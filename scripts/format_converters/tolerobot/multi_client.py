@@ -129,21 +129,41 @@ if __name__ == "__main__":
 
 
 """_summary_
+# 用于正式运行，用于数据集转换测试
 python scripts/format_converters/tolerobot/multi_client.py \
     --host=172.16.18.160 \
     --port=8766 \
     --timeout=1.0 \
     --heartbeat-interval=10.0 \
     --log-path=./outputs/leformat_converter/log \
-    --num-clients=4
+    --num-clients=8
+
+# 用于正式运行，用于数据集转换
+python scripts/format_converters/tolerobot/multi_client.py \
+    --host=172.16.18.160 \
+    --port=8765 \
+    --timeout=1.0 \
+    --heartbeat-interval=10.0 \
+    --log-path=./outputs/leformat_converter/log \
+    --num-clients=8
 
 
-# test
+# 用于本地测试，用于数据集转换测试
 python scripts/format_converters/tolerobot/multi_client.py \
     --host=127.0.0.1 \
-    --port=8766 \
-    --timeout=10.0 \
-    --heartbeat-interval=100.0 \
+    --port=8765 \
+    --timeout=1.0 \
+    --heartbeat-interval=10.0 \
     --log-path=./outputs/leformat_converter/log \
-    --num-clients=4
+    --num-clients=8
+
+# 用于本地测试，用于数据集转换
+python scripts/format_converters/tolerobot/multi_client.py \
+    --host=127.0.0.1 \
+    --port=8765 \
+    --timeout=1.0 \
+    --heartbeat-interval=10.0 \
+    --log-path=./outputs/leformat_converter/log \
+    --num-clients=8
+
 """
