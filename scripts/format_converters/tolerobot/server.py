@@ -134,18 +134,18 @@ python scripts/format_converters/tolerobot/server.py \
     --converter-factory-config-path=scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
     --specific-device-model=unitree_g1 \
     --heartbeat-interval=100000.0 \
-    --log-path=/mnt/nas/robocoin_datasets/server_logs/ \
+    --log-path=/mnt/synnas/docker2/robocoin-datasets/server_logs/ \
     --image-writer-processes=4 \
     --image-writer-threads=4 \
     --video-backend=pyav \
-    --convert-root-path=/mnt/nas/robocoin_datasets
+    --convert-root-path=/mnt/synnas/robocoin-datasets
 
 
 # for test
 python scripts/format_converters/tolerobot/server.py \
     --db-file=./db/datasets.db \
     --host=0.0.0.0 \
-    --port=8765 \
+    --port=8766 \
     --timeout=10.0 \
     --converter-factory-config-path=scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
     --heartbeat-interval=100.0 \
@@ -155,5 +155,21 @@ python scripts/format_converters/tolerobot/server.py \
     --video-backend=pyav \
     --convert-root-path=/mnt/nas/robocoin_datasets_test/test \
     --specific-device-model=realman_rmc_aidal \
+    --is-test
+
+    
+
+python scripts/format_converters/tolerobot/server.py \
+    --db-file=db/datasets.db \
+    --host=0.0.0.0 \
+    --port=8766 \
+    --timeout=1.0 \
+    --converter-factory-config-path=scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
+    --heartbeat-interval=100000.0 \
+    --log-path=/mnt/nas/synnas/docker2/robocoin-datasets/server_logs/ \
+    --image-writer-processes=4 \
+    --image-writer-threads=4 \
+    --video-backend=pyav \
+    --convert-root-path=/mnt/nas/synnas/docker2/robocoin-datasets
     --is-test
 """

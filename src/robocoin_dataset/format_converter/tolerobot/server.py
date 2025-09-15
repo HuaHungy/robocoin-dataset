@@ -154,6 +154,9 @@ class LeFormatConverterTaskServer(TaskServer):
         with self.db.with_session() as session:
             if self.is_test:
                 if not self.specific_device_model:
+                    print("specific device model not specified")
+                    # 情况1：未指定设备型号
+                    # 查询：标注已完成，且未进入测试流程（测试表中不存在）
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
@@ -166,52 +169,64 @@ class LeFormatConverterTaskServer(TaskServer):
                         )
                         .all()
                     )
+                    print(f"Found {len(results)} datasets")
                 else:
+                    print(f"specific device model is {self.specific_device_model}")
+                    # 情况2：指定了设备型号
+                    # 查询：标注已完成，设备型号匹配，且未进入测试流程
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
                         .filter(DmvAnnotationDB.device_model == self.specific_device_model)
-                        .filter(~session.query(LeFormatConvertTestDB))
+                        .filter(
+                            ~session.query(LeFormatConvertTestDB)
+                            .filter(
+                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid
+                            )
+                            .exists()
+                        )
                         .all()
                     )
+                    print(f"Found {len(results)} datasets")
 
             else:
-                if not self.specific_device_model:
-                    # 情况1：不按设备型号过滤
-                    results = (
-                        session.query(LeFormatConvertTestDB)
-                        .filter(LeFormatConvertTestDB.convert_status == TaskStatus.COMPLETED)
-                        .filter(
-                            ~session.query(LeFormatConvertDB)
-                            .filter(
-                                LeFormatConvertDB.dataset_uuid == LeFormatConvertTestDB.dataset_uuid
-                            )
-                            .exists()
-                        )
-                        .all()
+                # 1. 子查询：测试已完成
+                test_completed = (
+                    session.query(LeFormatConvertTestDB)
+                    .filter(
+                        LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
+                        LeFormatConvertTestDB.convert_status == TaskStatus.COMPLETED,
                     )
-                else:
-                    # 情况2：需要按设备型号过滤，需关联 DmvAnnotationDB
-                    results = (
-                        session.query(LeFormatConvertTestDB)
-                        .join(
-                            DmvAnnotationDB,
-                            DmvAnnotationDB.dataset_uuid == LeFormatConvertTestDB.dataset_uuid,
-                        )
-                        .filter(LeFormatConvertTestDB.convert_status == TaskStatus.COMPLETED)
-                        .filter(DmvAnnotationDB.device_model == self.specific_device_model)
-                        .filter(
-                            ~session.query(LeFormatConvertDB)
-                            .filter(
-                                LeFormatConvertDB.dataset_uuid == LeFormatConvertTestDB.dataset_uuid
-                            )
-                            .exists()
-                        )
-                        .all()
+                    .exists()
+                )
+
+                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 该 dataset_uuid
+                not_in_formal_convert = ~(
+                    session.query(LeFormatConvertDB)
+                    .filter(LeFormatConvertDB.dataset_uuid == DmvAnnotationDB.dataset_uuid)
+                    .exists()
+                )
+
+                # 3. 主查询
+                query = (
+                    session.query(DmvAnnotationDB)
+                    .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)  # 可选
+                    .filter(test_completed)  # ✅ 测试已完成
+                    .filter(not_in_formal_convert)  # ✅ 正式转换未开始（记录不存在）
+                )
+
+                # 4. 可选：按设备型号过滤
+                if self.specific_device_model:
+                    query = query.filter(
+                        DmvAnnotationDB.device_model == self.specific_device_model.strip()
                     )
 
+                # 5. 执行
+                results = query.all()
         if not results:
             return None
+
+        print(f"Found {len(results)} datasets")
 
         for item in results:
             dataset_item = (
