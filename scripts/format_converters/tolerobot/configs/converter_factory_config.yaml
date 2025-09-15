@@ -12,6 +12,12 @@ agilex_cobot_magic_aloha:
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_agilex_cobot_magic_aloha.yaml
 
+- version: realsense_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, realsense
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_magic_aloha_realsense.yaml
+
 galaxea_r1_lite:
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist

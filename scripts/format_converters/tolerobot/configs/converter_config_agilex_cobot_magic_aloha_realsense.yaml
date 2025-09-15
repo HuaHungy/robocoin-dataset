@@ -18,6 +18,12 @@ features:
       # names: [height, width, channels]
       # lerobot_feature: observations.images.cam_high : by _gen_lerobot_features()
         
+    ### values by manual
+    - cam_name: cam_high_realsense
+      args:
+
+        ### key and values by manual
+        h5_path: observations/images/cam_high_realsense
 
 
       ### values by function
