@@ -154,7 +154,6 @@ class LeFormatConverterTaskServer(TaskServer):
         with self.db.with_session() as session:
             if self.is_test:
                 if not self.specific_device_model:
-                    print("specific device model not specified")
                     # 情况1：未指定设备型号
                     # 查询：标注已完成，且未进入测试流程（测试表中不存在）
                     results = (
@@ -169,9 +168,7 @@ class LeFormatConverterTaskServer(TaskServer):
                         )
                         .all()
                     )
-                    print(f"Found {len(results)} datasets")
                 else:
-                    print(f"specific device model is {self.specific_device_model}")
                     # 情况2：指定了设备型号
                     # 查询：标注已完成，设备型号匹配，且未进入测试流程
                     results = (
@@ -187,7 +184,6 @@ class LeFormatConverterTaskServer(TaskServer):
                         )
                         .all()
                     )
-                    print(f"Found {len(results)} datasets")
 
             else:
                 # 1. 子查询：测试已完成
@@ -225,8 +221,6 @@ class LeFormatConverterTaskServer(TaskServer):
                 results = query.all()
         if not results:
             return None
-
-        print(f"Found {len(results)} datasets")
 
         for item in results:
             dataset_item = (

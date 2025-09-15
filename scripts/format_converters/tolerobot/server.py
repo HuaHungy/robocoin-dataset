@@ -163,13 +163,14 @@ python scripts/format_converters/tolerobot/server.py \
     --db-file=db/datasets.db \
     --host=0.0.0.0 \
     --port=8766 \
-    --timeout=1.0 \
+    --timeout=100.0 \
     --converter-factory-config-path=scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
-    --heartbeat-interval=100000.0 \
+    --heartbeat-interval=100.0 \
     --log-path=/mnt/nas/synnas/docker2/robocoin-datasets/server_logs/ \
     --image-writer-processes=4 \
     --image-writer-threads=4 \
     --video-backend=pyav \
-    --convert-root-path=/mnt/nas/synnas/docker2/robocoin-datasets
-    --is-test
+    --convert-root-path=/mnt/nas/synnas/docker2/robocoin-datasets-test \
+    --specific-device-model=realman_rmc_aidal \
+    --is-test 
 """

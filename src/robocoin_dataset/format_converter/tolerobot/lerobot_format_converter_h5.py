@@ -46,7 +46,8 @@ ALLOWED_RULES = {
         DESCRIBE_TXT_FILE,
         DEVICE_MODEL_ANNOTATION_FILE,
     },  # 允许的完整文件名
-    "suffixes": {H5_SUFFIX, HDF5_SUFFIX, ".yaml", ".txt", ".mp4"},  # 允许的后缀
+    "allowed_suffixes": {H5_SUFFIX, HDF5_SUFFIX},  # 允许的后缀
+    "other_suffixes": {".yaml", ".txt", ".mp4", ".db"},
 }
 
 # NAS_EADIR = "@eaDir"
@@ -59,11 +60,12 @@ def is_allowed_file(file_path: Path) -> bool:
 
     ret = (
         filename in ALLOWED_RULES["exact_names"]
-        or suffix in ALLOWED_RULES["suffixes"]
+        or suffix in ALLOWED_RULES["allowed_suffixes"]
         or NAS_SYSFILE_TAG in filename
+        or suffix in ALLOWED_RULES["other_suffixes"]
     )
     if ret:
-        if suffix in ALLOWED_RULES["suffixes"]:
+        if suffix in ALLOWED_RULES["allowed_suffixes"]:
             if file_path.stat().st_size < 1024:
                 return False
 
