@@ -18,13 +18,13 @@ features:
       ### values by function
       # lerobot_feature: observation.state : by _gen_lerobot_features()
       # dtype: float32 
-      # shape: [26]  # 实际Leju数据的state维度
+      # shape: [26]  
 
       ## sub_states should be concatenated together here : by _gen_state_names()
       
       ### values by manual
       sub_state:
-      # 直接使用Leju数据中现有的observation.state（26维）
+
       - names: 
         - leju_observation_state_0
         - leju_observation_state_1
@@ -63,13 +63,11 @@ features:
     ### values by function
     # lerobot_feature: action : by _gen_lerobot_features()
     # dtype: float32
-    # shape: [26]  # 实际Leju数据的action维度
-
+    # shape: [26]  
     ## sub_actions should be concatenated together here : by _gen_action_names()
 
     ### values by manual
     sub_action:
-    # 直接使用Leju数据中现有的action（26维）
     - names: 
       - leju_action_0
       - leju_action_1
