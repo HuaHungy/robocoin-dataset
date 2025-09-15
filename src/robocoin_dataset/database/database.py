@@ -86,7 +86,7 @@ class RWLock:
 
 class DatasetDatabase:
     def __init__(self, db_file: Path) -> None:
-        self.db_file = db_file.expanduser().absolute()
+        self.db_file = Path(db_file).expanduser().absolute()
         self.engine = None
         self.session_local = None
         self._initialize()

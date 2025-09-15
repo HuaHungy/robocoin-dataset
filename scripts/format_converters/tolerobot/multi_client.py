@@ -145,8 +145,7 @@ python scripts/format_converters/tolerobot/multi_client.py \
     --timeout=1.0 \
     --heartbeat-interval=10.0 \
     --log-path=./outputs/leformat_converter/log \
-    --num-clients=8
-
+    --num-clients=16
 
 # 用于本地测试，用于数据集转换测试
 python scripts/format_converters/tolerobot/multi_client.py \

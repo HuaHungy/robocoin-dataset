@@ -1,46 +1,46 @@
 # config.yml
 agilex_pika_sense:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_pika
+  module: robocoin_dataset.statics.episode_frames_collector_pika
   class: EpisodeFramesCollectorPika
 
 agilex_pika_sense_single:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_pika
+  module: robocoin_dataset.statics.episode_frames_collector_pika
   class: EpisodeFramesCollectorPika
 
 agilex_cobot_magic_aloha:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_hdf5
+  module: robocoin_dataset.statics.episode_frames_collector_hdf5
   class: EpisodeFramesCollectorHdf5
 
 agilex_cobot_decoupled_magic:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_hdf5
+  module: robocoin_dataset.statics.episode_frames_collector_hdf5
   class: EpisodeFramesCollectorHdf5
 
 realman_rmc_aidal:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_hdf5
+  module: robocoin_dataset.statics.episode_frames_collector_hdf5
   class: EpisodeFramesCollectorHdf5
 
 galaxea_r1_lite:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_galaxea
+  module: robocoin_dataset.statics.episode_frames_collector_galaxea
   class: EpisodeFramesCollectorGalaxea
 
 adora_dual_v1: 
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_lerobot
+  module: robocoin_dataset.statics.episode_frames_collector_lerobot
   class: EpisodeFramesCollectorLerobot
 
 unitree_g1:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_unitree
+  module: robocoin_dataset.statistic.episode_frames_collector_unitree
   class: EpisodeFramesCollectorUnitree
 
 human:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_visionpro
+  module: robocoin_dataset.statistic.episode_frames_collector_visionpro
   class: EpisodeFramesCollectorVisionPro
 
 visionpro:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_visionpro
+  module: robocoin_dataset.statics.episode_frames_collector_visionpro
   class: EpisodeFramesCollectorVisionPro
 
 discover_robotics_aitbot_mmk2:
-  module: robocoin_dataset.scripts.dataset_statics.episode_frames_collector_mmk
+  module: robocoin_dataset.statics.episode_frames_collector_mmk
   class: EpisodeFramesCollectorMMK
 
 
