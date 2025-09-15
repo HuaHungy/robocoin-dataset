@@ -153,32 +153,62 @@ class LeFormatConverterTaskServer(TaskServer):
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
             if self.is_test:
-                leformat_convert_db = LeFormatConvertTestDB
-            else:
-                leformat_convert_db = LeFormatConvertDB
-            if not self.specific_device_model:
-                results = (
-                    session.query(DmvAnnotationDB)
-                    .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
-                    .filter(
-                        ~session.query(leformat_convert_db)
-                        .filter(leformat_convert_db.dataset_uuid == DmvAnnotationDB.dataset_uuid)
-                        .exists()
+                if not self.specific_device_model:
+                    results = (
+                        session.query(DmvAnnotationDB)
+                        .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
+                        .filter(
+                            ~session.query(LeFormatConvertTestDB)
+                            .filter(
+                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid
+                            )
+                            .exists()
+                        )
+                        .all()
                     )
-                    .all()
-                )
-            else:
-                results = (
-                    session.query(DmvAnnotationDB)
-                    .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
-                    .filter(DmvAnnotationDB.device_model == self.specific_device_model)
-                    .filter(
-                        ~session.query(leformat_convert_db)
-                        .filter(leformat_convert_db.dataset_uuid == DmvAnnotationDB.dataset_uuid)
-                        .exists()
+                else:
+                    results = (
+                        session.query(DmvAnnotationDB)
+                        .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
+                        .filter(DmvAnnotationDB.device_model == self.specific_device_model)
+                        .filter(~session.query(LeFormatConvertTestDB))
+                        .all()
                     )
-                    .all()
-                )
+
+            else:
+                if not self.specific_device_model:
+                    # 情况1：不按设备型号过滤
+                    results = (
+                        session.query(LeFormatConvertTestDB)
+                        .filter(LeFormatConvertTestDB.convert_status == TaskStatus.COMPLETED)
+                        .filter(
+                            ~session.query(LeFormatConvertDB)
+                            .filter(
+                                LeFormatConvertDB.dataset_uuid == LeFormatConvertTestDB.dataset_uuid
+                            )
+                            .exists()
+                        )
+                        .all()
+                    )
+                else:
+                    # 情况2：需要按设备型号过滤，需关联 DmvAnnotationDB
+                    results = (
+                        session.query(LeFormatConvertTestDB)
+                        .join(
+                            DmvAnnotationDB,
+                            DmvAnnotationDB.dataset_uuid == LeFormatConvertTestDB.dataset_uuid,
+                        )
+                        .filter(LeFormatConvertTestDB.convert_status == TaskStatus.COMPLETED)
+                        .filter(DmvAnnotationDB.device_model == self.specific_device_model)
+                        .filter(
+                            ~session.query(LeFormatConvertDB)
+                            .filter(
+                                LeFormatConvertDB.dataset_uuid == LeFormatConvertTestDB.dataset_uuid
+                            )
+                            .exists()
+                        )
+                        .all()
+                    )
 
         if not results:
             return None
