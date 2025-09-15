@@ -581,7 +581,10 @@ class LerobotFormatConverter:
             dataset = self._create_lerobot_dataset()
         ep_idx = 0
         for task_path, task in self.path_task_dict.items():
-            for task_ep_idx in range(self._get_task_episodes_num(task_path)):
+            episodes_num = self._get_task_episodes_num(task_path)
+            if is_test:
+                episodes_num = 1
+            for task_ep_idx in range(episodes_num):
                 try:
                     images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
                         task_path, task_ep_idx

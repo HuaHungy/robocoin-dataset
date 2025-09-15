@@ -49,24 +49,35 @@ ALLOWED_RULES = {
     "suffixes": {H5_SUFFIX, HDF5_SUFFIX},  # 允许的后缀
 }
 
-NAS_EADIR = "@eaDir"
-NAS_EASTREAM = "@"
+# NAS_EADIR = "@eaDir"
+NAS_SYSFILE_TAG = "@"
 
 
 def is_allowed_file(file_path: Path) -> bool:
     filename = file_path.name
     suffix = file_path.suffix
 
-    return filename in ALLOWED_RULES["exact_names"] or suffix in ALLOWED_RULES["suffixes"]
+    ret = (
+        filename in ALLOWED_RULES["exact_names"]
+        or suffix in ALLOWED_RULES["suffixes"]
+        or NAS_SYSFILE_TAG in filename
+        or suffix == ".yaml"
+    )
+    if ret:
+        if suffix in ALLOWED_RULES["suffixes"]:
+            if file_path.stat().st_size < 1024:
+                return False
+
+    return ret
 
 
 def find_unexpected_files(directory: Path, include_hidden: bool = False) -> list[str]:
     directory = Path(directory)
 
     if not directory.exists():
-        raise FileNotFoundError(f"目录不存在: {directory}")
+        raise FileNotFoundError(f"Dir dose not exist: {directory}.")
     if not directory.is_dir():
-        raise NotADirectoryError(f"路径不是目录: {directory}")
+        raise NotADirectoryError(f"{directory} is not directory.")
 
     unexpected_files: list[str] = []
 

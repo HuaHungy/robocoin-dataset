@@ -30,6 +30,7 @@ def convert2lerobot(
     image_writer_threads: int = 4,
     converter_log_dir: Path | None = None,
     device_model_version: str | None = None,
+    is_test: bool = False,
 ) -> LerobotFormatConverter:
     """
     Convert dataset to lerobot format.
@@ -95,12 +96,15 @@ def convert2lerobot(
         image_writer_processes=image_writer_processes,
         image_writer_threads=image_writer_threads,
         logger=logger,
+        converter_log_dir=converter_log_dir,
     )
 
     total_episodes = converter.get_episodes_num()
+    if is_test:
+        total_episodes = 1
 
     for task, task_ep_idx, ep_idx in tqdm(
-        converter.convert(),
+        converter.convert(is_test=is_test),
         total=total_episodes,
         desc="Converting Dataset",
         unit="episode",
@@ -171,6 +175,13 @@ def main() -> None:
         help="Device model version (default: none)",
     )
 
+    argparser.add_argument(
+        "--is-test",
+        action="store_true",
+        default=False,
+        help="Enable test mode (default: disabled)",
+    )
+
     args = argparser.parse_args()
     device_model_version = None
     if args.device_model_version != "none":
@@ -189,6 +200,7 @@ def main() -> None:
             image_writer_threads=args.image_writer_threads,
             converter_log_dir=args.log_dir,
             device_model_version=device_model_version,
+            is_test=args.is_test,
         )
     except Exception:
         traceback.print_exc()
@@ -211,14 +223,15 @@ python scripts/format_converters/tolerobot/convert2lerobot.py \
 --video_backend pyav
 
 python scripts/format_converters/tolerobot/convert2lerobot.py \
---dataset_path /mnt/nas/11realman_rmc_aidal/basket_storage_banana \
---output_path ./outputs/lerobot_converter/basket_storage_banana \
+--dataset_path /mnt/synnas/docker/11realman_rmc_aidal/basket_storage_banana \
+--output_path ./outputs/lerobot_converter_test/basket_storage_banana \
 --device_model realman_rmc_aidal \
 --factory_config_path scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
 --repo_id robocoin/basket_storage \
---log_dir ./outputs/robocoin/logs \
+--log_dir ./outputs/lerobot_converter_test/basket_storage_banana/logs \
 --image_writer_processes 10 \
 --image_writer_threads 4 \
---video_backend pyav
+--video_backend pyav \
+--is-test
 
 """
