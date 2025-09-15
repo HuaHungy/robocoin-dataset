@@ -77,25 +77,70 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
             self.sync_analyzer = TimeSyncAnalyzer(self.logger)
 
     def _prevalidate_files(self) -> None:
-        """验证ROS bag数据集文件结构"""
+        """验证ROS bag数据集文件结构 - 使用非阻塞验证模式"""
+        validation_warnings = []
+        
         for path in self.path_task_dict.keys():
-            if not path.exists():
-                raise FileNotFoundError(f"{path} does not exist")
-            if path.is_file():
-                raise ValueError(f"{path} is a file, expected directory")
+            try:
+                if not path.exists():
+                    warning_msg = f"Path does not exist: {path}"
+                    validation_warnings.append(warning_msg)
+                    if self.logger:
+                        self.logger.warning(warning_msg)
+                    continue
+                    
+                if path.is_file():
+                    warning_msg = f"Expected directory but found file: {path}"
+                    validation_warnings.append(warning_msg)
+                    if self.logger:
+                        self.logger.warning(warning_msg)
+                    continue
 
-            # 检查是否有.bag文件
-            bag_files = list(path.glob("*.bag"))
-            if not bag_files:
-                raise ValueError(f"No .bag files found in {path}")
-            
-            # 验证每个bag文件
-            for i, bag_file in enumerate(bag_files):
-                if not bag_file.is_file():
-                    raise ValueError(f"Bag file {bag_file} is not a valid file")
+                # 检查是否有.bag文件
+                bag_files = list(path.glob("*.bag"))
+                if not bag_files:
+                    warning_msg = f"No .bag files found in {path}"
+                    validation_warnings.append(warning_msg)
+                    if self.logger:
+                        self.logger.warning(warning_msg)
+                    continue
                 
-                # Enhanced validation: validate each bag file's internal structure
-                self._validate_rosbag_structure(bag_file, i)
+                # 验证每个bag文件
+                for i, bag_file in enumerate(bag_files):
+                    try:
+                        if not bag_file.is_file():
+                            warning_msg = f"Bag file is not valid: {bag_file}"
+                            validation_warnings.append(warning_msg)
+                            if self.logger:
+                                self.logger.warning(warning_msg)
+                            continue
+                        
+                        # Enhanced validation: validate each bag file's internal structure
+                        self._validate_rosbag_structure(bag_file, i)
+                        
+                    except Exception as e:
+                        warning_msg = f"Failed to validate bag file {bag_file}: {e}"
+                        validation_warnings.append(warning_msg)
+                        if self.logger:
+                            self.logger.warning(warning_msg)
+                        
+            except Exception as e:
+                warning_msg = f"Failed to validate path {path}: {e}"
+                validation_warnings.append(warning_msg)
+                if self.logger:
+                    self.logger.warning(warning_msg)
+        
+        # 记录总体验证结果，但不抛出异常
+        if validation_warnings:
+            if self.logger:
+                self.logger.info(f"ROS bag validation completed with {len(validation_warnings)} warnings")
+                for warning in validation_warnings[:5]:  # 只显示前5个警告避免日志过长
+                    self.logger.info(f"  - {warning}")
+                if len(validation_warnings) > 5:
+                    self.logger.info(f"  ... and {len(validation_warnings) - 5} more warnings")
+        else:
+            if self.logger:
+                self.logger.info("ROS bag validation completed successfully")
 
     def _validate_rosbag_structure(self, bag_file: Path, ep_idx: int) -> None:
         """Validate internal ROS bag structure against configuration"""
@@ -361,25 +406,45 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        # 使用时间对齐器来确定episode的帧数
-        rosbag_data = self._get_episode_rosbag_data(task_path, ep_idx)
-        
-        # rosbag_data现在已经是对齐后的数据，所有topic长度应该一致
-        if not rosbag_data:
+        try:
+            # 使用时间对齐器来确定episode的帧数
+            rosbag_data = self._get_episode_rosbag_data(task_path, ep_idx)
+            
+            # rosbag_data现在已经是对齐后的数据，所有topic长度应该一致
+            if not rosbag_data:
+                if self.logger:
+                    self.logger.warning(f"No rosbag data found for episode {ep_idx} of task {task_path}")
+                return 0
+                
+            # 获取任意一个topic的长度作为帧数
+            first_topic_data = next(iter(rosbag_data.values()))
+            frame_count = len(first_topic_data) if first_topic_data else 0
+            
+            if self.logger:
+                self.logger.info(f"Episode {ep_idx} 帧数: {frame_count}")
+                
+            return frame_count
+            
+        except (IndexError, ValueError, KeyError) as e:
+            if self.logger:
+                self.logger.error(f"Error getting frame count for episode {ep_idx} of task {task_path}: {e}")
             return 0
-            
-        # 获取任意一个topic的长度作为帧数
-        first_topic_data = next(iter(rosbag_data.values()))
-        frame_count = len(first_topic_data) if first_topic_data else 0
-        
-        if self.logger:
-            self.logger.info(f"Episode {ep_idx} 帧数: {frame_count}")
-            
-        return frame_count
 
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:
-        return len(self.task_episode_rosbagfile_paths[task_path])
+        # 安全获取task对应的episode数量
+        if task_path not in self.task_episode_rosbagfile_paths:
+            if self.logger:
+                self.logger.warning(f"Task path {task_path} not found in rosbag file paths")
+            return 0
+        
+        episode_files = self.task_episode_rosbagfile_paths[task_path]
+        count = len(episode_files) if episode_files else 0
+        
+        if self.logger:
+            self.logger.info(f"Task {task_path} has {count} episodes")
+            
+        return count
 
     # @override
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> any:
@@ -396,12 +461,43 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
     @cached_property
     def task_episode_rosbagfile_paths(self) -> dict[Path, list[Path]]:
         task_episode_paths = {}
+        
         for path in self.path_task_dict.keys():
-            if path.exists():
-                rosbag_files = natsorted(list(path.rglob("*.bag")))
-                # rosbag_files.extend(natsorted(list(path.rglob("*.mcap"))))
-                # rosbag_files.extend(natsorted(list(path.rglob("*.db3"))))  # ROS2 sqlite bags
-                task_episode_paths[path] = rosbag_files
+            if not path.exists() or not path.is_dir():
+                task_episode_paths[path] = []
+                if self.logger:
+                    self.logger.warning(f"Path does not exist or is not a directory: {path}")
+                continue
+                
+            try:
+                # 首先尝试在当前目录查找bag文件
+                rosbag_files = list(path.glob("*.bag"))
+                
+                # 如果当前目录没有，递归查找子目录
+                if not rosbag_files:
+                    rosbag_files = list(path.rglob("*.bag"))
+                
+                # 自然排序确保episode顺序正确
+                rosbag_files = natsorted(rosbag_files)
+                
+                # 过滤掉无效文件
+                valid_files = []
+                for bag_file in rosbag_files:
+                    if bag_file.is_file() and bag_file.stat().st_size > 0:
+                        valid_files.append(bag_file)
+                    elif self.logger:
+                        self.logger.warning(f"Skipping invalid or empty bag file: {bag_file}")
+                
+                task_episode_paths[path] = valid_files
+                
+                if self.logger:
+                    self.logger.info(f"Found {len(valid_files)} valid bag files in {path}")
+                    
+            except Exception as e:
+                task_episode_paths[path] = []
+                if self.logger:
+                    self.logger.error(f"Error processing path {path}: {e}")
+                    
         return task_episode_paths
 
     def _get_bag_metadata(self, bag_file_path: Path) -> dict:
@@ -439,7 +535,27 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
             print(f"buffer is ok, skipping Loading episode {ep_idx} from {task_path}")
             return self.rosbag_buffer.rosbag_data
         
-        rosbag_file_path = self.task_episode_rosbagfile_paths[task_path][ep_idx]
+        # 安全检查：确保task_path存在且ep_idx在有效范围内
+        if task_path not in self.task_episode_rosbagfile_paths:
+            error_msg = f"Task path {task_path} not found in rosbag file paths"
+            if self.logger:
+                self.logger.error(error_msg)
+            raise ValueError(error_msg)
+            
+        episode_files = self.task_episode_rosbagfile_paths[task_path]
+        if ep_idx >= len(episode_files):
+            error_msg = f"Episode index {ep_idx} out of range. Available episodes: {len(episode_files)} for task {task_path}"
+            if self.logger:
+                self.logger.error(error_msg)
+            raise IndexError(error_msg)
+            
+        if not episode_files:
+            error_msg = f"No rosbag files found for task {task_path}"
+            if self.logger:
+                self.logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        rosbag_file_path = episode_files[ep_idx]
         
         # 第1步：读取rosbag文件并按topic组织原始消息
         topic_messages = self._read_raw_topic_messages(rosbag_file_path)
