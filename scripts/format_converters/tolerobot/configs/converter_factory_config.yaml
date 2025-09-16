@@ -27,22 +27,58 @@ galaxea_r1_lite:
 
 unitree_g1:
 - version: default_version
-  verison_description: two arms and two hands, one rgb cameras with high
+  verison_description: two arms and two hands (6 joints each), one rgb cameras with high
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
   class: LerobotFormatConverterG1
-  converter_config_path: converter_config_unitree_g1.yaml
+  converter_config_path: converter_config_unitree_g1_6hands.yaml
+
+- version: 6hands_version
+  verison_description: two arms and two hands (6 joints each), one rgb cameras with high
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
+  class: LerobotFormatConverterG1
+  converter_config_path: converter_config_unitree_g1_6hands.yaml
+
+- version: 7hands_version
+  verison_description: two arms and two hands (7 joints each), one rgb cameras with high
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
+  class: LerobotFormatConverterG1
+  converter_config_path: converter_config_unitree_g1_7hands.yaml
 
 - version: twocam_version
-  verison_description: two arms and two hands, two rgb cameras with high_up and high_down
+  verison_description: two arms and two hands (6 joints each), two rgb cameras with high_up and high_down
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
   class: LerobotFormatConverterG1
-  converter_config_path: converter_config_unitree_g1.yaml
+  converter_config_path: converter_config_unitree_g1_twocam_6hands.yaml
+
+- version: twocam_6hands_version
+  verison_description: two arms and two hands (6 joints each), two rgb cameras with high_up and high_down
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
+  class: LerobotFormatConverterG1
+  converter_config_path: converter_config_unitree_g1_twocam_6hands.yaml
+
+- version: twocam_7hands_version
+  verison_description: two arms and two hands (7 joints each), two rgb cameras with high_up and high_down
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
+  class: LerobotFormatConverterG1
+  converter_config_path: converter_config_unitree_g1_twocam_7hands.yaml
 
 - version: threecam_version
-  verison_description: two arms and two hands, three rgb cameras with high, left wrist, right wrist
+  verison_description: two arms and two hands (6 joints each), three rgb cameras with high, left wrist, right wrist
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
   class: LerobotFormatConverterG1
-  converter_config_path: converter_config_unitree_g1_threecam.yaml
+  converter_config_path: converter_config_unitree_g1_threecam_6hands.yaml
+
+- version: threecam_6hands_version
+  verison_description: two arms and two hands (6 joints each), three rgb cameras with high, left wrist, right wrist
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
+  class: LerobotFormatConverterG1
+  converter_config_path: converter_config_unitree_g1_threecam_6hands.yaml
+
+- version: threecam_7hands_version
+  verison_description: two arms and two hands (7 joints each), three rgb cameras with high, left wrist, right wrist
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
+  class: LerobotFormatConverterG1
+  converter_config_path: converter_config_unitree_g1_threecam_7hands.yaml
 
 discover_robotics_aitbot_mmk2:
 # Version 1: 4外, 6右，11左

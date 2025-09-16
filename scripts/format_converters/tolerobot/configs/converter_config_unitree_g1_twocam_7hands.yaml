@@ -5,25 +5,18 @@ features:
     images:
 
     ### values by manual
-    - cam_name: cam_high_rgb
+    - cam_name: cam_high_up_rgb
       args:
 
         ### key and values by manual
         image_key: color_0
 
-    ### values by manual
-    - cam_name: color_left_wrist
-      args:
-
-        ### key and values by manual
-        image_key: color_2
-
-    ### values by manual
-    - cam_name: color_right_wrist
+    - cam_name: cam_high_down_rgb
       args:
 
         ### key and values by manual
         image_key: color_1
+
 
       ### values by function
       # dtype: video

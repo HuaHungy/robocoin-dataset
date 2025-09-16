@@ -11,19 +11,6 @@ features:
         ### key and values by manual
         image_key: color_0
 
-    ### values by manual
-    - cam_name: color_left_wrist
-      args:
-
-        ### key and values by manual
-        image_key: color_2
-
-    ### values by manual
-    - cam_name: color_right_wrist
-      args:
-
-        ### key and values by manual
-        image_key: color_1
 
       ### values by function
       # dtype: video
@@ -36,7 +23,7 @@ features:
       ### values by function
       # lerobot_feature: observation.state : by _gen_lerobot_features()
       # dtype: float32 
-      # shape: [28]
+      # shape: [26]
 
       ## sub_states should be concatenated together here : by _gen_state_names(), such as:
       # names: 
@@ -93,13 +80,12 @@ features:
         - left_hand_joint_4_rad
         - left_hand_joint_5_rad
         - left_hand_joint_6_rad
-        - left_hand_joint_7_rad
 
         args:
           ### keys and values by manual
           json_path: states.left_hand.qpos
           range_from: 0
-          range_to: 7
+          range_to: 6
 
         ### values by manual
         # convert_func: degree2rad
@@ -112,13 +98,12 @@ features:
         - right_hand_joint_4_rad
         - right_hand_joint_5_rad
         - right_hand_joint_6_rad
-        - right_hand_joint_7_rad
 
         args:
           ### keys and values by manual
           json_path: states.right_hand.qpos
           range_from: 0
-          range_to: 7
+          range_to: 6
 
         ### values by manual
         # convert_func: degree2rad
@@ -127,7 +112,7 @@ features:
     ### values by function
     # lerobot_feature: action: by _gen_lerobot_features()
     # dtype: float32 
-    # shape: [28]
+    # shape: [26]
 
     ## sub_actions should be concatenated together here, : by _gen_acton_names(), such as:
     # names:
@@ -178,13 +163,12 @@ features:
       - left_hand_joint_4_rad
       - left_hand_joint_5_rad
       - left_hand_joint_6_rad
-      - left_hand_joint_7_rad
 
       args:
         ### keys and values by manual
         json_path: actions.left_hand.qpos
         range_from: 0
-        range_to: 7
+        range_to: 6
 
     ### values by manual
     - names: 
@@ -194,10 +178,9 @@ features:
       - right_hand_joint_4_rad
       - right_hand_joint_5_rad
       - right_hand_joint_6_rad
-      - right_hand_joint_7_rad
 
       args:
         ### keys and values by manual
         json_path: actions.right_hand.qpos
         range_from: 0
-        range_to: 7
+        range_to: 6
