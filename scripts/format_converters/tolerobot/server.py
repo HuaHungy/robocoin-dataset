@@ -163,5 +163,37 @@ python scripts/format_converters/tolerobot/server.py \
     --image-writer-threads=4 \
     --video-backend=pyav \
     --convert-root-path=/mnt/nas/synnas/docker2/robocoin-datasets-test \
+    --specific-device-model=realman_rmc_aidal \
+    --is-test 
+
+# 用于正式运行，用于数据集转换
+python scripts/format_converters/tolerobot/server.py \
+    --db-file=db/datasets.db \
+    --host=172.16.18.160 \
+    --port=8765 \
+    --timeout=100.0 \
+    --converter-factory-config-path=scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
+    --heartbeat-interval=100.0 \
+    --log-path=/mnt/nas/synnas/docker2/robocoin-datasets/server_logs/ \
+    --image-writer-processes=4 \
+    --image-writer-threads=4 \
+    --video-backend=pyav \
+    --convert-root-path=/mnt/nas/synnas/docker2/robocoin-datasets-test \
+    --specific-device-model=realman_rmc_aidal 
+
+# 用于正式运行，用于数据集转换测试
+python scripts/format_converters/tolerobot/server.py \
+    --db-file=db/datasets.db \
+    --host=172.16.18.160 \
+    --port=8766 \
+    --timeout=100.0 \
+    --converter-factory-config-path=scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
+    --heartbeat-interval=100.0 \
+    --log-path=/mnt/nas/synnas/docker2/robocoin-datasets/server_logs/ \
+    --image-writer-processes=4 \
+    --image-writer-threads=4 \
+    --video-backend=pyav \
+    --convert-root-path=/mnt/nas/synnas/docker2/robocoin-datasets-test \
+    --specific-device-model=realman_rmc_aidal \
     --is-test
 """
