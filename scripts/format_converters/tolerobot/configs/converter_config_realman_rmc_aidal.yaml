@@ -62,13 +62,13 @@ features:
       ### values by manual
       sub_state:
       - names: 
-        - right_joint_1_rad
-        - right_joint_2_rad
-        - right_joint_3_rad
-        - right_joint_4_rad
-        - right_joint_5_rad
-        - right_joint_6_rad
-        - right_joint_7_rad
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        - right_arm_joint_7_rad
 
         args:
           ### keys and values by manual
@@ -122,13 +122,13 @@ features:
 
       ### values by manual
       - names: 
-        - left_joint_1_rad
-        - left_joint_2_rad
-        - left_joint_3_rad
-        - left_joint_4_rad
-        - left_joint_5_rad
-        - left_joint_6_rad
-        - left_joint_7_rad
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        - left_arm_joint_7_rad
 
         args:
           ### keys and values by manual
@@ -198,13 +198,13 @@ features:
     sub_action:
 
       - names: 
-        - right_joint_1_rad
-        - right_joint_2_rad
-        - right_joint_3_rad
-        - right_joint_4_rad
-        - right_joint_5_rad
-        - right_joint_6_rad
-        - right_joint_7_rad
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        - right_arm_joint_7_rad
 
         args:
           ### keys and values by manual
@@ -258,13 +258,13 @@ features:
 
       ### values by manual
       - names: 
-        - left_joint_1_rad
-        - left_joint_2_rad
-        - left_joint_3_rad
-        - left_joint_4_rad
-        - left_joint_5_rad
-        - left_joint_6_rad
-        - left_joint_7_rad
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        - left_arm_joint_7_rad
 
         args:
           ### keys and values by manual
