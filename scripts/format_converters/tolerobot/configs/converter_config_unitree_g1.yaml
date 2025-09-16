@@ -5,7 +5,7 @@ features:
     images:
 
     ### values by manual
-    - cam_name: color_head
+    - cam_name: cam_high_rgb
       args:
 
         ### key and values by manual

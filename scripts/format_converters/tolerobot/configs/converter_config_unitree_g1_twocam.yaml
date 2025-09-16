@@ -5,13 +5,13 @@ features:
     images:
 
     ### values by manual
-    - cam_name: color_head_up
+    - cam_name: cam_high_up_rgb
       args:
 
         ### key and values by manual
         image_key: color_0
 
-    - cam_name: color_head_down
+    - cam_name: cam_high_down_rgb
       args:
 
         ### key and values by manual

@@ -6,25 +6,25 @@ features:
     images:
 
     ### left head camera - compressed RGB image
-    - cam_name: head_left_rgb
+    - cam_name: cam_high_left_rgb
       args:
         topic_name: /hdas/camera_head/left_raw/image_raw_color/compressed
       # messages: sensor_msgs/msg/CompressedImage
 
     ### right head camera - compressed RGB image
-    - cam_name: head_right_rgb
+    - cam_name: cam_high_right_rgb
       args:
         topic_name: /hdas/camera_head/right_raw/image_raw_color/compressed
       # messages: sensor_msgs/msg/CompressedImage
 
     ### left wrist camera - compressed RGB image
-    - cam_name: wrist_left_rgb
+    - cam_name: cam_left_wrist_rgb
       args:
         topic_name: /hdas/camera_wrist_left/color/image_raw/compressed
       # messages: sensor_msgs/msg/CompressedImage
 
     ### right wrist camera - compressed RGB image
-    - cam_name: wrist_right_rgb
+    - cam_name: cam_right_wrist_rgb
       args:
         topic_name: /hdas/camera_wrist_right/color/image_raw/compressed
       # messages: sensor_msgs/msg/CompressedImage
