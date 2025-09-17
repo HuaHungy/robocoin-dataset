@@ -162,19 +162,18 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             raise Exception(err_msg)
 
         invalid_h5_files = []
-        h5_files = self.dataset_path.rglob("*.h5")
-        for h5_file in h5_files:
-            try:
-                validate_h5file(h5_file)
-            except Exception:  # noqa: PERF203
-                invalid_h5_files.append(h5_file)
+        for path in self.task_episode_h5file_paths:
+            for file in path.rglob("*.h5"):
+                try:
+                    validate_h5file(file)
+                except Exception:  # noqa: PERF203
+                    invalid_h5_files.append(file)
 
-        h5_files = self.dataset_path.rglob("*.hdf5")
-        for h5_file in h5_files:
-            try:
-                validate_h5file(h5_file)
-            except Exception:  # noqa: PERF203
-                invalid_h5_files.append(h5_file)
+            for file in path.rglob("*.hdf5"):
+                try:
+                    validate_h5file(file)
+                except Exception:  # noqa: PERF203
+                    invalid_h5_files.append(file)
 
         if invalid_h5_files:
             err_msg = "Found invalid h5 files:"
