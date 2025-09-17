@@ -236,32 +236,53 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
 
 
     def _move_videos_to_standard_structure(self) -> None:
-        """Move videos to our standard structure if needed"""
-        # Handle depth videos if they exist in a separate depth/ folder
-        depth_path = self.lerobot_data_path / "depth"
-        if depth_path.exists():
-            target_videos_path = Path(self.output_path) / "videos"
-            target_videos_path.mkdir(parents=True, exist_ok=True)
+        """Copy video files to output/videos/{cam_name}/ according to config."""
+        import glob
+        import os
+        
+        # 1. 获取 config 里的 cam_name 列表
+        cam_configs = self.converter_config.get('features', {}).get('observation', {}).get('images', [])
+        cam_names = [c.get('cam_name') for c in cam_configs if 'cam_name' in c]
+        
+        # 2. 源视频目录
+        src_videos_path = self.lerobot_data_path / "videos"
+        if not src_videos_path.exists():
+            if self.logger:
+                self.logger.warning(f"No videos directory found at {src_videos_path}")
+            return
+        
+        # 3. 目标根目录
+        target_videos_path = Path(self.output_path) / "videos"
+        target_videos_path.mkdir(parents=True, exist_ok=True)
+        
+        # 4. 遍历每个相机，查找并复制视频文件
+        for cam_name in cam_names:
+            # 支持多种视频格式
+            video_patterns = [
+                str(src_videos_path / f"{cam_name}*.mp4"),
+                str(src_videos_path / f"{cam_name}*.avi"),
+                str(src_videos_path / f"{cam_name}*.mov"),
+                str(src_videos_path / f"{cam_name}*.mkv"),
+            ]
+            video_files = []
+            for pattern in video_patterns:
+                video_files.extend(glob.glob(pattern))
             
-            # Copy depth videos structure to videos folder
-            for chunk_dir in depth_path.iterdir():
-                if chunk_dir.is_dir():
-                    target_chunk_dir = target_videos_path / chunk_dir.name
-                    target_chunk_dir.mkdir(exist_ok=True)
-                    
-                    for camera_dir in chunk_dir.iterdir():
-                        if camera_dir.is_dir():
-                            # Keep original camera naming convention
-                            target_camera_dir = target_chunk_dir / camera_dir.name
-                            
-                            if target_camera_dir.exists():
-                                shutil.rmtree(target_camera_dir)
-                            shutil.copytree(camera_dir, target_camera_dir)
-                            
-                            if self.logger:
-                                self.logger.info(f"Moved videos: {camera_dir} -> {target_camera_dir}")
+            # 目标文件夹
+            target_cam_dir = target_videos_path / cam_name
+            target_cam_dir.mkdir(parents=True, exist_ok=True)
+            
+            for video_file in video_files:
+                video_file_name = os.path.basename(video_file)
+                target_file = target_cam_dir / video_file_name
+                shutil.copy2(video_file, target_file)
+                if self.logger:
+                    self.logger.info(f"Copied video: {video_file} -> {target_file}")
+        
+        if self.logger:
+            self.logger.info(f"All videos copied to {target_videos_path} by cam_name from config.")
 
-    def _convert_units(self, data: np.ndarray, data_type: str) -> np.ndarray:
+    def _convert_units(self, data: np.ndarray, data_type: str, unit_config: dict = None) -> np.ndarray:
         """
         Convert data units to our standard if needed:
         - All angles in radians
@@ -269,7 +290,26 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         """
         converted_data = data.copy().astype(np.float32)
         
-        # Generic unit conversion logic
+        # If unit_config is provided, use it for conversion
+        if unit_config and 'source_units' in unit_config and 'target_units' in unit_config:
+            source_units = unit_config['source_units']
+            target_units = unit_config['target_units']
+            
+            if len(source_units) != len(converted_data) or len(target_units) != len(converted_data):
+                if self.logger:
+                    self.logger.warning(f"Unit config length mismatch: data={len(converted_data)}, source={len(source_units)}, target={len(target_units)}")
+                return converted_data
+            
+            # Apply unit conversions element by element
+            for i, (src_unit, tgt_unit) in enumerate(zip(source_units, target_units)):
+                converted_data[i] = self._convert_single_unit(converted_data[i], src_unit, tgt_unit)
+                
+            if self.logger:
+                self.logger.debug(f"Applied unit conversion for {data_type}: {source_units} -> {target_units}")
+            
+            return converted_data
+        
+        # Generic unit conversion logic (fallback)
         # Specific conversions can be added based on data_type
         if data_type in ["joint_position", "joint_effort", "joint_velocity"]:
             # Assume joint data is already in standard units (radians, etc.)
@@ -282,6 +322,92 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
             pass
         
         return converted_data
+    
+    def _convert_single_unit(self, value: float, source_unit: str, target_unit: str) -> float:
+        """Convert a single value from source unit to target unit"""
+        if source_unit == target_unit:
+            return value
+        
+        # Distance conversions
+        if source_unit == "mm" and target_unit == "m":
+            return value / 1000.0
+        elif source_unit == "cm" and target_unit == "m":
+            return value / 100.0
+        elif source_unit == "m" and target_unit == "mm":
+            return value * 1000.0
+        elif source_unit == "m" and target_unit == "cm":
+            return value * 100.0
+        
+        # Angle conversions
+        elif source_unit == "deg" and target_unit == "rad":
+            return np.deg2rad(value)
+        elif source_unit == "rad" and target_unit == "deg":
+            return np.rad2deg(value)
+        
+        # Velocity conversions
+        elif source_unit == "mm/s" and target_unit == "m/s":
+            return value / 1000.0
+        elif source_unit == "m/s" and target_unit == "mm/s":
+            return value * 1000.0
+        
+        # Force conversions
+        elif source_unit == "N" and target_unit == "N":
+            return value
+        elif source_unit == "kN" and target_unit == "N":
+            return value * 1000.0
+        elif source_unit == "N" and target_unit == "kN":
+            return value / 1000.0
+        
+        # If no conversion is found, log warning and return original value
+        if self.logger:
+            self.logger.warning(f"Unknown unit conversion: {source_unit} -> {target_unit}, returning original value")
+        
+        return value
+
+    def _get_unit_config_for_current_sub_state(self, args_dict: dict, data_type: str) -> dict:
+        """Get unit config for current sub_state from converter config"""
+        try:
+            # Find the matching sub_state config based on args_dict
+            sub_state_configs = self.converter_config.get('features', {}).get('observation', {}).get('state', {}).get('sub_state', [])
+            
+            for sub_state_config in sub_state_configs:
+                config_args = sub_state_config.get('args', {})
+                # Match based on json_path or other identifying fields
+                if self._args_match(args_dict, config_args):
+                    return sub_state_config.get('unit_config', {})
+            
+            return {}
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get unit config for {data_type}: {e}")
+            return {}
+
+    def _get_unit_config_for_current_sub_action(self, args_dict: dict, data_type: str) -> dict:
+        """Get unit config for current sub_action from converter config"""
+        try:
+            # Find the matching sub_action config based on args_dict
+            sub_action_configs = self.converter_config.get('features', {}).get('action', {}).get('sub_action', [])
+            
+            for sub_action_config in sub_action_configs:
+                config_args = sub_action_config.get('args', {})
+                # Match based on json_path or other identifying fields
+                if self._args_match(args_dict, config_args):
+                    return sub_action_config.get('unit_config', {})
+            
+            return {}
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get unit config for {data_type}: {e}")
+            return {}
+
+    def _args_match(self, args_dict1: dict, args_dict2: dict) -> bool:
+        """Check if two args dictionaries match for the purpose of finding unit config"""
+        # Match based on json_path as primary identifier
+        if 'json_path' in args_dict1 and 'json_path' in args_dict2:
+            return args_dict1['json_path'] == args_dict2['json_path']
+        
+        # If no json_path, check if they have the same keys and values
+        return args_dict1 == args_dict2
 
     def _load_episode_data(self, ep_idx: int) -> pd.DataFrame:
         """Load parquet data for a specific episode"""
@@ -336,7 +462,11 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         
         # Convert to numpy array and apply unit conversion
         data = np.array(frame_data, dtype=np.float32)
-        return self._convert_units(data, "state")
+        
+        # Get unit config from parent state config if available
+        unit_config = self._get_unit_config_for_current_sub_state(args_dict, "state")
+        
+        return self._convert_units(data, "state", unit_config)
 
     def _get_frame_sub_actions(
         self,
@@ -362,7 +492,11 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         
         # Convert to numpy array and apply unit conversion
         data = np.array(frame_data, dtype=np.float32)
-        return self._convert_units(data, "action")
+        
+        # Get unit config from parent action config if available
+        unit_config = self._get_unit_config_for_current_sub_action(args_dict, "action")
+        
+        return self._convert_units(data, "action", unit_config)
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
         """Get number of frames in an episode"""

@@ -25,39 +25,97 @@ features:
       ### values by manual
       sub_state:
 
+      # 关节角度数据 - 已经是rad单位，无需转换
       - names: 
-      - l_leg_roll
-      - l_leg_yaw
-      - l_leg_pitch
-      - l_knee
-      - l_foot_pitch
-      - l_foot_roll
-      - r_leg_roll
-      - r_leg_yaw
-      - r_leg_pitch
-      - r_knee
-      - r_foot_pitch
-      - r_foot_roll
-      - l_arm_pitch
-      - l_arm_roll
-      - l_arm_yaw
-      - l_forearm_pitch
-      - l_hand_yaw
-      - l_hand_pitch
-      - l_hand_roll
-      - r_arm_pitch
-      - r_arm_roll
-      - r_arm_yaw
-      - r_forearm_pitch
-      - r_hand_yaw
-      - r_hand_pitch
-      - r_hand_roll
+        - l_leg_roll
+        - l_leg_yaw
+        - l_leg_pitch
+        - l_knee
+        - l_foot_pitch
+        - l_foot_roll
+        - r_leg_roll
+        - r_leg_yaw
+        - r_leg_pitch
+        - r_knee
+        - r_foot_pitch
+        - r_foot_roll
+        - l_arm_pitch
+        - l_arm_roll
+        - l_arm_yaw
+        - l_forearm_pitch
+        - l_hand_yaw
+        - l_hand_pitch
+        - l_hand_roll
+        - r_arm_pitch
+        - r_arm_roll
+        - r_arm_yaw
+        - r_forearm_pitch
+        - r_hand_yaw
+        - r_hand_pitch
+        - r_hand_roll
 
-      args:
+        args:
           ### keys and values by manual
           json_path: observation.state
           range_from: 0
           range_to: 26
+        
+        # Unit conversion configuration - 关节角度已经是rad
+        unit_config:
+          source_units: 
+            - rad  # l_leg_roll - 腿部关节已经是弧度
+            - rad  # l_leg_yaw
+            - rad  # l_leg_pitch
+            - rad  # l_knee
+            - rad  # l_foot_pitch
+            - rad  # l_foot_roll
+            - rad  # r_leg_roll
+            - rad  # r_leg_yaw
+            - rad  # r_leg_pitch
+            - rad  # r_knee
+            - rad  # r_foot_pitch
+            - rad  # r_foot_roll
+            - rad  # l_arm_pitch - 手臂关节已经是弧度
+            - rad  # l_arm_roll
+            - rad  # l_arm_yaw
+            - rad  # l_forearm_pitch
+            - rad  # l_hand_yaw
+            - rad  # l_hand_pitch
+            - rad  # l_hand_roll
+            - rad  # r_arm_pitch
+            - rad  # r_arm_roll
+            - rad  # r_arm_yaw
+            - rad  # r_forearm_pitch
+            - rad  # r_hand_yaw
+            - rad  # r_hand_pitch
+            - rad  # r_hand_roll
+          target_units:
+            - rad  # 目标单位保持为rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
+            - rad
 
   action:
     ### values by function
@@ -68,36 +126,94 @@ features:
 
     ### values by manual
     sub_action:
+    # 关节角度目标数据 - 已经是rad单位，无需转换
     - names: 
-      - l_leg_roll
-      - l_leg_yaw
-      - l_leg_pitch
-      - l_knee
-      - l_foot_pitch
-      - l_foot_roll
-      - r_leg_roll
-      - r_leg_yaw
-      - r_leg_pitch
-      - r_knee
-      - r_foot_pitch
-      - r_foot_roll
-      - l_arm_pitch
-      - l_arm_roll
-      - l_arm_yaw
-      - l_forearm_pitch
-      - l_hand_yaw
-      - l_hand_pitch
-      - l_hand_roll
-      - r_arm_pitch
-      - r_arm_roll
-      - r_arm_yaw
-      - r_forearm_pitch
-      - r_hand_yaw
-      - r_hand_pitch
-      - r_hand_roll
+        - l_leg_roll
+        - l_leg_yaw
+        - l_leg_pitch
+        - l_knee
+        - l_foot_pitch
+        - l_foot_roll
+        - r_leg_roll
+        - r_leg_yaw
+        - r_leg_pitch
+        - r_knee
+        - r_foot_pitch
+        - r_foot_roll
+        - l_arm_pitch
+        - l_arm_roll
+        - l_arm_yaw
+        - l_forearm_pitch
+        - l_hand_yaw
+        - l_hand_pitch
+        - l_hand_roll
+        - r_arm_pitch
+        - r_arm_roll
+        - r_arm_yaw
+        - r_forearm_pitch
+        - r_hand_yaw
+        - r_hand_pitch
+        - r_hand_roll
 
       args:
         ### keys and values by manual
         json_path: action
         range_from: 0
         range_to: 26
+      
+      # Unit conversion configuration - 动作目标角度已经是rad
+      unit_config:
+        source_units:
+          - rad  # l_leg_roll - 腿部目标关节已经是弧度
+          - rad  # l_leg_yaw
+          - rad  # l_leg_pitch
+          - rad  # l_knee
+          - rad  # l_foot_pitch
+          - rad  # l_foot_roll
+          - rad  # r_leg_roll
+          - rad  # r_leg_yaw
+          - rad  # r_leg_pitch
+          - rad  # r_knee
+          - rad  # r_foot_pitch
+          - rad  # r_foot_roll
+          - rad  # l_arm_pitch - 手臂目标关节已经是弧度
+          - rad  # l_arm_roll
+          - rad  # l_arm_yaw
+          - rad  # l_forearm_pitch
+          - rad  # l_hand_yaw
+          - rad  # l_hand_pitch
+          - rad  # l_hand_roll
+          - rad  # r_arm_pitch
+          - rad  # r_arm_roll
+          - rad  # r_arm_yaw
+          - rad  # r_forearm_pitch
+          - rad  # r_hand_yaw
+          - rad  # r_hand_pitch
+          - rad  # r_hand_roll
+        target_units:
+          - rad  # 目标单位保持为rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
+          - rad
