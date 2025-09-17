@@ -31,7 +31,6 @@ features:
       # names: [height, width, channels]
       # lerobot_feature: observations.images.color_head : by _gen_lerobot_features()
 
-
     state:
       ### values by function
       # lerobot_feature: observation.state : by _gen_lerobot_features()
