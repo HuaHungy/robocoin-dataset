@@ -93,7 +93,7 @@ features:
       
       ### values by manual
       - names: 
-        - left_gripper_open_rad
+        - right_gripper_open_rad
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -123,7 +123,7 @@ features:
 
       ### values by manual
       - names: 
-        - right_gripper_open_rad
+        - left_gripper_open_rad
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -165,7 +165,7 @@ features:
 
     ### values by manual
     - names: 
-      - left_gripper_open_rad
+      - right_gripper_open_rad
       args:
         ### keys and values by manual
         h5_path: action
@@ -188,7 +188,7 @@ features:
 
     ### values by manual
     - names: 
-      - right_gripper_open_rad
+      - left_gripper_open_rad
       args:
         ### keys and values by manual
         h5_path: action
