@@ -1,0 +1,241 @@
+### fps by manual
+fps: 30
+features:
+  observation:
+    images:
+
+    ### values by manual
+    - cam_name: cam_high_left_rgb
+      args:
+
+        ### key and values by manual
+        image_key: observation.images.cam_high_left
+
+    - cam_name: cam_high_right_rgb
+      args:
+
+        ### key and values by manual
+        image_key: observation.images.cam_high_right
+
+
+      ### values by function
+      # dtype: video
+      # shape: [480, 640, 3]
+      # names: [height, width, channels]
+      # lerobot_feature: observations.images.cam_high_left : by _gen_lerobot_features()
+
+
+    state:
+      ### values by function
+      # lerobot_feature: observation.state : by _gen_lerobot_features()
+      # dtype: float32 
+      # shape: [26]
+
+      ## sub_states should be concatenated together here : by _gen_state_names(), such as:
+      # names: 
+      # - left_arm_joint_1_rad
+      # - ...
+      # - left_arm_joint_7_rad
+      # - ...
+
+      ### Unit conversion configuration for state data
+      unit_config:
+        source_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+        target_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+
+      ### values by manual
+      sub_state:
+      - names: 
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        - left_arm_joint_7_rad
+
+        args:
+          ### keys and values by manual
+          field_name: observation.state
+          range_from: 0
+          range_to: 7
+
+        ### Unit conversion for this sub_state
+        unit_config:
+          source_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+          target_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+        
+        ### values by manual
+        # convert_func: degree2rad
+      
+      ### values by manual
+      - names: 
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        - right_arm_joint_7_rad
+
+        args:
+          ### keys and values by manual
+          field_name: observation.state
+          range_from: 7
+          range_to: 14
+
+        ### Unit conversion for this sub_state
+        unit_config:
+          source_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+          target_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+
+        ### values by manual
+        # convert_func: degree2rad
+
+      ### values by manual - 6 joint hand (not 7)
+      - names: 
+        - left_hand_joint_1_rad
+        - left_hand_joint_2_rad
+        - left_hand_joint_3_rad
+        - left_hand_joint_4_rad
+        - left_hand_joint_5_rad
+        - left_hand_joint_6_rad
+
+        args:
+          ### keys and values by manual
+          field_name: observation.state
+          range_from: 14
+          range_to: 20
+
+        ### Unit conversion for this sub_state
+        unit_config:
+          source_units: ["rad", "rad", "rad", "rad", "rad", "rad"]
+          target_units: ["rad", "rad", "rad", "rad", "rad", "rad"]
+
+        ### values by manual
+        # convert_func: degree2rad
+
+      ### values by manual - 6 joint hand (not 7)
+      - names: 
+        - right_hand_joint_1_rad
+        - right_hand_joint_2_rad
+        - right_hand_joint_3_rad
+        - right_hand_joint_4_rad
+        - right_hand_joint_5_rad
+        - right_hand_joint_6_rad
+
+        args:
+          ### keys and values by manual
+          field_name: observation.state
+          range_from: 20
+          range_to: 26
+
+        ### Unit conversion for this sub_state
+        unit_config:
+          source_units: ["rad", "rad", "rad", "rad", "rad", "rad"]
+          target_units: ["rad", "rad", "rad", "rad", "rad", "rad"]
+
+        ### values by manual
+        # convert_func: degree2rad
+
+  action:
+    ### values by function
+    # lerobot_feature: action: by _gen_lerobot_features()
+    # dtype: float32 
+    # shape: [26]
+
+    ## sub_actions should be concatenated together here, : by _gen_acton_names(), such as:
+    # names:
+    # - left_arm_joint_1_rad
+    # - ...
+    # - left_arm_joint_7_rad
+    # - ...
+
+    ### Unit conversion configuration for action data
+    unit_config:
+      source_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+      target_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+
+    ### values by manual
+    timeline_offset: 1
+    sub_action:
+    - names: 
+      - left_arm_joint_1_rad
+      - left_arm_joint_2_rad
+      - left_arm_joint_3_rad
+      - left_arm_joint_4_rad
+      - left_arm_joint_5_rad
+      - left_arm_joint_6_rad
+      - left_arm_joint_7_rad
+
+      args:
+        ### keys and values by manual
+        field_name: action
+        range_from: 0
+        range_to: 7
+
+      ### Unit conversion for this sub_action
+      unit_config:
+        source_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+        target_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+    
+    ### values by manual
+    - names: 
+      - right_arm_joint_1_rad
+      - right_arm_joint_2_rad
+      - right_arm_joint_3_rad
+      - right_arm_joint_4_rad
+      - right_arm_joint_5_rad
+      - right_arm_joint_6_rad
+      - right_arm_joint_7_rad
+
+      args:
+        ### keys and values by manual
+        field_name: action
+        range_from: 7
+        range_to: 14
+
+      ### Unit conversion for this sub_action
+      unit_config:
+        source_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+        target_units: ["rad", "rad", "rad", "rad", "rad", "rad", "rad"]
+
+    ### values by manual - 6 joint hand (not 7)
+    - names: 
+      - left_hand_joint_1_rad
+      - left_hand_joint_2_rad
+      - left_hand_joint_3_rad
+      - left_hand_joint_4_rad
+      - left_hand_joint_5_rad
+      - left_hand_joint_6_rad
+
+      args:
+        ### keys and values by manual
+        field_name: action
+        range_from: 14
+        range_to: 20
+
+      ### Unit conversion for this sub_action
+      unit_config:
+        source_units: ["rad", "rad", "rad", "rad", "rad", "rad"]
+        target_units: ["rad", "rad", "rad", "rad", "rad", "rad"]
+
+    ### values by manual - 6 joint hand (not 7)
+    - names: 
+      - right_hand_joint_1_rad
+      - right_hand_joint_2_rad
+      - right_hand_joint_3_rad
+      - right_hand_joint_4_rad
+      - right_hand_joint_5_rad
+      - right_hand_joint_6_rad
+
+      args:
+        ### keys and values by manual
+        field_name: action
+        range_from: 20
+        range_to: 26
+
+      ### Unit conversion for this sub_action
+      unit_config:
+        source_units: ["rad", "rad", "rad", "rad", "rad", "rad"]
+        target_units: ["rad", "rad", "rad", "rad", "rad", "rad"]

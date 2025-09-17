@@ -1,6 +1,5 @@
 import json
 import logging
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -236,9 +235,14 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
 
 
     def _move_videos_to_standard_structure(self) -> None:
-        """Copy video files to output/videos/{cam_name}/ according to config."""
+        """Copy video files to output/videos/{cam_name}/ according to config.
+        
+        For G1 LeRobot datasets, videos are organized in folders containing 'left' and 'right' in names,
+        with mp4 files inside these folders.
+        """
         import glob
         import os
+        import shutil
         
         # 1. 获取 config 里的 cam_name 列表
         cam_configs = self.converter_config.get('features', {}).get('observation', {}).get('images', [])
@@ -257,27 +261,67 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         
         # 4. 遍历每个相机，查找并复制视频文件
         for cam_name in cam_names:
-            # 支持多种视频格式
-            video_patterns = [
-                str(src_videos_path / f"{cam_name}*.mp4"),
-                str(src_videos_path / f"{cam_name}*.avi"),
-                str(src_videos_path / f"{cam_name}*.mov"),
-                str(src_videos_path / f"{cam_name}*.mkv"),
-            ]
-            video_files = []
-            for pattern in video_patterns:
-                video_files.extend(glob.glob(pattern))
-            
-            # 目标文件夹
+            # 创建目标文件夹
             target_cam_dir = target_videos_path / cam_name
             target_cam_dir.mkdir(parents=True, exist_ok=True)
             
-            for video_file in video_files:
-                video_file_name = os.path.basename(video_file)
-                target_file = target_cam_dir / video_file_name
-                shutil.copy2(video_file, target_file)
-                if self.logger:
-                    self.logger.info(f"Copied video: {video_file} -> {target_file}")
+            # 查找包含left或right的文件夹，适配G1 LeRobot数据集结构
+            found_videos = False
+            
+            # 遍历所有chunk文件夹和子文件夹
+            for chunk_dir in src_videos_path.glob("*"):
+                if chunk_dir.is_dir():
+                    # 在chunk目录下查找包含left/right的子目录
+                    for sub_dir in chunk_dir.iterdir():
+                        if sub_dir.is_dir():
+                            dir_name = sub_dir.name.lower()
+                            
+                            # 根据cam_name匹配对应的目录
+                            if (("left" in cam_name.lower() and "left" in dir_name) or 
+                                ("right" in cam_name.lower() and "right" in dir_name)):
+                                
+                                # 在匹配的目录中查找mp4文件
+                                for video_file in sub_dir.glob("*.mp4"):
+                                    video_file_name = video_file.name
+                                    target_file = target_cam_dir / video_file_name
+                                    shutil.copy2(video_file, target_file)
+                                    if self.logger:
+                                        self.logger.info(f"Copied video: {video_file} -> {target_file}")
+                                    found_videos = True
+                                
+                                # 也检查其他常见视频格式
+                                for ext in ["*.avi", "*.mov", "*.mkv"]:
+                                    for video_file in sub_dir.glob(ext):
+                                        video_file_name = video_file.name
+                                        target_file = target_cam_dir / video_file_name
+                                        shutil.copy2(video_file, target_file)
+                                        if self.logger:
+                                            self.logger.info(f"Copied video: {video_file} -> {target_file}")
+                                        found_videos = True
+            
+            # 如果没有找到left/right文件夹，尝试直接查找
+            if not found_videos:
+                # 支持多种视频格式的直接匹配
+                video_patterns = [
+                    str(src_videos_path / f"**/{cam_name}*.mp4"),
+                    str(src_videos_path / f"**/{cam_name}*.avi"),
+                    str(src_videos_path / f"**/{cam_name}*.mov"),
+                    str(src_videos_path / f"**/{cam_name}*.mkv"),
+                ]
+                video_files = []
+                for pattern in video_patterns:
+                    video_files.extend(glob.glob(pattern, recursive=True))
+                
+                for video_file in video_files:
+                    video_file_name = os.path.basename(video_file)
+                    target_file = target_cam_dir / video_file_name
+                    shutil.copy2(video_file, target_file)
+                    if self.logger:
+                        self.logger.info(f"Copied video: {video_file} -> {target_file}")
+                    found_videos = True
+            
+            if not found_videos and self.logger:
+                self.logger.warning(f"No videos found for camera {cam_name}")
         
         if self.logger:
             self.logger.info(f"All videos copied to {target_videos_path} by cam_name from config.")
@@ -331,31 +375,38 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         # Distance conversions
         if source_unit == "mm" and target_unit == "m":
             return value / 1000.0
-        elif source_unit == "cm" and target_unit == "m":
+        
+        if source_unit == "cm" and target_unit == "m":
             return value / 100.0
-        elif source_unit == "m" and target_unit == "mm":
+        
+        if source_unit == "m" and target_unit == "mm":
             return value * 1000.0
-        elif source_unit == "m" and target_unit == "cm":
+        
+        if source_unit == "m" and target_unit == "cm":
             return value * 100.0
         
         # Angle conversions
-        elif source_unit == "deg" and target_unit == "rad":
+        if source_unit == "deg" and target_unit == "rad":
             return np.deg2rad(value)
-        elif source_unit == "rad" and target_unit == "deg":
+        
+        if source_unit == "rad" and target_unit == "deg":
             return np.rad2deg(value)
         
         # Velocity conversions
-        elif source_unit == "mm/s" and target_unit == "m/s":
+        if source_unit == "mm/s" and target_unit == "m/s":
             return value / 1000.0
-        elif source_unit == "m/s" and target_unit == "mm/s":
+        
+        if source_unit == "m/s" and target_unit == "mm/s":
             return value * 1000.0
         
         # Force conversions
-        elif source_unit == "N" and target_unit == "N":
+        if source_unit == "N" and target_unit == "N":
             return value
-        elif source_unit == "kN" and target_unit == "N":
+        
+        if source_unit == "kN" and target_unit == "N":
             return value * 1000.0
-        elif source_unit == "N" and target_unit == "kN":
+        
+        if source_unit == "N" and target_unit == "kN":
             return value / 1000.0
         
         # If no conversion is found, log warning and return original value
