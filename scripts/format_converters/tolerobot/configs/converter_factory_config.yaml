@@ -70,6 +70,10 @@ unitree_g1:
   class: LerobotFormatConverterG1
   converter_config_path: converter_config_unitree_g1_threecam_dex3v1.yaml
 
+- version: lerobot
+  verison_description: lerobot to lerobot
+  
+
 discover_robotics_aitbot_mmk2:
 # Version 1: 4外, 6右，11左
 - version: version_4_6_11
