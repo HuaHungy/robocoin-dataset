@@ -207,7 +207,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import time
+
+    st = time.time()
     main()
+    print(f"Total time: {time.time() - st}")
 
 """_summary_
 
@@ -223,7 +227,7 @@ python scripts/format_converters/tolerobot/convert2lerobot.py \
 --video_backend pyav
 
 python scripts/format_converters/tolerobot/convert2lerobot.py \
---dataset_path /mnt/synnas/docker/11realman_rmc_aidal/basket_storage_banana \
+--dataset_path /mnt/nas/synnas/docker/11realman_rmc_aidal/basket_storage_banana \
 --output_path ./outputs/lerobot_converter_test/basket_storage_banana \
 --device_model realman_rmc_aidal \
 --factory_config_path scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
@@ -233,5 +237,17 @@ python scripts/format_converters/tolerobot/convert2lerobot.py \
 --image_writer_threads 4 \
 --video_backend pyav \
 --is-test
+
+
+python scripts/format_converters/tolerobot/convert2lerobot.py \
+--dataset_path /mnt/nas/synnas/docker/test_dataset/source \
+--output_path /mnt/nas/synnas/docker/test_dataset/target \
+--device_model realman_rmc_aidal \
+--factory_config_path scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
+--repo_id robocoin/test \
+--log_dir ./outputs/lerobot_converter_test/test/logs \
+--image_writer_processes 10 \
+--image_writer_threads 4 \
+--video_backend pyav 
 
 """

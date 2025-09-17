@@ -95,6 +95,29 @@ def find_unexpected_files(directory: Path, include_hidden: bool = False) -> list
     return unexpected_files
 
 
+def explore_hdf5_group(group, prefix="") -> None:  # noqa: ANN001
+    for key in group.keys():
+        item = group[key]
+        if isinstance(item, h5py.Dataset):
+            pass
+        elif isinstance(item, h5py.Group):
+            explore_hdf5_group(item, prefix + "  ")
+
+
+def validate_h5file(h5_file_path: Path) -> list[Path]:
+    if not h5_file_path.exists():
+        raise FileNotFoundError(f"{h5_file_path} does not exist")
+
+    if not h5_file_path.is_file():
+        raise Exception(f"{h5_file_path} is not a file")
+
+    try:
+        with h5py.File(h5_file_path, "r") as h5_file:
+            explore_hdf5_group(h5_file)
+    except Exception as e:
+        raise Exception(f"Error validating {h5_file_path}: {e}")
+
+
 class LerobotFormatConverterHdf5(LerobotFormatConverter):
     def __init__(
         self,
@@ -136,6 +159,26 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         if unexpected_files:
             err_msg = "Found unexpected files in dataset directory:"
             err_msg += "\n".join(f"{path}" for path in unexpected_files)
+            raise Exception(err_msg)
+
+        invalid_h5_files = []
+        h5_files = self.dataset_path.rglob("*.h5")
+        for h5_file in h5_files:
+            try:
+                validate_h5file(h5_file)
+            except Exception:  # noqa: PERF203
+                invalid_h5_files.append(h5_file)
+
+        h5_files = self.dataset_path.rglob("*.hdf5")
+        for h5_file in h5_files:
+            try:
+                validate_h5file(h5_file)
+            except Exception:  # noqa: PERF203
+                invalid_h5_files.append(h5_file)
+
+        if invalid_h5_files:
+            err_msg = "Found invalid h5 files:"
+            err_msg += "\n".join(f"{h5_file}" for h5_file in invalid_h5_files)
             raise Exception(err_msg)
 
         # 验证HDF5文件内部结构
