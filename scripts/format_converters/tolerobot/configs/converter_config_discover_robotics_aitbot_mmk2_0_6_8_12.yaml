@@ -7,22 +7,22 @@ features:
     images:
     
     # 左手相机 (camera_0)
-    - cam_name: cam_left_wrist_camera
+    - cam_name: cam_left_wrist
       args:
         camera_dir: camera_0
     
     # 外部相机 (camera_6) 
-    - cam_name: cam_outside_camera
+    - cam_name: cam_outside
       args:
         camera_dir: camera_6
         
     # 右手相机 (camera_8)
-    - cam_name: cam_right_wrist_camera
+    - cam_name: cam_right_wrist
       args:
         camera_dir: camera_8
         
     # 下方相机 (camera_12)
-    - cam_name: cam_bottom_camera
+    - cam_name: cam_high
       args:
         camera_dir: camera_12
 
