@@ -22,10 +22,8 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     VIDEO_BACKEND,
 )
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
+    LerobotFormatConverter,
     LerobotFormatConverterFactory,
-)
-from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5 import (
-    LerobotFormatConverterHdf5,
 )
 from robocoin_dataset.utils.logger import setup_logger
 
@@ -73,7 +71,7 @@ class LeFormatConverterTaskClient(TaskClient):
                 logging.INFO,
             )
 
-            converter: LerobotFormatConverterHdf5 = LerobotFormatConverterFactory.create_converter(
+            converter: LerobotFormatConverter = LerobotFormatConverterFactory.create_converter(
                 dataset_path=dataset_path,
                 device_model=device_model,
                 output_path=output_path,
