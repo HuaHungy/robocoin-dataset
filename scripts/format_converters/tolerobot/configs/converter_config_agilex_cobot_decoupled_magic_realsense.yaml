@@ -69,11 +69,11 @@ features:
       ### values by manual
       sub_state:
       - names: 
-        - right_arm_joint_1_rad
-        - right_arm_joint_2_rad
-        - right_arm_joint_3_rad
-        - right_arm_joint_4_rad
-        - right_arm_joint_5_rad
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
         - right_arm_joint_6_rad
 
         args:
@@ -87,7 +87,7 @@ features:
       
       ### values by manual
       - names: 
-        - right_gripper_open
+        - left_gripper_open
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -98,9 +98,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - right_eef_pos_x_m
-        - right_eef_pos_y_m
-        - right_eef_pos_z_m
+        - left_eef_pos_x_m
+        - left_eef_pos_y_m
+        - left_eef_pos_z_m
 
         args:
           ### keys and values by manual
@@ -112,9 +112,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - right_eef_rot_euler_x_rad
-        - right_eef_rot_euler_y_rad
-        - right_eef_rot_euler_z_rad
+        - left_eef_rot_euler_x_rad
+        - left_eef_rot_euler_y_rad
+        - left_eef_rot_euler_z_rad
 
         args:
           ### keys and values by manual
@@ -128,12 +128,13 @@ features:
 
       ### values by manual
       - names: 
-        - left_arm_joint_1_rad
-        - left_arm_joint_2_rad
-        - left_arm_joint_3_rad
-        - left_arm_joint_4_rad
-        - left_arm_joint_5_rad
-        - left_arm_joint_6_rad
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -145,7 +146,7 @@ features:
 
       ### values by manual
       - names: 
-        - left_gripper_open_rad
+        - right_gripper_open_rad
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -156,9 +157,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - left_eef_pos_x_m
-        - left_eef_pos_y_m
-        - left_eef_pos_z_m
+        - right_eef_pos_x_m
+        - right_eef_pos_y_m
+        - right_eef_pos_z_m
 
         args:
           ### keys and values by manual
@@ -170,9 +171,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - left_eef_rot_euler_x_rad
-        - left_eef_rot_euler_y_rad
-        - left_eef_rot_euler_z_rad
+        - right_eef_rot_euler_x_rad
+        - right_eef_rot_euler_y_rad
+        - right_eef_rot_euler_z_rad
 
         args:
           ### keys and values by manual
@@ -202,13 +203,12 @@ features:
     sub_action:
 
       - names: 
-        - right_arm_joint_1_rad
-        - right_arm_joint_2_rad
-        - right_arm_joint_3_rad
-        - right_arm_joint_4_rad
-        - right_arm_joint_5_rad
-        - right_arm_joint_6_rad
-
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -220,7 +220,7 @@ features:
       
       ### values by manual
       - names: 
-        - right_gripper_open
+        - left_gripper_open
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -231,9 +231,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - right_eef_pos_x_m
-        - right_eef_pos_y_m
-        - right_eef_pos_z_m
+        - left_eef_pos_x_m
+        - left_eef_pos_y_m
+        - left_eef_pos_z_m
 
         args:
           ### keys and values by manual
@@ -245,9 +245,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - right_eef_rot_euler_x_rad
-        - right_eef_rot_euler_y_rad
-        - right_eef_rot_euler_z_rad
+        - left_eef_rot_euler_x_rad
+        - left_eef_rot_euler_y_rad
+        - left_eef_rot_euler_z_rad
 
         args:
           ### keys and values by manual
@@ -261,12 +261,12 @@ features:
 
       ### values by manual
       - names: 
-        - left_arm_joint_1_rad
-        - left_arm_joint_2_rad
-        - left_arm_joint_3_rad
-        - left_arm_joint_4_rad
-        - left_arm_joint_5_rad
-        - left_arm_joint_6_rad
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
 
         args:
           ### keys and values by manual
@@ -279,7 +279,7 @@ features:
 
       ### values by manual
       - names: 
-        - left_gripper_open_rad
+        - right_gripper_open_rad
         args:
           ### keys and values by manual
           h5_path: observations/qpos
@@ -290,9 +290,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - left_eef_pos_x_m
-        - left_eef_pos_y_m
-        - left_eef_pos_z_m
+        - right_eef_pos_x_m
+        - right_eef_pos_y_m
+        - right_eef_pos_z_m
 
         args:
           ### keys and values by manual
@@ -304,9 +304,9 @@ features:
         # convert_func: degree2rad
 
       - names: 
-        - left_eef_rot_euler_x_rad
-        - left_eef_rot_euler_y_rad
-        - left_eef_rot_euler_z_rad
+        - right_eef_rot_euler_x_rad
+        - right_eef_rot_euler_y_rad
+        - right_eef_rot_euler_z_rad
 
         args:
           ### keys and values by manual
