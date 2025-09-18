@@ -50,31 +50,189 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
 
     def _prevalidate_files(self) -> None:
         """Validate G1 dataset files and structure."""
+        validation_errors = []
+        critical_errors = []
+        
         for task_path in self.path_task_dict.keys():
             if not task_path.exists():
-                raise FileNotFoundError(f"Task path does not exist: {task_path}")
+                critical_errors.append(f"Task path does not exist: {task_path}")
+                continue
             if not task_path.is_dir():
-                raise ValueError(f"Task path is not a directory: {task_path}")
+                critical_errors.append(f"Task path is not a directory: {task_path}")
+                continue
             
-            # Check for required JSON files and image directories
-            episode_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('episode_')]
-            if not episode_dirs:
-                self.logger.warning(f"No episode directories found in {task_path}")
+            # 获取该任务的JSON文件列表
+            task_json_files = self.task_episode_jsonfile_paths.get(task_path, [])
+            if not task_json_files:
+                validation_errors.append(f"No JSON files found for task: {task_path}")
+                continue
             
-            # Validate each episode directory
-            for episode_dir in episode_dirs:
-                # Check for JSON files
-                json_files = list(episode_dir.glob("*.json"))
-                if not json_files:
-                    self.logger.warning(f"No JSON files found in {episode_dir}")
+            # 验证每个JSON文件
+            for ep_idx, json_file_path in enumerate(task_json_files):
+                try:
+                    # 1. 检查文件是否存在
+                    if not json_file_path.exists():
+                        critical_errors.append(f"JSON file does not exist: {json_file_path}")
+                        continue
+                    
+                    # 2. 检查文件是否为空
+                    if json_file_path.stat().st_size == 0:
+                        critical_errors.append(f"JSON file is empty: {json_file_path}")
+                        continue
+                    
+                    # 3. 检查JSON文件是否可以正常解析
+                    try:
+                        with open(json_file_path, encoding='utf-8') as f:
+                            json_data = json.load(f)
+                    except json.JSONDecodeError as e:
+                        critical_errors.append(f"JSON file is corrupted or malformed: {json_file_path} - {str(e)}")
+                        continue
+                    except UnicodeDecodeError as e:
+                        critical_errors.append(f"JSON file has encoding issues: {json_file_path} - {str(e)}")
+                        continue
+                    except Exception as e:
+                        critical_errors.append(f"Cannot read JSON file: {json_file_path} - {str(e)}")
+                        continue
+                    
+                    # 4. 检查JSON基础结构
+                    if not isinstance(json_data, dict):
+                        critical_errors.append(f"JSON file must contain a dictionary: {json_file_path}")
+                        continue
+                    
+                    if "data" not in json_data:
+                        critical_errors.append(f"JSON file missing 'data' field: {json_file_path}")
+                        continue
+                    
+                    if not isinstance(json_data["data"], list):
+                        critical_errors.append(f"JSON 'data' field must be a list: {json_file_path}")
+                        continue
+                    
+                    if len(json_data["data"]) == 0:
+                        validation_errors.append(f"JSON file has empty 'data' list: {json_file_path}")
+                        continue
+                    
+                    # 5. 检查对应的图像文件
+                    episode_dir = json_file_path.parent
+                    image_files = (list(episode_dir.rglob("*.jpg")) + 
+                                 list(episode_dir.rglob("*.JPG")) + 
+                                 list(episode_dir.rglob("*.jpeg")) + 
+                                 list(episode_dir.rglob("*.JPEG")) + 
+                                 list(episode_dir.rglob("*.png")) + 
+                                 list(episode_dir.rglob("*.PNG")))
+                    
+                    if not image_files:
+                        validation_errors.append(f"No image files found for episode: {episode_dir}")
+                        continue
+                    
+                    # 6. 检查数据帧数与图像数量的合理性
+                    frame_count = len(json_data["data"])
+                    image_count = len(image_files)
+                    
+                    # 分组图像以检查相机数量
+                    camera_groups = self._group_images_by_camera_g1(image_files)
+                    camera_count = len(camera_groups)
+                    
+                    if camera_count == 0:
+                        validation_errors.append(f"No valid camera groups found in: {episode_dir}")
+                        continue
+                    
+                    # 检查图像数量是否合理（考虑多相机情况）
+                    expected_images_per_camera = frame_count
+                    total_expected_images = expected_images_per_camera * camera_count
+                    
+                    # 允许一定的误差范围（±10%）
+                    if abs(image_count - total_expected_images) > total_expected_images * 0.1:
+                        validation_errors.append(
+                            f"Image count mismatch in {episode_dir}: "
+                            f"Found {image_count} images, expected ~{total_expected_images} "
+                            f"({frame_count} frames × {camera_count} cameras)"
+                        )
+                    
+                    # 7. 验证数据结构完整性（抽样检查第一帧）
+                    if frame_count > 0:
+                        first_frame = json_data["data"][0]
+                        if not isinstance(first_frame, dict):
+                            critical_errors.append(f"Frame data must be dictionaries: {json_file_path}")
+                            continue
+                        
+                        # 检查关键字段是否存在（基于配置文件）
+                        missing_fields = self._check_required_json_fields(first_frame, json_file_path)
+                        if missing_fields:
+                            critical_errors.extend(missing_fields)
+                    
+                    if self.logger:
+                        self.logger.debug(f"Validated episode {ep_idx}: {json_file_path} "
+                                        f"({frame_count} frames, {image_count} images, {camera_count} cameras)")
                 
-                # Check for image files
-                image_files = list(episode_dir.glob("*.jpg")) + list(episode_dir.glob("*.png"))
-                if not image_files:
-                    self.logger.warning(f"No image files found in {episode_dir}")
+                except Exception as e:
+                    critical_errors.append(f"Unexpected error validating {json_file_path}: {str(e)}")
+        
+        # 报告验证结果
+        if critical_errors:
+            error_msg = "Critical validation errors found:\n" + "\n".join(critical_errors)
+            if self.logger:
+                self.logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        if validation_errors:
+            warning_msg = "Validation warnings:\n" + "\n".join(validation_errors)
+            if self.logger:
+                self.logger.warning(warning_msg)
+        
+        if self.logger:
+            total_episodes = sum(len(episodes) for episodes in self.task_episode_jsonfile_paths.values())
+            self.logger.info(f"G1 dataset validation completed successfully: {total_episodes} episodes validated")
         
         # 验证JSON文件内部结构与配置匹配
         self._validate_g1_json_structure()
+
+    def _check_required_json_fields(self, frame_data: dict, json_file_path: Path) -> list[str]:
+        """检查JSON帧数据中是否包含配置文件要求的所有字段"""
+        missing_fields = []
+        
+        # 获取配置中需要的JSON路径
+        required_json_paths = set()
+        
+        # 从状态配置中收集JSON路径
+        if "observation" in self.converter_config.get("features", {}):
+            observation_config = self.converter_config["features"]["observation"]
+            if "state" in observation_config and "sub_state" in observation_config["state"]:
+                for state_config in observation_config["state"]["sub_state"]:
+                    if "args" in state_config and "json_path" in state_config["args"]:
+                        required_json_paths.add(state_config["args"]["json_path"])
+        
+        # 从动作配置中收集JSON路径
+        if "action" in self.converter_config.get("features", {}):
+            action_config = self.converter_config["features"]["action"]
+            if "sub_action" in action_config:
+                for action_config_item in action_config["sub_action"]:
+                    if "args" in action_config_item and "json_path" in action_config_item["args"]:
+                        required_json_paths.add(action_config_item["args"]["json_path"])
+        
+        # 验证每个必需的JSON路径
+        for json_path in required_json_paths:
+            try:
+                # 导航到目标数据
+                data = frame_data
+                path_parts = json_path.split(".")
+                for part in path_parts:
+                    if isinstance(data, dict) and part in data:
+                        data = data[part]
+                    else:
+                        missing_fields.append(f"Missing JSON path '{json_path}' in {json_file_path}")
+                        break
+                else:
+                    # 检查数据是否为有效的列表/数组
+                    if not isinstance(data, (list, tuple)):
+                        missing_fields.append(
+                            f"JSON path '{json_path}' should be a list/array but got {type(data).__name__} in {json_file_path}"
+                        )
+                    elif len(data) == 0:
+                        missing_fields.append(f"JSON path '{json_path}' is an empty array in {json_file_path}")
+            except Exception as e:
+                missing_fields.append(f"Error accessing JSON path '{json_path}' in {json_file_path}: {e}")
+        
+        return missing_fields
 
     def _validate_g1_json_structure(self) -> None:
         """验证G1 JSON文件内部结构是否与YAML配置匹配"""
@@ -621,17 +779,92 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
             return self.g1_buffer.g1_data
 
         json_file_path = self.task_episode_jsonfile_paths[task_path][ep_idx]
+        
+        # 详细的错误诊断
         try:
-            with open(json_file_path, encoding='utf-8') as json_file:
-                json_data = json.load(json_file)
+            # 1. 检查文件是否存在
+            if not json_file_path.exists():
+                raise FileNotFoundError(f"JSON file does not exist: {json_file_path}")
+            
+            # 2. 检查文件大小
+            file_size = json_file_path.stat().st_size
+            if file_size == 0:
+                raise ValueError(f"JSON file is empty (0 bytes): {json_file_path}")
+            
+            # 3. 尝试读取文件内容
+            try:
+                with open(json_file_path, encoding='utf-8') as json_file:
+                    file_content = json_file.read()
+                    
+                    # 检查文件内容是否为空或只包含空白字符
+                    if not file_content.strip():
+                        raise ValueError(f"JSON file contains only whitespace: {json_file_path}")
+                    
+                    # 尝试解析JSON
+                    json_data = json.loads(file_content)
+                    
+            except UnicodeDecodeError as e:
+                raise ValueError(f"JSON file has encoding issues: {json_file_path} - {str(e)}")
+            except json.JSONDecodeError as e:
+                # 提供更详细的JSON错误信息
+                error_msg = f"JSON file is malformed: {json_file_path}\n"
+                error_msg += f"JSON Error: {str(e)}\n"
+                error_msg += f"File size: {file_size} bytes\n"
+                
+                # 显示文件开头内容以帮助诊断
+                try:
+                    with open(json_file_path, encoding='utf-8') as f:
+                        preview = f.read(200)  # 读取前200个字符
+                        error_msg += f"File preview: {repr(preview)}"
+                except Exception:
+                    error_msg += "Cannot read file preview"
+                
+                raise ValueError(error_msg)
+            
+            # 4. 验证JSON结构
+            if not isinstance(json_data, dict):
+                raise ValueError(f"JSON file must contain a dictionary, got {type(json_data).__name__}: {json_file_path}")
+            
+            if "data" not in json_data:
+                raise ValueError(f"JSON file missing required 'data' field: {json_file_path}")
+            
+            if not isinstance(json_data["data"], list):
+                raise ValueError(f"JSON 'data' field must be a list, got {type(json_data['data']).__name__}: {json_file_path}")
+            
+            if len(json_data["data"]) == 0:
+                raise ValueError(f"JSON 'data' field is empty: {json_file_path}")
+            
+            # 5. 缓存成功加载的数据
+            self.g1_buffer.g1_data = json_data
+            self.g1_buffer.task_path = task_path
+            self.g1_buffer.ep_idx = ep_idx
 
-                # 缓存JSON数据
-                self.g1_buffer.g1_data = json_data
-                self.g1_buffer.task_path = task_path
-                self.g1_buffer.ep_idx = ep_idx
-
-                print("json_file loaded")
-                print(f"Total frames: {len(json_data.get('data', []))}")
-                return json_data
+            print("json_file loaded")
+            print(f"Total frames: {len(json_data.get('data', []))}")
+            return json_data
+            
         except Exception as e:
-            raise ValueError(f"Error while reading json file {json_file_path}: {e}")
+            # 增强错误信息，包含更多上下文
+            error_context = f"Failed to load episode {ep_idx} from task {task_path}\n"
+            error_context += f"JSON file path: {json_file_path}\n"
+            error_context += f"Episode index: {ep_idx}/{len(self.task_episode_jsonfile_paths.get(task_path, []))}\n"
+            
+            if json_file_path.exists():
+                try:
+                    stat = json_file_path.stat()
+                    error_context += f"File size: {stat.st_size} bytes\n"
+                    error_context += f"Last modified: {stat.st_mtime}\n"
+                except Exception:
+                    pass
+            
+            # 建议可能的解决方案
+            if isinstance(e, FileNotFoundError):
+                error_context += "Suggestion: Check if the file was moved, deleted, or if there are permission issues\n"
+            elif "empty" in str(e).lower() or "whitespace" in str(e).lower():
+                error_context += "Suggestion: The file appears to be empty or corrupted. It may need to be regenerated\n"
+            elif "malformed" in str(e).lower() or "JSONDecodeError" in str(e):
+                error_context += "Suggestion: The JSON file is corrupted. It may need to be regenerated or fixed manually\n"
+            elif "encoding" in str(e).lower():
+                error_context += "Suggestion: Try converting the file to UTF-8 encoding\n"
+            
+            raise ValueError(f"{error_context}Original error: {str(e)}") from e
