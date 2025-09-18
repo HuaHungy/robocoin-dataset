@@ -5,19 +5,6 @@ realman_rmc_aidal:
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_realman_rmc_aidal.yaml
 
-agilex_cobot_magic_aloha:
-- version: default_version
-  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
-  class: LerobotFormatConverterHdf5
-  converter_config_path: converter_config_agilex_cobot_magic_aloha.yaml
-
-- version: realsense_version
-  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, realsense
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
-  class: LerobotFormatConverterHdf5
-  converter_config_path: converter_config_agilex_cobot_magic_aloha_realsense.yaml
-
 galaxea_r1_lite:
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
@@ -72,7 +59,7 @@ unitree_g1:
 
 - version: lerobot
   verison_description: lerobot to lerobot
-  
+
 
 discover_robotics_aitbot_mmk2:
 # Version 1: 4外, 6右，11左
