@@ -54,10 +54,16 @@ def degree2rad(input: np.ndarray) -> np.ndarray:
     return np.deg2rad(input)
 
 
+def multiply_by_10(input: np.ndarray) -> np.ndarray:
+    """Multiply input by 10 - used to correct Magic gripper data that is 10x smaller than actual"""
+    return input * 10.0
+
+
 spatial_covertor_funcs = {
     "mm2m": mm2m,
     "cm2m": cm2m,
     "quat_wxyz_2_rot_xyz": quat_xyzw_2_euler_xyz,
     "rot6d_to_euler_xyz": rot6d_to_euler_xyz,
     "degree2rad": degree2rad,
+    "multiply_by_10": multiply_by_10,
 }
