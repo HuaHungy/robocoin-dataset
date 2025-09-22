@@ -336,16 +336,15 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                         camera_dir = image_config['args']['camera_dir']
                         expected_cameras.add(camera_dir)
             
-            # Check available cameras
+            # Check available cameras - 动态发现所有camera目录
             available_cameras = set()
-            for camera_dir in ['camera_0', 'camera_1', 'camera_2']:
-                camera_path = episode_dir / camera_dir
-                if camera_path.exists():
-                    available_cameras.add(camera_dir)
+            for camera_path in episode_dir.iterdir():
+                if camera_path.is_dir() and camera_path.name.startswith("camera"):
+                    available_cameras.add(camera_path.name)
                     # Count images
                     jpg_files = list(camera_path.glob("*.jpg"))
                     if self.logger:
-                        self.logger.info(f"Camera {camera_dir}: {len(jpg_files)} images")
+                        self.logger.info(f"Camera {camera_path.name}: {len(jpg_files)} images")
             
             if self.logger:
                 self.logger.info(f"Available cameras: {sorted(available_cameras)}")
@@ -394,9 +393,13 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                 self.logger.info("Please check your configuration file to ensure camera_dir matches available cameras")
                 self.logger.info("Or consider using a different camera configuration version")
                 
-                # 建议使用twocam版本
+                # 针对常见的相机配置提供建议
                 if available_cameras == {"camera_0", "camera_2"}:
                     self.logger.info("Detected camera_0 and camera_2 only. Consider using 'twocam_version' configuration.")
+                elif len(available_cameras) == 4:
+                    self.logger.info(f"Detected 4 cameras: {sorted(available_cameras)}. Consider creating a custom configuration for this setup.")
+                elif "camera_head" in available_cameras:
+                    self.logger.info("Detected named cameras (e.g., camera_head). Consider using apple_storage configuration.")
             
             # 提供更详细的错误信息以便调试
             raise ValueError(
@@ -547,11 +550,12 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         episode_dir = self._get_episode_directory(task_path, ep_idx)
 
         camera_groups = {}
-        for camera_dir in ["camera_0", "camera_1", "camera_2"]:
-            camera_path = episode_dir / camera_dir
-            if camera_path.exists():
+        # 动态发现所有相机目录
+        for camera_path in episode_dir.iterdir():
+            if camera_path.is_dir() and camera_path.name.startswith("camera"):
                 jpg_files = natsorted(list(camera_path.glob("*.jpg")))
-                camera_groups[camera_dir] = jpg_files
+                if jpg_files:  # 只添加有图像文件的相机目录
+                    camera_groups[camera_path.name] = jpg_files
 
         # Add available cameras metadata for validation
         available_cameras = set(camera_groups.keys())
