@@ -367,6 +367,31 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
         if self.logger:
             self.logger.info("G1 JSON structure validation completed successfully")
 
+    def _get_structure_summary(self, data: any, max_depth: int = 2, current_depth: int = 0) -> any:
+        """获取数据结构的简要总结，用于调试"""
+        if current_depth >= max_depth:
+            return f"... (max depth {max_depth} reached)"
+        
+        if isinstance(data, dict):
+            if not data:
+                return "{}"
+            keys = list(data.keys())[:5]  # 只显示前5个键
+            summary = {key: self._get_structure_summary(data[key], max_depth, current_depth + 1) for key in keys}
+            if len(data) > 5:
+                summary["..."] = f"({len(data) - 5} more keys)"
+            return summary
+        
+        if isinstance(data, list):
+            if not data:
+                return "[]"
+            length = len(data)
+            if length > 0:
+                sample = self._get_structure_summary(data[0], max_depth, current_depth + 1)
+                return f"[{sample}, ...] (length: {length})"
+            return "[]"
+        
+        return f"{type(data).__name__}"
+
     # @override
     def _get_frame_image(
         self,
@@ -477,20 +502,75 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
         to_idx = args_dict["range_to"]
 
         # 获取帧数据
-        frame_data = sub_states_buffer["data"][frame_idx]
+        try:
+            frame_data = sub_states_buffer["data"][frame_idx]
+        except (KeyError, IndexError) as e:
+            available_keys = list(sub_states_buffer.keys()) if isinstance(sub_states_buffer, dict) else "Not a dict"
+            data_length = len(sub_states_buffer.get("data", [])) if isinstance(sub_states_buffer, dict) else "Unknown"
+            raise ValueError(
+                f"Failed to access frame {frame_idx} in states buffer for task {task_path}, episode {ep_idx}. "
+                f"Available buffer keys: {available_keys}, data length: {data_length}. "
+                f"Original error: {e}"
+            )
 
         # 按路径导航到目标数据
         data = frame_data
-        for path_part in json_path.split("."):
-            if path_part in data:
+        current_path = ""
+        for i, path_part in enumerate(json_path.split(".")):
+            current_path = ".".join(json_path.split(".")[:i+1])
+            if isinstance(data, dict) and path_part in data:
                 data = data[path_part]
             else:
-                raise ValueError(f"Path '{json_path}' not found in frame {frame_idx}")
+                # 提供详细的调试信息
+                available_keys = list(data.keys()) if isinstance(data, dict) else f"Not a dict, type: {type(data)}"
+                total_frames = len(sub_states_buffer.get("data", []))
+                
+                # 尝试找到相似的键
+                similar_keys = []
+                if isinstance(data, dict):
+                    similar_keys = [
+                        key for key in data.keys()
+                        if path_part.lower() in key.lower() or key.lower() in path_part.lower()
+                    ]
+                
+                error_msg = (
+                    f"Path '{json_path}' not found in frame {frame_idx} at step '{current_path}' "
+                    f"for task {task_path}, episode {ep_idx}. "
+                    f"Available keys at current level: {available_keys}. "
+                    f"Total frames in episode: {total_frames}. "
+                    f"Target path part: '{path_part}'. "
+                )
+                
+                if similar_keys:
+                    error_msg += f"Similar keys found: {similar_keys}. "
+                
+                # 记录第一个可用帧的结构作为参考
+                if frame_idx > 0:
+                    try:
+                        first_frame = sub_states_buffer["data"][0]
+                        error_msg += f"Structure of frame 0 for reference: {self._get_structure_summary(first_frame)}. "
+                    except Exception:
+                        pass
+                
+                if self.logger:
+                    self.logger.error(error_msg)
+                
+                raise ValueError(error_msg)
 
         # 提取指定范围的数据
         if isinstance(data, list):
+            if to_idx > len(data):
+                if self.logger:
+                    self.logger.warning(
+                        f"Requested range [{from_idx}:{to_idx}] exceeds data length {len(data)} "
+                        f"for path '{json_path}' in frame {frame_idx}"
+                    )
             return np.array(data[from_idx:to_idx], dtype=np.float32)
-        raise ValueError(f"Expected list data for path '{json_path}', got {type(data)}")
+        
+        raise ValueError(
+            f"Expected list data for path '{json_path}', got {type(data)} with value: {data} "
+            f"in frame {frame_idx} for task {task_path}, episode {ep_idx}"
+        )
 
     # @override
     def _get_frame_sub_actions(
@@ -510,20 +590,75 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
         to_idx = args_dict["range_to"]
 
         # 获取帧数据
-        frame_data = sub_actions_buffer["data"][frame_idx]
+        try:
+            frame_data = sub_actions_buffer["data"][frame_idx]
+        except (KeyError, IndexError) as e:
+            available_keys = list(sub_actions_buffer.keys()) if isinstance(sub_actions_buffer, dict) else "Not a dict"
+            data_length = len(sub_actions_buffer.get("data", [])) if isinstance(sub_actions_buffer, dict) else "Unknown"
+            raise ValueError(
+                f"Failed to access frame {frame_idx} in actions buffer for task {task_path}, episode {ep_idx}. "
+                f"Available buffer keys: {available_keys}, data length: {data_length}. "
+                f"Original error: {e}"
+            )
 
         # 按路径导航到目标数据
         data = frame_data
-        for path_part in json_path.split("."):
-            if path_part in data:
+        current_path = ""
+        for i, path_part in enumerate(json_path.split(".")):
+            current_path = ".".join(json_path.split(".")[:i+1])
+            if isinstance(data, dict) and path_part in data:
                 data = data[path_part]
             else:
-                raise ValueError(f"Path '{json_path}' not found in frame {frame_idx}")
+                # 提供详细的调试信息
+                available_keys = list(data.keys()) if isinstance(data, dict) else f"Not a dict, type: {type(data)}"
+                total_frames = len(sub_actions_buffer.get("data", []))
+                
+                # 尝试找到相似的键
+                similar_keys = []
+                if isinstance(data, dict):
+                    similar_keys = [
+                        key for key in data.keys()
+                        if path_part.lower() in key.lower() or key.lower() in path_part.lower()
+                    ]
+                
+                error_msg = (
+                    f"Path '{json_path}' not found in frame {frame_idx} at step '{current_path}' "
+                    f"for task {task_path}, episode {ep_idx}. "
+                    f"Available keys at current level: {available_keys}. "
+                    f"Total frames in episode: {total_frames}. "
+                    f"Target path part: '{path_part}'. "
+                )
+                
+                if similar_keys:
+                    error_msg += f"Similar keys found: {similar_keys}. "
+                
+                # 记录第一个可用帧的结构作为参考
+                if frame_idx > 0:
+                    try:
+                        first_frame = sub_actions_buffer["data"][0]
+                        error_msg += f"Structure of frame 0 for reference: {self._get_structure_summary(first_frame)}. "
+                    except Exception:
+                        pass
+                
+                if self.logger:
+                    self.logger.error(error_msg)
+                
+                raise ValueError(error_msg)
 
         # 提取指定范围的数据
         if isinstance(data, list):
+            if to_idx > len(data):
+                if self.logger:
+                    self.logger.warning(
+                        f"Requested range [{from_idx}:{to_idx}] exceeds data length {len(data)} "
+                        f"for path '{json_path}' in frame {frame_idx}"
+                    )
             return np.array(data[from_idx:to_idx], dtype=np.float32)
-        raise ValueError(f"Expected list data for path '{json_path}', got {type(data)}")
+        
+        raise ValueError(
+            f"Expected list data for path '{json_path}', got {type(data)} with value: {data} "
+            f"in frame {frame_idx} for task {task_path}, episode {ep_idx}"
+        )
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:

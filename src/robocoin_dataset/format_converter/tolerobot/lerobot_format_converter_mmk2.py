@@ -138,6 +138,31 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             image_writer_threads=image_writer_threads,
         )
 
+    def _get_structure_summary(self, data: any, max_depth: int = 2, current_depth: int = 0) -> any:
+        """获取数据结构的简要总结，用于调试"""
+        if current_depth >= max_depth:
+            return f"... (max depth {max_depth} reached)"
+        
+        if isinstance(data, dict):
+            if not data:
+                return "{}"
+            keys = list(data.keys())[:5]  # 只显示前5个键
+            summary = {key: self._get_structure_summary(data[key], max_depth, current_depth + 1) for key in keys}
+            if len(data) > 5:
+                summary["..."] = f"({len(data) - 5} more keys)"
+            return summary
+        
+        if isinstance(data, list):
+            if not data:
+                return "[]"
+            length = len(data)
+            if length > 0:
+                sample = self._get_structure_summary(data[0], max_depth, current_depth + 1)
+                return f"[{sample}, ...] (length: {length})"
+            return "[]"
+        
+        return f"{type(data).__name__}"
+
     def _prevalidate_files(self) -> None:
         """Validate MMK2 dataset files and structure."""
         for task_path in self.path_task_dict.keys():
@@ -453,20 +478,58 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             field = args_dict.get("field", "pos")  # 默认使用pos字段
 
             if data_path not in sub_states_buffer["main_data"]:
-                raise ValueError(f"Data path '{data_path}' not found in main BSON data")
+                available_paths = list(sub_states_buffer["main_data"].keys())
+                # 尝试找到相似的路径
+                similar_paths = [
+                    path for path in available_paths
+                    if any(part.lower() in path.lower() for part in data_path.split("/"))
+                ]
+                
+                error_msg = (
+                    f"Data path '{data_path}' not found in main BSON data for frame {frame_idx}. "
+                    f"Available paths: {available_paths}. "
+                )
+                
+                if similar_paths:
+                    error_msg += f"Similar paths found: {similar_paths}. "
+                
+                if self.logger:
+                    self.logger.error(error_msg)
+                
+                raise ValueError(error_msg)
 
             data_list = sub_states_buffer["main_data"][data_path]
 
             if frame_idx >= len(data_list):
                 raise ValueError(
-                    f"Frame index {frame_idx} out of range. Available: {len(data_list)}"
+                    f"Frame index {frame_idx} out of range for path '{data_path}'. "
+                    f"Available frames: {len(data_list)}, BSON file: '{bson_file}'"
                 )
 
             frame_data = data_list[frame_idx]
             if "data" not in frame_data or field not in frame_data["data"]:
-                raise ValueError(f"Field '{field}' not found in frame data")
+                available_data_keys = list(frame_data.keys()) if isinstance(frame_data, dict) else "Not a dict"
+                available_field_keys = list(frame_data.get("data", {}).keys()) if isinstance(frame_data.get("data"), dict) else "No data field or not a dict"
+                
+                error_msg = (
+                    f"Field '{field}' not found in frame {frame_idx} for path '{data_path}'. "
+                    f"Available top-level keys: {available_data_keys}. "
+                    f"Available field keys in 'data': {available_field_keys}. "
+                    f"BSON file: '{bson_file}'"
+                )
+                
+                if self.logger:
+                    self.logger.error(error_msg)
+                
+                raise ValueError(error_msg)
 
             values = frame_data["data"][field]
+            if range_to > len(values):
+                if self.logger:
+                    self.logger.warning(
+                        f"Requested range [{range_from}:{range_to}] exceeds data length {len(values)} "
+                        f"for path '{data_path}', field '{field}' in frame {frame_idx}"
+                    )
             return np.array(values[range_from:range_to], dtype=np.float32)
 
         if bson_file == "xhand_control_data.bson":
@@ -483,15 +546,59 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             # 解析data_path，例如: "observation.left_hand"
             path_parts = data_path.split(".")
             data = frame_data
-            for part in path_parts:
-                if part in data:
+            current_path = ""
+            for i, part in enumerate(path_parts):
+                current_path = ".".join(path_parts[:i+1])
+                if isinstance(data, dict) and part in data:
                     data = data[part]
                 else:
-                    raise ValueError(f"Path '{data_path}' not found in hand data")
+                    # 提供详细的调试信息
+                    available_keys = list(data.keys()) if isinstance(data, dict) else f"Not a dict, type: {type(data)}"
+                    
+                    # 尝试找到相似的键
+                    similar_keys = []
+                    if isinstance(data, dict):
+                        similar_keys = [
+                            key for key in data.keys()
+                            if part.lower() in key.lower() or key.lower() in part.lower()
+                        ]
+                    
+                    error_msg = (
+                        f"Path '{data_path}' not found in hand data at step '{current_path}' "
+                        f"for BSON file '{bson_file}', frame {frame_idx}. "
+                        f"Available keys at current level: {available_keys}. "
+                        f"Target path part: '{part}'. "
+                    )
+                    
+                    if similar_keys:
+                        error_msg += f"Similar keys found: {similar_keys}. "
+                    
+                    # 记录第一个可用帧的结构作为参考
+                    if frame_idx > 0 and frame_idx < len(hand_data):
+                        try:
+                            first_frame = hand_data[0]
+                            error_msg += f"Structure of frame 0 for reference: {self._get_structure_summary(first_frame)}. "
+                        except Exception:
+                            pass
+                    
+                    if self.logger:
+                        self.logger.error(error_msg)
+                    
+                    raise ValueError(error_msg)
 
             if isinstance(data, list):
+                if range_to > len(data):
+                    if self.logger:
+                        self.logger.warning(
+                            f"Requested range [{range_from}:{range_to}] exceeds data length {len(data)} "
+                            f"for path '{data_path}' in frame {frame_idx}, BSON file '{bson_file}'"
+                        )
                 return np.array(data[range_from:range_to], dtype=np.float32)
-            raise ValueError(f"Expected list data for path '{data_path}', got {type(data)}")
+            
+            raise ValueError(
+                f"Expected list data for path '{data_path}', got {type(data)} with value: {data} "
+                f"in frame {frame_idx}, BSON file '{bson_file}'"
+            )
 
         raise ValueError(f"Unknown BSON file: {bson_file}")
 
