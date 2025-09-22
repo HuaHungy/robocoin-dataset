@@ -1,6 +1,6 @@
 import importlib
 import logging
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -38,7 +38,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 from robocoin_dataset.format_converter.utils.spatial_data_convertor import spatial_covertor_funcs
 
 
-class LerobotFormatConverter:
+class LerobotFormatConverter(ABC):
     """
     Base class for converting datasets to the LeRobot format.
     This class should be extended by specific dataset format converters.

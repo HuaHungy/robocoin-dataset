@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import traceback
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from websockets.exceptions import ConnectionClosed
 from websockets.legacy.server import WebSocketServerProtocol, serve
@@ -30,7 +30,7 @@ from .constant import (
 )
 
 
-class TaskServer:
+class TaskServer(ABC):
     def __init__(
         self,
         host: str = "0.0.0.0",

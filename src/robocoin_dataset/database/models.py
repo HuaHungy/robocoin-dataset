@@ -15,6 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import LargeBinary
 
 Base = declarative_base()
 
@@ -265,3 +266,112 @@ class DmvAnnotationDB(Base):
     device_model = Column(String(255), nullable=True)
 
     device_model_version = Column(String(255), nullable=True)
+
+
+class SubtaskAnnotationJsonDB(Base):
+    __tablename__ = "subtask_annotation_json"
+
+    id = Column(Integer, primary_key=True, index=True)
+    json_content = Column(Text, nullable=False, index=False)
+    video_url = Column(String(255), index=True, unique=True, nullable=False)
+
+    # 关系：一个 annotation 有一个 download 记录
+    download_info = relationship(
+        "SubtaskAnnotationVideoDownloadDB",
+        uselist=False,
+        back_populates="annotation",
+    )
+
+
+class DownloadStatus(str, PyEnum):
+    PENDING = "PENDING"
+    DOWNLOADING = "DOWNLOADING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
+
+class SubtaskAnnotationVideoDownloadDB(Base):
+    __tablename__ = "subtask_annotation_video_download"
+
+    id = Column(Integer, primary_key=True, index=True)
+    annotation_id = Column(
+        Integer, ForeignKey("subtask_annotation_json.id"), nullable=False, index=True
+    )
+    video_download_path = Column(String(255), index=True, nullable=True)
+    download_status = Column(
+        Enum(DownloadStatus), default=DownloadStatus.PENDING, nullable=False, index=True
+    )
+    frame_num = Column(Integer, nullable=True, index=True)
+    video_matched_status = Column(Boolean, default=False, nullable=False, index=True)
+
+    # 关系：一个 download 有一个 file_hash
+    file_hash = relationship(
+        "SubtaskAnnotationVideoFileHashDB",
+        uselist=False,
+        back_populates="download",
+        cascade="all, delete-orphan",  # 删除 download 时自动删除 hash
+    )
+    # 反向关系字段
+    annotation = relationship("SubtaskAnnotationJsonDB", back_populates="download_info")
+    image_hash = relationship(
+        "SubtaskAnnotationVideoImageHashDB",
+        uselist=False,
+        back_populates="download",
+        cascade="all, delete-orphan",
+    )
+
+
+class FileHashStatus(str, PyEnum):
+    PENDING = "PENGDING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    PROCESSING = "PROCESSING"
+
+
+class SubtaskAnnotationVideoFileHashDB(Base):
+    __tablename__ = "subtask_annotation_video_file_hash"
+
+    id = Column(Integer, primary_key=True, index=True)
+    download_id = Column(
+        Integer, ForeignKey("subtask_annotation_video_download.id"), nullable=False, index=True
+    )
+    sha256 = Column(String(64), index=True, nullable=True)
+    hash_status = Column(
+        Enum(FileHashStatus), default=FileHashStatus.PENDING, nullable=False, index=True
+    )
+
+    # 反向关系
+    download = relationship(
+        "SubtaskAnnotationVideoDownloadDB",  # 引用 download 表类名
+        back_populates="file_hash",
+    )
+
+
+class ImageHashStatus(str, PyEnum):
+    PENDING = "PENDING"
+    PROCESSING = "PROGRESSING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
+
+class SubtaskAnnotationVideoImageHashDB(Base):
+    __tablename__ = "subtask_annotation_video_image_hashes"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 外键：关联到下载表，表示这个 image hash 属于哪个下载的视频
+    download_id = Column(
+        Integer, ForeignKey("subtask_annotation_video_download.id"), nullable=False, index=True
+    )
+
+    # 常见的感知哈希类型（以 hex string 存储）
+    image_hashes = Column(LargeBinary, index=False, nullable=True)  # perceptual hash
+    image_hash_status = Column(
+        Enum(ImageHashStatus), default=ImageHashStatus.PENDING, nullable=False, index=True
+    )
+
+    # 关系：反向关联到 download 表
+    download = relationship(
+        "SubtaskAnnotationVideoDownloadDB",
+        back_populates="image_hash",  # 对应 download 表中的字段名
+    )

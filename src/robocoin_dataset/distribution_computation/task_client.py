@@ -3,7 +3,7 @@ import json
 import logging
 import socket
 import traceback
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from websockets.exceptions import ConnectionClosed
 from websockets.legacy.client import connect
@@ -43,7 +43,7 @@ def get_client_ip() -> str:
         raise e
 
 
-class TaskClient:
+class TaskClient(ABC):
     def __init__(
         self,
         server_uri: str = "ws://localhost:8765",

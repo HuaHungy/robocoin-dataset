@@ -29,6 +29,8 @@ dependencies = [
   "sqlalchemy",
   "websockets",
   "dashscope",
+  "imagehash",
+  "blake3",
 ] # project dependencies
 
 # scripts path
