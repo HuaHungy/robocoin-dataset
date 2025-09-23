@@ -132,7 +132,7 @@ if __name__ == "__main__":
 # 用于正式运行，用于数据集转换测试
 python scripts/format_converters/tolerobot/multi_client.py \
     --host=172.16.18.160 \
-    --port=8766 \
+    --port=8761 \
     --timeout=1.0 \
     --heartbeat-interval=10.0 \
     --log-path=./outputs/leformat_converter/log \

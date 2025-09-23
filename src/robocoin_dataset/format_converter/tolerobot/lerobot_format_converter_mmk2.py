@@ -477,7 +477,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             # 主要关节数据
             field = args_dict.get("field", "pos")  # 默认使用pos字段
 
-            if data_path not in sub_states_buffer["main_data"]:
+            # 规范化路径格式 - 确保路径以 / 开头
+            normalized_data_path = data_path if data_path.startswith('/') else f'/{data_path}'
+
+            if normalized_data_path not in sub_states_buffer["main_data"]:
                 available_paths = list(sub_states_buffer["main_data"].keys())
                 # 尝试找到相似的路径
                 similar_paths = [
@@ -486,7 +489,7 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                 ]
                 
                 error_msg = (
-                    f"Data path '{data_path}' not found in main BSON data for frame {frame_idx}. "
+                    f"Data path '{data_path}' (normalized: '{normalized_data_path}') not found in main BSON data for frame {frame_idx}. "
                     f"Available paths: {available_paths}. "
                 )
                 
@@ -498,11 +501,11 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                 
                 raise ValueError(error_msg)
 
-            data_list = sub_states_buffer["main_data"][data_path]
+            data_list = sub_states_buffer["main_data"][normalized_data_path]
 
             if frame_idx >= len(data_list):
                 raise ValueError(
-                    f"Frame index {frame_idx} out of range for path '{data_path}'. "
+                    f"Frame index {frame_idx} out of range for path '{normalized_data_path}'. "
                     f"Available frames: {len(data_list)}, BSON file: '{bson_file}'"
                 )
 
