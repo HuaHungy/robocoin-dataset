@@ -48,7 +48,7 @@ class DatasetDB(Base):
     device_model = Column(String(100), nullable=False)
     end_effector_type = Column(String(100), nullable=False)
     operation_platform_height = Column(Float, nullable=True)
-    yaml_file_path = Column(String(255), nullable=True, unique=True)
+    yaml_file_path = Column(String(255), nullable=True)
 
     # 多对多关系
     scene_types = relationship(
@@ -58,7 +58,7 @@ class DatasetDB(Base):
         "TaskDescriptionDB", secondary="dataset_task_descriptions", back_populates="datasets"
     )
     objects = relationship("ObjectDB", secondary="dataset_objects", back_populates="datasets")
-
+    atomic_actions = relationship("AtomicActionDB", secondary="dataset_atomic_actions", back_populates="datasets")
 
 # =====================
 # 分类与多对多表
@@ -73,6 +73,16 @@ class SceneTypeDB(Base):
     # 反向关系
     datasets = relationship(
         "DatasetDB", secondary="dataset_scene_types", back_populates="scene_types"
+    )
+
+class AtomicActionDB(Base):
+    __tablename__ = "atomic_actions"
+    id = Column(Integer, primary_key=True, index=True)
+    action_name = Column(String(100), unique=True, nullable=False)
+    
+     # 反向关系
+    datasets = relationship(
+        "DatasetDB", secondary="dataset_atomic_actions", back_populates="atomic_actions"
     )
 
 
@@ -119,6 +129,14 @@ dataset_task_descriptions = Table(
     Column("dataset_id", Integer, ForeignKey("datasets.id"), primary_key=True),
     Column("task_description_id", Integer, ForeignKey("task_descriptions.id"), primary_key=True),
 )
+
+dataset_atomic_actions = Table(
+    "dataset_atomic_actions",
+    Base.metadata,
+    Column("dataset_id", Integer, ForeignKey("datasets.id"), primary_key=True),
+    Column("atomic_actions_id", Integer, ForeignKey("atomic_actions.id"), primary_key=True),
+)
+
 
 dataset_objects = Table(
     "dataset_objects",

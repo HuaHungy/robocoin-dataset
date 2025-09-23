@@ -1,5 +1,5 @@
 from pathlib import Path
-
+from typing import Iterator
 import h5py
 
 
@@ -11,6 +11,10 @@ def explore_hdf5_group(group, prefix="") -> None:  # noqa: ANN001
         elif isinstance(item, h5py.Group):
             explore_hdf5_group(item, prefix + "  ")
 
+
+def iter_h5_files(root_path:Path) ->  Iterator[Path]:
+    yield from root_path.rglob("*.h5")
+    yield from root_path.rglob("*.hdf5")
 
 def main() -> None:
     import argparse
@@ -36,22 +40,33 @@ def main() -> None:
             print(f"{path} is NOT a valid h5file.")
             exit(1)
         exit(0)
-    error_h5files = []
-    h5_files = list(path.glob("*.h5"))
-    h5_files = h5_files + list(path.glob("*.hdf5"))
-    print(f"Checking {len(h5_files)} h5files...")
-    for file in h5_files:
-        try:
-            explore_hdf5_group(h5py.File(file, "r"))
-        except Exception:  # noqa: PERF203
-            error_h5files.append(file)
+    if path.is_dir():
+        h5_files = list(iter_h5_files(path))
+        if not h5_files:
+            print(f" No .h5 or .hdf5 files found in {path} (including subdirectories).")
+            exit(0)
 
-    if error_h5files:
-        print(f"Found {len(error_h5files)} error h5files:")
-        for file in error_h5files:
-            print(file)
+        print(f" Checking {len(h5_files)} HDF5 file(s)...")
+        error_h5files = []
+
+        for file in h5_files:
+            try:
+                with h5py.File(file, "r") as f:
+                    explore_hdf5_group(f)  
+            except Exception as e:
+                print(f" Failed to read {file}: {e}")
+                error_h5files.append(file)
+
+        if error_h5files:
+            print(f"\n Found {len(error_h5files)} invalid HDF5 file(s):")
+            for file in error_h5files:
+                print(f"  - {file}")
+            exit(1)
+        else:
+            print(f"\n  All {len(h5_files)} HDF5 files are valid.")
     else:
-        print("No error h5files found.")
+        print(f"{path} is neither a file nor a directory.")
+        exit(1)
 
 
 if __name__ == "__main__":

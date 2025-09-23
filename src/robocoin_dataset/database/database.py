@@ -101,6 +101,7 @@ class DatasetDatabase:
         database_url = f"sqlite:///{self.db_file}"
         self.engine = create_engine(database_url, connect_args={"check_same_thread": False})
         self.session_local = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        self._create_tables()
 
     def get_session(self) -> Generator[Session, None, None]:
         db = self.session_local()
