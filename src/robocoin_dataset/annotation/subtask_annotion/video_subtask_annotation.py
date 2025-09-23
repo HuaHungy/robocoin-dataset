@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from collections import defaultdict
 from pathlib import Path
 
 import av
@@ -13,17 +14,22 @@ import imagehash
 import requests
 from PIL import Image
 from sqlalchemy import exists
+from sqlalchemy.orm import Session
 from tqdm import tqdm
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
+    DatasetAnnotationCorrespondingDB,
     DownloadStatus,
+    EpisodeSubtaskAnnotationCorrespondingDB,
     FileHashStatus,
     ImageHashStatus,
+    LeFormatConvertDB,
     SubtaskAnnotationJsonDB,
     SubtaskAnnotationVideoDownloadDB,
     SubtaskAnnotationVideoFileHashDB,
     SubtaskAnnotationVideoImageHashDB,
+    TaskStatus,
 )
 
 FRAME_SAMPLE_NUM = 10
@@ -89,7 +95,7 @@ def gen_frame_indices_from_framenum(frame_num: int) -> list[int]:
 
 
 def extract_frame_phashes_ffmpeg(
-    vidoepath: str, frame_indices: list[int], hash_size: int = 16
+    video_path: str, frame_indices: list[int], hash_size: int = 16
 ) -> list[imagehash.ImageHash]:
     """
     使用 ffmpeg 从视频中提取指定帧的 pHash（批量抽取，高效稳定）
@@ -102,11 +108,11 @@ def extract_frame_phashes_ffmpeg(
     Returns:
         List[imagehash.ImageHash]: pHash 列表，对应每个帧，失败为 None
     """
-    vidoepath = Path(vidoepath)
+    video_path = Path(video_path)
 
     # 检查文件是否存在
-    if not vidoepath.exists():
-        raise FileNotFoundError(f"视频文件不存在: {vidoepath}")
+    if not video_path.exists():
+        raise FileNotFoundError(f"视频文件不存在: {video_path}")
 
     # 如果没有要抽的帧，直接返回
     if not frame_indices:
@@ -124,7 +130,7 @@ def extract_frame_phashes_ffmpeg(
         cmd = [
             "ffmpeg",
             "-i",
-            vidoepath,  # 输入文件
+            video_path,  # 输入文件
             "-vf",
             filter_complex,  # 只保留指定帧
             "-vsync",  # 最高质量
@@ -142,7 +148,7 @@ def extract_frame_phashes_ffmpeg(
         )
 
         if result.returncode != 0:
-            print(f"❌ ffmpeg 抽帧失败 (退出码 {result.returncode}): {vidoepath}")
+            print(f"❌ ffmpeg 抽帧失败 (退出码 {result.returncode}): {video_path}")
             print(f"错误信息:\n{result.stderr}")
             return [None] * len(frame_indices)
 
@@ -171,8 +177,7 @@ def extract_frame_phashes_ffmpeg(
                     phash_list.append(None)
             else:
                 print(f"⚠️ 未找到帧 {idx} 的图像")
-                print(f"视频文件路径: {vidoepath} ")
-                input("press enter to continue")
+                print(f"视频文件路径: {video_path} ")
                 phash_list.append(None)
 
         return phash_list
@@ -871,7 +876,7 @@ class VideoSubtaskAnnotation:
                 # 计算 SHA256
                 try:
                     phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
-                        vidoepath=video_path, frame_indices=image_frame_indices
+                        video_path=video_path, frame_indices=image_frame_indices
                     )
                     serialized_hashes = pickle.dumps(phashes)
                     self.logger.debug(f"Worker-{worker_id}: 成功计算视频指纹  ({video_path})")
@@ -946,7 +951,7 @@ class VideoSubtaskAnnotation:
             # 计算 SHA256
             try:
                 phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
-                    vidoepath=video_path, frame_indices=image_frame_indices
+                    video_path=video_path, frame_indices=image_frame_indices
                 )
                 serialized_hashes = pickle.dumps(phashes)
                 self.logger.debug(f"成功计算视频指纹  ({video_path})")
@@ -969,3 +974,392 @@ class VideoSubtaskAnnotation:
 
         pbar.close()
         self.logger.info("🎉 所有视频指纹计算任务已完成！")
+
+    def prepare_video_filehash_lib(self) -> None:
+        with self.db.with_session() as session:
+            results = (
+                session.query(
+                    SubtaskAnnotationVideoFileHashDB.sha256,
+                    SubtaskAnnotationVideoFileHashDB.download_id,
+                )
+                .filter(SubtaskAnnotationVideoFileHashDB.hash_status == FileHashStatus.SUCCESS)
+                .filter(
+                    SubtaskAnnotationVideoFileHashDB.sha256.isnot(None)
+                )  # 可选：确保 sha256 存在
+                .all()
+            )
+        sha256_list = [row.sha256 for row in results]
+        download_id_list = [row.download_id for row in results]
+
+        self.video_filehash_lib = {
+            sha256_list[i]: download_id_list[i] for i in range(len(download_id_list))
+        }
+
+    def prepare_video_imagehashes_lib(self) -> None:
+        with self.db.with_session() as session:
+            image_hashes_results = (
+                session.query(
+                    SubtaskAnnotationVideoImageHashDB.download_id,
+                    SubtaskAnnotationVideoImageHashDB.image_hashes,
+                )
+                .filter(
+                    SubtaskAnnotationVideoImageHashDB.image_hash_status == ImageHashStatus.SUCCESS
+                )  # 可选：确保 sha256 存在
+                .all()
+            )
+
+            frame_num_results = session.query(
+                SubtaskAnnotationVideoDownloadDB.id,
+                SubtaskAnnotationVideoDownloadDB.frame_num,
+            ).all()
+
+        image_hashes_list = [pickle.loads(row.image_hashes) for row in image_hashes_results]
+        download_id_list = [row.download_id for row in image_hashes_results]
+
+        video_imagehashes = {
+            download_id_list[i]: image_hashes_list[i] for i in range(len(download_id_list))
+        }
+        frame_num_list = [row.frame_num for row in frame_num_results]
+        download_id_list = [row.id for row in frame_num_results]
+
+        frame_num_dict = {
+            download_id_list[i]: frame_num_list[i] for i in range(len(download_id_list))
+        }
+
+        self.video_imagehashes_lib = self._sort_video_imagehashes_from_frame_num(
+            video_imagehashes, frame_num_dict=frame_num_dict
+        )
+
+    def _get_video_lengths(self) -> dict[int, int]:
+        with self.db.with_session() as session:
+            results = (
+                session.query(
+                    SubtaskAnnotationVideoDownloadDB.id,
+                    SubtaskAnnotationVideoDownloadDB.frame_num,
+                )
+                .filter(SubtaskAnnotationVideoDownloadDB.download_status == DownloadStatus.SUCCESS)
+                .all()
+            )
+
+        download_id_list = [row.download_id for row in results]
+        frame_num_list = [row.frame_num for row in results]
+
+        return {download_id_list[i]: frame_num_list[i] for i in range(len(download_id_list))}
+
+    def _sort_video_imagehashes_from_frame_num(
+        self,
+        video_imagehashes: dict[int, list[imagehash.ImageHash]],
+        frame_num_dict: dict[int, int],
+    ) -> dict[int, list[tuple[int, list[imagehash.ImageHash]]]]:
+        result = defaultdict(list)
+        for idx, frame_num in frame_num_dict.items():
+            if idx in video_imagehashes:
+                result[frame_num].append((idx, video_imagehashes[idx]))
+
+        return dict(result)
+
+    def _match_video_file_hash(self, hash: str, file_hash_lib: dict[str, int]) -> int | None:
+        if hash in file_hash_lib:
+            return file_hash_lib[hash]
+        return None
+
+    def _match_video_image_hashes(
+        self,
+        frame_num: int,
+        image_phashes: list[imagehash.ImageHash],
+        video_image_phashes_lib: dict[int, list[tuple[int, list[imagehash.ImageHash]]]],
+        threashold: float = 0.95,
+    ) -> int | None:
+        if frame_num not in video_image_phashes_lib:
+            return None
+
+        min_avg_dist = 1
+        matched_id = None
+
+        for item in video_image_phashes_lib[frame_num]:
+            id = item[0]
+            phashes = item[1]
+            hash_num = len(phashes)
+            if len(image_phashes) != hash_num:
+                continue
+
+            dist = 0
+            for s_phash, t_phash in zip(image_phashes, phashes):
+                dist += (s_phash - t_phash) / len(t_phash)
+            avg_dist = dist / hash_num
+            if avg_dist < min_avg_dist:
+                min_avg_dist = avg_dist
+                matched_id = id
+
+        if matched_id is None:
+            return None
+        if 1 - min_avg_dist < threashold:
+            return None
+
+        return matched_id
+
+    def _match_video(
+        self,
+        video_path: str | Path,
+    ) -> int | None:
+        video_path = Path(video_path).expanduser().absolute()
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}.")
+
+        if video_path.is_dir():
+            raise ValueError(f"{video_path} is a directory.")
+
+        sha256_hex = self._compute_sha256(video_path)
+
+        if sha256_hex in self.video_filehash_lib:
+            return self.video_filehash_lib[sha256_hex]
+
+        frame_num = self._get_frame_num(video_path=video_path)
+        frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
+
+        image_hashes = extract_frame_phashes_ffmpeg(
+            video_path=video_path, frame_indices=frame_indices
+        )
+
+        return self._match_video_image_hashes(
+            frame_num,
+            image_phashes=image_hashes,
+            video_image_phashes_lib=self.video_imagehashes_lib,
+        )
+
+    def sync_dataset_annotation_corresponding_task(self) -> None:
+        with self.db.with_session() as session:
+            query = (
+                session.query(LeFormatConvertDB.dataset_uuid, LeFormatConvertDB.convert_path)
+                .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
+                .filter(
+                    ~session.query(DatasetAnnotationCorrespondingDB)
+                    .filter(
+                        DatasetAnnotationCorrespondingDB.dataset_uuid
+                        == LeFormatConvertDB.dataset_uuid
+                    )
+                    .exists()
+                )
+            )
+            tasks = query.all()
+            for task in tasks:
+                self._upsert_dataset_annotation_corresponding_status(
+                    session, task.dataset_uuid, TaskStatus.PENDING
+                )
+
+            self.logger.info(f"Sync {len(tasks)} subtask annotation corresponding tasks to process")
+
+    def _gen_one_dataset_subtask_annotation_corresponding_task(
+        self, ds_uuid: str | None = None
+    ) -> tuple[str, str | Path]:
+        with self.db.with_session() as session:
+            if ds_uuid is None:
+                query = session.query(DatasetAnnotationCorrespondingDB).filter(
+                    DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.PENDING
+                )
+            else:
+                query = session.query(DatasetAnnotationCorrespondingDB).filter(
+                    DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.PENDING,
+                    DatasetAnnotationCorrespondingDB.dataset_uuid == ds_uuid,
+                )
+            item = query.first()
+            if not item:
+                self.logger.warning(f"No subtask annotation task found for dataset {ds_uuid}")
+                return None, None
+            ds_uuid = item.dataset_uuid
+            self._upsert_dataset_annotation_corresponding_status(
+                session, ds_uuid, TaskStatus.PROCESSING
+            )
+            query = session.query(LeFormatConvertDB).filter(
+                LeFormatConvertDB.dataset_uuid == ds_uuid
+            )
+            item = query.first()
+
+            return ds_uuid, item.convert_path
+
+    def _get_annotationid_from_downloadid(self, download_id: int) -> int | None:
+        with self.db.with_session() as session:
+            return (
+                session.query(SubtaskAnnotationJsonDB.id)
+                .join(SubtaskAnnotationVideoDownloadDB.annotation)  # 通过关系 join
+                .filter(SubtaskAnnotationVideoDownloadDB.id == download_id)
+                .scalar()  # 返回单个值
+            )
+
+    def _get_epidx_annoidx_corresponding(self, session: Session, ds_uuid: str, ep_idx: int) -> int:
+        return (
+            session.query(EpisodeSubtaskAnnotationCorrespondingDB.annotation_json_id)
+            .filter(
+                EpisodeSubtaskAnnotationCorrespondingDB.dataset_uuid == ds_uuid,
+                EpisodeSubtaskAnnotationCorrespondingDB.episode_idx == ep_idx,
+            )
+            .first()
+        )
+
+    def _upsert_epidx_annoidx_corresponding(
+        self, session: Session, ds_uuid: str, ep_idx: int, annotation_idx: int
+    ) -> None:
+        record = (
+            session.query(EpisodeSubtaskAnnotationCorrespondingDB)
+            .filter(
+                EpisodeSubtaskAnnotationCorrespondingDB.dataset_uuid == ds_uuid,
+                EpisodeSubtaskAnnotationCorrespondingDB.episode_idx == ep_idx,
+            )
+            .first()
+        )
+
+        if record:
+            record.annotation_json_id = annotation_idx
+        else:
+            record = EpisodeSubtaskAnnotationCorrespondingDB(
+                dataset_uuid=ds_uuid, episode_idx=ep_idx, annotation_json_id=annotation_idx
+            )
+        session.add(record)
+
+        session.commit()
+
+    def _upsert_dataset_annotation_corresponding_status(
+        self,
+        session: Session,
+        ds_uuid: str,
+        status: TaskStatus = TaskStatus.PENDING,
+        error_epindices: list[int] = [],
+    ) -> None:
+        if error_epindices:
+            status = TaskStatus.FAILED
+            err_msg = f"Unmatched episode indices: {error_epindices}"
+        else:
+            err_msg = ""
+
+        item = (
+            session.query(DatasetAnnotationCorrespondingDB)
+            .filter(DatasetAnnotationCorrespondingDB.dataset_uuid == ds_uuid)
+            .first()
+        )
+
+        if item:
+            item.corresponding_status = status
+            item.error_msg = err_msg
+        else:
+            item = DatasetAnnotationCorrespondingDB(
+                dataset_uuid=ds_uuid, corresponding_status=status, error_msg=err_msg
+            )
+
+        session.add(item)
+        session.commit()
+
+    def _correspond_dataset_subtask_annotation(self, ds_uuid: str, ds_path: str | Path) -> None:
+        ds_path: Path = Path(ds_path).expanduser().absolute()
+        if not ds_path.exists():
+            raise ValueError(f"{ds_path} not exists")
+        if ds_path.is_file():
+            raise ValueError(f"{ds_path} is a file")
+
+        video_dir = ds_path / "videos"
+        if not video_dir.exists():
+            raise ValueError(f"{video_dir} not exists")
+
+        chunks = [dir for dir in list(video_dir.iterdir()) if dir.is_dir()]
+
+        chunk_subdirs = [dir for dir in list(chunks[0].iterdir()) if dir.is_dir()]
+
+        camera_videos = {
+            dir.name: sorted(list(dir.glob("*.mp4"))) for dir in chunk_subdirs if dir.is_dir()
+        }
+
+        temp_camera_name = next(iter(camera_videos))
+
+        camera_labels = {camera_name: False for camera_name in camera_videos.keys()}
+
+        annotation_id_dict = {}
+        success_ep_set = set()
+        failed_ep_set = set()
+        pbar = tqdm(
+            range(len(camera_videos[temp_camera_name])), desc="对齐Episode标注文件", unit="episode"
+        )
+        for ep_idx in pbar:
+            with self.db.with_session() as session:
+                if self._get_epidx_annoidx_corresponding(
+                    session=session, ds_uuid=ds_uuid, ep_idx=ep_idx
+                ):
+                    continue
+            video_download_id = None
+            for camera_name in camera_videos.keys():
+                if not camera_labels[camera_name]:
+                    continue
+                video_download_id = self._match_video(camera_videos[camera_name][ep_idx])
+                if video_download_id:
+                    # Found matched video
+                    break
+                camera_labels[camera_name] = False
+
+            if not video_download_id:
+                for camera_name in camera_videos.keys():
+                    video_download_id = self._match_video(camera_videos[camera_name][ep_idx])
+                    if video_download_id:
+                        # Found matched video
+                        camera_labels[camera_name] = True
+                        break
+
+            if video_download_id:
+                annotation_id = self._get_annotationid_from_downloadid(video_download_id)
+                annotation_id_dict[ep_idx] = annotation_id
+                with self.db.with_session() as session:
+                    self._upsert_epidx_annoidx_corresponding(
+                        session=session,
+                        ds_uuid=ds_uuid,
+                        ep_idx=ep_idx,
+                        annotation_idx=annotation_id,
+                    )
+                success_ep_set.add(ep_idx)
+            if not video_download_id:
+                failed_ep_set.add(ep_idx)
+                pbar.set_postfix(
+                    {
+                        "失败数": len(failed_ep_set),
+                    }
+                )
+
+        error_epindices = [
+            ep_idx
+            for ep_idx in range(len(camera_videos[temp_camera_name]))
+            if ep_idx not in success_ep_set
+        ]
+        if error_epindices:
+            status = TaskStatus.FAILED
+        else:
+            status = TaskStatus.COMPLETED
+        with self.db.with_session() as session:
+            self._upsert_dataset_annotation_corresponding_status(
+                session=session,
+                ds_uuid=ds_uuid,
+                status=status,
+                error_epindices=error_epindices,
+            )
+
+    def correspond_dataset_subtask_annotations(self, ds_uuid: str | None = None) -> None:
+        self.logger.info("Loading video file hashes lib ...")
+        self.prepare_video_filehash_lib()
+        self.logger.info("Loading video image hashes lib ...")
+        self.prepare_video_imagehashes_lib()
+        if ds_uuid is None:
+            while True:
+                task = self._gen_one_dataset_subtask_annotation_corresponding_task()
+                if not task:
+                    self.logger.info("All task completed, no task to process")
+                    break
+
+                uuid = task[0]
+                convert_path = task[1]
+
+                self.logger.info(f"Corresponding subtask annotation for dataset: {convert_path}")
+                if convert_path is None:
+                    raise ValueError("Please specify the convert path")
+                self._correspond_dataset_subtask_annotation(ds_uuid=uuid, ds_path=convert_path)
+
+            return
+
+        uuid, convert_path = self._gen_one_dataset_subtask_annotation_corresponding_task(
+            ds_uuid=ds_uuid
+        )
+        self._correspond_dataset_subtask_annotation(ds_uuid=uuid, ds_path=convert_path)

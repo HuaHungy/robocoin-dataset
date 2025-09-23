@@ -44,6 +44,9 @@ if __name__ == "__main__":
         default="outputs/logs/",
         help="Path to log file.",
     )
+    argparser.add_argument(
+        "--dataset_uuid", type=str, default=None, help="数据集的UUID（可选，如果不指定则为None）"
+    )
 
     args = argparser.parse_args()
 
@@ -61,22 +64,18 @@ if __name__ == "__main__":
         logger=log,
     )
     try:
-        video_subtask_annotation.process_video_subtask_annotation_files()
-        video_subtask_annotation.sync_download_tasks()
-        video_subtask_annotation.download_videos_multi_threads()
-        video_subtask_annotation.sync_filehash_tasks()
-        video_subtask_annotation.compute_file_hashes_multi_threads()
-        video_subtask_annotation.sync_imagehash_tasks()
-        video_subtask_annotation.compute_image_hashes_multi_threads()
-        # video_subtask_annotation.compute_image_hashes_single_threads()
+        video_subtask_annotation.sync_dataset_annotation_corresponding_task()
+        video_subtask_annotation.correspond_dataset_subtask_annotations(args.dataset_uuid)
 
     except Exception:
         print(traceback.format_exc())
 
 """usages:
-python -m scripts.annotation.subtask_annotation_preprocess \
+# 可以指定数据集 uuid，前提是数据集已经完成格式转换，如果不设定uuid，则默认处理所有数据集
+python -m scripts.annotation.dataset_subtask_annotation\
     --db_file ./db/datasets.db \
     --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/source-files \
     --json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/destination-files \
-    --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
+    --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos \
+    --dataset_uuid 3f805357-8df7-41c3-aa00-a08b08e0915c
 """

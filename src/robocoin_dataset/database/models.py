@@ -244,10 +244,6 @@ class SubtaskAnnotationDB(Base):
 
     annotation_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
 
-    annotatio_file_path = Column(String(255), nullable=True, default="")
-
-    err_message = Column(String(255), nullable=True, default="")
-
 
 class DmvAnnotationDB(Base):
     __tablename__ = "device_model_annotation"
@@ -364,7 +360,7 @@ class SubtaskAnnotationVideoImageHashDB(Base):
         Integer, ForeignKey("subtask_annotation_video_download.id"), nullable=False, index=True
     )
 
-    # 常见的感知哈希类型（以 hex string 存储）
+    # 常见的感知哈希类型（以 LargeBinary 存储）
     image_hashes = Column(LargeBinary, index=False, nullable=True)  # perceptual hash
     image_hash_status = Column(
         Enum(ImageHashStatus), default=ImageHashStatus.PENDING, nullable=False, index=True
@@ -375,3 +371,53 @@ class SubtaskAnnotationVideoImageHashDB(Base):
         "SubtaskAnnotationVideoDownloadDB",
         back_populates="image_hash",  # 对应 download 表中的字段名
     )
+
+
+class DatasetAnnotationCorrespondingDB(Base):
+    __tablename__ = "dataset_annotation_corresponding"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String, index=True, unique=True, nullable=False)
+    error_msg= Column(Text, nullable=True)
+    corresponding_status = Column(Enum(TaskStatus), nullable=False, default=TaskStatus.FAILED)
+
+
+class EpisodeSubtaskAnnotationCorrespondingDB(Base):
+    __tablename__ = "episode_subtask_annotation_corresponding"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=False, nullable=False)
+    annotation_json_id = Column(
+        Integer, ForeignKey("subtask_annotation_json.id"), nullable=True, index=True
+    )
+    __table_args__ = (UniqueConstraint("dataset_uuid", "episode_idx", name="uix_dataset_episode"),)
+
+
+class EpisodeSubtaskAnnotationContentDB(Base):
+    __tablename__ = "episode_subtask_annotation_content"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    json_id = Column(
+        Integer,
+        ForeignKey("episode_subtask_annotation_corresponding.id"),
+        nullable=False,
+        index=True,
+    )
+    annotation_content = Column(Text, nullable=False)
+
+
+class EpisodeRangeSubtaskAnnotationDB(Base):
+    __tablename__ = "episode_range_subtask_annotation"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    episode_id = Column(
+        Integer, ForeignKey("episode_subtask_annotation_content.id"), index=True, nullable=False
+    )
+
+    range_from_frame_idx = Column(Integer, nullable=False)
+    range_to_frame_idx = Column(Integer, nullable=False)
+
+    subtask_annotation = Column(String)
