@@ -20,6 +20,8 @@ from tqdm import tqdm
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetAnnotationCorrespondingDB,
+    DatasetSubtaskAnnotationContentDB,
+    DatasetSubtaskAnnotationContentStatusDB,
     DownloadStatus,
     EpisodeSubtaskAnnotationCorrespondingDB,
     FileHashStatus,
@@ -1079,13 +1081,19 @@ class VideoSubtaskAnnotation:
         for item in video_image_phashes_lib[frame_num]:
             id = item[0]
             phashes = item[1]
-            hash_num = len(phashes)
-            if len(image_phashes) != hash_num:
+            if len(image_phashes) != len(phashes):
                 continue
 
             dist = 0
+            hash_num = 0
             for s_phash, t_phash in zip(image_phashes, phashes):
+                if s_phash is None or t_phash is None:
+                    continue
                 dist += (s_phash - t_phash) / len(t_phash)
+                hash_num += 1
+
+            if hash_num == 0:
+                continue
             avg_dist = dist / hash_num
             if avg_dist < min_avg_dist:
                 min_avg_dist = avg_dist
@@ -1337,12 +1345,12 @@ class VideoSubtaskAnnotation:
                 error_epindices=error_epindices,
             )
 
-    def correspond_dataset_subtask_annotations(self, ds_uuid: str | None = None) -> None:
+    def correspond_dataset_subtask_annotations(self, ds_uuids: list[str] | None = None) -> None:
         self.logger.info("Loading video file hashes lib ...")
         self.prepare_video_filehash_lib()
         self.logger.info("Loading video image hashes lib ...")
         self.prepare_video_imagehashes_lib()
-        if ds_uuid is None:
+        if ds_uuids is None:
             while True:
                 task = self._gen_one_dataset_subtask_annotation_corresponding_task()
                 if not task:
@@ -1359,7 +1367,94 @@ class VideoSubtaskAnnotation:
 
             return
 
-        uuid, convert_path = self._gen_one_dataset_subtask_annotation_corresponding_task(
-            ds_uuid=ds_uuid
+        for ds_uuid in ds_uuids:
+            uuid, convert_path = self._gen_one_dataset_subtask_annotation_corresponding_task(
+                ds_uuid=ds_uuid
+            )
+            if uuid is None:
+                self.logger.warning("Failed to generate corresponding task for dataset: {ds_uuid}")
+                continue
+            self._correspond_dataset_subtask_annotation(ds_uuid=uuid, ds_path=convert_path)
+
+    def _upsert_dataset_annotation_content_status(
+        self, session: Session, ds_uuid: str, status: TaskStatus, err_msg: str = None
+    ) -> None:
+        item = (
+            session.query(DatasetSubtaskAnnotationContentStatusDB)
+            .filter(DatasetSubtaskAnnotationContentStatusDB.dataset_uuid == ds_uuid)
+            .first()
         )
-        self._correspond_dataset_subtask_annotation(ds_uuid=uuid, ds_path=convert_path)
+        if item:
+            item.status = status
+            item.err_message = err_msg
+        else:
+            item = DatasetSubtaskAnnotationContentStatusDB(
+                dataset_uuid=ds_uuid, status=status, err_message=err_msg
+            )
+        session.add(item)
+        session.commit()
+
+    def sync_dataset_subtask_annotation_content(self) -> None:
+        with self.db.with_session() as session:
+            query = (
+                session.query(DatasetAnnotationCorrespondingDB.dataset_uuid)
+                .filter(
+                    DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.COMPLETED
+                )
+                .filter(
+                    ~session.query(DatasetSubtaskAnnotationContentStatusDB)
+                    .filter(
+                        DatasetSubtaskAnnotationContentStatusDB.dataset_uuid
+                        == DatasetAnnotationCorrespondingDB.dataset_uuid
+                    )
+                    .exists()
+                )
+            )
+            tasks = query.all()
+            for task in tasks:
+                self._upsert_dataset_annotation_content_status(
+                    session, task.dataset_uuid, TaskStatus.PENDING
+                )
+
+            self.logger.info(f"Sync {len(tasks)} dataset subtask annotation content tasks")
+
+    def _gen_one_dataset_subtask_annotation_content_task(
+        self,
+        session: Session,
+    ) -> str | None:
+        with self.db.with_session() as session:
+            task = (
+                session.query(DatasetSubtaskAnnotationContentStatusDB)
+                .filter(DatasetSubtaskAnnotationContentStatusDB.status == TaskStatus.PENDING)
+                .first()
+            )
+            if not task:
+                self.logger.info("No pending dataset subtask annotation content task")
+                return None
+
+            return task.dataset_uuid
+
+    def _upsert_dataset_subtask_annotation_content(
+        self,
+        session: Session,
+        ds_uuid: str,
+        ori_content: str,
+        new_content: str | None = None,
+    ) -> None:
+        item = (
+            session.query(DatasetSubtaskAnnotationContentDB)
+            .filter(DatasetSubtaskAnnotationContentDB.dataset_uuid == ds_uuid)
+            .filter(DatasetSubtaskAnnotationContentDB.ori_content == ori_content)
+            .first()
+        )
+        if item is None:
+            item = DatasetSubtaskAnnotationContentDB(
+                dataset_uuid=ds_uuid,
+                ori_content=ori_content,
+                new_content=new_content,
+            )
+            session.add(item)
+            session.commit()
+        else:
+            item.new_content = new_content
+            session.commit()

@@ -377,7 +377,7 @@ class DatasetAnnotationCorrespondingDB(Base):
     __tablename__ = "dataset_annotation_corresponding"
     id = Column(Integer, primary_key=True, index=True)
     dataset_uuid = Column(String, index=True, unique=True, nullable=False)
-    error_msg= Column(Text, nullable=True)
+    error_msg = Column(Text, nullable=True)
     corresponding_status = Column(Enum(TaskStatus), nullable=False, default=TaskStatus.FAILED)
 
 
@@ -421,3 +421,24 @@ class EpisodeRangeSubtaskAnnotationDB(Base):
     range_to_frame_idx = Column(Integer, nullable=False)
 
     subtask_annotation = Column(String)
+
+
+class DatasetSubtaskAnnotationContentStatusDB(Base):
+    __tablename__ = "dataset_subtask_annotation_content_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_message = Column(String(255), nullable=True)
+
+
+class DatasetSubtaskAnnotationContentDB(Base):
+    __tablename__ = "dataset_subtask_annotation_content"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    ori_content = Column(String, nullable=False)
+    new_content = Column(String, nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_uuid", "ori_content", name="uix_dataset_subtask_annotation_content"
+        ),
+    )
