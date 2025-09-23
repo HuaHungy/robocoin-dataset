@@ -71,6 +71,7 @@ if __name__ == "__main__":
         print(traceback.format_exc())
 
 """usages:
+该程序功能为：通过视频指纹识别，为转换好的数据集的Episode，对齐json标注条目
 # 可以指定数据集 uuid，前提是数据集已经完成格式转换，如果不设定uuid，则默认处理所有数据集
 python -m scripts.annotation.dataset_subtask_annotation\
     --db_file ./db/datasets.db \

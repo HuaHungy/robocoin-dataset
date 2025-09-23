@@ -74,6 +74,18 @@ if __name__ == "__main__":
         print(traceback.format_exc())
 
 """usages:
+# 该程序功能包括：
+1. 对子任务标注json文件进行批处理
+    通过参数 --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/source-files 来指定源文件目录
+    需要人工将新增的子任务标注json文件复制到该目录下
+    程序自动将通过检查的所有json文件移动至 --json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/destination-files 目录下
+
+2. 自动生成标注视频下载任务、多线程下载，下载目录为 --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
+
+3. 自动生成文件hash任务、多线程计算文件hash，结果保存在到数据库中
+
+4. 自动生成视频指纹计算任务、多线程计算，结果保存在到数据库中
+
 python -m scripts.annotation.subtask_annotation_preprocess \
     --db_file ./db/datasets.db \
     --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/source-files \
