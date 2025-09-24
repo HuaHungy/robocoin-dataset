@@ -553,7 +553,12 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
                         pass
                 
                 if self.logger:
-                    self.logger.error(error_msg)
+                    self.logger.error(f"G1 States Path Error: {error_msg}")
+                
+                # 确保错误信息包含足够的诊断信息
+                simplified_error = f"Path '{json_path}' not found in frame {frame_idx}"
+                if self.logger:
+                    self.logger.error(f"WARNING: If you see only this simplified error '{simplified_error}', check the full error above!")
                 
                 raise ValueError(error_msg)
 
@@ -641,7 +646,12 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
                         pass
                 
                 if self.logger:
-                    self.logger.error(error_msg)
+                    self.logger.error(f"G1 Actions Path Error: {error_msg}")
+                
+                # 确保错误信息包含足够的诊断信息
+                simplified_error = f"Path '{json_path}' not found in frame {frame_idx}"
+                if self.logger:
+                    self.logger.error(f"WARNING: If you see only this simplified error '{simplified_error}', check the full error above!")
                 
                 raise ValueError(error_msg)
 

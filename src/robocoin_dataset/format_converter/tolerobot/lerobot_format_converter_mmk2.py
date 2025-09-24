@@ -480,6 +480,12 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             # 规范化路径格式 - 确保路径以 / 开头
             normalized_data_path = data_path if data_path.startswith('/') else f'/{data_path}'
 
+            # 检查路径是否为可选路径（如末端执行器数据可能不存在）
+            is_optional_path = any(optional in data_path.lower() for optional in ['_eef', 'end_effector'])
+
+            if self.logger:
+                self.logger.debug(f"Checking path: '{data_path}', normalized: '{normalized_data_path}', is_optional: {is_optional_path}")
+
             if normalized_data_path not in sub_states_buffer["main_data"]:
                 available_paths = list(sub_states_buffer["main_data"].keys())
                 # 尝试找到相似的路径
@@ -495,6 +501,16 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                 
                 if similar_paths:
                     error_msg += f"Similar paths found: {similar_paths}. "
+
+                # 对于可选路径，返回零值而不是抛出错误
+                if is_optional_path:
+                    if self.logger:
+                        self.logger.warning(
+                            f"Optional path '{data_path}' not found. Using zero values. "
+                            f"Available paths: {available_paths}"
+                        )
+                    # 返回指定范围大小的零数组
+                    return np.zeros(range_to - range_from, dtype=np.float32)
                 
                 if self.logger:
                     self.logger.error(error_msg)
