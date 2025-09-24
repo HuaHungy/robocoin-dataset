@@ -367,13 +367,51 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             return self.h5_buffer.h5_data
         self.h5_buffer.h5_data = {}
 
+        h5_file_path = self.task_episode_h5file_paths[task_path][ep_idx]
+
         def _get_dataset(name: str, obj: any) -> None:
             if isinstance(obj, h5py.Dataset):
-                self.h5_buffer.h5_data[name] = obj[()]
+                try:
+                    self.h5_buffer.h5_data[name] = obj[()]
+                except Exception as e:
+                    # 提供详细的H5文件错误诊断信息
+                    error_msg = (
+                        f"H5 Dataset Read Error: Failed to read dataset '{name}' from H5 file '{h5_file_path}'. "
+                        f"Task: {task_path}, Episode: {ep_idx}. "
+                        f"Dataset shape: {getattr(obj, 'shape', 'Unknown')}, "
+                        f"Dataset dtype: {getattr(obj, 'dtype', 'Unknown')}, "
+                        f"Dataset size: {getattr(obj, 'size', 'Unknown')} bytes. "
+                        f"Original error: {type(e).__name__}: {e}. "
+                        f"This might indicate file corruption or incompatible H5 format."
+                    )
+                    
+                    if self.logger:
+                        self.logger.error(f"H5 File Error: {error_msg}")
+                        self.logger.error("WARNING: If you see a simplified OSError, check the full error above!")
+                    
+                    raise ValueError(error_msg) from e
 
-        with h5py.File(self.task_episode_h5file_paths[task_path][ep_idx]) as h5_file:
-            h5_file.visititems(_get_dataset)
-            self.h5_buffer.task_path = task_path
-            self.h5_buffer.ep_idx = ep_idx
+        try:
+            with h5py.File(h5_file_path) as h5_file:
+                h5_file.visititems(_get_dataset)
+                self.h5_buffer.task_path = task_path
+                self.h5_buffer.ep_idx = ep_idx
+        except Exception as e:
+            # 捕获文件级别的错误
+            if not isinstance(e, ValueError):  # 避免重复包装我们自己的ValueError
+                error_msg = (
+                    f"H5 File Access Error: Failed to access H5 file '{h5_file_path}'. "
+                    f"Task: {task_path}, Episode: {ep_idx}. "
+                    f"Original error: {type(e).__name__}: {e}. "
+                    f"Please check if the file exists and is not corrupted."
+                )
+                
+                if self.logger:
+                    self.logger.error(f"H5 File Access Error: {error_msg}")
+                
+                raise ValueError(error_msg) from e
+            
+            # 重新抛出我们自己的ValueError
+            raise
 
         return self.h5_buffer.h5_data

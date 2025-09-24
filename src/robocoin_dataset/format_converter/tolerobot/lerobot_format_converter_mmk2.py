@@ -665,10 +665,40 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
-        episode_dirs = [
-            d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")
-        ]
-        return len(episode_dirs)
+        try:
+            episode_dirs = [
+                d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")
+            ]
+            episode_count = len(episode_dirs)
+            
+            if episode_count == 0:
+                # 提供详细的MMK2 Episode计数错误诊断信息
+                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+                
+                warning_msg = (
+                    f"MMK2 Episode Count Warning: No episode directories found in task '{task_path}'. "
+                    f"All directories found: {all_dirs}. "
+                    f"Expected directories starting with 'episode'. "
+                    f"Task path exists: {task_path.exists()}. "
+                    f"This will likely cause conversion failures."
+                )
+                
+                if self.logger:
+                    self.logger.warning(f"MMK2 Episode Count Warning: {warning_msg}")
+            
+            return episode_count
+            
+        except Exception as e:
+            error_msg = (
+                f"MMK2 Episode Count Error: Failed to count episodes in task '{task_path}'. "
+                f"Original error: {type(e).__name__}: {e}. "
+                f"Task path exists: {task_path.exists()}."
+            )
+            
+            if self.logger:
+                self.logger.error(f"MMK2 Episode Count Error: {error_msg}")
+            
+            raise ValueError(error_msg) from e
 
     # @override
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> any:
@@ -729,5 +759,22 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")]
         )
         if ep_idx >= len(episode_dirs):
-            raise ValueError(f"Episode index {ep_idx} out of range. Available: {len(episode_dirs)}")
+            # 提供详细的MMK2 Episode目录错误诊断信息
+            all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+            episode_dir_names = [d.name for d in episode_dirs]
+            
+            error_msg = (
+                f"MMK2 Episode Directory Error: Episode index {ep_idx} out of range in task '{task_path}'. "
+                f"Found {len(episode_dirs)} episode directories. "
+                f"Episode directories found: {episode_dir_names if episode_dir_names else 'None'}. "
+                f"All directories in task: {all_dirs}. "
+                f"Task path exists: {task_path.exists()}. "
+                f"This might indicate missing episode data or incorrect task path."
+            )
+            
+            if self.logger:
+                self.logger.error(f"MMK2 Episode Directory Error: {error_msg}")
+                self.logger.error("WARNING: Check if the task directory contains properly named episode_* folders!")
+            
+            raise ValueError(error_msg)
         return episode_dirs[ep_idx]
