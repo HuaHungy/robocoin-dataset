@@ -452,8 +452,34 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             raise ValueError(f"Image file not found: {image_path}")
 
         # 读取并返回图像
-        img = Image.open(image_path)
-        return np.array(img)
+        try:
+            img = Image.open(image_path)
+            return np.array(img)
+        except OSError as e:
+            if "truncated" in str(e):
+                raise ValueError(f"MMK2 Image Corruption Error: Image file is corrupted or truncated. "
+                               f"Image path: {image_path}, "
+                               f"File size: {image_path.stat().st_size if image_path.exists() else 'N/A'} bytes, "
+                               f"Task: {task_path.name}, "
+                               f"Episode: {ep_idx}, "
+                               f"Frame: {frame_idx}, "
+                               f"Camera: {camera_dir}, "
+                               f"Original error: {str(e)}") from e
+            raise ValueError(f"MMK2 Image Read Error: Failed to read image file. "
+                           f"Image path: {image_path}, "
+                           f"Task: {task_path.name}, "
+                           f"Episode: {ep_idx}, "
+                           f"Frame: {frame_idx}, "
+                           f"Camera: {camera_dir}, "
+                           f"Original error: {str(e)}") from e
+        except Exception as e:
+            raise ValueError(f"MMK2 Image Processing Error: Unexpected error while processing image. "
+                           f"Image path: {image_path}, "
+                           f"Task: {task_path.name}, "
+                           f"Episode: {ep_idx}, "
+                           f"Frame: {frame_idx}, "
+                           f"Camera: {camera_dir}, "
+                           f"Original error: {str(e)}") from e
 
     # @override
     def _get_frame_sub_states(

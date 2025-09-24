@@ -332,8 +332,19 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         try:
             with h5py.File(h5_file_path, "r") as h5_file:
                 return h5_file[h5_path].shape[0]
+        except OSError as e:
+            error_str = str(e)
+            if "bad global heap collection signature" in error_str:
+                raise ValueError(f"H5 File Corruption Error (Frame Count): H5 file has corrupted global heap collection signature. "
+                               f"File path: {h5_file_path}, Task: {task_path.name}, Episode: {ep_idx}, "
+                               f"Original error: {error_str}. Please regenerate this H5 file.") from e
+            raise ValueError(f"H5 File OSError (Frame Count): Cannot read frame count from H5 file. "
+                           f"File path: {h5_file_path}, Task: {task_path.name}, Episode: {ep_idx}, "
+                           f"Original error: {error_str}") from e
         except Exception as e:
-            raise ValueError(f"Error while reading h5 file {h5_file_path}: {e}")
+            raise ValueError(f"H5 File Error (Frame Count): Error while reading frame count from H5 file. "
+                           f"File path: {h5_file_path}, Task: {task_path.name}, Episode: {ep_idx}, "
+                           f"H5 path: {h5_path}, Original error: {e}") from e
 
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:
@@ -392,12 +403,48 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                     raise ValueError(error_msg) from e
 
         try:
-            with h5py.File(h5_file_path) as h5_file:
+            with h5py.File(h5_file_path, "r") as h5_file:
                 h5_file.visititems(_get_dataset)
                 self.h5_buffer.task_path = task_path
                 self.h5_buffer.ep_idx = ep_idx
+        except OSError as e:
+            # 特定处理 H5 文件损坏错误
+            error_str = str(e)
+            if "bad global heap collection signature" in error_str:
+                error_msg = (
+                    f"H5 File Corruption Error: H5 file has corrupted global heap collection signature. "
+                    f"File path: {h5_file_path}, "
+                    f"Task: {task_path.name}, "
+                    f"Episode: {ep_idx}, "
+                    f"File size: {h5_file_path.stat().st_size if h5_file_path.exists() else 'N/A'} bytes. "
+                    f"This indicates severe file corruption. Original error: {error_str}. "
+                    f"Please regenerate or re-download this H5 file."
+                )
+            elif "unable to open file" in error_str.lower():
+                error_msg = (
+                    f"H5 File Access Error: Cannot open H5 file. "
+                    f"File path: {h5_file_path}, "
+                    f"Task: {task_path.name}, "
+                    f"Episode: {ep_idx}, "
+                    f"File exists: {h5_file_path.exists()}, "
+                    f"File size: {h5_file_path.stat().st_size if h5_file_path.exists() else 'N/A'} bytes. "
+                    f"Original error: {error_str}"
+                )
+            else:
+                error_msg = (
+                    f"H5 File OSError: H5 file operation failed. "
+                    f"File path: {h5_file_path}, "
+                    f"Task: {task_path.name}, "
+                    f"Episode: {ep_idx}, "
+                    f"Original error: {error_str}"
+                )
+            
+            if self.logger:
+                self.logger.error(f"H5 File Corruption Detected: {error_msg}")
+            
+            raise ValueError(error_msg) from e
         except Exception as e:
-            # 捕获文件级别的错误
+            # 捕获文件级别的其他错误
             if not isinstance(e, ValueError):  # 避免重复包装我们自己的ValueError
                 error_msg = (
                     f"H5 File Access Error: Failed to access H5 file '{h5_file_path}'. "
