@@ -23,6 +23,7 @@ from robocoin_dataset.database.models import (
     DatasetSubtaskAnnotationContentDB,
     DatasetSubtaskAnnotationContentStatusDB,
     DownloadStatus,
+    EpisodeRangeSubtaskAnnotationDB,
     EpisodeSubtaskAnnotationCorrespondingDB,
     FileHashStatus,
     ImageHashStatus,
@@ -185,6 +186,109 @@ def extract_frame_phashes_ffmpeg(
         return phash_list
 
 
+def validate_annotation_json(data: str | list) -> None:
+    """
+    验证标注 JSON 数据是否满足以下条件：
+    1. 所有 ranges 覆盖从 1 开始的所有帧，无空缺
+    2. 每个 videoLabel 的 ranges 只有一个 {start, end}
+    3. 每个 videoLabel 的 timelinelabels 只有一个标签
+
+    Args:
+        data: JSON 字符串 或 已加载的 Python 对象（list of dicts）
+
+    Returns:
+        True if valid, raises AssertionError otherwise
+    """
+    if isinstance(data, str):
+        data = json.loads(data)
+
+    if not isinstance(data, list):
+        raise ValueError("JSON 根节点必须是一个数组")
+
+    for idx, item in enumerate(data):
+        video_labels = item.get("videoLabels", [])
+        if not isinstance(video_labels, list):
+            raise AssertionError(f"第 {idx + 1} 个条目的 videoLabels 必须是数组")
+
+        if len(video_labels) == 0:
+            raise AssertionError(f"第 {idx + 1} 个条目的 videoLabels 不能为空")
+
+        ranges = []
+        for lbl_idx, label in enumerate(video_labels):
+            # 验证 ranges 长度为 1
+            if not isinstance(label.get("ranges"), list) or len(label["ranges"]) != 1:
+                raise AssertionError(
+                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
+                    f"ranges 必须是一个包含一个元素的数组"
+                )
+
+            r = label["ranges"][0]
+            if not isinstance(r, dict) or "start" not in r or "end" not in r:
+                raise AssertionError(
+                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
+                    f"range 必须是 {{'start': ..., 'end': ...}} 格式"
+                )
+
+            start, end = r["start"], r["end"]
+            if not isinstance(start, int) or not isinstance(end, int):
+                raise AssertionError(
+                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: start 和 end 必须是整数"
+                )
+            if start < 1 or end < start:
+                raise AssertionError(
+                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: start >= 1 且 end > start"
+                )
+
+            ranges.append((start, end))
+
+            # 验证 timelinelabels 长度为 1
+            timeline_labels = label.get("timelinelabels")
+            if not isinstance(timeline_labels, list) or len(timeline_labels) != 1:
+                raise AssertionError(
+                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
+                    f"timelinelabels 必须是一个包含一个字符串的数组"
+                )
+            if not isinstance(timeline_labels[0], str):
+                raise AssertionError(
+                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
+                    f"timelinelabels[0] 必须是字符串"
+                )
+
+        # 验证 range 覆盖连续帧（从 1 开始，无空缺）
+        validate_coverage(ranges, item_id=item.get("id"), entry_idx=idx + 1)
+
+
+def validate_coverage(
+    ranges: list[tuple[int, int]], item_id: int = None, entry_idx: int = 1
+) -> None:
+    """
+    验证一组 (start, end) 区间是否覆盖从 1 开始的所有帧，无空缺。
+    允许重叠。
+    """
+    if not ranges:
+        raise AssertionError("ranges 不能为空")
+
+    # 按 start 排序
+    sorted_ranges = sorted(ranges, key=lambda x: x[0])
+
+    current_end = 1  # 当前覆盖到的帧（开区间）
+
+    for start, end in sorted_ranges:
+        if start < 1:
+            raise AssertionError(f"第 {entry_idx} 个条目 (id={item_id}): start 帧不能小于 1")
+
+        if start > current_end:
+            raise AssertionError(
+                f"第 {entry_idx} 个条目 (id={item_id}): "
+                f"帧 [{current_end}, {start}) 未被覆盖，存在空缺"
+            )
+
+        current_end = max(current_end, end)  # 合并区间
+
+    if current_end <= 1:
+        raise AssertionError(f"第 {entry_idx} 个条目 (id={item_id}): 至少需要覆盖到帧 1")
+
+
 class VideoSubtaskAnnotation:
     def __init__(
         self,
@@ -211,7 +315,7 @@ class VideoSubtaskAnnotation:
         self.video_dl_dir.mkdir(parents=True, exist_ok=True)
         pass
 
-    def process_video_subtask_annotation_files(self) -> None:
+    def process_video_subtask_annotation_json_files(self) -> None:
         source_dir = self.json_src_dir
         dest_dir = self.json_dst_dir
         json_files = [
@@ -221,7 +325,12 @@ class VideoSubtaskAnnotation:
             if file.is_file() and file.suffix == ".json":
                 try:
                     with open(file) as f:
-                        data = json.load(f)
+                        try:
+                            data = json.load(f)
+                            validate_annotation_json(data)
+                        except Exception as e:
+                            self.logger.error(f"❌ {file} is not a valid annotation json: {e}")
+                            continue
 
                         for episode in data:
                             video_url = episode["video"]
@@ -231,24 +340,23 @@ class VideoSubtaskAnnotation:
                                 raise Exception(f"Failed to dumpi videoLabels of {episode}") from e
 
                             with self.db.with_session() as session:
-                                video_id = (
+                                item = (
                                     session.query(SubtaskAnnotationJsonDB)
                                     .filter(SubtaskAnnotationJsonDB.video_url == video_url)
                                     .first()
                                 )
 
-                                if video_id:
-                                    self.logger.warning(
-                                        f"⚠️ Video {video_url} already exists in database, skipping"
+                                if item:
+                                    item.json_content = ep_annotation
+                                    self.logger.info(
+                                        f"⚠️ Video {video_url} already exists in database, this one will covert the old one."
                                     )
-                                    continue
+                                else:
+                                    new_entry = SubtaskAnnotationJsonDB(
+                                        video_url=video_url, json_content=ep_annotation
+                                    )
+                                    session.add(new_entry)
 
-                                new_entry = SubtaskAnnotationJsonDB(
-                                    video_url=str(video_url),
-                                    json_content=ep_annotation,
-                                )
-
-                                session.add(new_entry)
                                 session.commit()
 
                     shutil.move(file, dest_dir)
@@ -1379,12 +1487,13 @@ class VideoSubtaskAnnotation:
     def _upsert_dataset_annotation_content_status(
         self, session: Session, ds_uuid: str, status: TaskStatus, err_msg: str = None
     ) -> None:
-        item = (
+        item: DatasetSubtaskAnnotationContentStatusDB = (
             session.query(DatasetSubtaskAnnotationContentStatusDB)
             .filter(DatasetSubtaskAnnotationContentStatusDB.dataset_uuid == ds_uuid)
             .first()
         )
         if item:
+            item.dataset_uuid = ds_uuid
             item.status = status
             item.err_message = err_msg
         else:
@@ -1397,7 +1506,7 @@ class VideoSubtaskAnnotation:
     def sync_dataset_subtask_annotation_content(self) -> None:
         with self.db.with_session() as session:
             query = (
-                session.query(DatasetAnnotationCorrespondingDB.dataset_uuid)
+                session.query(DatasetAnnotationCorrespondingDB)
                 .filter(
                     DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.COMPLETED
                 )
@@ -1410,17 +1519,16 @@ class VideoSubtaskAnnotation:
                     .exists()
                 )
             )
-            tasks = query.all()
-            for task in tasks:
+            items = query.all()
+            for item in items:
                 self._upsert_dataset_annotation_content_status(
-                    session, task.dataset_uuid, TaskStatus.PENDING
+                    session, ds_uuid=item.dataset_uuid, status=TaskStatus.PENDING
                 )
 
-            self.logger.info(f"Sync {len(tasks)} dataset subtask annotation content tasks")
+            self.logger.info(f"Sync {len(items)} dataset subtask annotation content tasks")
 
     def _gen_one_dataset_subtask_annotation_content_task(
         self,
-        session: Session,
     ) -> str | None:
         with self.db.with_session() as session:
             task = (
@@ -1432,6 +1540,9 @@ class VideoSubtaskAnnotation:
                 self.logger.info("No pending dataset subtask annotation content task")
                 return None
 
+            self._upsert_dataset_annotation_content_status(
+                session=session, ds_uuid=task.dataset_uuid, status=TaskStatus.PROCESSING
+            )
             return task.dataset_uuid
 
     def _upsert_dataset_subtask_annotation_content(
@@ -1458,3 +1569,161 @@ class VideoSubtaskAnnotation:
         else:
             item.new_content = new_content
             session.commit()
+
+    def _get_dataset_subtask_annotation_json_dict(
+        self,
+        ds_uuid: str,
+    ) -> dict[int, str]:
+        with self.db.with_session() as session:
+            results = (
+                session.query(
+                    EpisodeSubtaskAnnotationCorrespondingDB.episode_idx,
+                    SubtaskAnnotationJsonDB.json_content,
+                )
+                .join(
+                    SubtaskAnnotationJsonDB,
+                    SubtaskAnnotationJsonDB.id
+                    == EpisodeSubtaskAnnotationCorrespondingDB.annotation_json_id,
+                )
+                .filter(EpisodeSubtaskAnnotationCorrespondingDB.dataset_uuid == ds_uuid)
+                .order_by(
+                    EpisodeSubtaskAnnotationCorrespondingDB.episode_idx
+                )  # 按 episode_idx 排序
+                .all()
+            )
+            return {item.episode_idx: item.json_content for item in results}
+
+    # 提取为字符串列表
+
+    # def _get_dataset_subtask_annotation_set(
+    #     self,
+    #     ds_uuid: str,
+    # ) -> set[str]:
+    #     annotation_set = set()
+    #     json_list = self._get_dataset_subtask_annotation_json_dict(ds_uuid=ds_uuid)
+    #     for json_item in json_list:
+    #         video_labels = json_item["videoLabels"]
+    #         print(video_labels)
+    #         for video_label in video_labels:
+    #             annotations = video_label.get("timelinelabels", [])
+    #             for annotation in annotations:
+    #                 annotation_set.add(annotation)
+
+    #     return annotation_set
+
+    # def optimize_dataset_subtask_annotation_content(
+    #     self,
+    #     ds_uuid: str,
+    #     api_key: str,
+    # ) -> dict[str, str]:
+    #     """
+    #     Generate dataset subtask annotation content.
+    #     """
+    #     annotation_set = self._get_dataset_subtask_annotation_set(ds_uuid=ds_uuid)
+    #     from .subtask_annotation_optimization import optimize_annotation
+
+    #     return optimize_annotation(annotation_set=annotation_set, ds_api_key=api_key)
+
+    def _upsert_episode_range_subtask_annotation(
+        self,
+        ds_uuid: str,
+        episode_idx: int,
+        range_from_frame_idx: int,
+        range_to_frame_idx: int,
+        annotation: str,
+    ) -> None:
+        with self.db.with_session() as session:
+            item = (
+                session.query(EpisodeRangeSubtaskAnnotationDB)
+                .filter(
+                    EpisodeRangeSubtaskAnnotationDB.dataset_uuid == ds_uuid,
+                    EpisodeRangeSubtaskAnnotationDB.episode_id == episode_idx,
+                    EpisodeRangeSubtaskAnnotationDB.range_from_frame_idx == range_from_frame_idx,
+                    EpisodeRangeSubtaskAnnotationDB.range_to_frame_idx == range_to_frame_idx,
+                )
+                .first()
+            )
+            if item is None:
+                item = EpisodeRangeSubtaskAnnotationDB(
+                    dataset_uuid=ds_uuid,
+                    episode_id=episode_idx,
+                    range_from_frame_idx=range_from_frame_idx,
+                    range_to_frame_idx=range_to_frame_idx,
+                    subtask_annotation=annotation,
+                )
+            else:
+                item.dataset_uuid = ds_uuid
+                item.episode_id = episode_idx
+                item.range_from_frame_idx = range_from_frame_idx
+                item.range_to_frame_idx = range_to_frame_idx
+                item.subtask_annotation = annotation
+
+            session.add(item)
+            session.commit()
+
+    def gen_dataset_optimized_subtask_annotation_content(
+        self,
+        ds_uuid: str,
+        api_key: str,
+    ) -> dict[str, str]:
+        """
+        Generate dataset subtask annotation content.
+        """
+        episode_annotation_json_dict = self._get_dataset_subtask_annotation_json_dict(
+            ds_uuid=ds_uuid
+        )
+        annotation_set = set()
+        for json_str in episode_annotation_json_dict.values():
+            for range_label in json.loads(json_str):
+                annotations = range_label.get("timelinelabels", [])
+                for annotation in annotations:
+                    annotation_set.add(annotation)
+
+        from .subtask_annotation_optimization import optimize_annotation
+
+        optimized_annotation_dict = optimize_annotation(
+            annotation_set=annotation_set, ds_api_key=api_key
+        )
+
+        for ep_idx, json_str in episode_annotation_json_dict.items():
+            for range_label in json.loads(json_str):
+                annotations = range_label.get("timelinelabels", [])
+                ranges = range_label.get("ranges", [])
+                try:
+                    range = ranges[0]
+                    annotation = annotations[0]
+                except IndexError:
+                    raise ValueError(
+                        f"dataset {ds_uuid} has invalid annotation json, ranges or timelinelabels are empty"
+                    )
+                start_frame_idx = range["start"] - 1
+                end_frame_idx = range["end"] - 1
+                optimized_annotation = optimized_annotation_dict[annotation]
+                self._upsert_episode_range_subtask_annotation(
+                    ds_uuid,
+                    ep_idx,
+                    start_frame_idx,
+                    end_frame_idx,
+                    optimized_annotation,
+                )
+
+    def process_dataset_subtask_annotation(self, api_key: str) -> None:
+        while True:
+            ds_uuid = self._gen_one_dataset_subtask_annotation_content_task()
+            if ds_uuid is None:
+                break
+            err_msg = ""
+            try:
+                self.gen_dataset_optimized_subtask_annotation_content(ds_uuid, api_key=api_key)
+                status = TaskStatus.COMPLETED
+            except Exception as e:
+                err_msg = f"{ds_uuid} gen_dataset_optimized_subtask_annotation_content error: {e}"
+                status = TaskStatus.FAILED
+
+            with self.db.with_session() as session:
+                self._upsert_dataset_annotation_content_status(
+                    session=session,
+                    ds_uuid=ds_uuid,
+                    status=status,
+                    err_msg=err_msg,
+                )

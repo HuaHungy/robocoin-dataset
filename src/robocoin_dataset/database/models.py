@@ -413,18 +413,27 @@ class EpisodeRangeSubtaskAnnotationDB(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    episode_id = Column(
-        Integer, ForeignKey("episode_subtask_annotation_content.id"), index=True, nullable=False
-    )
+    dataset_uuid = Column(String, nullable=False, index=True)
+    episode_id = Column(Integer, index=True, nullable=False)
 
     range_from_frame_idx = Column(Integer, nullable=False)
     range_to_frame_idx = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_uuid",
+            "episode_id",
+            "range_from_frame_idx",
+            "range_to_frame_idx",
+            name="unique_episode_range_subtask_annotation",
+        ),
+    )
 
     subtask_annotation = Column(String)
 
 
 class DatasetSubtaskAnnotationContentStatusDB(Base):
-    __tablename__ = "dataset_subtask_annotation_content_status"
+    __tablename__ = "dataset_subtask_annotation_status"
     id = Column(Integer, primary_key=True, index=True)
     dataset_uuid = Column(String(255), index=True, nullable=False)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)

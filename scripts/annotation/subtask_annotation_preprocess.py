@@ -50,7 +50,7 @@ if __name__ == "__main__":
     log = setup_logger(
         name="video_subtask_annotation",
         log_dir=Path(args.log_dir),
-        level=logging.INFO,
+        level=logging.ERROR,
     )
 
     video_subtask_annotation = VideoSubtaskAnnotation(
@@ -61,7 +61,7 @@ if __name__ == "__main__":
         logger=log,
     )
     try:
-        video_subtask_annotation.process_video_subtask_annotation_files()
+        video_subtask_annotation.process_video_subtask_annotation_json_files()
         video_subtask_annotation.sync_download_tasks()
         video_subtask_annotation.download_videos_multi_threads()
         video_subtask_annotation.sync_filehash_tasks()
@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
 python -m scripts.annotation.subtask_annotation_preprocess \
     --db_file ./db/datasets.db \
-    --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/source-files \
-    --json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/destination-files \
+    --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process \
+    --json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/processed-files \
     --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
 """
