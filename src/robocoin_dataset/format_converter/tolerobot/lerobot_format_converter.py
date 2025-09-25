@@ -249,8 +249,11 @@ class LerobotFormatConverter(ABC):
                 )
 
         if len(set(sub_state_names)) != len(sub_state_names):
+            seen = set()
+            duplicates = {x for x in sub_state_names if x in seen or seen.add(x)}
             raise ValueError(
-                f"Convertion config has same state names in {FEATURES_KEY}.{OBSERVATION_KEY}.{STATE_KEY}"
+                f"Convertion config has same state names in {FEATURES_KEY}.{OBSERVATION_KEY}.{STATE_KEY}. "
+                f"Duplicates: {list(duplicates)}"
             )
 
         # check features.action:
