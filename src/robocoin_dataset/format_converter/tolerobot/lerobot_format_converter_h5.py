@@ -47,7 +47,7 @@ ALLOWED_RULES = {
         DEVICE_MODEL_ANNOTATION_FILE,
     },  # 允许的完整文件名
     "allowed_suffixes": {H5_SUFFIX, HDF5_SUFFIX},  # 允许的后缀
-    "other_suffixes": {".yaml", ".txt", ".mp4", ".db", ".doc", ".docx"},
+    "other_suffixes": {".yaml", ".txt", ".mp4", ".db", ".doc", ".docx", ".hdf5"},
 }
 
 # NAS_EADIR = "@eaDir"
