@@ -1,0 +1,193 @@
+fps: 30
+features:
+  observation:
+    images:
+      - cam_name: cam_front_rgb
+        args:
+          h5_path: images/cam_front
+      - cam_name: cam_high_rgb
+        args:
+          h5_path: images/cam_high
+      - cam_name: cam_left_wrist_rgb
+        args:
+          h5_path: images/cam_left_wrist
+      - cam_name: cam_right_wrist_rgb
+        args:
+          h5_path: images/cam_right_wrist
+
+    state:
+      sub_state:
+        # master左臂
+        - names:
+            - master_left_arm_joint_1_rad
+            - master_left_arm_joint_2_rad
+            - master_left_arm_joint_3_rad
+            - master_left_arm_joint_4_rad
+            - master_left_arm_joint_5_rad
+            - master_left_arm_joint_6_rad
+            - master_left_arm_joint_7_rad
+          args:
+            h5_path: master/joint
+            range_from: 0
+            range_to: 7
+        # master右臂
+        - names:
+            - master_right_arm_joint_1_rad
+            - master_right_arm_joint_2_rad
+            - master_right_arm_joint_3_rad
+            - master_right_arm_joint_4_rad
+            - master_right_arm_joint_5_rad
+            - master_right_arm_joint_6_rad
+            - master_right_arm_joint_7_rad
+          args:
+            h5_path: master/joint
+            range_from: 7
+            range_to: 14
+        # puppet左臂
+        - names:
+            - puppet_left_arm_joint_1_rad
+            - puppet_left_arm_joint_2_rad
+            - puppet_left_arm_joint_3_rad
+            - puppet_left_arm_joint_4_rad
+            - puppet_left_arm_joint_5_rad
+            - puppet_left_arm_joint_6_rad
+            - puppet_left_arm_joint_7_rad
+          args:
+            h5_path: puppet/joint
+            range_from: 0
+            range_to: 7
+        # puppet右臂
+        - names:
+            - puppet_right_arm_joint_1_rad
+            - puppet_right_arm_joint_2_rad
+            - puppet_right_arm_joint_3_rad
+            - puppet_right_arm_joint_4_rad
+            - puppet_right_arm_joint_5_rad
+            - puppet_right_arm_joint_6_rad
+            - puppet_right_arm_joint_7_rad
+          args:
+            h5_path: puppet/joint
+            range_from: 7
+            range_to: 14
+        # 其他字段同理（如 eef_pose、effort、velocity），按 0:7/7:14 分割
+
+        # puppet左臂末端姿态
+        - names:
+            - puppet_left_eef_pose_1
+            - puppet_left_eef_pose_2
+            - puppet_left_eef_pose_3
+            - puppet_left_eef_pose_4
+            - puppet_left_eef_pose_5
+            - puppet_left_eef_pose_6
+            - puppet_left_eef_pose_7
+          args:
+            h5_path: puppet/eef_pose
+            range_from: 0
+            range_to: 7
+        # puppet右臂末端姿态
+        - names:
+            - puppet_right_eef_pose_1
+            - puppet_right_eef_pose_2
+            - puppet_right_eef_pose_3
+            - puppet_right_eef_pose_4
+            - puppet_right_eef_pose_5
+            - puppet_right_eef_pose_6
+            - puppet_right_eef_pose_7
+          args:
+            h5_path: puppet/eef_pose
+            range_from: 7
+            range_to: 14
+
+        # puppet左臂力
+        - names:
+            - puppet_left_effort_1
+            - puppet_left_effort_2
+            - puppet_left_effort_3
+            - puppet_left_effort_4
+            - puppet_left_effort_5
+            - puppet_left_effort_6
+            - puppet_left_effort_7
+          args:
+            h5_path: puppet/effort
+            range_from: 0
+            range_to: 7
+        # puppet右臂力
+        - names:
+            - puppet_right_effort_1
+            - puppet_right_effort_2
+            - puppet_right_effort_3
+            - puppet_right_effort_4
+            - puppet_right_effort_5
+            - puppet_right_effort_6
+            - puppet_right_effort_7
+          args:
+            h5_path: puppet/effort
+            range_from: 7
+            range_to: 14
+
+        # puppet左臂速度
+        - names:
+            - puppet_left_velocity_1
+            - puppet_left_velocity_2
+            - puppet_left_velocity_3
+            - puppet_left_velocity_4
+            - puppet_left_velocity_5
+            - puppet_left_velocity_6
+            - puppet_left_velocity_7
+          args:
+            h5_path: puppet/velocity
+            range_from: 0
+            range_to: 7
+        # puppet右臂速度
+        - names:
+            - puppet_right_velocity_1
+            - puppet_right_velocity_2
+            - puppet_right_velocity_3
+            - puppet_right_velocity_4
+            - puppet_right_velocity_5
+            - puppet_right_velocity_6
+            - puppet_right_velocity_7
+          args:
+            h5_path: puppet/velocity
+            range_from: 7
+            range_to: 14
+
+        # 底盘速度
+        - names:
+            - base_velocity_x
+            - base_velocity_y
+          args:
+            h5_path: base/velocity
+            range_from: 0
+            range_to: 2
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      # master左臂动作
+      - names:
+          - master_left_arm_joint_1_rad
+          - master_left_arm_joint_2_rad
+          - master_left_arm_joint_3_rad
+          - master_left_arm_joint_4_rad
+          - master_left_arm_joint_5_rad
+          - master_left_arm_joint_6_rad
+          - master_left_arm_joint_7_rad
+        args:
+          h5_path: master/joint
+          range_from: 0
+          range_to: 7
+      # master右臂动作
+      - names:
+          - master_right_arm_joint_1_rad
+          - master_right_arm_joint_2_rad
+          - master_right_arm_joint_3_rad
+          - master_right_arm_joint_4_rad
+          - master_right_arm_joint_5_rad
+          - master_right_arm_joint_6_rad
+          - master_right_arm_joint_7_rad
+        args:
+          h5_path: master/joint
+          range_from: 7
+          range_to: 14
+      # 其他 action 字段可按实际需求补充
