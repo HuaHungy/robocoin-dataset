@@ -1,0 +1,158 @@
+fps: 30
+features:
+  observation:
+    images:
+      - cam_name: cam_high_rgb
+        args:
+          mcap_topic: /camera_head/color/image_raw/compressed
+      - cam_name: cam_left_wrist_rgb
+        args:
+          mcap_topic: /camera_left/color/image_raw/compressed
+      - cam_name: cam_right_wrist_rgb
+        args:
+          mcap_topic: /camera_right/color/image_raw/compressed
+
+    state:
+      sub_state:
+        - names: 
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_arm_joint_7_rad
+          args:
+            mcap_topic: /right_arm_controller/joint_states
+            range_from: 0
+            range_to: 7
+        - names: 
+            - right_gripper_open
+          args:
+            mcap_topic: /right_arm_controller/rm_driver/gripper_pos
+            range_from: 0
+            range_to: 1
+        - names: 
+            - right_eef_pos_x_m
+            - right_eef_pos_y_m
+            - right_eef_pos_z_m
+          args:
+            mcap_topic: /right_arm_controller/rm_driver/udp_arm_position
+            range_from: 0
+            range_to: 3
+        - names: 
+            - right_eef_rot_euler_x_rad
+            - right_eef_rot_euler_y_rad
+            - right_eef_rot_euler_z_rad
+          args:
+            mcap_topic: /right_arm_controller/rm_driver/udp_arm_position
+            range_from: 3
+            range_to: 6
+          convert_func: rot6d_to_euler_xyz
+        - names: 
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
+            - left_arm_joint_7_rad
+          args:
+            mcap_topic: /left_arm_controller/joint_states
+            range_from: 0
+            range_to: 7
+        - names: 
+            - left_gripper_open_rad
+          args:
+            mcap_topic: /left_arm_controller/rm_driver/gripper_pos
+            range_from: 0
+            range_to: 1
+        - names: 
+            - left_eef_pos_x_m
+            - left_eef_pos_y_m
+            - left_eef_pos_z_m
+          args:
+            mcap_topic: /left_arm_controller/rm_driver/udp_arm_position
+            range_from: 0
+            range_to: 3
+        - names: 
+            - left_eef_rot_euler_x_rad
+            - left_eef_rot_euler_y_rad
+            - left_eef_rot_euler_z_rad
+          args:
+            mcap_topic: /left_arm_controller/rm_driver/udp_arm_position
+            range_from: 3
+            range_to: 6
+          convert_func: rot6d_to_euler_xyz
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      - names: 
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_arm_joint_7_rad
+        args:
+          mcap_topic: /right_arm_controller/joint_states
+          range_from: 0
+          range_to: 7
+      - names: 
+          - right_gripper_open
+        args:
+          mcap_topic: /right_arm_controller/rm_driver/gripper_pos
+          range_from: 0
+          range_to: 1
+      - names: 
+          - right_eef_pos_x_m
+          - right_eef_pos_y_m
+          - right_eef_pos_z_m
+        args:
+          mcap_topic: /right_arm_controller/rm_driver/udp_arm_position
+          range_from: 0
+          range_to: 3
+      - names: 
+          - right_eef_rot_euler_x_rad
+          - right_eef_rot_euler_y_rad
+          - right_eef_rot_euler_z_rad
+        args:
+          mcap_topic: /right_arm_controller/rm_driver/udp_arm_position
+          range_from: 3
+          range_to: 6
+        convert_func: rot6d_to_euler_xyz
+      - names: 
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
+          - left_arm_joint_7_rad
+        args:
+          mcap_topic: /left_arm_controller/joint_states
+          range_from: 0
+          range_to: 7
+      - names: 
+          - left_gripper_open_rad
+        args:
+          mcap_topic: /left_arm_controller/rm_driver/gripper_pos
+          range_from: 0
+          range_to: 1
+      - names: 
+          - left_eef_pos_x_m
+          - left_eef_pos_y_m
+          - left_eef_pos_z_m
+        args:
+          mcap_topic: /left_arm_controller/rm_driver/udp_arm_position
+          range_from: 0
+          range_to: 3
+      - names: 
+          - left_eef_rot_euler_x_rad
+          - left_eef_rot_euler_y_rad
+          - left_eef_rot_euler_z_rad
+        args:
+          mcap_topic: /left_arm_controller/rm_driver/udp_arm_position
+          range_from: 3
