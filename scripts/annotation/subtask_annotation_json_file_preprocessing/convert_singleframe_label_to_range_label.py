@@ -74,7 +74,7 @@ if __name__ == "__main__":
                                 else:
                                     new_data = data
                                 with open(new_file_path, "w") as new_f:
-                                    json.dump(new_data, new_f, indent=4)
+                                    json.dump(new_data, new_f, indent=4, ensure_ascii=False)
 
                                 logger.info(f"已处理 {file}，保存到 {new_file_path}")
 
@@ -96,5 +96,5 @@ if __name__ == "__main__":
     """usage:
     # 功能：
     # 1. 格式检查
-python scripts/annotation/convert_singleframe_label_to_range_label.py --json_dir ~/Downloads/json_label_files --target_json_dir ~/Downloads/json_label_files_range --log_dir ./outputs/logs 
+python scripts/annotation/subtask_annotation_json_file_preprocessing/convert_singleframe_label_to_range_label.py --json_dir ~/Downloads/json_label_files --target_json_dir ~/Downloads/json_label_files_range --log_dir ./outputs/logs 
     """
