@@ -25,10 +25,17 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--json_dst_dir",
+        "--passed_json_dst_dir",
         type=str,
         default="",
-        help="json dst dir",
+        help="dir to save passed json files",
+    )
+
+    argparser.add_argument(
+        "--impassed_json_dst_dir",
+        type=str,
+        default="",
+        help="dir to save impassed json files",
     )
 
     argparser.add_argument(
@@ -62,7 +69,8 @@ if __name__ == "__main__":
     video_subtask_annotation = VideoSubtaskAnnotation(
         db_file_path=args.db_file,
         json_src_dir=args.json_src_dir,
-        json_dst_dir=args.json_dst_dir,
+        passed_json_dst_dir=args.passed_json_dst_dir,
+        impassed_json_dst_dir=args.impassed_json_dst_dir,
         video_dl_dir=args.video_download_dir,
         logger=log,
     )
@@ -76,7 +84,14 @@ if __name__ == "__main__":
 """usages:
 python -m scripts.annotation.process_dataset_subtask_annotation \
     --db_file ./db/datasets.db \
-    --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/source-files \
+    --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process \
     --json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/destination-files \
+    --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
+# 作用：
+python -m scripts.annotation.process_dataset_subtask_annotation \
+    --db_file ./db/datasets.db \
+    --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process \
+    --passed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/passed-files \
+    --impassed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/impassed-files \
     --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
 """

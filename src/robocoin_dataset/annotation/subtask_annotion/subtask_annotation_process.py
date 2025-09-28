@@ -1,9 +1,8 @@
-import argparse
 import json
 import logging
 import sys
-import traceback
 from datetime import datetime
+from itertools import groupby
 from logging.handlers import RotatingFileHandler  # 可选：轮转
 from pathlib import Path
 
@@ -170,6 +169,125 @@ def validate_and_get_label_json_data(data: str | list) -> tuple[list, list[str]]
     return data, []
 
 
+def is_frame_annotation_json(data: str | list) -> bool:
+    data, _ = validate_and_get_label_json_data(data)
+    flags = []
+
+    for ep_item in data:
+        labels = ep_item.get("videoLabels")
+        ep_id = ep_item.get("id")
+        max_end_frame_idx = -1
+        for label in labels:
+            ranges = label.get("ranges")
+            end = ranges[0]["end"]
+            if end > max_end_frame_idx:
+                max_end_frame_idx = end
+        for label in labels:
+            ranges = label.get("ranges")
+            start = ranges[0]["start"]
+            end = ranges[0]["end"]
+            if start == end:
+                if end != max_end_frame_idx:
+                    flags.append((True, ep_id))
+            else:
+                flags.append((False, ep_id))
+
+    flags_set = set(flags)
+    bool_set = set([flag[0] for flag in flags_set])
+    if bool_set == {True}:
+        return True
+    if bool_set == {False}:
+        return False
+    true_ep_ids = [ep_id for flag, ep_id in flags if flag is True]
+    false_ep_ids = [ep_id for flag, ep_id in flags if flag is False]
+
+    if len(true_ep_ids) > len(false_ep_ids):
+        err_msg = f"These episodes are labeled using start < end: {false_ep_ids}"
+    else:
+        err_msg = f"These episodes are labeled using start == end: {true_ep_ids}"
+
+    raise ValueError(
+        "The video subtask annotation contains inconsistent labels. "
+        "Please check the label ranges and make sure they are consistent."
+        f"{err_msg}"
+    )
+
+
+def extract_episodes_ranges(data: list) -> list[list[tuple[int, int]]]:
+    result = []
+    for ep_item in data:
+        ep_result = []
+        ep_labels = ep_item.get("videoLabels")
+        for ranges in ep_labels:
+            ranges = ranges.get("ranges")
+            range0 = ranges[0]
+            start = range0.get("start")
+            end = range0.get("end")
+            ep_result.append((start, end))
+        result.append(ep_result)
+
+    return result
+
+
+def embed_episodes_ranges(data: list[dict], new_ranges: list[list[tuple[int, int]]]) -> list[dict]:
+    """
+    将新的区间列表注入到原始数据的每个 episode 的 videoLabels 中。
+
+    Args:
+        data: 原始 JSON 数据列表，每个元素是一个 episode 的标注
+        new_ranges: 新的区间列表，格式为 [[(s1,e1), (s2,e2), ...], [...], ...]
+
+    Returns:
+        修改后的数据列表（深拷贝，不修改原数据）
+    """
+    import copy
+
+    result = copy.deepcopy(data)  # 避免修改原数据
+    if len(result) != len(new_ranges):
+        raise AssertionError("数据长度不一致")
+
+    for i, ep_item in enumerate(result):
+        ep_new_ranges = new_ranges[i]
+        ep_labels = ep_item.get("videoLabels", [])
+
+        for range_item in ep_labels:
+            # 获取目标 ranges 列表（通常只有一个 range）
+            ranges_list = range_item.get("ranges")
+            if not ranges_list or not isinstance(ranges_list, list):
+                continue
+            if len(ranges_list) == 0:
+                continue
+
+            # 更新第一个 range 的 start 和 end
+            ranges_list[0]["start"] = ep_new_ranges[0][ranges_list[0]["end"]]
+
+    return result
+
+
+def process_singleframe_label(data: list) -> list:
+    singleframe_ranges = extract_episodes_ranges(data)
+    result = []
+    for ep_item in singleframe_ranges:
+        ep_result = []
+        sorted_ranges = sorted(ep_item, key=lambda x: x[0])
+        grouped = [list(group) for _, group in groupby(sorted_ranges, key=lambda x: x[0])]
+        if not grouped:
+            raise AssertionError("没有分组")
+
+        # 处理第一个range
+        end_start_ranges_dict = {}
+        for idx in range(len(grouped)):
+            if idx == 0:
+                end_start_ranges_dict[grouped[idx][0][0]] = 1
+            else:
+                end_start_ranges_dict[grouped[idx][0][0]] = grouped[idx - 1][0][0]
+
+            ep_result.append(end_start_ranges_dict)
+
+        result.append(ep_result)
+
+    return result
+
 
 def validate_coverage(ranges: list[tuple[int, int]], start_frame_idx: int = 0) -> list[str]:
     """
@@ -296,7 +414,7 @@ def validate_annotation_item(item: dict, start_frame_idx: int = 0) -> str:
 
 def validate_annotation_json(data: str | list, start_frame_idx: int = 0) -> list[str]:
     """
-    验证标注 JSON 数据是否满足以下条件：
+    验证标注 JSON 数据(左闭右闭)是否满足以下条件：
     1. 所有 ranges 覆盖从 1 开始的所有帧，无空缺
     2. 每个 videoLabel 的 ranges 只有一个 {start, end}
     3. 每个 videoLabel 的 timelinelabels 只有一个标签
@@ -325,80 +443,22 @@ def validate_annotation_json(data: str | list, start_frame_idx: int = 0) -> list
     return errors
 
 
-if __name__ == "__main__":
-    argparser = argparse.ArgumentParser()
+def lcro2lcrc(data: list[dict]) -> list[dict]:
+    import copy
 
-    argparser.add_argument(
-        "--json_dir",
-        type=str,
-        default="",
-        help="json dir",
-    )
+    new_data = copy.deepcopy(data)  # 避免修改原数据
+    for ep_item in new_data:
+        labels = ep_item.get("videoLabels")
+        max_end_frame_idx = -1
+        for label in labels:
+            ranges = label.get("ranges")
+            end = ranges[0]["end"]
+            if end > max_end_frame_idx:
+                max_end_frame_idx = end
+        for label in labels:
+            ranges = label.get("ranges")
+            end = ranges[0]["end"]
+            if end != max_end_frame_idx:
+                ranges[0]["end"] -= 1
 
-    argparser.add_argument(
-        "--log_dir",
-        type=str,
-        default="outputs/logs/",
-        help="Path to log file.",
-    )
-
-    args = argparser.parse_args()
-
-    logger = setup_logger(
-        name="validate_label_json_files",
-        log_dir=Path(args.log_dir),
-        level=logging.INFO,
-    )
-
-    json_dir = Path(args.json_dir).expanduser().absolute()
-    try:
-        json_files = [
-            file for file in json_dir.iterdir() if file.is_file() and file.suffix == ".json"
-        ]
-        logger.info(f"Found {len(json_files)} json files.")
-        for file in json_files:
-            if file.is_file() and file.suffix == ".json":
-                try:
-                    with open(file) as f:
-                        try:
-                            data = json.load(f)
-                            data, errors = validate_and_get_label_json_data(data)
-                            if errors:
-                                for error in errors:
-                                    if error:
-                                        logger.error(f"File {file} 检验失败: {error}")
-                                        continue
-
-                            try:
-                                is_frame_annotation = is_frame_annotation_json(data)
-                            except Exception as e:
-                                logger.error(f"❌ {file} : {e}")
-                                continue
-
-                            errors = validate_annotation_json(data, start_frame_idx=1)
-                            if errors:
-                                for error in errors:
-                                    if error:
-                                        logger.error(f"File {file} 检验失败: {error}")
-                                        continue
-
-                        except Exception as e:
-                            logger.error(f"{file} 检验失败: {e}")
-                            print(traceback.format_exc())
-
-                except Exception as e:
-                    logger.error(f"处理标注文件 {file} 失败: {e}")
-                    print(traceback.format_exc())
-
-    except Exception:
-        print(traceback.format_exc())
-
-    """usage:
-    python scripts/annotation/validate_label_json_files.py \
-        --json_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process \
-        --log_dir ./outputs/logs 
-
-    python scripts/annotation/validate_label_json_files.py \
-        --json_dir ~/Downloads/modified_json2 \
-        --log_dir ./outputs/logs 
-    """
+    return new_data

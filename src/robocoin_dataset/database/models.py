@@ -331,7 +331,7 @@ class SubtaskAnnotationVideoFileHashDB(Base):
     download_id = Column(
         Integer, ForeignKey("subtask_annotation_video_download.id"), nullable=False, index=True
     )
-    sha256 = Column(String(64), index=True, nullable=True)
+    sha256 = Column(String(64), index=True, nullable=True, unique=True)
     hash_status = Column(
         Enum(FileHashStatus), default=FileHashStatus.PENDING, nullable=False, index=True
     )
@@ -418,18 +418,17 @@ class EpisodeRangeSubtaskAnnotationDB(Base):
 
     range_from_frame_idx = Column(Integer, nullable=False)
     range_to_frame_idx = Column(Integer, nullable=False)
-
+    subtask_annotation = Column(String)
     __table_args__ = (
         UniqueConstraint(
             "dataset_uuid",
             "episode_id",
             "range_from_frame_idx",
             "range_to_frame_idx",
+            "subtask_annotation",
             name="unique_episode_range_subtask_annotation",
         ),
     )
-
-    subtask_annotation = Column(String)
 
 
 class DatasetSubtaskAnnotationContentStatusDB(Base):
@@ -451,3 +450,11 @@ class DatasetSubtaskAnnotationContentDB(Base):
             "dataset_uuid", "ori_content", name="uix_dataset_subtask_annotation_content"
         ),
     )
+
+
+class LerobotSubtaskAnnotationStatusDB(Base):
+    __tablename__ = "leformat_subtask_annotation_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(String, nullable=True)

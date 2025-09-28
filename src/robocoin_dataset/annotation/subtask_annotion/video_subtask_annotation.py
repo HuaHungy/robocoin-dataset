@@ -17,6 +17,9 @@ from sqlalchemy import exists
 from sqlalchemy.orm import Session
 from tqdm import tqdm
 
+from robocoin_dataset.annotation.subtask_annotion.subtask_annotation_process import (
+    validate_annotation_json,
+)
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetAnnotationCorrespondingDB,
@@ -186,107 +189,132 @@ def extract_frame_phashes_ffmpeg(
         return phash_list
 
 
-def validate_annotation_json(data: str | list) -> None:
-    """
-    验证标注 JSON 数据是否满足以下条件：
-    1. 所有 ranges 覆盖从 1 开始的所有帧，无空缺
-    2. 每个 videoLabel 的 ranges 只有一个 {start, end}
-    3. 每个 videoLabel 的 timelinelabels 只有一个标签
+# def validate_coverage(ranges: list[tuple[int, int]]) -> None:
+#     """
+#     验证一组 (start, end) 区间是否覆盖从 1 开始的所有连续帧，无空缺。
+#     使用 左闭右闭 语义：[start, end] 包含 start 和 end。
+#     允许重叠。
 
-    Args:
-        data: JSON 字符串 或 已加载的 Python 对象（list of dicts）
+#     与原版本不同：本函数会收集所有错误，最后统一抛出。
 
-    Returns:
-        True if valid, raises AssertionError otherwise
-    """
-    if isinstance(data, str):
-        data = json.loads(data)
+#     Args:
+#         ranges: 区间列表，每个元素为 (start, end)，包含两端
+#         item_id: 当前项 ID，用于错误信息
 
-    if not isinstance(data, list):
-        raise ValueError("JSON 根节点必须是一个数组")
+#     Raises:
+#         AssertionError: 包含所有错误的汇总信息
+#     """
+#     errors = []  # 收集所有错误信息
 
-    for idx, item in enumerate(data):
-        video_labels = item.get("videoLabels", [])
-        if not isinstance(video_labels, list):
-            raise AssertionError(f"第 {idx + 1} 个条目的 videoLabels 必须是数组")
+#     if not ranges:
+#         errors.append("ranges 不能为空")
+#     else:
+#         # 排序前先做基本合法性检查
+#         for i, (start, end) in enumerate(ranges):
+#             if not isinstance(start, int) or not isinstance(end, int):
+#                 errors.append(f"区间 #{i + 1} ({start}, {end}): start 和 end 必须是整数")
+#                 continue  # 后续检查跳过这个区间
+#             if start < 1:
+#                 errors.append(f"区间 #{i + 1} ({start}, {end}): start 帧不能小于 1")
+#             if end < start:
+#                 errors.append(f"区间 #{i + 1} ({start}, {end}): end 帧不能小于 start 帧")
 
-        if len(video_labels) == 0:
-            raise AssertionError(f"第 {idx + 1} 个条目的 videoLabels 不能为空")
+#         if not errors:  # 只有在基础格式都正确时才进行覆盖检查
+#             sorted_ranges = sorted(ranges, key=lambda x: x[0])
+#             current_end = 0  # 当前已连续覆盖到的最后一个帧
 
-        ranges = []
-        for lbl_idx, label in enumerate(video_labels):
-            # 验证 ranges 长度为 1
-            if not isinstance(label.get("ranges"), list) or len(label["ranges"]) != 1:
-                raise AssertionError(
-                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
-                    f"ranges 必须是一个包含一个元素的数组"
-                )
+#             for start, end in sorted_ranges:
+#                 # 检查是否有空缺
+#                 if start > current_end + 1:
+#                     missing_start = current_end + 1
+#                     missing_end = start - 1
+#                     if missing_start == missing_end:
+#                         gap_msg = f"帧 {missing_start}"
+#                     else:
+#                         gap_msg = f"帧 [{missing_start}, {missing_end}]"
+#                     errors.append(f"存在空缺：{gap_msg} 未被覆盖")
 
-            r = label["ranges"][0]
-            if not isinstance(r, dict) or "start" not in r or "end" not in r:
-                raise AssertionError(
-                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
-                    f"range 必须是 {{'start': ..., 'end': ...}} 格式"
-                )
+#                 # 更新当前覆盖的最远帧
+#                 if end > current_end:
+#                     current_end = end
 
-            start, end = r["start"], r["end"]
-            if not isinstance(start, int) or not isinstance(end, int):
-                raise AssertionError(
-                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: start 和 end 必须是整数"
-                )
-            if start < 1 or end < start:
-                raise AssertionError(
-                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: start >= 1 且 end > start"
-                )
+#             # 最终检查：是否覆盖了帧 1？
+#             if current_end < 1:
+#                 errors.append("至少需要覆盖到帧 1")
 
-            ranges.append((start, end))
-
-            # 验证 timelinelabels 长度为 1
-            timeline_labels = label.get("timelinelabels")
-            if not isinstance(timeline_labels, list) or len(timeline_labels) != 1:
-                raise AssertionError(
-                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
-                    f"timelinelabels 必须是一个包含一个字符串的数组"
-                )
-            if not isinstance(timeline_labels[0], str):
-                raise AssertionError(
-                    f"第 {idx + 1} 个条目, videoLabel #{lbl_idx + 1}: "
-                    f"timelinelabels[0] 必须是字符串"
-                )
-
-        # 验证 range 覆盖连续帧（从 1 开始，无空缺）
-        validate_coverage(ranges, item_id=item.get("id"), entry_idx=idx + 1)
+#     # === 所有检查完成，统一处理错误 ===
+#     if errors:
+#         raise AssertionError(errors)
 
 
-def validate_coverage(
-    ranges: list[tuple[int, int]], item_id: int = None, entry_idx: int = 1
-) -> None:
-    """
-    验证一组 (start, end) 区间是否覆盖从 1 开始的所有帧，无空缺。
-    允许重叠。
-    """
-    if not ranges:
-        raise AssertionError("ranges 不能为空")
+# def validate_annotation_item(item: dict) -> None:
+#     video_labels = item.get("videoLabels", [])
+#     if not isinstance(video_labels, list):
+#         raise AssertionError("videoLabels 必须是数组")
 
-    # 按 start 排序
-    sorted_ranges = sorted(ranges, key=lambda x: x[0])
+#     if len(video_labels) == 0:
+#         raise AssertionError("videoLabels 不能为空")
 
-    current_end = 1  # 当前覆盖到的帧（开区间）
+#     ranges = []
+#     for lbl_idx, label in enumerate(video_labels):
+#         # 验证 ranges 长度为 1
+#         if not isinstance(label.get("ranges"), list) or len(label["ranges"]) != 1:
+#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: ranges 必须是一个包含一个元素的数组")
 
-    for start, end in sorted_ranges:
-        if start < 1:
-            raise AssertionError(f"第 {entry_idx} 个条目 (id={item_id}): start 帧不能小于 1")
+#         r = label["ranges"][0]
+#         if not isinstance(r, dict) or "start" not in r or "end" not in r:
+#             raise AssertionError(
+#                 f"videoLabel #{lbl_idx + 1}: range 必须是 {{'start': ..., 'end': ...}} 格式"
+#             )
 
-        if start > current_end:
-            raise AssertionError(
-                f"第 {entry_idx} 个条目 (id={item_id}): "
-                f"帧 [{current_end}, {start}) 未被覆盖，存在空缺"
-            )
+#         start, end = r["start"], r["end"]
+#         if not isinstance(start, int) or not isinstance(end, int):
+#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: start 和 end 必须是整数")
+#         if start < 1 or end < start:
+#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: start >= 1 且 end > start")
 
-        current_end = max(current_end, end)  # 合并区间
+#         ranges.append((start, end))
 
-    if current_end <= 1:
-        raise AssertionError(f"第 {entry_idx} 个条目 (id={item_id}): 至少需要覆盖到帧 1")
+#         # 验证 timelinelabels 长度为 1
+#         timeline_labels = label.get("timelinelabels")
+#         if not isinstance(timeline_labels, list) or len(timeline_labels) != 1:
+#             raise AssertionError(
+#                 f"videoLabel #{lbl_idx + 1}: timelinelabels 必须是一个包含一个字符串的数组"
+#             )
+#         if not isinstance(timeline_labels[0], str):
+#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: timelinelabels[0] 必须是字符串")
+
+#     # 验证 range 覆盖连续帧（从 1 开始，无空缺）
+#     validate_coverage(ranges)
+
+
+# def validate_annotation_json(data: str | list) -> list[str]:
+#     """
+#     验证标注 JSON 数据是否满足以下条件：
+#     1. 所有 ranges 覆盖从 1 开始的所有帧，无空缺
+#     2. 每个 videoLabel 的 ranges 只有一个 {start, end}
+#     3. 每个 videoLabel 的 timelinelabels 只有一个标签
+
+#     Args:
+#         data: JSON 字符串 或 已加载的 Python 对象（list of dicts）
+
+#     Returns:
+#         err_msg: 错误信息，为空则表示无错误
+#     """
+#     if isinstance(data, str):
+#         data = json.loads(data)
+
+#     if not isinstance(data, list):
+#         raise ValueError("JSON 根节点必须是一个数组")
+
+#     err_msg = []
+#     for idx, item in enumerate(data):
+#         try:
+#             validate_annotation_item(item)
+#         except AssertionError as e:  # noqa: PERF203
+#             err_msg.append(f"第{idx + 1}个条目: {str(e)}")
+
+#     return err_msg
 
 
 class VideoSubtaskAnnotation:
@@ -294,22 +322,27 @@ class VideoSubtaskAnnotation:
         self,
         db_file_path: str | Path,
         json_src_dir: str | Path,
-        json_dst_dir: str | Path,
+        passed_json_dst_dir: str | Path,
+        impassed_json_dst_dir: str | Path,
         video_dl_dir: str | Path,
         logger: logging.Logger | None = None,
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.json_src_dir = Path(json_src_dir).expanduser().absolute()
-        self.json_dst_dir = Path(json_dst_dir).expanduser().absolute()
+        self.passed_json_dst_dir = Path(passed_json_dst_dir).expanduser().absolute()
+        self.impassed_json_dst_dir = Path(impassed_json_dst_dir).expanduser().absolute()
         self.video_dl_dir = Path(video_dl_dir).expanduser().absolute()
         self.logger = logger or logging.getLogger(__name__)
 
         if self.json_src_dir.is_file():
             raise NotADirectoryError(f"Json source directory {self.json_src_dir} is a file")
-        if self.json_dst_dir.is_file():
-            raise NotADirectoryError(f"Json destination directory {self.json_dst_dir} is a file")
-        self.json_dst_dir.mkdir(parents=True, exist_ok=True)
+        if self.passed_json_dst_dir.is_file():
+            raise NotADirectoryError(
+                f"Json destination directory {self.passed_json_dst_dir} is a file"
+            )
+        self.passed_json_dst_dir.mkdir(parents=True, exist_ok=True)
+        self.impassed_json_dst_dir.mkdir(parents=True, exist_ok=True)
         if self.video_dl_dir.is_file():
             raise NotADirectoryError(f"Download directory {self.video_dl_dir} is a file")
         self.video_dl_dir.mkdir(parents=True, exist_ok=True)
@@ -317,49 +350,61 @@ class VideoSubtaskAnnotation:
 
     def process_video_subtask_annotation_json_files(self) -> None:
         source_dir = self.json_src_dir
-        dest_dir = self.json_dst_dir
         json_files = [
             file for file in source_dir.iterdir() if file.is_file() and file.suffix == ".json"
         ]
         for file in tqdm(json_files, desc="Processing Subtask Annotation JSON files", unit="file"):
             if file.is_file() and file.suffix == ".json":
                 try:
+                    success = True
                     with open(file) as f:
                         try:
                             data = json.load(f)
-                            validate_annotation_json(data)
+                            errors = validate_annotation_json(data, start_frame_idx=1)
+                            if errors:
+                                for error in errors:
+                                    if error:
+                                        self.logger.error(f"File {file} 检验失败: {error}")
+                                        success = False
                         except Exception as e:
                             self.logger.error(f"❌ {file} is not a valid annotation json: {e}")
-                            continue
+                            success = False
 
-                        for episode in data:
-                            video_url = episode["video"]
-                            try:
+                        if success:
+                            for episode in data:
+                                video_url = episode["video"]
                                 ep_annotation = json.dumps(episode["videoLabels"])
-                            except Exception as e:
-                                raise Exception(f"Failed to dumpi videoLabels of {episode}") from e
 
-                            with self.db.with_session() as session:
-                                item = (
-                                    session.query(SubtaskAnnotationJsonDB)
-                                    .filter(SubtaskAnnotationJsonDB.video_url == video_url)
-                                    .first()
-                                )
-
-                                if item:
-                                    item.json_content = ep_annotation
-                                    self.logger.info(
-                                        f"⚠️ Video {video_url} already exists in database, this one will covert the old one."
+                                with self.db.with_session() as session:
+                                    item = (
+                                        session.query(SubtaskAnnotationJsonDB)
+                                        .filter(SubtaskAnnotationJsonDB.video_url == video_url)
+                                        .first()
                                     )
-                                else:
-                                    new_entry = SubtaskAnnotationJsonDB(
-                                        video_url=video_url, json_content=ep_annotation
-                                    )
-                                    session.add(new_entry)
 
-                                session.commit()
+                                    if item:
+                                        item.json_content = ep_annotation
+                                        self.logger.info(
+                                            f"⚠️ Video {video_url} already exists in database, this one will covert the old one."
+                                        )
+                                    else:
+                                        new_entry = SubtaskAnnotationJsonDB(
+                                            video_url=video_url, json_content=ep_annotation
+                                        )
+                                        session.add(new_entry)
 
-                    shutil.move(file, dest_dir)
+                                    session.commit()
+
+                    if success:
+                        shutil.move(file, self.passed_json_dst_dir)
+                        self.logger.info(
+                            f"处理标注文件 {file} 成功, the file will be moved to passed_json_dst_dir {self.passed_json_dst_dir}"
+                        )
+                    else:
+                        shutil.move(file, self.impassed_json_dst_dir)
+                        self.logger.error(
+                            f"处理标注文件 {file} 失败, the file will be moved to impassed_json_dst_dir {self.impassed_json_dst_dir}"
+                        )
                 except Exception as e:
                     self.logger.error(f"处理标注文件 {file} 失败: {e}")
 
@@ -678,7 +723,12 @@ class VideoSubtaskAnnotation:
             else:
                 file_hash_task.hash_status = FileHashStatus.FAILED
 
-            session.commit()
+            try:
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                self.logger.error(f"Failed to commit file hash for {id}: {e}")
+                raise e
 
     def _compute_sha256(self, filepath: str) -> str:
         """计算文件的 SHA-256 哈希值"""

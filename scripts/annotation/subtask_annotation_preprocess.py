@@ -25,10 +25,17 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--json_dst_dir",
+        "--passed_json_dst_dir",
         type=str,
         default="",
-        help="json dst dir",
+        help="dir to save passed json files",
+    )
+
+    argparser.add_argument(
+        "--impassed_json_dst_dir",
+        type=str,
+        default="",
+        help="dir to save impassed json files",
     )
 
     argparser.add_argument(
@@ -56,19 +63,19 @@ if __name__ == "__main__":
     video_subtask_annotation = VideoSubtaskAnnotation(
         db_file_path=args.db_file,
         json_src_dir=args.json_src_dir,
-        json_dst_dir=args.json_dst_dir,
+        passed_json_dst_dir=args.passed_json_dst_dir,
+        impassed_json_dst_dir=args.impassed_json_dst_dir,
         video_dl_dir=args.video_download_dir,
         logger=log,
     )
     try:
-        video_subtask_annotation.process_video_subtask_annotation_json_files()
-        video_subtask_annotation.sync_download_tasks()
+        # video_subtask_annotation.process_video_subtask_annotation_json_files()
+        # video_subtask_annotation.sync_download_tasks()
         video_subtask_annotation.download_videos_multi_threads()
         video_subtask_annotation.sync_filehash_tasks()
         video_subtask_annotation.compute_file_hashes_multi_threads()
         video_subtask_annotation.sync_imagehash_tasks()
         video_subtask_annotation.compute_image_hashes_multi_threads()
-        # video_subtask_annotation.compute_image_hashes_single_threads()
 
     except Exception:
         print(traceback.format_exc())
@@ -76,9 +83,10 @@ if __name__ == "__main__":
 """usages:
 # 该程序功能包括：
 1. 对子任务标注json文件进行批处理
-    通过参数 --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/source-files 来指定源文件目录
+    通过参数 --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process 来指定源文件目录
     需要人工将新增的子任务标注json文件复制到该目录下
-    程序自动将通过检查的所有json文件移动至 --json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/destination-files 目录下
+    程序自动将通过检查的所有json文件移动至 --passed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/passed-files 目录下
+    程序自动将未通过检查的所有json文件移动至 --impassed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/impassed-files 目录下
 
 2. 自动生成标注视频下载任务、多线程下载，下载目录为 --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
 
@@ -89,6 +97,7 @@ if __name__ == "__main__":
 python -m scripts.annotation.subtask_annotation_preprocess \
     --db_file ./db/datasets.db \
     --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process \
-    --json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/processed-files \
+    --passed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/passed-files \
+    --impassed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/impassed-files \
     --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
 """
