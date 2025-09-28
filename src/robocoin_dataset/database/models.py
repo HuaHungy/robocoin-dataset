@@ -376,6 +376,7 @@ class SubtaskAnnotationVideoImageHashDB(Base):
 class DatasetAnnotationCorrespondingDB(Base):
     __tablename__ = "dataset_annotation_corresponding"
     id = Column(Integer, primary_key=True, index=True)
+    convert_path = Column(String, index=True, unique=True, nullable=False)
     dataset_uuid = Column(String, index=True, unique=True, nullable=False)
     error_msg = Column(Text, nullable=True)
     corresponding_status = Column(Enum(TaskStatus), nullable=False, default=TaskStatus.FAILED)
@@ -434,6 +435,7 @@ class EpisodeRangeSubtaskAnnotationDB(Base):
 class DatasetSubtaskAnnotationContentStatusDB(Base):
     __tablename__ = "dataset_subtask_annotation_status"
     id = Column(Integer, primary_key=True, index=True)
+    convert_path = Column(String(255), index=True, nullable=False)
     dataset_uuid = Column(String(255), index=True, nullable=False)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_message = Column(String(255), nullable=True)

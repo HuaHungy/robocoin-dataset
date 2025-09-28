@@ -435,7 +435,9 @@ def validate_annotation_json(data: str | list, start_frame_idx: int = 0) -> list
 
     for item in data:
         try:
-            errors.append(validate_annotation_item(item, start_frame_idx=start_frame_idx))
+            error = validate_annotation_item(item, start_frame_idx=start_frame_idx)
+            if error:
+                errors.append(error)
         except AssertionError as e:  # noqa: PERF203
             errors.append(f"Invalid item: {e}")
             continue

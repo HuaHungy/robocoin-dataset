@@ -58,10 +58,13 @@ if __name__ == "__main__":
                             try:
                                 errors = validate_annotation_json(data, start_frame_idx=1)
                                 if errors:
+                                    logger.error(f"Found {len(errors)} errors in {file}")
                                     for error in errors:
                                         if error:
-                                            logger.error(f"File {file} 检验失败: {error}")
+                                            logger.error(f"File {file} 区域覆盖检验失败: {error}")
                                     continue
+                                else:
+                                    logger.info(f"✅ {file} passed.")
 
                             except Exception as e:
                                 logger.error(f"❌ {file} : {e}")
@@ -75,7 +78,8 @@ if __name__ == "__main__":
                     logger.error(f"处理标注文件 {file} 失败: {e}")
                     print(traceback.format_exc())
 
-                passed_files.append(file)
+            passed_files.append(file)
+
         logger.info(f"✅ {len(passed_files)} json files passed.")
         impassed_files = [file for file in json_files if file not in passed_files]
         logger.info(f"✅ {len(impassed_files)} json files failed.")
@@ -90,5 +94,5 @@ if __name__ == "__main__":
     1. 所有 ranges 覆盖从 1 开始的所有帧，无空缺
     2. 每个 videoLabel 的 ranges 只有一个 {start, end}
     3. 每个 videoLabel 的 timelinelabels 只有一个标签
-python scripts/annotation/validate_coverage.py --json_dir ~/Downloads/json_label_files_range_lcrc --log_dir ./outputs/logs 
+python scripts/annotation/subtask_annotation_json_file_preprocessing/validate_coverage.py --json_dir ~/Downloads/json_label_files_range_lcrc --log_dir ./outputs/logs 
     """

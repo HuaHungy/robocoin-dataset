@@ -1267,6 +1267,8 @@ class VideoSubtaskAnnotation:
     def _match_video(
         self,
         video_path: str | Path,
+        using_file_hash: bool = True,
+        using_image_hashes: bool = True,
     ) -> int | None:
         video_path = Path(video_path).expanduser().absolute()
         if not video_path.exists():
@@ -1275,23 +1277,26 @@ class VideoSubtaskAnnotation:
         if video_path.is_dir():
             raise ValueError(f"{video_path} is a directory.")
 
-        sha256_hex = self._compute_sha256(video_path)
+        if using_file_hash:
+            sha256_hex = self._compute_sha256(video_path)
 
-        if sha256_hex in self.video_filehash_lib:
-            return self.video_filehash_lib[sha256_hex]
+            if sha256_hex in self.video_filehash_lib:
+                return self.video_filehash_lib[sha256_hex]
 
-        frame_num = self._get_frame_num(video_path=video_path)
-        frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
+        if using_image_hashes:
+            frame_num = self._get_frame_num(video_path=video_path)
+            frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
 
-        image_hashes = extract_frame_phashes_ffmpeg(
-            video_path=video_path, frame_indices=frame_indices
-        )
+            image_hashes = extract_frame_phashes_ffmpeg(
+                video_path=video_path, frame_indices=frame_indices
+            )
 
-        return self._match_video_image_hashes(
-            frame_num,
-            image_phashes=image_hashes,
-            video_image_phashes_lib=self.video_imagehashes_lib,
-        )
+            return self._match_video_image_hashes(
+                frame_num,
+                image_phashes=image_hashes,
+                video_image_phashes_lib=self.video_imagehashes_lib,
+            )
+        return None
 
     def sync_dataset_annotation_corresponding_task(self) -> None:
         with self.db.with_session() as session:
@@ -1316,32 +1321,32 @@ class VideoSubtaskAnnotation:
             self.logger.info(f"Sync {len(tasks)} subtask annotation corresponding tasks to process")
 
     def _gen_one_dataset_subtask_annotation_corresponding_task(
-        self, ds_uuid: str | None = None
+        self, convert_path: str | None = None
     ) -> tuple[str, str | Path]:
         with self.db.with_session() as session:
-            if ds_uuid is None:
+            if convert_path is None:
                 query = session.query(DatasetAnnotationCorrespondingDB).filter(
                     DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.PENDING
                 )
             else:
                 query = session.query(DatasetAnnotationCorrespondingDB).filter(
                     DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.PENDING,
-                    DatasetAnnotationCorrespondingDB.dataset_uuid == ds_uuid,
+                    DatasetAnnotationCorrespondingDB.convert_path == convert_path,
                 )
             item = query.first()
             if not item:
-                self.logger.warning(f"No subtask annotation task found for dataset {ds_uuid}")
+                self.logger.warning(f"No subtask annotation task found for dataset {convert_path}")
                 return None, None
-            ds_uuid = item.dataset_uuid
+            convert_path = item.dataset_uuid
             self._upsert_dataset_annotation_corresponding_status(
-                session, ds_uuid, TaskStatus.PROCESSING
+                session, convert_path, TaskStatus.PROCESSING
             )
             query = session.query(LeFormatConvertDB).filter(
-                LeFormatConvertDB.dataset_uuid == ds_uuid
+                LeFormatConvertDB.dataset_uuid == convert_path
             )
             item = query.first()
 
-            return ds_uuid, item.convert_path
+            return convert_path, item.convert_path
 
     def _get_annotationid_from_downloadid(self, download_id: int) -> int | None:
         with self.db.with_session() as session:
@@ -1407,14 +1412,27 @@ class VideoSubtaskAnnotation:
             item.corresponding_status = status
             item.error_msg = err_msg
         else:
+            query = session.query(LeFormatConvertDB.convert_path).filter(
+                LeFormatConvertDB.dataset_uuid == ds_uuid
+            )
+            print(query.first().convert_path)
             item = DatasetAnnotationCorrespondingDB(
-                dataset_uuid=ds_uuid, corresponding_status=status, error_msg=err_msg
+                convert_path=query.first().convert_path,
+                dataset_uuid=ds_uuid,
+                corresponding_status=status,
+                error_msg=err_msg,
             )
 
         session.add(item)
         session.commit()
 
-    def _correspond_dataset_subtask_annotation(self, ds_uuid: str, ds_path: str | Path) -> None:
+    def _correspond_dataset_subtask_annotation(
+        self,
+        ds_uuid: str,
+        ds_path: str | Path,
+        using_file_hash: bool = True,
+        using_image_hash: bool = True,
+    ) -> None:
         ds_path: Path = Path(ds_path).expanduser().absolute()
         if not ds_path.exists():
             raise ValueError(f"{ds_path} not exists")
@@ -1453,7 +1471,11 @@ class VideoSubtaskAnnotation:
             for camera_name in camera_videos.keys():
                 if not camera_labels[camera_name]:
                     continue
-                video_download_id = self._match_video(camera_videos[camera_name][ep_idx])
+                video_download_id = self._match_video(
+                    camera_videos[camera_name][ep_idx],
+                    using_file_hash=using_file_hash,
+                    using_image_hashes=using_image_hash,
+                )
                 if video_download_id:
                     # Found matched video
                     break
@@ -1461,7 +1483,11 @@ class VideoSubtaskAnnotation:
 
             if not video_download_id:
                 for camera_name in camera_videos.keys():
-                    video_download_id = self._match_video(camera_videos[camera_name][ep_idx])
+                    video_download_id = self._match_video(
+                        camera_videos[camera_name][ep_idx],
+                        using_file_hash=using_file_hash,
+                        using_image_hashes=using_image_hash,
+                    )
                     if video_download_id:
                         # Found matched video
                         camera_labels[camera_name] = True
@@ -1503,12 +1529,17 @@ class VideoSubtaskAnnotation:
                 error_epindices=error_epindices,
             )
 
-    def correspond_dataset_subtask_annotations(self, ds_uuids: list[str] | None = None) -> None:
+    def correspond_dataset_subtask_annotations(
+        self,
+        ds_convert_paths: list[str] | None = None,
+        using_file_hash: bool = True,
+        using_image_hash: bool = True,
+    ) -> None:
         self.logger.info("Loading video file hashes lib ...")
         self.prepare_video_filehash_lib()
         self.logger.info("Loading video image hashes lib ...")
         self.prepare_video_imagehashes_lib()
-        if ds_uuids is None:
+        if ds_convert_paths is None:
             while True:
                 task = self._gen_one_dataset_subtask_annotation_corresponding_task()
                 if not task:
@@ -1521,18 +1552,28 @@ class VideoSubtaskAnnotation:
                 self.logger.info(f"Corresponding subtask annotation for dataset: {convert_path}")
                 if convert_path is None:
                     raise ValueError("Please specify the convert path")
-                self._correspond_dataset_subtask_annotation(ds_uuid=uuid, ds_path=convert_path)
+                self._correspond_dataset_subtask_annotation(
+                    ds_uuid=uuid,
+                    ds_path=convert_path,
+                    using_file_hash=using_file_hash,
+                    using_image_hash=using_image_hash,
+                )
 
             return
 
-        for ds_uuid in ds_uuids:
+        for convert_path in ds_convert_paths:
             uuid, convert_path = self._gen_one_dataset_subtask_annotation_corresponding_task(
-                ds_uuid=ds_uuid
+                convert_path=convert_path
             )
             if uuid is None:
                 self.logger.warning("Failed to generate corresponding task for dataset: {ds_uuid}")
                 continue
-            self._correspond_dataset_subtask_annotation(ds_uuid=uuid, ds_path=convert_path)
+            self._correspond_dataset_subtask_annotation(
+                ds_uuid=uuid,
+                ds_path=convert_path,
+                using_file_hash=using_file_hash,
+                using_image_hash=using_image_hash,
+            )
 
     def _upsert_dataset_annotation_content_status(
         self, session: Session, ds_uuid: str, status: TaskStatus, err_msg: str = None
