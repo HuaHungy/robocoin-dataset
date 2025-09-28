@@ -43,6 +43,10 @@ discover_robotics_aitbot_mmk2:
   module: robocoin_dataset.statics.episode_frames_collector_mmk
   class: EpisodeFramesCollectorMMK
 
+galbo:
+  module: robocoin_dataset.statistic.episode_frames_collector_galbo
+  class: EpisodeFramesCollectorGalbo
+
 
 # unitree_g1
 # galaxea_r1_lite
