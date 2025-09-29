@@ -460,3 +460,50 @@ class LerobotSubtaskAnnotationStatusDB(Base):
     dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_msg = Column(String, nullable=True)
+
+
+class LeformatEpisodeVideoHashDB(Base):
+    __tablename__ = "leformat_episode_video_hash"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    video_path = Column(String(255), index=True, nullable=False)
+    file_hash = Column(String(255), index=True, nullable=False)
+    frame_num = Column(Integer, index=True, nullable=False)
+    image_hashes = Column(LargeBinary, index=False, nullable=False)
+
+
+class LeformatEpisodeVideoHashStatusDB(Base):
+    __tablename__ = "leformat_episode_video_hash_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=False)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+
+
+class LeformatEpisodeVideoCorrespondWithDownLoadVideoStatusDB(Base):
+    __tablename__ = "leformat_episode_video_correspond_with_download_video_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=False)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+
+
+class LeformatEpisodeVideoCorrespondWithDownLoadVideoDB(Base):
+    __tablename__ = "leformat_episode_video_correspond_with_download_video"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    video_path = Column()
+    corresponding_dowload_video_id = Column(
+        Integer, ForeignKey("SubtaskAnnotationVideoDownloadDB.id"), nullable=True
+    )
+
+
+class UrlVideoStAnnotationDB(Base):
+    __tablename__ = "url_video_subtask_annotation"
+    id = Column(Integer, primary_key=True, index=True)
+    video_url = Column(String(255), index=True, nullable=False)
+    start_frame_idx = Column(Integer, index=True, nullable=False)
+    end_frame_idx = Column(Integer, index=True, nullable=False)
+    annotation = Column(String(255), nullable=False)

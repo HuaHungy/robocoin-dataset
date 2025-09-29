@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import logging
 import os
@@ -31,6 +32,8 @@ from robocoin_dataset.database.models import (
     FileHashStatus,
     ImageHashStatus,
     LeFormatConvertDB,
+    LeformatEpisodeVideoHashDB,
+    LeformatEpisodeVideoHashStatusDB,
     SubtaskAnnotationJsonDB,
     SubtaskAnnotationVideoDownloadDB,
     SubtaskAnnotationVideoFileHashDB,
@@ -187,135 +190,6 @@ def extract_frame_phashes_ffmpeg(
                 phash_list.append(None)
 
         return phash_list
-
-
-# def validate_coverage(ranges: list[tuple[int, int]]) -> None:
-#     """
-#     验证一组 (start, end) 区间是否覆盖从 1 开始的所有连续帧，无空缺。
-#     使用 左闭右闭 语义：[start, end] 包含 start 和 end。
-#     允许重叠。
-
-#     与原版本不同：本函数会收集所有错误，最后统一抛出。
-
-#     Args:
-#         ranges: 区间列表，每个元素为 (start, end)，包含两端
-#         item_id: 当前项 ID，用于错误信息
-
-#     Raises:
-#         AssertionError: 包含所有错误的汇总信息
-#     """
-#     errors = []  # 收集所有错误信息
-
-#     if not ranges:
-#         errors.append("ranges 不能为空")
-#     else:
-#         # 排序前先做基本合法性检查
-#         for i, (start, end) in enumerate(ranges):
-#             if not isinstance(start, int) or not isinstance(end, int):
-#                 errors.append(f"区间 #{i + 1} ({start}, {end}): start 和 end 必须是整数")
-#                 continue  # 后续检查跳过这个区间
-#             if start < 1:
-#                 errors.append(f"区间 #{i + 1} ({start}, {end}): start 帧不能小于 1")
-#             if end < start:
-#                 errors.append(f"区间 #{i + 1} ({start}, {end}): end 帧不能小于 start 帧")
-
-#         if not errors:  # 只有在基础格式都正确时才进行覆盖检查
-#             sorted_ranges = sorted(ranges, key=lambda x: x[0])
-#             current_end = 0  # 当前已连续覆盖到的最后一个帧
-
-#             for start, end in sorted_ranges:
-#                 # 检查是否有空缺
-#                 if start > current_end + 1:
-#                     missing_start = current_end + 1
-#                     missing_end = start - 1
-#                     if missing_start == missing_end:
-#                         gap_msg = f"帧 {missing_start}"
-#                     else:
-#                         gap_msg = f"帧 [{missing_start}, {missing_end}]"
-#                     errors.append(f"存在空缺：{gap_msg} 未被覆盖")
-
-#                 # 更新当前覆盖的最远帧
-#                 if end > current_end:
-#                     current_end = end
-
-#             # 最终检查：是否覆盖了帧 1？
-#             if current_end < 1:
-#                 errors.append("至少需要覆盖到帧 1")
-
-#     # === 所有检查完成，统一处理错误 ===
-#     if errors:
-#         raise AssertionError(errors)
-
-
-# def validate_annotation_item(item: dict) -> None:
-#     video_labels = item.get("videoLabels", [])
-#     if not isinstance(video_labels, list):
-#         raise AssertionError("videoLabels 必须是数组")
-
-#     if len(video_labels) == 0:
-#         raise AssertionError("videoLabels 不能为空")
-
-#     ranges = []
-#     for lbl_idx, label in enumerate(video_labels):
-#         # 验证 ranges 长度为 1
-#         if not isinstance(label.get("ranges"), list) or len(label["ranges"]) != 1:
-#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: ranges 必须是一个包含一个元素的数组")
-
-#         r = label["ranges"][0]
-#         if not isinstance(r, dict) or "start" not in r or "end" not in r:
-#             raise AssertionError(
-#                 f"videoLabel #{lbl_idx + 1}: range 必须是 {{'start': ..., 'end': ...}} 格式"
-#             )
-
-#         start, end = r["start"], r["end"]
-#         if not isinstance(start, int) or not isinstance(end, int):
-#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: start 和 end 必须是整数")
-#         if start < 1 or end < start:
-#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: start >= 1 且 end > start")
-
-#         ranges.append((start, end))
-
-#         # 验证 timelinelabels 长度为 1
-#         timeline_labels = label.get("timelinelabels")
-#         if not isinstance(timeline_labels, list) or len(timeline_labels) != 1:
-#             raise AssertionError(
-#                 f"videoLabel #{lbl_idx + 1}: timelinelabels 必须是一个包含一个字符串的数组"
-#             )
-#         if not isinstance(timeline_labels[0], str):
-#             raise AssertionError(f"videoLabel #{lbl_idx + 1}: timelinelabels[0] 必须是字符串")
-
-#     # 验证 range 覆盖连续帧（从 1 开始，无空缺）
-#     validate_coverage(ranges)
-
-
-# def validate_annotation_json(data: str | list) -> list[str]:
-#     """
-#     验证标注 JSON 数据是否满足以下条件：
-#     1. 所有 ranges 覆盖从 1 开始的所有帧，无空缺
-#     2. 每个 videoLabel 的 ranges 只有一个 {start, end}
-#     3. 每个 videoLabel 的 timelinelabels 只有一个标签
-
-#     Args:
-#         data: JSON 字符串 或 已加载的 Python 对象（list of dicts）
-
-#     Returns:
-#         err_msg: 错误信息，为空则表示无错误
-#     """
-#     if isinstance(data, str):
-#         data = json.loads(data)
-
-#     if not isinstance(data, list):
-#         raise ValueError("JSON 根节点必须是一个数组")
-
-#     err_msg = []
-#     for idx, item in enumerate(data):
-#         try:
-#             validate_annotation_item(item)
-#         except AssertionError as e:  # noqa: PERF203
-#             err_msg.append(f"第{idx + 1}个条目: {str(e)}")
-
-#     return err_msg
-
 
 class VideoSubtaskAnnotation:
     def __init__(
@@ -1298,6 +1172,17 @@ class VideoSubtaskAnnotation:
             )
         return None
 
+    def _match_video_with_hash(
+        self, file_hash: str, frame_num: int, image_hashes: list[imagehash.ImageHash]
+    ) -> int | None:
+        if file_hash in self.video_filehash_lib:
+            return self.video_filehash_lib[file_hash]
+        return self._match_video_image_hashes(
+            frame_num,
+            image_phashes=image_hashes,
+            video_image_phashes_lib=self.video_imagehashes_lib,
+        )
+
     def sync_dataset_annotation_corresponding_task(self) -> None:
         with self.db.with_session() as session:
             query = (
@@ -1415,7 +1300,6 @@ class VideoSubtaskAnnotation:
             query = session.query(LeFormatConvertDB.convert_path).filter(
                 LeFormatConvertDB.dataset_uuid == ds_uuid
             )
-            print(query.first().convert_path)
             item = DatasetAnnotationCorrespondingDB(
                 convert_path=query.first().convert_path,
                 dataset_uuid=ds_uuid,
@@ -1425,6 +1309,139 @@ class VideoSubtaskAnnotation:
 
         session.add(item)
         session.commit()
+
+
+    def _correspond_leformat_episode_videos_with_download_videos(
+        self,
+        ds_uuid: str,
+        using_file_hash: bool = True,
+        using_image_hash: bool = True,
+    ) -> None:
+        with self.db.with_session() as session:
+            items= session.query(LeformatEpisodeVideoHashDB).filter(
+                LeformatEpisodeVideoHashStatusDB.dataset_uuid == ds_uuid
+            ).
+
+
+    #     annotation_id_dict = {}
+    #     success_ep_set = set()
+    #     failed_ep_set = set()
+    #     pbar = tqdm(
+    #         range(len(camera_videos[temp_camera_name])), desc="对齐Episode标注文件", unit="episode"
+    #     )
+    #     for ep_idx in pbar:
+    #         with self.db.with_session() as session:
+    #             if self._get_epidx_annoidx_corresponding(
+    #                 session=session, ds_uuid=ds_uuid, ep_idx=ep_idx
+    #             ):
+    #                 continue
+    #         video_download_id = None
+    #         for camera_name in camera_videos.keys():
+    #             if not camera_labels[camera_name]:
+    #                 continue
+    #             video_download_id = self._match_video(
+    #                 camera_videos[camera_name][ep_idx],
+    #                 using_file_hash=using_file_hash,
+    #                 using_image_hashes=using_image_hash,
+    #             )
+    #             if video_download_id:
+    #                 # Found matched video
+    #                 break
+    #             camera_labels[camera_name] = False
+
+    #         if not video_download_id:
+    #             for camera_name in camera_videos.keys():
+    #                 video_download_id = self._match_video(
+    #                     camera_videos[camera_name][ep_idx],
+    #                     using_file_hash=using_file_hash,
+    #                     using_image_hashes=using_image_hash,
+    #                 )
+    #                 if video_download_id:
+    #                     # Found matched video
+    #                     camera_labels[camera_name] = True
+    #                     break
+
+    #         if video_download_id:
+    #             annotation_id = self._get_annotationid_from_downloadid(video_download_id)
+    #             annotation_id_dict[ep_idx] = annotation_id
+    #             with self.db.with_session() as session:
+    #                 self._upsert_epidx_annoidx_corresponding(
+    #                     session=session,
+    #                     ds_uuid=ds_uuid,
+    #                     ep_idx=ep_idx,
+    #                     annotation_idx=annotation_id,
+    #                 )
+    #             success_ep_set.add(ep_idx)
+    #         if not video_download_id:
+    #             failed_ep_set.add(ep_idx)
+    #             pbar.set_postfix(
+    #                 {
+    #                     "失败数": len(failed_ep_set),
+    #                 }
+    #             )
+
+    #     error_epindices = [
+    #         ep_idx
+    #         for ep_idx in range(len(camera_videos[temp_camera_name]))
+    #         if ep_idx not in success_ep_set
+    #     ]
+    #     if error_epindices:
+    #         status = TaskStatus.FAILED
+    #     else:
+    #         status = TaskStatus.COMPLETED
+    #     with self.db.with_session() as session:
+    #         self._upsert_dataset_annotation_corresponding_status(
+    #             session=session,
+    #             ds_uuid=ds_uuid,
+    #             status=status,
+    #             error_epindices=error_epindices,
+    #         )
+
+    # def correspond_dataset_subtask_annotations(
+    #     self,
+    #     ds_convert_paths: list[str] | None = None,
+    #     using_file_hash: bool = True,
+    #     using_image_hash: bool = True,
+    # ) -> None:
+    #     self.logger.info("Loading video file hashes lib ...")
+    #     self.prepare_video_filehash_lib()
+    #     self.logger.info("Loading video image hashes lib ...")
+    #     self.prepare_video_imagehashes_lib()
+    #     if ds_convert_paths is None:
+    #         while True:
+    #             task = self._gen_one_dataset_subtask_annotation_corresponding_task()
+    #             if not task:
+    #                 self.logger.info("All task completed, no task to process")
+    #                 break
+
+    #             uuid = task[0]
+    #             convert_path = task[1]
+
+    #             self.logger.info(f"Corresponding subtask annotation for dataset: {convert_path}")
+    #             if convert_path is None:
+    #                 raise ValueError("Please specify the convert path")
+    #             self._correspond_dataset_subtask_annotation(
+    #                 ds_uuid=uuid,
+    #                 ds_path=convert_path,
+    #                 using_file_hash=using_file_hash,
+    #                 using_image_hash=using_image_hash,
+    #             )
+
+    #         return
+
+    #     for convert_path in ds_convert_paths:
+    #         uuid, convert_path = self._gen_one_dataset_subtask_annotation_corresponding_task(
+    #             convert_path=convert_path
+    #         )
+    #         if uuid is None:
+    #             self.logger.warning("Failed to generate corresponding task for dataset: {ds_uuid}")
+    #             continue
+    #         self._correspond_dataset_subtask_annotation(
+    #             ds_uuid=uuid,
+    #             ds_path=convert_path,
+    #             using_file_hash=using_file_hash,
+    #             using_image_hash=using_image_hash,
+    #         )
 
     def _correspond_dataset_subtask_annotation(
         self,
@@ -1684,36 +1701,6 @@ class VideoSubtaskAnnotation:
             )
             return {item.episode_idx: item.json_content for item in results}
 
-    # 提取为字符串列表
-
-    # def _get_dataset_subtask_annotation_set(
-    #     self,
-    #     ds_uuid: str,
-    # ) -> set[str]:
-    #     annotation_set = set()
-    #     json_list = self._get_dataset_subtask_annotation_json_dict(ds_uuid=ds_uuid)
-    #     for json_item in json_list:
-    #         video_labels = json_item["videoLabels"]
-    #         print(video_labels)
-    #         for video_label in video_labels:
-    #             annotations = video_label.get("timelinelabels", [])
-    #             for annotation in annotations:
-    #                 annotation_set.add(annotation)
-
-    #     return annotation_set
-
-    # def optimize_dataset_subtask_annotation_content(
-    #     self,
-    #     ds_uuid: str,
-    #     api_key: str,
-    # ) -> dict[str, str]:
-    #     """
-    #     Generate dataset subtask annotation content.
-    #     """
-    #     annotation_set = self._get_dataset_subtask_annotation_set(ds_uuid=ds_uuid)
-    #     from .subtask_annotation_optimization import optimize_annotation
-
-    #     return optimize_annotation(annotation_set=annotation_set, ds_api_key=api_key)
 
     def _upsert_episode_range_subtask_annotation(
         self,
@@ -1818,3 +1805,197 @@ class VideoSubtaskAnnotation:
                     status=status,
                     err_msg=err_msg,
                 )
+
+    def sync_leformat_episode_video_hash_status(self) -> None:
+        with self.db.with_session() as session:
+            query = (
+                session.query(LeFormatConvertDB.dataset_uuid, LeFormatConvertDB.convert_path)
+                .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
+                .filter(
+                    ~session.query(LeFormatConvertDB)
+                    .filter(
+                        LeformatEpisodeVideoHashStatusDB.dataset_uuid
+                        == LeFormatConvertDB.dataset_uuid
+                    )
+                    .exists()
+                )
+            )
+
+            tasks = list(query.all())
+            for ds_uuid, convert_path in tasks:
+                self._upsert_leformat_episode_video_hash_status(
+                    session=session,
+                    ds_uuid=ds_uuid,
+                    convert_path=convert_path,
+                    status=TaskStatus.PENDING,
+                )
+
+    def _upsert_leformat_episode_video_hash(
+        self,
+        session: Session,
+        ds_uuid: str,
+        ep_idx: int,
+        video_path: str,
+        file_hash: str,
+        frame_num: int,
+        image_hashes: bytes,
+    ) -> None:
+        item = (
+            session.query(LeformatEpisodeVideoHashDB)
+            .filter(LeformatEpisodeVideoHashDB.dataset_uuid == ds_uuid)
+            .filter(LeformatEpisodeVideoHashDB.video_path == video_path)
+            .first()
+        )
+        if item is None:
+            item = LeformatEpisodeVideoHashDB(
+                dataset_uuid=ds_uuid,
+                episode_idx=ep_idx,
+                video_path=video_path,
+                file_hash=file_hash,
+                frame_num=frame_num,
+                image_hashes=image_hashes,
+            )
+            session.add(item)
+        else:
+            item.file_hash = file_hash
+            item.image_hashes = image_hashes
+
+        session.commit()
+
+    def _upsert_leformat_episode_video_hash_status(
+        self,
+        session: Session,
+        ds_uuid: str,
+        convert_path: str,
+        status: TaskStatus,
+    ) -> None:
+        item = (
+            session.query(LeformatEpisodeVideoHashStatusDB)
+            .filter(LeformatEpisodeVideoHashStatusDB.dataset_uuid == ds_uuid)
+            .filter(LeformatEpisodeVideoHashStatusDB.convert_path == convert_path)
+        ).first()
+        if item:
+            item.status = status
+        else:
+            item = LeformatEpisodeVideoHashStatusDB(
+                dataset_uuid=ds_uuid,
+                convert_path=convert_path,
+                status=status,
+            )
+            session.add(item)
+        session.commit()
+
+    def _gen_one_leformat_episode_video_hash_task(self) -> tuple[str, str]:
+        """
+        生成一个处理视频文件的任务。
+
+        :return: (ds_uuid, convert_path, ep_idx, video_path)
+        """
+        with self.db.with_session() as session:
+            item = (
+                session.query(
+                    LeformatEpisodeVideoHashStatusDB.dataset_uuid,
+                    LeformatEpisodeVideoHashStatusDB.convert_path,
+                    LeformatEpisodeVideoHashStatusDB.status,
+                )
+                .filter(LeformatEpisodeVideoHashStatusDB.status == TaskStatus.PENDING)
+                .first()
+            )
+            if item is None:
+                return None
+            self._upsert_leformat_episode_video_hash_status(
+                session=session,
+                ds_uuid=item.dataset_uuid,
+                convert_path=item.convert_path,
+                status=TaskStatus.PROCESSING,
+            )
+            return item.dataset_uuid, item.convert_path
+
+    def compute_leformat_episode_video_image_hashes_threas_pool(self, num_workers: int = 8) -> None:
+        """
+        启动多个工作线程，并发计算所有待处理视频文件的 SHA256 哈希值。
+
+        :param num_workers: 工作线程数量
+        """
+        # 先统计总任务数
+        # tuple = (ds_uuid, convert_path, ep_idx, video_path)
+        tasks: list[tuple[str, int, str]] = []
+        with self.db.with_session() as session:
+            datasets_tasks = (
+                session.query(
+                    LeformatEpisodeVideoHashStatusDB.dataset_uuid,
+                    LeformatEpisodeVideoHashStatusDB.convert_path,
+                )
+                .filter(LeformatEpisodeVideoHashStatusDB.status == ImageHashStatus.PENDING)
+                .all()
+            )
+
+        self.logger.info(f"🚀 启动 {num_workers} 个Episode Video Hash及指纹计算线程...")
+        # 创建进度条
+
+        def process_item(item: tuple[str, int, str]) -> None:
+            ds_uuid, ep_idx, video_path = item
+            if video_path is None:
+                return
+            if not video_path.exists():
+                return
+
+            file_hash = self._compute_sha256(video_path)
+
+            frame_num = self._get_frame_num(video_path=video_path)
+
+            image_frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
+            phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
+                video_path=video_path, frame_indices=image_frame_indices
+            )
+            serialized_hashes = pickle.dumps(phashes)
+
+            with self.db.with_session() as session:
+                self._upsert_leformat_episode_video_hash(
+                    session=session,
+                    ds_uuid=ds_uuid,
+                    video_path=str(video_path),
+                    ep_idx=ep_idx,
+                    file_hash=file_hash,
+                    frame_num=frame_num,
+                    image_hashes=serialized_hashes,
+                )
+
+        num_datasets = len(list(datasets_tasks))
+        ds_pbar = tqdm(
+            total=num_datasets, desc="🔐 计算数据集视频指纹哈希", unit="dataset", dynamic_ncols=True
+        )
+        while True:
+            item = self._gen_one_leformat_episode_video_hash_task()
+            if item is None:
+                break
+            ds_uuid, convert_path = item
+            tasks = []
+            for video_path in Path(convert_path).expanduser().absolute().rglob("*.mp4"):
+                try:
+                    ep_idx = int(video_path.with_suffix("").name.split("_")[-1])
+                    tasks.append((ds_uuid, ep_idx, video_path))
+                except Exception:  # noqa: PERF203
+                    continue
+            ep_pbar = tqdm(
+                total=len(tasks),
+                desc=f"🔐 启动数据集{convert_path}视频文件处理线程",
+                unit="video",
+                dynamic_ncols=True,
+            )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+                results = executor.map(process_item, tasks)
+                for _ in results:
+                    ep_pbar.update(1)
+
+            with self.db.with_session() as session:
+                self._upsert_leformat_episode_video_hash_status(
+                    session=session,
+                    ds_uuid=ds_uuid,
+                    convert_path=convert_path,
+                    status=ImageHashStatus.SUCCESS,
+                )
+            ds_pbar.update(1)
+
+        self.logger.info("🎉 所有Episode Videos 文件Hash及视频指纹计算任务已完成！")
