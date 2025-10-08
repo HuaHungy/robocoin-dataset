@@ -1,0 +1,67 @@
+fps: 50
+features:
+  observation:
+    images:
+      - cam_name: cam_high_rgb
+        args:
+          cam_name: cam_high_rgb
+          video_file_pattern: "*cam_high.mp4"
+      - cam_name: cam_left_wrist_rgb
+        args:
+          cam_name: cam_left_wrist_rgb
+          video_file_pattern: "*cam_left_wrist.mp4"
+      - cam_name: cam_right_wrist_rgb
+        args:
+          cam_name: cam_right_wrist_rgb
+          video_file_pattern: "*cam_right_wrist.mp4"
+
+    state:
+      sub_state:
+        - names:
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
+            - left_gripper_open
+          args:
+            range_from: 0
+            range_to: 7
+        - names:
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_gripper_open
+          args:
+            range_from: 7
+            range_to: 14
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      - names:
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
+          - left_gripper_open
+        args:
+          range_from: 0
+          range_to: 7
+      - names:
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_gripper_open
+        args:
+          range_from: 7
+          range_to: 14

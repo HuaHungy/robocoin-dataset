@@ -1,0 +1,113 @@
+fps: 30
+features:
+  observation:
+    images:
+      - cam_name: camera_front_head_rgb
+        args:
+          cam_name: camera_front_head_rgb
+          video_file_pattern: "*camera_front_head_rgb.mp4"
+      - cam_name: camera_left_wrist
+        args:
+          cam_name: camera_left_wrist
+          video_file_pattern: "*camera_left_wrist.mp4"
+      - cam_name: camera_right_wrist
+        args:
+          cam_name: camera_right_wrist
+          video_file_pattern: "*camera_right_wrist.mp4"
+
+    state:
+      sub_state:
+        - names:
+            - body_joint_0
+            - body_joint_1
+            - body_joint_2
+          args:
+            json_path: state_body_joint_position
+            range_from: 0
+            range_to: 3
+        - names:
+            - head_joint_0
+            - head_joint_1
+          args:
+            json_path: state_front_head_joint
+            range_from: 0
+            range_to: 2
+        - names:
+            - left_arm_joint_0
+            - left_arm_joint_1
+            - left_arm_joint_2
+            - left_arm_joint_3
+            - left_arm_joint_4
+            - left_arm_joint_5
+            - left_arm_joint_6
+          args:
+            json_path: state_left_arm_joint_position
+            range_from: 0
+            range_to: 7
+        - names:
+            - left_gripper_width
+          args:
+            json_path: state_left_arm_gripper_width
+            range_from: 0
+            range_to: 1
+        - names:
+            - right_arm_joint_0
+            - right_arm_joint_1
+            - right_arm_joint_2
+            - right_arm_joint_3
+            - right_arm_joint_4
+            - right_arm_joint_5
+            - right_arm_joint_6
+          args:
+            json_path: state_right_arm_joint_position
+            range_from: 0
+            range_to: 7
+        - names:
+            - right_gripper_width
+          args:
+            json_path: state_right_arm_gripper_width
+            range_from: 0
+            range_to: 1
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      - names:
+          - body_joint_0
+          - body_joint_1
+          - body_joint_2
+        args:
+          json_path: cmd_body_joint
+          range_from: 0
+          range_to: 3
+      - names:
+          - head_joint_0
+          - head_joint_1
+        args:
+          json_path: cmd_head_joint_state
+          range_from: 0
+          range_to: 2
+      - names:
+          - left_arm_joint_0
+          - left_arm_joint_1
+          - left_arm_joint_2
+          - left_arm_joint_3
+          - left_arm_joint_4
+          - left_arm_joint_5
+          - left_arm_joint_6
+        args:
+          json_path: cmd_left_joint_state
+          range_from: 0
+          range_to: 7
+      - names:
+          - right_arm_joint_0
+          - right_arm_joint_1
+          - right_arm_joint_2
+          - right_arm_joint_3
+          - right_arm_joint_4
+          - right_arm_joint_5
+          - right_arm_joint_6
+        args:
+          json_path: cmd_right_joint_state
+          range_from: 0
+          range_to: 7

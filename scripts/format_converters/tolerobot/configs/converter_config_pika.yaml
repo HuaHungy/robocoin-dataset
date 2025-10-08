@@ -1,0 +1,111 @@
+fps: 30
+features:
+  observation:
+    images:
+      - cam_name: realsense_c_rgb
+        args:
+          cam_name: realsense_c_rgb
+          camera_folder: "camera_realsense_c"
+      - cam_name: pikaDepthCamera_l_rgb
+        args:
+          cam_name: pikaDepthCamera_l_rgb
+          camera_folder: "pikaDepthCamera_l"
+      - cam_name: pikaDepthCamera_r_rgb
+        args:
+          cam_name: pikaDepthCamera_r_rgb
+          camera_folder: "pikaDepthCamera_r"
+      - cam_name: pikaFisheyeCamera_l_rgb
+        args:
+          cam_name: pikaFisheyeCamera_l_rgb
+          camera_folder: "pikaFisheyeCamera_l"
+      - cam_name: pikaFisheyeCamera_r_rgb
+        args:
+          cam_name: pikaFisheyeCamera_r_rgb
+          camera_folder: "pikaFisheyeCamera_r"
+
+    state:
+      sub_state:
+        - names:
+            - pika_left_joint_0
+            - pika_left_joint_1
+            - pika_left_joint_2
+            - pika_left_joint_3
+            - pika_left_joint_4
+            - pika_left_joint_5
+            - pika_left_joint_6
+          args:
+            joint_type: puppet_left
+            field_name: position
+            range_from: 0
+            range_to: 7
+        - names:
+            - pika_right_joint_0
+            - pika_right_joint_1
+            - pika_right_joint_2
+            - pika_right_joint_3
+            - pika_right_joint_4
+            - pika_right_joint_5
+            - pika_right_joint_6
+          args:
+            joint_type: puppet_right
+            field_name: position
+            range_from: 0
+            range_to: 7
+        - names:
+            - pika_left_gripper
+          args:
+            joint_type: gripper_left
+            field_name: position
+            range_from: 0
+            range_to: 1
+        - names:
+            - pika_right_gripper
+          args:
+            joint_type: gripper_right
+            field_name: position
+            range_from: 0
+            range_to: 1
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      - names:
+          - pika_left_joint_0
+          - pika_left_joint_1
+          - pika_left_joint_2
+          - pika_left_joint_3
+          - pika_left_joint_4
+          - pika_left_joint_5
+          - pika_left_joint_6
+        args:
+          joint_type: master_left
+          field_name: position
+          range_from: 0
+          range_to: 7
+      - names:
+          - pika_right_joint_0
+          - pika_right_joint_1
+          - pika_right_joint_2
+          - pika_right_joint_3
+          - pika_right_joint_4
+          - pika_right_joint_5
+          - pika_right_joint_6
+        args:
+          joint_type: master_right
+          field_name: position
+          range_from: 0
+          range_to: 7
+      - names:
+          - pika_left_gripper
+        args:
+          joint_type: gripper_left
+          field_name: position
+          range_from: 0
+          range_to: 1
+      - names:
+          - pika_right_gripper
+        args:
+          joint_type: gripper_right
+          field_name: position
+          range_from: 0
+          range_to: 1

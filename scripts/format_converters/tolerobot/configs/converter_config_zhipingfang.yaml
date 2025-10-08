@@ -1,0 +1,89 @@
+fps: 30
+features:
+  observation:
+    images:
+      - cam_name: camera_head_rgb
+        args:
+          h5_path: observations/camera/rgb/head/images
+      - cam_name: camera_right_rgb
+        args:
+          h5_path: observations/camera/rgb/right/images
+
+    state:
+      sub_state:
+        - names:
+            - left_arm_joint_0
+            - left_arm_joint_1
+            - left_arm_joint_2
+            - left_arm_joint_3
+            - left_arm_joint_4
+            - left_arm_joint_5
+            - left_arm_joint_6
+          args:
+            h5_path: observations/arm/left/joints
+            range_from: 0
+            range_to: 7
+        - names:
+            - left_effector_position
+          args:
+            h5_path: observations/effector/left/position
+            range_from: 0
+            range_to: 1
+        - names:
+            - right_arm_joint_0
+            - right_arm_joint_1
+            - right_arm_joint_2
+            - right_arm_joint_3
+            - right_arm_joint_4
+            - right_arm_joint_5
+            - right_arm_joint_6
+          args:
+            h5_path: observations/arm/right/joints
+            range_from: 0
+            range_to: 7
+        - names:
+            - right_effector_position
+          args:
+            h5_path: observations/effector/right/position
+            range_from: 0
+            range_to: 1
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      - names:
+          - left_arm_joint_0
+          - left_arm_joint_1
+          - left_arm_joint_2
+          - left_arm_joint_3
+          - left_arm_joint_4
+          - left_arm_joint_5
+          - left_arm_joint_6
+        args:
+          h5_path: observations/arm/left/joints
+          range_from: 0
+          range_to: 7
+      - names:
+          - left_effector_position
+        args:
+          h5_path: observations/effector/left/position
+          range_from: 0
+          range_to: 1
+      - names:
+          - right_arm_joint_0
+          - right_arm_joint_1
+          - right_arm_joint_2
+          - right_arm_joint_3
+          - right_arm_joint_4
+          - right_arm_joint_5
+          - right_arm_joint_6
+        args:
+          h5_path: observations/arm/right/joints
+          range_from: 0
+          range_to: 7
+      - names:
+          - right_effector_position
+        args:
+          h5_path: observations/effector/right/position
+          range_from: 0
+          range_to: 1

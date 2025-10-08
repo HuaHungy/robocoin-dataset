@@ -1,0 +1,75 @@
+fps: 50
+features:
+  observation:
+    images:
+      - cam_name: camera_front
+        args:
+          cam_name: camera_front
+          camera_folder: front
+      - cam_name: camera_left
+        args:
+          cam_name: camera_left
+          camera_folder: left
+      - cam_name: camera_right
+        args:
+          cam_name: camera_right
+          camera_folder: right
+
+    state:
+      sub_state:
+        - names:
+            - master_left_joint_0
+            - master_left_joint_1
+            - master_left_joint_2
+            - master_left_joint_3
+            - master_left_joint_4
+            - master_left_joint_5
+            - master_left_joint_6
+          args:
+            joint_type: puppetLeft
+            field_name: position
+            range_from: 0
+            range_to: 7
+        - names:
+            - master_right_joint_0
+            - master_right_joint_1
+            - master_right_joint_2
+            - master_right_joint_3
+            - master_right_joint_4
+            - master_right_joint_5
+            - master_right_joint_6
+          args:
+            joint_type: puppetRight
+            field_name: position
+            range_from: 0
+            range_to: 7
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      - names:
+          - master_left_joint_0
+          - master_left_joint_1
+          - master_left_joint_2
+          - master_left_joint_3
+          - master_left_joint_4
+          - master_left_joint_5
+          - master_left_joint_6
+        args:
+          joint_type: masterLeft
+          field_name: position
+          range_from: 0
+          range_to: 7
+      - names:
+          - master_right_joint_0
+          - master_right_joint_1
+          - master_right_joint_2
+          - master_right_joint_3
+          - master_right_joint_4
+          - master_right_joint_5
+          - master_right_joint_6
+        args:
+          joint_type: masterRight
+          field_name: position
+          range_from: 0
+          range_to: 7

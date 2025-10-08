@@ -1,0 +1,83 @@
+fps: 30
+features:
+  observation:
+    images:
+      - cam_name: camera_realsense_c
+        args:
+          cam_name: camera_realsense_c
+          camera_folder: camera_realsense_c
+      - cam_name: pikaDepthCamera_l
+        args:
+          cam_name: pikaDepthCamera_l
+          camera_folder: pikaDepthCamera_l
+      - cam_name: pikaDepthCamera_r
+        args:
+          cam_name: pikaDepthCamera_r
+          camera_folder: pikaDepthCamera_r
+      - cam_name: pikaFisheyeCamera_l
+        args:
+          cam_name: pikaFisheyeCamera_l
+          camera_folder: pikaFisheyeCamera_l
+      - cam_name: pikaFisheyeCamera_r
+        args:
+          cam_name: pikaFisheyeCamera_r
+          camera_folder: pikaFisheyeCamera_r
+
+    state:
+      sub_state:
+        - names:
+            - mayi_left_joint_0
+            - mayi_left_joint_1
+            - mayi_left_joint_2
+            - mayi_left_joint_3
+            - mayi_left_joint_4
+            - mayi_left_joint_5
+            - mayi_left_joint_6
+          args:
+            joint_type: puppet_left
+            field_name: position
+            range_from: 0
+            range_to: 7
+        - names:
+            - mayi_right_joint_0
+            - mayi_right_joint_1
+            - mayi_right_joint_2
+            - mayi_right_joint_3
+            - mayi_right_joint_4
+            - mayi_right_joint_5
+            - mayi_right_joint_6
+          args:
+            joint_type: puppet_right
+            field_name: position
+            range_from: 0
+            range_to: 7
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      - names:
+          - mayi_left_joint_0
+          - mayi_left_joint_1
+          - mayi_left_joint_2
+          - mayi_left_joint_3
+          - mayi_left_joint_4
+          - mayi_left_joint_5
+          - mayi_left_joint_6
+        args:
+          joint_type: master_left
+          field_name: position
+          range_from: 0
+          range_to: 7
+      - names:
+          - mayi_right_joint_0
+          - mayi_right_joint_1
+          - mayi_right_joint_2
+          - mayi_right_joint_3
+          - mayi_right_joint_4
+          - mayi_right_joint_5
+          - mayi_right_joint_6
+        args:
+          joint_type: master_right
+          field_name: position
+          range_from: 0
+          range_to: 7
