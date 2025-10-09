@@ -62,7 +62,8 @@ def multiply_by_10(input: np.ndarray) -> np.ndarray:
 spatial_covertor_funcs = {
     "mm2m": mm2m,
     "cm2m": cm2m,
-    "quat_wxyz_2_rot_xyz": quat_xyzw_2_euler_xyz,
+    "quat_wxyz_2_euler_xyz": quat_wxyz_2_euler_xyz,
+    "quat_xyzw_2_euler_xyz": quat_xyzw_2_euler_xyz,
     "rot6d_to_euler_xyz": rot6d_to_euler_xyz,
     "degree2rad": degree2rad,
     "multiply_by_10": multiply_by_10,

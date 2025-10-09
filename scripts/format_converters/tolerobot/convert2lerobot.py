@@ -61,13 +61,13 @@ def convert2lerobot(
                     converter_config_path = (
                         factory_config_path.parent / device_model_config["converter_config_path"]
                     )
-                break
-            if device_model_config[DEVICE_MODEL_VERSION_KEY] == device_model_version:
+                    break
+            elif device_model_config[DEVICE_MODEL_VERSION_KEY] == device_model_version:
                 converter_module_path = device_model_config["module"]
                 converter_class_name = device_model_config["class"]
                 converter_config_path = (
                     factory_config_path.parent
-                    / factory_config[device_model]["converter_config_path"]
+                    / device_model_config["converter_config_path"]
                 )
                 break
         if converter_module_path is None:

@@ -8,8 +8,14 @@ realman_rmc_aidal:
 - version: mcap_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist, mcap format
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mcap
-  class: LerobotFormatConverterMcap
+  class: LerobotFormatConverterRealmanRmcAidalMcap
   converter_config_path: converter_config_realman_rmc_aidal_mcap.yaml
+
+- version: mcap_simple_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist, mcap format, simplified without end effector pose
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mcap
+  class: LerobotFormatConverterRealmanRmcAidalMcap
+  converter_config_path: converter_config_realman_rmc_aidal_mcap_simple.yaml
 
 galaxea_r1_lite:
 - version: default_version
@@ -182,3 +188,52 @@ single_arm_ur5:
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_ur5
   class: LerobotFormatConverterUr5
   converter_config_path: converter_config_single_arm_ur5.yaml
+
+aloha:
+- version: h5_mp4
+  verison_description: aloha robot with HDF5 data and MP4 videos
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_aloha_h5_mp4.yaml
+
+- version: mult_sensor
+  verison_description: aloha robot with multiple sensor folder structure
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
+  class: LerobotFormatConverterJpgJson
+  converter_config_path: converter_config_aloha_mult_sensor.yaml
+
+yinhe:
+- version: default_version
+  verison_description: yinhe robot with MP4 videos and JSON data
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mp4_json
+  class: LerobotFormatConverterMp4Json
+  converter_config_path: converter_config_yinhe.yaml
+
+zhipingfang:
+- version: default_version
+  verison_description: zhipingfang robot with nested HDF5 structure
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang.yaml
+
+agilex_pika:
+- version: default_version
+  verison_description: agilex pika robot with multiple sensors and JPG+JSON
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
+  class: LerobotFormatConverterJpgJson
+  converter_config_path: converter_config_pika.yaml
+
+mayi:
+- version: default_version
+  verison_description: mayi robot with multiple sensors and JPG+JSON
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
+  class: LerobotFormatConverterJpgJson
+  converter_config_path: converter_config_mayi.yaml
+
+robobrain:
+- version: default_version
+  verison_description: robobrain dataset with annotation file managing H5 and MP4 files
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_annotation_h5_mp4
+  class: LerobotFormatConverterAnnotationH5Mp4
+  converter_config_path: converter_config_robobrain.yaml
+
