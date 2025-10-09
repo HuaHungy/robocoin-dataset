@@ -237,3 +237,10 @@ robobrain:
   class: LerobotFormatConverterAnnotationH5Mp4
   converter_config_path: converter_config_robobrain.yaml
 
+leju_waibu:
+- version: default_version
+  verison_description: leju waibu dataset with metadata.json + H5 + MP4 videos
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_leju_waibu
+  class: LerobotFormatConverterLejuWaibu
+  converter_config_path: converter_config_leju_waibu.yaml
+

@@ -1,0 +1,250 @@
+### fps by manual
+fps: 30
+
+features:
+  observation:
+    images:
+      ### values by manual
+      - cam_name: head_cam_h
+        args:
+          ### keys and values by manual
+          cam_name: head_cam_h
+          video_file_pattern: camera/video/head_cam_h.mp4
+
+        ### values by function
+        # dtype: video
+        # shape: [480, 640, 3]
+        # names: [height, width, channels]
+        # lerobot_feature: observations.images.head_cam_h : by _gen_lerobot_features()
+
+      ### values by manual
+      - cam_name: wrist_cam_l
+        args:
+          ### keys and values by manual
+          cam_name: wrist_cam_l
+          video_file_pattern: camera/video/wrist_cam_l.mp4
+
+        ### values by function
+        # dtype: video
+        # shape: [480, 640, 3]
+        # names: [height, width, channels]
+        # lerobot_feature: observations.images.wrist_cam_l : by _gen_lerobot_features()
+
+      ### values by manual
+      - cam_name: wrist_cam_r
+        args:
+          ### keys and values by manual
+          cam_name: wrist_cam_r
+          video_file_pattern: camera/video/wrist_cam_r.mp4
+
+        ### values by function
+        # dtype: video
+        # shape: [480, 640, 3]
+        # names: [height, width, channels]
+        # lerobot_feature: observations.images.wrist_cam_r : by _gen_lerobot_features()
+
+    state:
+      ### values by function
+      # lerobot_feature: observation.state : by _gen_lerobot_features()
+      # dtype: float32 
+      # shape: [54]  # 14 joint pos + 12 leg pos + 12 dexhand pos + 2 head pos + 14 joint vel
+
+      ## sub_states should be concatenated together here : by _gen_state_names()
+      sub_state:
+        ### Joint positions (14)
+        - names: 
+            - joint_pos_0
+            - joint_pos_1
+            - joint_pos_2
+            - joint_pos_3
+            - joint_pos_4
+            - joint_pos_5
+            - joint_pos_6
+            - joint_pos_7
+            - joint_pos_8
+            - joint_pos_9
+            - joint_pos_10
+            - joint_pos_11
+            - joint_pos_12
+            - joint_pos_13
+          args:
+            ### keys and values by manual
+            h5_path: state/joint/position
+            range_from: 0
+            range_to: 14
+
+        ### Leg positions (12)
+        - names: 
+            - leg_pos_0
+            - leg_pos_1
+            - leg_pos_2
+            - leg_pos_3
+            - leg_pos_4
+            - leg_pos_5
+            - leg_pos_6
+            - leg_pos_7
+            - leg_pos_8
+            - leg_pos_9
+            - leg_pos_10
+            - leg_pos_11
+          args:
+            ### keys and values by manual
+            h5_path: state/leg/position
+            range_from: 0
+            range_to: 12
+
+        ### Dexhand positions (12)
+        - names: 
+            - dexhand_pos_0
+            - dexhand_pos_1
+            - dexhand_pos_2
+            - dexhand_pos_3
+            - dexhand_pos_4
+            - dexhand_pos_5
+            - dexhand_pos_6
+            - dexhand_pos_7
+            - dexhand_pos_8
+            - dexhand_pos_9
+            - dexhand_pos_10
+            - dexhand_pos_11
+          args:
+            ### keys and values by manual
+            h5_path: state/effector/position(dexhand)
+            range_from: 0
+            range_to: 12
+
+        ### Head positions (2)
+        - names: 
+            - head_pos_0
+            - head_pos_1
+          args:
+            ### keys and values by manual
+            h5_path: state/head/position
+            range_from: 0
+            range_to: 2
+
+        ### Joint velocities (14)
+        - names: 
+            - joint_vel_0
+            - joint_vel_1
+            - joint_vel_2
+            - joint_vel_3
+            - joint_vel_4
+            - joint_vel_5
+            - joint_vel_6
+            - joint_vel_7
+            - joint_vel_8
+            - joint_vel_9
+            - joint_vel_10
+            - joint_vel_11
+            - joint_vel_12
+            - joint_vel_13
+          args:
+            ### keys and values by manual
+            h5_path: state/joint/velocity
+            range_from: 0
+            range_to: 14
+
+  action:
+    ### values by function
+    # lerobot_feature: action : by _gen_lerobot_features()
+    # dtype: float32
+    # shape: [54]  # Same as state
+
+    ## sub_actions should be concatenated together here : by _gen_action_names()
+    ### values by manual
+    timeline_offset: 1
+    sub_action:
+      ### Joint positions (14)
+      - names: 
+          - joint_pos_0
+          - joint_pos_1
+          - joint_pos_2
+          - joint_pos_3
+          - joint_pos_4
+          - joint_pos_5
+          - joint_pos_6
+          - joint_pos_7
+          - joint_pos_8
+          - joint_pos_9
+          - joint_pos_10
+          - joint_pos_11
+          - joint_pos_12
+          - joint_pos_13
+        args:
+          ### keys and values by manual
+          h5_path: action/joint/position
+          range_from: 0
+          range_to: 14
+
+      ### Leg positions (12)
+      - names: 
+          - leg_pos_0
+          - leg_pos_1
+          - leg_pos_2
+          - leg_pos_3
+          - leg_pos_4
+          - leg_pos_5
+          - leg_pos_6
+          - leg_pos_7
+          - leg_pos_8
+          - leg_pos_9
+          - leg_pos_10
+          - leg_pos_11
+        args:
+          ### keys and values by manual
+          h5_path: action/leg/position
+          range_from: 0
+          range_to: 12
+
+      ### Dexhand positions (12)
+      - names: 
+          - dexhand_pos_0
+          - dexhand_pos_1
+          - dexhand_pos_2
+          - dexhand_pos_3
+          - dexhand_pos_4
+          - dexhand_pos_5
+          - dexhand_pos_6
+          - dexhand_pos_7
+          - dexhand_pos_8
+          - dexhand_pos_9
+          - dexhand_pos_10
+          - dexhand_pos_11
+        args:
+          ### keys and values by manual
+          h5_path: action/effector/position(dexhand)
+          range_from: 0
+          range_to: 12
+
+      ### Head positions (2)
+      - names: 
+          - head_pos_0
+          - head_pos_1
+        args:
+          ### keys and values by manual
+          h5_path: action/head/position
+          range_from: 0
+          range_to: 2
+
+      ### Joint velocities (14) - using state velocity as action is common
+      - names: 
+          - joint_vel_0
+          - joint_vel_1
+          - joint_vel_2
+          - joint_vel_3
+          - joint_vel_4
+          - joint_vel_5
+          - joint_vel_6
+          - joint_vel_7
+          - joint_vel_8
+          - joint_vel_9
+          - joint_vel_10
+          - joint_vel_11
+          - joint_vel_12
+          - joint_vel_13
+        args:
+          ### keys and values by manual
+          h5_path: state/joint/velocity
+          range_from: 0
+          range_to: 14
