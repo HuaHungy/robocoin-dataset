@@ -162,6 +162,37 @@ int32 lift_pos
             # 如果已注册则忽略
             pass
 
+    def _get_dataset_task_paths(self) -> dict[Path, str]:
+        """重写基类方法：扫描dataset_path下包含.mcap文件的子目录作为task"""
+        from pathlib import Path
+        import yaml
+        
+        task_paths_dict = {}
+        
+        # 读取dataset根目录的local_task_info.yaml获取task_index
+        local_task_info_path = self.dataset_path / "local_task_info.yaml"
+        if not local_task_info_path.exists():
+            raise FileNotFoundError(f"local_task_info.yaml not found in {self.dataset_path}")
+        
+        with open(local_task_info_path) as f:
+            task_info_dict = yaml.safe_load(f)
+            task_index = task_info_dict["task_index"]
+            task = self.tasks[task_index]
+        
+        # 扫描dataset_path下的所有子目录，查找包含.mcap文件的目录
+        for subdir in self.dataset_path.iterdir():
+            if subdir.is_dir():
+                mcap_files = list(subdir.glob("*.mcap"))
+                if mcap_files:
+                    # 找到包含.mcap文件的子目录，将其作为task_path
+                    task_paths_dict[subdir] = task
+                    self.logger.info(f"Found task path: {subdir} with {len(mcap_files)} mcap files")
+        
+        if not task_paths_dict:
+            raise FileNotFoundError(f"No directories with .mcap files found in {self.dataset_path}")
+        
+        return task_paths_dict
+
     def _prevalidate_files(self) -> None:
         for path in self.path_task_dict.keys():
             mcap_files = list(path.rglob("*.mcap"))
