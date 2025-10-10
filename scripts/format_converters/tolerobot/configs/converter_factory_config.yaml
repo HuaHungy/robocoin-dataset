@@ -144,6 +144,13 @@ leju_robot:
   class: LerobotFormatConverterLerobot
   converter_config_path: converter_config_leju_robot.yaml
 
+- version: waibu_version
+  verison_description: leju waibu dataset with metadata.json + H5 + MP4 videos
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_leju_waibu
+  class: LerobotFormatConverterLejuWaibu
+  converter_config_path: converter_config_leju_waibu.yaml
+
+
 agilex_cobot_decoupled_magic:
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
@@ -175,6 +182,18 @@ agilex_cobot_decoupled_magic:
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_agilex_cobot_decoupled_magic_masterpuppet.yaml
 
+- version: h5_mp4
+  verison_description: aloha robot with HDF5 data and MP4 videos
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_aloha_h5_mp4.yaml
+
+- version: mult_sensor
+  verison_description: aloha robot with multiple sensor folder structure
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
+  class: LerobotFormatConverterJpgJson
+  converter_config_path: converter_config_aloha_mult_sensor.yaml
+
 agilex_pika_sense:
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
@@ -189,18 +208,6 @@ single_arm_ur5:
   class: LerobotFormatConverterUr5
   converter_config_path: converter_config_single_arm_ur5.yaml
 
-aloha:
-- version: h5_mp4
-  verison_description: aloha robot with HDF5 data and MP4 videos
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
-  class: LerobotFormatConverterH5Mp4
-  converter_config_path: converter_config_aloha_h5_mp4.yaml
-
-- version: mult_sensor
-  verison_description: aloha robot with multiple sensor folder structure
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
-  class: LerobotFormatConverterJpgJson
-  converter_config_path: converter_config_aloha_mult_sensor.yaml
 
 yinhe:
 - version: default_version
@@ -232,15 +239,8 @@ mayi:
 
 robobrain:
 - version: default_version
-  verison_description: robobrain dataset with annotation file managing H5 and MP4 files
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_annotation_h5_mp4
-  class: LerobotFormatConverterAnnotationH5Mp4
-  converter_config_path: converter_config_robobrain.yaml
-
-leju_waibu:
-- version: default_version
-  verison_description: leju waibu dataset with metadata.json + H5 + MP4 videos
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_leju_waibu
-  class: LerobotFormatConverterLejuWaibu
-  converter_config_path: converter_config_leju_waibu.yaml
-
+- version: h5_mp4
+  verison_description: aloha robot with HDF5 data and MP4 videos
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_aloha_h5_mp4.yaml
