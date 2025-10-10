@@ -1,23 +1,33 @@
+import io
 import logging
 from pathlib import Path
 from typing import Any
+
 import numpy as np
-import io
 from mcap.reader import make_reader
-from rosbags.typesys import Stores, get_typestore, get_types_from_msg
+from rosbags.typesys import Stores, get_types_from_msg, get_typestore
 
 from robocoin_dataset.format_converter.tolerobot.constant import (
-    FEATURES_KEY, OBSERVATION_KEY, IMAGE_KEY, STATE_KEY, SUB_STATE_KEY,
-    ACTION_KEY, SUB_ACTION_KEY, ARGS_KEY, CAM_NAME_KEY, NAME_KEY, LEROBOT_FEATURE_KEY,
+    ACTION_KEY,
+    CAM_NAME_KEY,
+    FEATURES_KEY,
+    IMAGE_KEY,
+    LEROBOT_FEATURE_KEY,
+    OBSERVATION_KEY,
+    STATE_KEY,
+    SUB_ACTION_KEY,
+    SUB_STATE_KEY,
 )
-from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import LerobotFormatConverter
+from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
+    LerobotFormatConverter,
+)
 
 try:
     from PIL import Image
 except ImportError:
     Image = None
 
-def decode_image_bytes(img_bytes: bytes, typestore) -> np.ndarray:
+def decode_image_bytes(img_bytes: bytes, typestore) -> np.ndarray:  # noqa: ANN001
     """解码压缩的ROS图像消息
     
     Args:
@@ -37,11 +47,11 @@ def decode_image_bytes(img_bytes: bytes, typestore) -> np.ndarray:
         img_data = bytes(compressed_img_msg.data)
         with Image.open(io.BytesIO(img_data)) as img:
             return np.array(img.convert("RGB"))
-    except Exception as e:
+    except Exception:
         # 如果解码失败，返回None
         return None
 
-def find_nearest_msg(msgs, target_time):
+def find_nearest_msg(msgs, target_time):  # noqa: ANN001, ANN201
     # msgs: list of (log_time, data)
     # 返回最近时间的消息，使用二分查找优化性能
     if not msgs:
@@ -66,8 +76,7 @@ def find_nearest_msg(msgs, target_time):
     
     if abs(target_time - before) <= abs(after - target_time):
         return msgs[pos - 1][1]
-    else:
-        return msgs[pos][1]
+    return msgs[pos][1]
 
 class LerobotFormatConverterRealmanRmcAidalMcap(LerobotFormatConverter):
     def __init__(
@@ -164,7 +173,7 @@ int32 lift_pos
 
     def _get_dataset_task_paths(self) -> dict[Path, str]:
         """重写基类方法：扫描dataset_path下包含.mcap文件的子目录作为task"""
-        from pathlib import Path
+
         import yaml
         
         task_paths_dict = {}
@@ -288,7 +297,7 @@ int32 lift_pos
                 else:
                     images[cam_name].append(None)
         
-        self.logger.info(f"Finished decoding all images")
+        self.logger.info("Finished decoding all images")
 
         # 解析状态
         # 注意：这里只提取原始数据，不应用convert_func
@@ -384,15 +393,15 @@ int32 lift_pos
             self._episode_data_cache[cache_key] = self._parse_mcap_episode(mcap_file)
         return self._episode_data_cache[cache_key]
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> Any:
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> Any:  # noqa: ANN401
         episode_data = self._get_episode_data(task_path, ep_idx)
         return episode_data["images"]
 
-    def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> Any:
+    def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> Any:  # noqa: ANN401
         episode_data = self._get_episode_data(task_path, ep_idx)
         return episode_data["states"]
 
-    def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> Any:
+    def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> Any:  # noqa: ANN401
         episode_data = self._get_episode_data(task_path, ep_idx)
         return episode_data["actions"]
 
@@ -414,8 +423,11 @@ int32 lift_pos
         
         # 配置图像信息
         from robocoin_dataset.format_converter.tolerobot.constant import (
-            DTYPE_KEY, IMAGE_DTYPE_VALUE, NAME_KEY, SHAPE_KEY,
-            DEFAULT_IMAGE_SHAPE_NAMES
+            DEFAULT_IMAGE_SHAPE_NAMES,
+            DTYPE_KEY,
+            IMAGE_DTYPE_VALUE,
+            NAME_KEY,
+            SHAPE_KEY,
         )
         
         for image_config in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]:
@@ -430,20 +442,20 @@ int32 lift_pos
             else:
                 raise ValueError(f"Camera {cam_name} not found in MCAP file sample")
 
-    def _get_frame_image(self, task_path: Path, ep_idx: int, frame_idx: int, args_dict: dict, images_buffer: Any = None) -> np.ndarray:
+    def _get_frame_image(self, task_path: Path, ep_idx: int, frame_idx: int, args_dict: dict, images_buffer: Any = None) -> np.ndarray:  # noqa: ANN401
         cam_name = args_dict.get("cam_name")
         if images_buffer is None:
             images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx)
         return images_buffer[cam_name][frame_idx]
 
-    def _get_frame_sub_states(self, task_path: Path, ep_idx: int, frame_idx: int, args_dict: dict, sub_states_buffer: Any = None) -> np.ndarray:
+    def _get_frame_sub_states(self, task_path: Path, ep_idx: int, frame_idx: int, args_dict: dict, sub_states_buffer: Any = None) -> np.ndarray:  # noqa: ANN401
         if sub_states_buffer is None:
             sub_states_buffer = self._prepare_episode_states_buffer(task_path, ep_idx)
         from_idx = args_dict["range_from"]
         to_idx = args_dict["range_to"]
         return sub_states_buffer[frame_idx][from_idx:to_idx]
 
-    def _get_frame_sub_actions(self, task_path: Path, ep_idx: int, frame_idx: int, args_dict: dict, sub_actions_buffer: Any = None) -> np.ndarray:
+    def _get_frame_sub_actions(self, task_path: Path, ep_idx: int, frame_idx: int, args_dict: dict, sub_actions_buffer: Any = None) -> np.ndarray:  # noqa: ANN401
         if sub_actions_buffer is None:
             sub_actions_buffer = self._prepare_episode_actions_buffer(task_path, ep_idx)
         from_idx = args_dict["range_from"]

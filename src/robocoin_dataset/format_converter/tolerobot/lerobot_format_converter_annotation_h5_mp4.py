@@ -4,20 +4,29 @@ LeRobot格式转换器 - Annotation+H5+MP4格式
 用于robobrain等使用标注文件管理数据的数据集
 """
 
+import json
 import logging
 from pathlib import Path
-from typing import Any
-import numpy as np
-import h5py
+
 import cv2
-import json
+import h5py
+import numpy as np
 import yaml
 
 from robocoin_dataset.format_converter.tolerobot.constant import (
-    FEATURES_KEY, OBSERVATION_KEY, IMAGE_KEY, STATE_KEY, SUB_STATE_KEY,
-    ACTION_KEY, SUB_ACTION_KEY, ARGS_KEY, CAM_NAME_KEY,
+    ACTION_KEY,
+    ARGS_KEY,
+    CAM_NAME_KEY,
+    FEATURES_KEY,
+    IMAGE_KEY,
+    OBSERVATION_KEY,
+    STATE_KEY,
+    SUB_ACTION_KEY,
+    SUB_STATE_KEY,
 )
-from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import LerobotFormatConverter
+from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
+    LerobotFormatConverter,
+)
 
 
 class LerobotFormatConverterAnnotationH5Mp4(LerobotFormatConverter):
@@ -67,14 +76,14 @@ class LerobotFormatConverterAnnotationH5Mp4(LerobotFormatConverter):
             if not annotation_file.exists():
                 raise FileNotFoundError(f"Annotation file not found: {annotation_file}")
             
-            with open(annotation_file, 'r') as f:
+            with open(annotation_file) as f:
                 self._annotation_data = json.load(f)
         
         return self._annotation_data
 
     def _gen_task_paths_dict(self) -> dict[Path, str]:
         """生成任务路径字典"""
-        annotation_data = self._load_annotation()
+        self._load_annotation()
         
         # robobrain将所有episodes作为一个大任务处理
         task_path = Path(self.dataset_path) / "videos" / "train"
@@ -82,7 +91,7 @@ class LerobotFormatConverterAnnotationH5Mp4(LerobotFormatConverter):
         # 尝试从local_task_info.yaml获取任务名称
         local_task_info = Path(self.dataset_path) / "local_task_info.yaml"
         if local_task_info.exists():
-            with open(local_task_info, 'r') as f:
+            with open(local_task_info) as f:
                 task_info = yaml.safe_load(f)
                 tasks = task_info.get('tasks', {})
                 if tasks:
@@ -271,7 +280,7 @@ class LerobotFormatConverterAnnotationH5Mp4(LerobotFormatConverter):
         state_configs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY].get(STATE_KEY, {}).get(SUB_STATE_KEY, [])
         total_dim = 0
         for state_config in state_configs:
-            from_idx = state_config.get(ARGS_KEY, {}).get('range_from', 0)
+            state_config.get(ARGS_KEY, {}).get('range_from', 0)
             to_idx = state_config.get(ARGS_KEY, {}).get('range_to', 0)
             total_dim = max(total_dim, to_idx)
         return total_dim
@@ -281,7 +290,7 @@ class LerobotFormatConverterAnnotationH5Mp4(LerobotFormatConverter):
         action_configs = self.converter_config[FEATURES_KEY].get(ACTION_KEY, {}).get(SUB_ACTION_KEY, [])
         total_dim = 0
         for action_config in action_configs:
-            from_idx = action_config.get(ARGS_KEY, {}).get('range_from', 0)
+            action_config.get(ARGS_KEY, {}).get('range_from', 0)
             to_idx = action_config.get(ARGS_KEY, {}).get('range_to', 0)
             total_dim = max(total_dim, to_idx)
         return total_dim
@@ -341,7 +350,7 @@ class LerobotFormatConverterAnnotationH5Mp4(LerobotFormatConverter):
         
         return sub_actions_buffer[frame_idx, from_idx:to_idx].astype(np.float32)
 
-    def __del__(self):
+    def __del__(self) -> None:
         """清理视频读取器"""
         for cap in self._video_readers.values():
             if cap.isOpened():
