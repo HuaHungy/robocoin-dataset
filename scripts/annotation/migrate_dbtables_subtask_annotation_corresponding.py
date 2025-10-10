@@ -13,14 +13,17 @@ Session = sessionmaker()
 
 # 表名列表，按依赖顺序排列：先父表，后子表
 tables_in_order = [
-    "subtask_annotation_json",  # 父表
-    "subtask_annotation_video_download",  # 引用 users
-    "subtask_annotation_video_file_hash",  # 引用 orders
-    "subtask_annotation_video_image_hashes",  # 引用 users
-    "episode_frames",
-    "episode_range_subtask_annotation",
-    "episode_subtask_annotation_content",
-    "episode_subtask_annotation_corresponding",
+    "leformat_episode_video_hash",
+    "leformat_episode_video_hash_status",
+    "url_video_subtask_annotation",
+    "download_videos",
+    "leformat_episode_url_video_match",
+    "leformat_episode_url_video_match_status",
+    "leformat_dataset_episode_original_subtask_annotation",
+    "leformat_dataset_episode_original_subtask_annotation_status",
+    "leformat_dataset_episode_optimized_subtask_annotation",
+    "leformat_dataset_episode_optimized_subtask_annotation_status",
+    "leformat_dataset_episode_subtask_range_annotation_embedding_status",
 ]
 
 
@@ -97,54 +100,6 @@ def migrate_tables() -> None:
     finally:
         source_session.close()
         target_session.close()
-
-
-# def migrate_tables() -> None:
-#     source_session = Session(bind=source_engine)
-#     target_session = Session(bind=target_engine)
-
-#     try:
-#         # 🔽 在目标数据库中临时禁用外键检查
-#         target_session.execute(text("PRAGMA foreign_keys = OFF"))
-#         target_session.commit()
-
-#         for table_name in tables_in_order:
-#             print(f"迁移表: {table_name}")
-
-#             # 读取源表所有数据
-#             result = source_session.execute(text(f"SELECT * FROM {table_name}"))
-#             rows = result.fetchall()
-#             if not rows:
-#                 print(f"  表 {table_name} 无数据")
-#                 continue
-
-#             columns = result.keys()
-
-#             # 构造 INSERT 语句
-#             placeholders = ", ".join([":" + col for col in columns])
-#             insert_sql = f"INSERT OR REPLACE INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
-
-#             # 批量插入
-#             target_session.execute(text(insert_sql), [dict(row._mapping) for row in rows])
-#             target_session.commit()
-
-#             print(f"  成功插入 {len(rows)} 条记录")
-
-#         # ✅ 所有表迁移完成后，重新启用外键并检查
-#         target_session.execute(text("PRAGMA foreign_keys = ON"))
-#         target_session.execute(text("PRAGMA foreign_key_check"))  # 检查一致性
-#         result = target_session.execute(text("PRAGMA foreign_key_check")).fetchall()
-#         if result:
-#             raise Exception(f"外键检查失败: {result}")
-#         print("✅ 所有表迁移完成，外键检查通过")
-
-#     except Exception as e:
-#         target_session.rollback()
-#         print(f"❌ 迁移失败: {e}")
-#         raise
-#     finally:
-#         source_session.close()
-#         target_session.close()
 
 
 # 执行迁移

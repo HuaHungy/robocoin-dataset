@@ -63,7 +63,7 @@ def optimize_annotation(annotation_set: set[str], ds_api_key: str) -> dict[str, 
 
     try:
         print("Tring to call DeepSeek API to translate Chinese annotations to English")
-        response = requests.post(api_url, headers=headers, data=json.dumps(payload), timeout=30)
+        response = requests.post(api_url, headers=headers, data=json.dumps(payload), timeout=100)
 
         if response.status_code == 200:
             response_data = response.json()

@@ -1,7 +1,6 @@
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
-    Boolean,
     Column,
     DateTime,
     Enum,
@@ -129,26 +128,6 @@ dataset_objects = Table(
 )
 
 
-# =====================
-# 独立状态表：使用 dataset_uuid 关联
-# =====================
-
-
-class AnnotationDB(Base):
-    __tablename__ = "annotations"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # ✅ 使用 dataset_uuid 作为关联字段
-    dataset_uuid = Column(String(255), index=True, nullable=False)
-
-    # 标注状态
-    annotation_status = Column(Boolean, default=False, nullable=False)
-
-    # ✅ 唯一约束：确保一个数据集最多一条标注记录
-    __table_args__ = (UniqueConstraint("dataset_uuid", name="uix_dataset_uuid_annotation"),)
-
-
 class LeFormatConvertDB(Base):
     __tablename__ = "lerobot_format_convert"
 
@@ -205,46 +184,6 @@ class LeFormatConvertTestDB(Base):
     __table_args__ = (UniqueConstraint("dataset_uuid", name="uix_dataset_uuid_convert"),)
 
 
-class EpisodeFrameDB(Base):
-    __tablename__ = "episode_frames"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # 存储 dataset_uuid（字符串格式）
-    dataset_uuid = Column(String(255), index=True, nullable=False)  # 改为 255，与 datasets 表一致
-
-    episode_index = Column(Integer, index=True, nullable=False)
-    frames_num = Column(Integer, nullable=False)
-
-
-# class SubtaskAnnotationDB(Base):
-#     __tablename__ = "subtask_annotations"
-
-#     id = Column(Integer, primary_key=True, index=True)
-
-#     # 存储 dataset_uuid（字符串格式）
-#     dataset_uuid = Column(String(255), index=True, nullable=False)  # 改为 255，与 datasets 表一致
-
-#     episode_index = Column(Integer, index=True, nullable=False, unique=True)
-#     frame_start_index = Column(Integer, index=True, nullable=False)
-#     frame_end_index = Column(Integer, index=True, nullable=False)
-#     subtask_annotation = Column(String(255), nullable=False)
-#     convert_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
-
-
-class SubtaskAnnotationDB(Base):
-    __tablename__ = "subtask_annotation"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # 存储 dataset_uuid（字符串格式）
-    dataset_uuid = Column(
-        String(255), index=True, nullable=False, unique=True
-    )  # 改为 255，与 datasets 表一致
-
-    annotation_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
-
-
 class DmvAnnotationDB(Base):
     __tablename__ = "device_model_annotation"
 
@@ -262,204 +201,6 @@ class DmvAnnotationDB(Base):
     device_model = Column(String(255), nullable=True)
 
     device_model_version = Column(String(255), nullable=True)
-
-
-class SubtaskAnnotationJsonDB(Base):
-    __tablename__ = "subtask_annotation_json"
-
-    id = Column(Integer, primary_key=True, index=True)
-    json_content = Column(Text, nullable=False, index=False)
-    video_url = Column(String(255), index=True, unique=True, nullable=False)
-
-    # 关系：一个 annotation 有一个 download 记录
-    download_info = relationship(
-        "SubtaskAnnotationVideoDownloadDB",
-        uselist=False,
-        back_populates="annotation",
-    )
-
-
-class DownloadStatus(str, PyEnum):
-    PENDING = "PENDING"
-    DOWNLOADING = "DOWNLOADING"
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-
-
-class SubtaskAnnotationVideoDownloadDB(Base):
-    __tablename__ = "subtask_annotation_video_download"
-
-    id = Column(Integer, primary_key=True, index=True)
-    annotation_id = Column(
-        Integer, ForeignKey("subtask_annotation_json.id"), nullable=False, index=True
-    )
-    video_download_path = Column(String(255), index=True, nullable=True)
-    download_status = Column(
-        Enum(DownloadStatus), default=DownloadStatus.PENDING, nullable=False, index=True
-    )
-    frame_num = Column(Integer, nullable=True, index=True)
-    video_matched_status = Column(Boolean, default=False, nullable=False, index=True)
-
-    # 关系：一个 download 有一个 file_hash
-    file_hash = relationship(
-        "SubtaskAnnotationVideoFileHashDB",
-        uselist=False,
-        back_populates="download",
-        cascade="all, delete-orphan",  # 删除 download 时自动删除 hash
-    )
-    # 反向关系字段
-    annotation = relationship("SubtaskAnnotationJsonDB", back_populates="download_info")
-    image_hash = relationship(
-        "SubtaskAnnotationVideoImageHashDB",
-        uselist=False,
-        back_populates="download",
-        cascade="all, delete-orphan",
-    )
-
-
-class FileHashStatus(str, PyEnum):
-    PENDING = "PENGDING"
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-    PROCESSING = "PROCESSING"
-
-
-class SubtaskAnnotationVideoFileHashDB(Base):
-    __tablename__ = "subtask_annotation_video_file_hash"
-
-    id = Column(Integer, primary_key=True, index=True)
-    download_id = Column(
-        Integer, ForeignKey("subtask_annotation_video_download.id"), nullable=False, index=True
-    )
-    sha256 = Column(String(64), index=True, nullable=True, unique=True)
-    hash_status = Column(
-        Enum(FileHashStatus), default=FileHashStatus.PENDING, nullable=False, index=True
-    )
-
-    # 反向关系
-    download = relationship(
-        "SubtaskAnnotationVideoDownloadDB",  # 引用 download 表类名
-        back_populates="file_hash",
-    )
-
-
-class ImageHashStatus(str, PyEnum):
-    PENDING = "PENDING"
-    PROCESSING = "PROGRESSING"
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-
-
-class SubtaskAnnotationVideoImageHashDB(Base):
-    __tablename__ = "subtask_annotation_video_image_hashes"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # 外键：关联到下载表，表示这个 image hash 属于哪个下载的视频
-    download_id = Column(
-        Integer, ForeignKey("subtask_annotation_video_download.id"), nullable=False, index=True
-    )
-
-    # 常见的感知哈希类型（以 LargeBinary 存储）
-    image_hashes = Column(LargeBinary, index=False, nullable=True)  # perceptual hash
-    image_hash_status = Column(
-        Enum(ImageHashStatus), default=ImageHashStatus.PENDING, nullable=False, index=True
-    )
-
-    # 关系：反向关联到 download 表
-    download = relationship(
-        "SubtaskAnnotationVideoDownloadDB",
-        back_populates="image_hash",  # 对应 download 表中的字段名
-    )
-
-
-class DatasetAnnotationCorrespondingDB(Base):
-    __tablename__ = "dataset_annotation_corresponding"
-    id = Column(Integer, primary_key=True, index=True)
-    convert_path = Column(String, index=True, unique=True, nullable=False)
-    dataset_uuid = Column(String, index=True, unique=True, nullable=False)
-    error_msg = Column(Text, nullable=True)
-    corresponding_status = Column(Enum(TaskStatus), nullable=False, default=TaskStatus.FAILED)
-
-
-class EpisodeSubtaskAnnotationCorrespondingDB(Base):
-    __tablename__ = "episode_subtask_annotation_corresponding"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    dataset_uuid = Column(String(255), index=True, nullable=False)
-    episode_idx = Column(Integer, index=False, nullable=False)
-    annotation_json_id = Column(
-        Integer, ForeignKey("subtask_annotation_json.id"), nullable=True, index=True
-    )
-    __table_args__ = (UniqueConstraint("dataset_uuid", "episode_idx", name="uix_dataset_episode"),)
-
-
-class EpisodeSubtaskAnnotationContentDB(Base):
-    __tablename__ = "episode_subtask_annotation_content"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    json_id = Column(
-        Integer,
-        ForeignKey("episode_subtask_annotation_corresponding.id"),
-        nullable=False,
-        index=True,
-    )
-    annotation_content = Column(Text, nullable=False)
-
-
-class EpisodeRangeSubtaskAnnotationDB(Base):
-    __tablename__ = "episode_range_subtask_annotation"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    dataset_uuid = Column(String, nullable=False, index=True)
-    episode_id = Column(Integer, index=True, nullable=False)
-
-    range_from_frame_idx = Column(Integer, nullable=False)
-    range_to_frame_idx = Column(Integer, nullable=False)
-    subtask_annotation = Column(String)
-    __table_args__ = (
-        UniqueConstraint(
-            "dataset_uuid",
-            "episode_id",
-            "range_from_frame_idx",
-            "range_to_frame_idx",
-            "subtask_annotation",
-            name="unique_episode_range_subtask_annotation",
-        ),
-    )
-
-
-class DatasetSubtaskAnnotationContentStatusDB(Base):
-    __tablename__ = "dataset_subtask_annotation_status"
-    id = Column(Integer, primary_key=True, index=True)
-    convert_path = Column(String(255), index=True, nullable=False)
-    dataset_uuid = Column(String(255), index=True, nullable=False)
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
-    err_message = Column(String(255), nullable=True)
-
-
-class DatasetSubtaskAnnotationContentDB(Base):
-    __tablename__ = "dataset_subtask_annotation_content"
-    id = Column(Integer, primary_key=True, index=True)
-    dataset_uuid = Column(String(255), index=True, nullable=False)
-    ori_content = Column(String, nullable=False)
-    new_content = Column(String, nullable=False)
-    __table_args__ = (
-        UniqueConstraint(
-            "dataset_uuid", "ori_content", name="uix_dataset_subtask_annotation_content"
-        ),
-    )
-
-
-class LerobotSubtaskAnnotationStatusDB(Base):
-    __tablename__ = "leformat_subtask_annotation_status"
-    id = Column(Integer, primary_key=True, index=True)
-    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
-    err_msg = Column(String, nullable=True)
 
 
 class LeformatEpisodeVideoHashDB(Base):
@@ -481,25 +222,6 @@ class LeformatEpisodeVideoHashStatusDB(Base):
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
 
 
-class LeformatEpisodeVideoCorrespondWithDownLoadVideoStatusDB(Base):
-    __tablename__ = "leformat_episode_video_correspond_with_download_video_status"
-    id = Column(Integer, primary_key=True, index=True)
-    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
-    convert_path = Column(String(255), index=True, nullable=False)
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
-
-
-class LeformatEpisodeVideoCorrespondWithDownLoadVideoDB(Base):
-    __tablename__ = "leformat_episode_video_correspond_with_download_video"
-    id = Column(Integer, primary_key=True, index=True)
-    dataset_uuid = Column(String(255), index=True, nullable=False)
-    episode_idx = Column(Integer, index=True, nullable=False)
-    video_path = Column()
-    corresponding_dowload_video_id = Column(
-        Integer, ForeignKey("SubtaskAnnotationVideoDownloadDB.id"), nullable=True
-    )
-
-
 class UrlVideoStAnnotationDB(Base):
     __tablename__ = "url_video_subtask_annotation"
     id = Column(Integer, primary_key=True, index=True)
@@ -507,3 +229,115 @@ class UrlVideoStAnnotationDB(Base):
     start_frame_idx = Column(Integer, index=True, nullable=False)
     end_frame_idx = Column(Integer, index=True, nullable=False)
     annotation = Column(String(255), nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "video_url",
+            "start_frame_idx",
+            "end_frame_idx",
+            "annotation",
+            name="uix_video_frame_range_annotation",
+        ),
+    )
+
+
+class DlVideoDB(Base):
+    __tablename__ = "download_videos"
+    id = Column(Integer, primary_key=True, index=True)
+    video_url = Column(String(255), index=True, nullable=False, unique=True)
+    download_path = Column(String(255), index=True, nullable=True, unique=True)
+    frame_num = Column(Integer, index=True, nullable=True)
+    download_status = Column(
+        Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True
+    )
+    file_hash = Column(String(255), index=True, nullable=True, unique=True)
+    file_hash_status = Column(
+        Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True, index=True
+    )
+    image_hashes = Column(LargeBinary, index=False, nullable=True)
+    image_hash_status = Column(
+        Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True, index=True
+    )
+
+
+class LeformatEpisodeUrlVideoMatchDB(Base):
+    __tablename__ = "leformat_episode_url_video_match"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    url_video_id = Column(Integer, ForeignKey("download_videos.id"), nullable=False)
+
+
+class LeformatEpisodeUrlVideoMatchStatusDB(Base):
+    __tablename__ = "leformat_episode_url_video_match_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=False)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True, index=True)
+    unmatched_episode_indices = Column(Text, index=True, nullable=True)
+
+
+class LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationDB(Base):
+    __tablename__ = "leformat_dataset_episode_original_subtask_annotation"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    start_frame_idx = Column(Integer, index=True, nullable=False)
+    end_frame_idx = Column(Integer, index=True, nullable=False)
+    annotation = Column(String(255), nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_uuid",
+            "episode_idx",
+            "start_frame_idx",
+            "end_frame_idx",
+            "annotation",
+            name="uix_dataset_episode_frame_range_annotation",
+        ),
+    )
+
+
+class LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB(Base):
+    __tablename__ = "leformat_dataset_episode_original_subtask_annotation_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(Text, index=True, nullable=True)
+
+
+class LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationDB(Base):
+    __tablename__ = "leformat_dataset_episode_optimized_subtask_annotation"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    start_frame_idx = Column(Integer, index=True, nullable=False)
+    end_frame_idx = Column(Integer, index=True, nullable=False)
+    annotation = Column(String(255), nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_uuid",
+            "episode_idx",
+            "start_frame_idx",
+            "end_frame_idx",
+            "annotation",
+            name="uix_dataset_episode_frame_range_annotation",
+        ),
+    )
+
+
+class LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB(Base):
+    __tablename__ = "leformat_dataset_episode_optimized_subtask_annotation_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(Text, index=True, nullable=True)
+
+
+class LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB(Base):
+    __tablename__ = "leformat_dataset_episode_subtask_range_annotation_embedding_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(Text, index=True, nullable=True)

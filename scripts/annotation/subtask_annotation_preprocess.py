@@ -69,11 +69,11 @@ if __name__ == "__main__":
         logger=log,
     )
     try:
-        # video_subtask_annotation.process_video_subtask_annotation_json_files()
-        # video_subtask_annotation.sync_download_tasks()
+        video_subtask_annotation.process_video_subtask_annotation_json_files()
+        video_subtask_annotation.sync_download_tasks()
         video_subtask_annotation.download_videos_multi_threads()
         video_subtask_annotation.sync_filehash_tasks()
-        video_subtask_annotation.compute_file_hashes_multi_threads()
+        video_subtask_annotation.generate_url_video_file_hashes_multi_threads()
         video_subtask_annotation.sync_imagehash_tasks()
         video_subtask_annotation.compute_image_hashes_multi_threads()
 

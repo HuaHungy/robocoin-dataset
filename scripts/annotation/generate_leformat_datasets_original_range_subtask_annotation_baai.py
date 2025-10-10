@@ -53,23 +53,10 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--dataset_convert_paths",
+        "--api_key",
         type=str,
-        nargs="*",  # 零个或多个
-        default=None,
-        help="Specify zero or more dataset data path",
-    )
-    argparser.add_argument(
-        "--ignore_file_hash",
-        action="store_true",
-        default=False,
-        help="If specified, ignore file hash. Default is False (file hash is checked).",
-    )
-    argparser.add_argument(
-        "--ignore_image_hash",
-        action="store_true",
-        default=False,
-        help="If specified, ignore image hash. Default is False (image hash is checked).",
+        default="sk-a3c8736391cf43809957329f28cac287",
+        help="api key",
     )
     args = argparser.parse_args()
 
@@ -88,16 +75,16 @@ if __name__ == "__main__":
         logger=log,
     )
     try:
-        video_subtask_annotation.generate_leformat_episode_video_hashes_threas_pool(num_workers=32)
+        video_subtask_annotation.generate_leformat_datasets_original_range_subtask_annotation_baai()
 
     except Exception:
         print(traceback.format_exc())
 
-    """_summary_
-python -m scripts.annotation.generate_leformat_video_hash\
+"""usages:
+python -m scripts.annotation.generate_leformat_datasets_original_range_subtask_annotation_baai \
     --db_file ./db/datasets.db \
     --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process \
     --passed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/passed-files \
     --impassed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/impassed-files \
     --video_download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos 
-    """
+"""
