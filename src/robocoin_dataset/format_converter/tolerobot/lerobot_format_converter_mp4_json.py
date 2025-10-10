@@ -3,16 +3,19 @@ LeRobot格式转换器 - MP4+JSON格式
 处理MP4视频文件配合JSON数据文件的数据集
 """
 
+import json
 import logging
 from pathlib import Path
-import numpy as np
+
 import cv2
-import json
+import numpy as np
 
 from robocoin_dataset.format_converter.tolerobot.constant import (
     CAM_NAME_KEY,
 )
-from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import LerobotFormatConverter
+from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
+    LerobotFormatConverter,
+)
 
 
 class LerobotFormatConverterMp4Json(LerobotFormatConverter):
