@@ -34,6 +34,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     STATE_KEY,
     SUB_ACTION_KEY,
     SUB_STATE_KEY,
+    TIMELINE_OFFSET_KEY,
 )
 from robocoin_dataset.format_converter.utils.spatial_data_convertor import spatial_covertor_funcs
 
@@ -441,13 +442,18 @@ class LerobotFormatConverter(ABC):
         self, task_path: Path, ep_idx: int, frame_idx: int, actions_buffer: any = None
     ) -> dict[str, np.ndarray]:
         lerobot_feature = self.converter_config[FEATURES_KEY][ACTION_KEY][LEROBOT_FEATURE_KEY]
+        
+        # Apply timeline_offset to get action from a future frame
+        timeline_offset = self.converter_config[FEATURES_KEY][ACTION_KEY].get(TIMELINE_OFFSET_KEY, 0)
+        action_frame_idx = frame_idx + timeline_offset
+        
         sub_actions_datas: list[np.ndarray] = []
         for action_config in self.converter_config[FEATURES_KEY][ACTION_KEY][SUB_ACTION_KEY]:
             args_dict = action_config[ARGS_KEY]
             sub_actions_data = self._get_frame_sub_actions(
                 task_path=task_path,
                 ep_idx=ep_idx,
-                frame_idx=frame_idx,
+                frame_idx=action_frame_idx,  # Use offset frame index for actions
                 args_dict=args_dict,
                 sub_actions_buffer=actions_buffer,
             )
@@ -566,7 +572,17 @@ class LerobotFormatConverter(ABC):
         states_buffer: any = None,
         actions_buffer: any = None,
     ) -> Iterable[dict]:
-        for frame_idx in range(self._get_episode_frames_num(task_path=task_path, ep_idx=ep_idx)):
+        total_frames = self._get_episode_frames_num(task_path=task_path, ep_idx=ep_idx)
+        
+        # Get timeline_offset from action config to determine how many frames to generate
+        timeline_offset = self.converter_config[FEATURES_KEY][ACTION_KEY].get(TIMELINE_OFFSET_KEY, 0)
+        
+        # When timeline_offset > 0, we need to stop earlier to avoid accessing frames beyond the episode
+        # For example, if timeline_offset=1, we can only use frames 0 to total_frames-2,
+        # because frame total_frames-1 would need to access frame total_frames (which doesn't exist)
+        max_frame_idx = total_frames - timeline_offset if timeline_offset > 0 else total_frames
+        
+        for frame_idx in range(max_frame_idx):
             try:
                 frame_data = self._gen_episode_frame(
                     task_path, ep_idx, frame_idx, images_buffer, states_buffer, actions_buffer

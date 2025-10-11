@@ -24,6 +24,8 @@ ACTION_KEY = "action"
 
 SUB_ACTION_KEY = "sub_action"
 
+TIMELINE_OFFSET_KEY = "timeline_offset"
+
 CAM_NAME_KEY = "cam_name"
 
 ARGS_KEY = "args"
