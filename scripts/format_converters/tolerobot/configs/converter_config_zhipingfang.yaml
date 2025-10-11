@@ -14,7 +14,7 @@ features:
         # dtype: video
         # lerobot_feature: observations.images.camera_head_rgb : by _gen_lerobot_features()
 
-      - cam_name: camera_right_wrist_rgb
+      - cam_name: camera_right_rgb
         args:
           ### keys and values by manual
           h5_path: observations/camera/rgb/right/images
@@ -23,61 +23,24 @@ features:
         # dtype: video
         # lerobot_feature: observations.images.camera_right_rgb : by _gen_lerobot_features()
 
-      ### values by manual - RGB cameras with images
-      - cam_name: cam_left_wrist_rgb
+      ### Depth cameras - NOW WITH DATA!
+      - cam_name: camera_head_depth
         args:
           ### keys and values by manual
-          h5_path: observations/camera/rgb/left/images
+          h5_path: observations/camera/depth/head/images
 
         ### values by function
         # dtype: video
-        # lerobot_feature: observations.images.camera_left_wrist_rgb : by _gen_lerobot_features()
+        # lerobot_feature: observations.images.camera_head_depth : by _gen_lerobot_features()
       
-      - cam_name: camera_chest_rgb
+      - cam_name: camera_right_depth
         args:
           ### keys and values by manual
-          h5_path: observations/camera/rgb/chest/images
+          h5_path: observations/camera/depth/right/images
 
         ### values by function
         # dtype: video
-        # lerobot_feature: observations.images.camera_chest_rgb : by _gen_lerobot_features()
-
-
-      # - cam_name: camera_head_depth
-      #   args:
-      #     ### keys and values by manual
-      #     h5_path: observations/camera/depth/head/images
-
-      #   ### values by function
-      #   # dtype: video
-      #   # lerobot_feature: observations.images.camera_head_depth : by _gen_lerobot_features()
-
-      # - cam_name: camera_right_depth
-      #   args:
-      #     ### keys and values by manual
-      #     h5_path: observations/camera/depth/right/images
-
-      #   ### values by function
-      #   # dtype: video
-      #   # lerobot_feature: observations.images.camera_right_depth : by _gen_lerobot_features()
-
-      # - cam_name: camera_left_wrist_depth
-      #   args:
-      #     ### keys and values by manual
-      #     h5_path: observations/camera/depth/left/images
-
-      #   ### values by function
-      #   # dtype: video
-      #   # lerobot_feature: observations.images.camera_left_wrist_depth : by _gen_lerobot_features()
-
-      # - cam_name: camera_chest_depth
-      #   args:
-      #     ### keys and values by manual
-      #     h5_path: observations/camera/depth/chest/images
-
-      #   ### values by function
-      #   # dtype: video
-      #   # lerobot_feature: observations.images.camera_chest_depth : by _gen_lerobot_features()
+        # lerobot_feature: observations.images.camera_right_depth : by _gen_lerobot_features()
 
     state:
       ### values by function
@@ -101,6 +64,8 @@ features:
             h5_path: observations/arm/left/joints
             range_from: 0
             range_to: 7
+          ### Convert float64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
         ### Left arm end effector pose (6) - xyz + rpy
         - names:
@@ -115,6 +80,8 @@ features:
             h5_path: observations/arm/left/pose
             range_from: 0
             range_to: 6
+          ### Convert float64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
         ### Left arm wrench (6) - force xyz + torque xyz
         - names:
@@ -129,6 +96,8 @@ features:
             h5_path: observations/arm/left/wrench
             range_from: 0
             range_to: 6
+          ### Convert float64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
         ### Left gripper position (1)
         - names:
@@ -138,6 +107,8 @@ features:
             h5_path: observations/effector/left/position
             range_from: 0
             range_to: 1
+          ### Convert int64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
         ### Right arm joints (7)
         - names:
@@ -153,6 +124,8 @@ features:
             h5_path: observations/arm/right/joints
             range_from: 0
             range_to: 7
+          ### Convert float64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
         ### Right arm end effector pose (6) - xyz + rpy
         - names:
@@ -167,6 +140,8 @@ features:
             h5_path: observations/arm/right/pose
             range_from: 0
             range_to: 6
+          ### Convert float64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
         ### Right arm wrench (6) - force xyz + torque xyz
         - names:
@@ -181,6 +156,8 @@ features:
             h5_path: observations/arm/right/wrench
             range_from: 0
             range_to: 6
+          ### Convert float64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
         ### Right gripper position (1)
         - names:
@@ -190,6 +167,8 @@ features:
             h5_path: observations/effector/right/position
             range_from: 0
             range_to: 1
+          ### Convert int64 to float32 as LeRobot requires float32
+          convert_func: to_float32
 
   action:
     ### values by function
@@ -215,6 +194,8 @@ features:
           h5_path: observations/arm/left/joints
           range_from: 0
           range_to: 7
+        ### Convert float64 to float32 as LeRobot requires float32
+        convert_func: to_float32
 
       ### Left arm end effector pose (6)
       - names:
@@ -229,6 +210,8 @@ features:
           h5_path: observations/arm/left/pose
           range_from: 0
           range_to: 6
+        ### Convert float64 to float32 as LeRobot requires float32
+        convert_func: to_float32
 
       ### Left arm wrench (6)
       - names:
@@ -243,6 +226,8 @@ features:
           h5_path: observations/arm/left/wrench
           range_from: 0
           range_to: 6
+        ### Convert float64 to float32 as LeRobot requires float32
+        convert_func: to_float32
 
       ### Left gripper position (1)
       - names:
@@ -252,6 +237,8 @@ features:
           h5_path: observations/effector/left/position
           range_from: 0
           range_to: 1
+        ### Convert int64 to float32 as LeRobot requires float32
+        convert_func: to_float32
 
       ### Right arm joints (7)
       - names:
@@ -267,6 +254,8 @@ features:
           h5_path: observations/arm/right/joints
           range_from: 0
           range_to: 7
+        ### Convert float64 to float32 as LeRobot requires float32
+        convert_func: to_float32
 
       ### Right arm end effector pose (6)
       - names:
@@ -281,6 +270,8 @@ features:
           h5_path: observations/arm/right/pose
           range_from: 0
           range_to: 6
+        ### Convert float64 to float32 as LeRobot requires float32
+        convert_func: to_float32
 
       ### Right arm wrench (6)
       - names:
@@ -295,6 +286,8 @@ features:
           h5_path: observations/arm/right/wrench
           range_from: 0
           range_to: 6
+        ### Convert float64 to float32 as LeRobot requires float32
+        convert_func: to_float32
 
       ### Right gripper position (1)
       - names:
@@ -304,3 +297,5 @@ features:
           h5_path: observations/effector/right/position
           range_from: 0
           range_to: 1
+        ### Convert int64 to float32 as LeRobot requires float32
+        convert_func: to_float32

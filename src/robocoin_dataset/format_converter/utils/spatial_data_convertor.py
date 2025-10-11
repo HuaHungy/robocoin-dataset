@@ -59,6 +59,15 @@ def multiply_by_10(input: np.ndarray) -> np.ndarray:
     return input * 10.0
 
 
+def to_float32(input: np.ndarray) -> np.ndarray:
+    """
+    Convert input to float32 dtype.
+    This is a passthrough function used when data needs dtype conversion without any numerical transformation.
+    Useful for H5 files that store data in float64 but LeRobot requires float32.
+    """
+    return input
+
+
 spatial_covertor_funcs = {
     "mm2m": mm2m,
     "cm2m": cm2m,
@@ -67,4 +76,5 @@ spatial_covertor_funcs = {
     "rot6d_to_euler_xyz": rot6d_to_euler_xyz,
     "degree2rad": degree2rad,
     "multiply_by_10": multiply_by_10,
+    "to_float32": to_float32,
 }
