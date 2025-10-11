@@ -105,12 +105,23 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         """获取episode的帧数"""
         json_data = self._load_json_data(task_path, ep_idx)
         if 'data' in json_data:
-            # 从第一个相机获取帧数
+            # 从任意一个数据键获取帧数（优先使用 camera 开头的键，否则使用第一个列表）
             for key, value in json_data['data'].items():
-                if 'camera' in key and isinstance(value, list):
+                if isinstance(value, list) and len(value) > 0:
+                    # 优先返回 camera 相关的键
+                    if 'camera' in key.lower():
+                        return len(value)
+            
+            # 如果没有找到 camera 键，使用第一个列表型数据
+            for key, value in json_data['data'].items():
+                if isinstance(value, list) and len(value) > 0:
                     return len(value)
         
-        raise ValueError("Cannot determine frame count from JSON data")
+        raise ValueError(
+            f"Cannot determine frame count from JSON data at "
+            f"task_path={task_path}, ep_idx={ep_idx}. "
+            f"Available keys: {list(json_data.get('data', {}).keys())}"
+        )
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
@@ -280,8 +291,19 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         if isinstance(frame_data, list) and frame_idx < len(frame_data):
             value = frame_data[frame_idx]
+            
+            # 如果 value 是字典（例如 {'position': [...], 'velocity': [...], ...}）
+            # 需要提取指定的字段（默认为 'position'）
+            if isinstance(value, dict):
+                # 尝试从 args_dict 获取字段名，默认使用 'position'
+                field_name = args_dict.get('field_name', 'position')
+                value = value.get(field_name, [])
+            
             if isinstance(value, (list, tuple)):
-                return np.array(value, dtype=np.float32)
+                # 提取指定范围的值
+                range_from = args_dict.get('range_from', 0)
+                range_to = args_dict.get('range_to', len(value))
+                return np.array(value[range_from:range_to], dtype=np.float32)
             return np.array([value], dtype=np.float32)
         
         # 如果找不到数据，返回0
