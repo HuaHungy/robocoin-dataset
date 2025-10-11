@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.spatial.transform import Rotation as r
+from scipy.spatial.transform import Rotation as r  # noqa: N813
 
 
 def cm2m(input: np.ndarray) -> np.ndarray:
