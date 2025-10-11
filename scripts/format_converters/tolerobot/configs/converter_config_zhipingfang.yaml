@@ -14,7 +14,7 @@ features:
         # dtype: video
         # lerobot_feature: observations.images.camera_head_rgb : by _gen_lerobot_features()
 
-      - cam_name: camera_right_rgb
+      - cam_name: camera_right_wrist_rgb
         args:
           ### keys and values by manual
           h5_path: observations/camera/rgb/right/images
@@ -23,24 +23,61 @@ features:
         # dtype: video
         # lerobot_feature: observations.images.camera_right_rgb : by _gen_lerobot_features()
 
-      ### Depth cameras - NOW WITH DATA!
-      - cam_name: camera_head_depth
+      ### values by manual - RGB cameras with images
+      - cam_name: cam_left_wrist_rgb
         args:
           ### keys and values by manual
-          h5_path: observations/camera/depth/head/images
+          h5_path: observations/camera/rgb/left/images
 
         ### values by function
         # dtype: video
-        # lerobot_feature: observations.images.camera_head_depth : by _gen_lerobot_features()
+        # lerobot_feature: observations.images.camera_left_wrist_rgb : by _gen_lerobot_features()
       
-      - cam_name: camera_right_depth
+      - cam_name: camera_chest_rgb
         args:
           ### keys and values by manual
-          h5_path: observations/camera/depth/right/images
+          h5_path: observations/camera/rgb/chest/images
 
         ### values by function
         # dtype: video
-        # lerobot_feature: observations.images.camera_right_depth : by _gen_lerobot_features()
+        # lerobot_feature: observations.images.camera_chest_rgb : by _gen_lerobot_features()
+
+
+      # - cam_name: camera_head_depth
+      #   args:
+      #     ### keys and values by manual
+      #     h5_path: observations/camera/depth/head/images
+
+      #   ### values by function
+      #   # dtype: video
+      #   # lerobot_feature: observations.images.camera_head_depth : by _gen_lerobot_features()
+
+      # - cam_name: camera_right_depth
+      #   args:
+      #     ### keys and values by manual
+      #     h5_path: observations/camera/depth/right/images
+
+      #   ### values by function
+      #   # dtype: video
+      #   # lerobot_feature: observations.images.camera_right_depth : by _gen_lerobot_features()
+
+      # - cam_name: camera_left_wrist_depth
+      #   args:
+      #     ### keys and values by manual
+      #     h5_path: observations/camera/depth/left/images
+
+      #   ### values by function
+      #   # dtype: video
+      #   # lerobot_feature: observations.images.camera_left_wrist_depth : by _gen_lerobot_features()
+
+      # - cam_name: camera_chest_depth
+      #   args:
+      #     ### keys and values by manual
+      #     h5_path: observations/camera/depth/chest/images
+
+      #   ### values by function
+      #   # dtype: video
+      #   # lerobot_feature: observations.images.camera_chest_depth : by _gen_lerobot_features()
 
     state:
       ### values by function

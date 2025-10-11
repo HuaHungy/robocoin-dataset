@@ -6,11 +6,11 @@ features:
         args:
           cam_name: camera_front_head_rgb
           video_file_pattern: "*camera_front_head_rgb.mp4"
-      - cam_name: camera_left_wrist
+      - cam_name: cam_left_wrist_rgb
         args:
           cam_name: camera_left_wrist
           video_file_pattern: "*camera_left_wrist.mp4"
-      - cam_name: camera_right_wrist
+      - cam_name: cam_right_wrist_rgb
         args:
           cam_name: camera_right_wrist
           video_file_pattern: "*camera_right_wrist.mp4"
