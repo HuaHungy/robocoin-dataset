@@ -244,3 +244,10 @@ robobrain:
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
   class: LerobotFormatConverterH5Mp4
   converter_config_path: converter_config_aloha_h5_mp4.yaml
+
+ruantong_a2d:
+- version: default_version
+  verison_description: Ruantong A2D humanoid robot with H5 state/action data and JPG images
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_jpg
+  class: LerobotFormatConverterH5Jpg
+  converter_config_path: converter_config_ruantong.yaml

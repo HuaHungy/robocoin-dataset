@@ -1,0 +1,308 @@
+# Ruantong (软通) A2D Humanoid Robot Dataset Converter Config - Full Version
+# 数据结构（组帧后）：
+# - framing_joints.h5 或 aligned_joints.h5: 包含 state 和 action 数据
+# - camera/{frame_idx}/{cam_name}.jpg: 图像文件
+# - meta_info.json: 元数据信息
+#
+# State维度: 45维
+# - 14 joints + 3+4 left_end + 3+4 right_end + 2 waist + 2 head + 2 effector + 3+4 robot_base = 45
+#
+# Action维度: 35维  
+# - 14 joints + 3+4 left_end + 3+4 right_end + 2 waist + 2 head + 2 effector = 35
+
+dataset_type: h5_jpg
+dataset_name: ruantong_a2d
+fps: 30
+
+features:
+  observation:
+    state:
+      lerobot_feature: observation.state
+      dtype: float32
+      sub_state:
+        # Joint positions - 关节位置 (14维)
+        - names:
+            - joint_pos_0
+            - joint_pos_1
+            - joint_pos_2
+            - joint_pos_3
+            - joint_pos_4
+            - joint_pos_5
+            - joint_pos_6
+            - joint_pos_7
+            - joint_pos_8
+            - joint_pos_9
+            - joint_pos_10
+            - joint_pos_11
+            - joint_pos_12
+            - joint_pos_13
+          args:
+            h5_path: /state/joint/position
+            range_from: 0
+            range_to: 14
+          convert_func: to_float32
+        
+        # Left end effector position - 左手末端位置 (3维)
+        - names:
+            - left_end_pos_x
+            - left_end_pos_y
+            - left_end_pos_z
+          args:
+            h5_path: /state/end/position
+            range_from: 0
+            range_to: 3
+            array_index: 0
+          convert_func: to_float32
+        
+        # Left end effector orientation (quaternion) - 左手末端姿态 (4维)
+        - names:
+            - left_end_quat_x
+            - left_end_quat_y
+            - left_end_quat_z
+            - left_end_quat_w
+          args:
+            h5_path: /state/end/orientation
+            range_from: 0
+            range_to: 4
+            array_index: 0
+          convert_func: to_float32
+        
+        # Right end effector position - 右手末端位置 (3维)
+        - names:
+            - right_end_pos_x
+            - right_end_pos_y
+            - right_end_pos_z
+          args:
+            h5_path: /state/end/position
+            range_from: 0
+            range_to: 3
+            array_index: 1
+          convert_func: to_float32
+        
+        # Right end effector orientation (quaternion) - 右手末端姿态 (4维)
+        - names:
+            - right_end_quat_x
+            - right_end_quat_y
+            - right_end_quat_z
+            - right_end_quat_w
+          args:
+            h5_path: /state/end/orientation
+            range_from: 0
+            range_to: 4
+            array_index: 1
+          convert_func: to_float32
+        
+        # Waist position - 腰部位置 (2维)
+        - names:
+            - waist_yaw
+            - waist_pitch
+          args:
+            h5_path: /state/waist/position
+            range_from: 0
+            range_to: 2
+          convert_func: to_float32
+        
+        # Head position - 头部位置 (2维)
+        - names:
+            - head_yaw
+            - head_pitch
+          args:
+            h5_path: /state/head/position
+            range_from: 0
+            range_to: 2
+          convert_func: to_float32
+        
+        # Effector/Gripper position - 夹爪位置 (2维)
+        - names:
+            - left_effector_pos
+            - right_effector_pos
+          args:
+            h5_path: /state/effector/position
+            range_from: 0
+            range_to: 2
+          convert_func: to_float32
+        
+        # Robot base position - 机器人基座位置 (3维)
+        - names:
+            - robot_pos_x
+            - robot_pos_y
+            - robot_pos_z
+          args:
+            h5_path: /state/robot/position
+            range_from: 0
+            range_to: 3
+          convert_func: to_float32
+        
+        # Robot base orientation (quaternion) - 机器人基座姿态 (4维)
+        - names:
+            - robot_quat_x
+            - robot_quat_y
+            - robot_quat_z
+            - robot_quat_w
+          args:
+            h5_path: /state/robot/orientation
+            range_from: 0
+            range_to: 4
+          convert_func: to_float32
+
+    images:
+      # Head RGB camera (d455) - 头部RGB相机
+      - cam_name: head_color
+        args:
+          h5_path: camera/{frame_idx}/head_color.jpg
+          file_type: jpg
+      
+      # Head depth camera (d455) - 头部深度相机
+      - cam_name: head_depth
+        args:
+          h5_path: camera/{frame_idx}/head_depth.png
+          file_type: png
+      
+      # Left hand RGB camera (d405) - 左手RGB相机
+      - cam_name: hand_left_color
+        args:
+          h5_path: camera/{frame_idx}/hand_left_color.jpg
+          file_type: jpg
+      
+      # Right hand RGB camera (d405) - 右手RGB相机
+      - cam_name: hand_right_color
+        args:
+          h5_path: camera/{frame_idx}/hand_right_color.jpg
+          file_type: jpg
+      
+      # Back left fisheye camera - 后左鱼眼相机
+      - cam_name: back_left_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/back_left_fisheye_color.jpg
+          file_type: jpg
+      
+      # Back right fisheye camera - 后右鱼眼相机
+      - cam_name: back_right_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/back_right_fisheye_color.jpg
+          file_type: jpg
+      
+      # Head center fisheye camera - 头部中央鱼眼相机
+      - cam_name: head_center_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/head_center_fisheye_color.jpg
+          file_type: jpg
+      
+      # Head left fisheye camera - 头部左侧鱼眼相机
+      - cam_name: head_left_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/head_left_fisheye_color.jpg
+          file_type: jpg
+      
+      # Head right fisheye camera - 头部右侧鱼眼相机
+      - cam_name: head_right_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/head_right_fisheye_color.jpg
+          file_type: jpg
+
+  action:
+    lerobot_feature: action
+    dtype: float32
+    timeline_offset: 1  # action 来自下一帧
+    sub_action:
+      # Joint positions - 关节位置指令 (14维)
+      - names:
+          - joint_pos_0
+          - joint_pos_1
+          - joint_pos_2
+          - joint_pos_3
+          - joint_pos_4
+          - joint_pos_5
+          - joint_pos_6
+          - joint_pos_7
+          - joint_pos_8
+          - joint_pos_9
+          - joint_pos_10
+          - joint_pos_11
+          - joint_pos_12
+          - joint_pos_13
+        args:
+          h5_path: /action/joint/position
+          range_from: 0
+          range_to: 14
+        convert_func: to_float32
+      
+      # Left end effector position - 左手末端位置指令 (3维)
+      - names:
+          - left_end_pos_x
+          - left_end_pos_y
+          - left_end_pos_z
+        args:
+          h5_path: /action/end/position
+          range_from: 0
+          range_to: 3
+          array_index: 0
+        convert_func: to_float32
+      
+      # Left end effector orientation (quaternion) - 左手末端姿态指令 (4维)
+      - names:
+          - left_end_quat_x
+          - left_end_quat_y
+          - left_end_quat_z
+          - left_end_quat_w
+        args:
+          h5_path: /action/end/orientation
+          range_from: 0
+          range_to: 4
+          array_index: 0
+        convert_func: to_float32
+      
+      # Right end effector position - 右手末端位置指令 (3维)
+      - names:
+          - right_end_pos_x
+          - right_end_pos_y
+          - right_end_pos_z
+        args:
+          h5_path: /action/end/position
+          range_from: 0
+          range_to: 3
+          array_index: 1
+        convert_func: to_float32
+      
+      # Right end effector orientation (quaternion) - 右手末端姿态指令 (4维)
+      - names:
+          - right_end_quat_x
+          - right_end_quat_y
+          - right_end_quat_z
+          - right_end_quat_w
+        args:
+          h5_path: /action/end/orientation
+          range_from: 0
+          range_to: 4
+          array_index: 1
+        convert_func: to_float32
+      
+      # Waist position - 腰部位置指令 (2维)
+      - names:
+          - waist_yaw
+          - waist_pitch
+        args:
+          h5_path: /action/waist/position
+          range_from: 0
+          range_to: 2
+        convert_func: to_float32
+      
+      # Head position - 头部位置指令 (2维)
+      - names:
+          - head_yaw
+          - head_pitch
+        args:
+          h5_path: /action/head/position
+          range_from: 0
+          range_to: 2
+        convert_func: to_float32
+      
+      # Effector/Gripper position - 夹爪位置指令 (2维)
+      - names:
+          - left_effector_pos
+          - right_effector_pos
+        args:
+          h5_path: /action/effector/position
+          range_from: 0
+          range_to: 2
+        convert_func: to_float32
