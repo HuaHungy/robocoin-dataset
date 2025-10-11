@@ -336,7 +336,7 @@ features:
 
         args:
           ### keys and values by manual
-          h5_path: /state/joint/position
+          h5_path: /action/joint/position
           range_from: 0
           range_to: 7
         
@@ -354,7 +354,7 @@ features:
 
         args:
           ### keys and values by manual
-          h5_path: /state/joint/position
+          h5_path: /action/joint/position
           range_from: 7
           range_to: 14
 
@@ -368,7 +368,7 @@ features:
         - left_end_pos_z
         args:
           ### keys and values by manual
-          h5_path: /state/end/position
+          h5_path: /action/end/position
           range_from: 0
           range_to: 3
           array_index: 0
@@ -384,7 +384,7 @@ features:
 
         args:
           ### keys and values by manual
-          h5_path: /state/end/orientation
+          h5_path: /action/end/orientation
           range_from: 0
           range_to: 4
           array_index: 0
@@ -401,7 +401,7 @@ features:
 
         args:
           ### keys and values by manual
-          h5_path: /state/end/position
+          h5_path: /action/end/position
           range_from: 0
           range_to: 3
           array_index: 1
@@ -417,7 +417,7 @@ features:
         - right_end_quat_w
         args:
           ### keys and values by manual
-          h5_path: /state/end/orientation
+          h5_path: /action/end/orientation
           range_from: 0
           range_to: 4
           array_index: 1
@@ -431,7 +431,7 @@ features:
 
         args:
           ### keys and values by manual
-          h5_path: /state/waist/position
+          h5_path: /action/waist/position
           range_from: 0
           range_to: 2
         
@@ -444,7 +444,7 @@ features:
 
         args:
           ### keys and values by manual
-          h5_path: /state/head/position
+          h5_path: /action/head/position
           range_from: 0
           range_to: 2
         
@@ -457,38 +457,9 @@ features:
 
         args:
           ### keys and values by manual
-          h5_path: /state/effector/position
+          h5_path: /action/effector/position
           range_from: 0
           range_to: 2
-        
-        ### values by manual
-        convert_func: to_float32
-
-      - names: 
-        - robot_pos_x
-        - robot_pos_y
-        - robot_pos_z
-
-        args:
-          ### keys and values by manual
-          h5_path: /state/robot/position
-          range_from: 0
-          range_to: 3
-        
-        ### values by manual
-        convert_func: to_float32
-
-      - names: 
-        - robot_quat_x
-        - robot_quat_y
-        - robot_quat_z
-        - robot_quat_w
-
-        args:
-          ### keys and values by manual
-          h5_path: /state/robot/orientation
-          range_from: 0
-          range_to: 4
         
         ### values by manual
         convert_func: to_float32
