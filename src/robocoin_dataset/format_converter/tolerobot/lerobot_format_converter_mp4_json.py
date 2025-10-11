@@ -171,10 +171,18 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         cam_name = args_dict.get(CAM_NAME_KEY)
         if cam_name not in images_buffer:
-            raise KeyError(f"Camera {cam_name} not found in episode {ep_idx}")
+            available_cameras = list(images_buffer.keys())
+            raise KeyError(
+                f"Camera '{cam_name}' not found in episode {ep_idx} at task_path={task_path}. "
+                f"Available cameras: {available_cameras}"
+            )
         
         if frame_idx >= len(images_buffer[cam_name]):
-            raise IndexError(f"Frame index {frame_idx} out of range for camera {cam_name}")
+            raise IndexError(
+                f"Frame index {frame_idx} out of range for camera '{cam_name}' "
+                f"in episode {ep_idx} at task_path={task_path}. "
+                f"Camera has {len(images_buffer[cam_name])} frames."
+            )
         
         return images_buffer[cam_name][frame_idx]
 

@@ -332,9 +332,17 @@ class LerobotFormatConverter(ABC):
 
     def _get_one_frame_image(self, args_dict: dict) -> np.ndarray:
         task_path = list(self.path_task_dict.keys())[0]
-        return self._get_frame_image(
-            task_path=task_path, ep_idx=0, frame_idx=0, args_dict=args_dict
-        )
+        try:
+            return self._get_frame_image(
+                task_path=task_path, ep_idx=0, frame_idx=0, args_dict=args_dict
+            )
+        except Exception as e:
+            cam_name = args_dict.get(CAM_NAME_KEY, "unknown")
+            raise RuntimeError(
+                f"Failed to get sample image for camera '{cam_name}' "
+                f"from task_path={task_path}, ep_idx=0, frame_idx=0. "
+                f"Original error: {type(e).__name__}: {e}"
+            ) from e
 
     def _get_one_frame_images(self, image_configs: list[dict]) -> dict[str, np.ndarray]:
         images = {}
@@ -589,8 +597,16 @@ class LerobotFormatConverter(ABC):
                 )
             except Exception as e:
                 if self.logger:
-                    self.logger.error(f"Error in episode {ep_idx} frame {frame_idx}: {e}")
-                raise e
+                    self.logger.error(
+                        f"Error generating frame data: task_path={task_path}, "
+                        f"episode={ep_idx}, frame={frame_idx}/{max_frame_idx}, "
+                        f"timeline_offset={timeline_offset}. Error: {e}"
+                    )
+                raise RuntimeError(
+                    f"Failed to generate frame at task_path={task_path}, "
+                    f"episode={ep_idx}, frame={frame_idx}/{max_frame_idx} "
+                    f"(timeline_offset={timeline_offset})"
+                ) from e
             yield frame_data
 
         pass
@@ -627,8 +643,15 @@ class LerobotFormatConverter(ABC):
                                     task=task,
                                 )
                         except Exception as e:  # noqa: PERF203
-                            raise Exception(
-                                f"Processing frame {frame_data[FRAME_IDX_KEY]} of episode {task_ep_idx} of task_path {str(task_path)} failed"
+                            if self.logger:
+                                self.logger.error(
+                                    f"Failed to process frame: task_path={task_path}, "
+                                    f"episode={task_ep_idx}, frame={frame_data[FRAME_IDX_KEY]}. "
+                                    f"Error: {e}"
+                                )
+                            raise RuntimeError(
+                                f"Failed to process frame {frame_data[FRAME_IDX_KEY]} "
+                                f"of episode {task_ep_idx} at task_path={task_path}"
                             ) from e
 
                     if not is_test:
@@ -636,8 +659,15 @@ class LerobotFormatConverter(ABC):
                     yield (task, task_ep_idx, ep_idx)
                     ep_idx += 1
                 except Exception as e:  # noqa: PERF203
-                    raise Exception(
-                        f"Processing episode {task_ep_idx} of task_path {str(task_path)} failed"
+                    if self.logger:
+                        self.logger.error(
+                            f"Failed to process episode: task_path={task_path}, "
+                            f"episode={task_ep_idx}, global_ep_idx={ep_idx}. "
+                            f"Error: {e}"
+                        )
+                    raise RuntimeError(
+                        f"Failed to process episode {task_ep_idx} (global episode {ep_idx}) "
+                        f"at task_path={task_path}"
                     ) from e
 
     def get_episodes_num(self) -> int:
