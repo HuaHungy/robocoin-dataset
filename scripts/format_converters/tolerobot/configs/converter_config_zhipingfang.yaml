@@ -1,16 +1,56 @@
+### fps by manual
 fps: 30
+
 features:
   observation:
     images:
+      ### values by manual - RGB cameras with images
       - cam_name: camera_head_rgb
         args:
+          ### keys and values by manual
           h5_path: observations/camera/rgb/head/images
+
+        ### values by function
+        # dtype: video
+        # lerobot_feature: observations.images.camera_head_rgb : by _gen_lerobot_features()
+
       - cam_name: camera_right_rgb
         args:
+          ### keys and values by manual
           h5_path: observations/camera/rgb/right/images
 
+        ### values by function
+        # dtype: video
+        # lerobot_feature: observations.images.camera_right_rgb : by _gen_lerobot_features()
+
+      ### Depth cameras - NOW WITH DATA!
+      - cam_name: camera_head_depth
+        args:
+          ### keys and values by manual
+          h5_path: observations/camera/depth/head/images
+
+        ### values by function
+        # dtype: video
+        # lerobot_feature: observations.images.camera_head_depth : by _gen_lerobot_features()
+      
+      - cam_name: camera_right_depth
+        args:
+          ### keys and values by manual
+          h5_path: observations/camera/depth/right/images
+
+        ### values by function
+        # dtype: video
+        # lerobot_feature: observations.images.camera_right_depth : by _gen_lerobot_features()
+
     state:
+      ### values by function
+      # lerobot_feature: observation.state : by _gen_lerobot_features()
+      # dtype: float32 
+      # shape: [40]  # 7 left joints + 6 left pose + 6 left wrench + 1 left gripper + 7 right joints + 6 right pose + 6 right wrench + 1 right gripper
+
+      ## sub_states should be concatenated together here : by _gen_state_names()
       sub_state:
+        ### Left arm joints (7)
         - names:
             - left_arm_joint_0
             - left_arm_joint_1
@@ -20,15 +60,49 @@ features:
             - left_arm_joint_5
             - left_arm_joint_6
           args:
+            ### keys and values by manual
             h5_path: observations/arm/left/joints
             range_from: 0
             range_to: 7
+
+        ### Left arm end effector pose (6) - xyz + rpy
+        - names:
+            - left_arm_pose_x
+            - left_arm_pose_y
+            - left_arm_pose_z
+            - left_arm_pose_roll
+            - left_arm_pose_pitch
+            - left_arm_pose_yaw
+          args:
+            ### keys and values by manual
+            h5_path: observations/arm/left/pose
+            range_from: 0
+            range_to: 6
+
+        ### Left arm wrench (6) - force xyz + torque xyz
+        - names:
+            - left_arm_wrench_fx
+            - left_arm_wrench_fy
+            - left_arm_wrench_fz
+            - left_arm_wrench_tx
+            - left_arm_wrench_ty
+            - left_arm_wrench_tz
+          args:
+            ### keys and values by manual
+            h5_path: observations/arm/left/wrench
+            range_from: 0
+            range_to: 6
+
+        ### Left gripper position (1)
         - names:
             - left_effector_position
           args:
+            ### keys and values by manual
             h5_path: observations/effector/left/position
             range_from: 0
             range_to: 1
+
+        ### Right arm joints (7)
         - names:
             - right_arm_joint_0
             - right_arm_joint_1
@@ -38,19 +112,59 @@ features:
             - right_arm_joint_5
             - right_arm_joint_6
           args:
+            ### keys and values by manual
             h5_path: observations/arm/right/joints
             range_from: 0
             range_to: 7
+
+        ### Right arm end effector pose (6) - xyz + rpy
+        - names:
+            - right_arm_pose_x
+            - right_arm_pose_y
+            - right_arm_pose_z
+            - right_arm_pose_roll
+            - right_arm_pose_pitch
+            - right_arm_pose_yaw
+          args:
+            ### keys and values by manual
+            h5_path: observations/arm/right/pose
+            range_from: 0
+            range_to: 6
+
+        ### Right arm wrench (6) - force xyz + torque xyz
+        - names:
+            - right_arm_wrench_fx
+            - right_arm_wrench_fy
+            - right_arm_wrench_fz
+            - right_arm_wrench_tx
+            - right_arm_wrench_ty
+            - right_arm_wrench_tz
+          args:
+            ### keys and values by manual
+            h5_path: observations/arm/right/wrench
+            range_from: 0
+            range_to: 6
+
+        ### Right gripper position (1)
         - names:
             - right_effector_position
           args:
+            ### keys and values by manual
             h5_path: observations/effector/right/position
             range_from: 0
             range_to: 1
 
   action:
+    ### values by function
+    # lerobot_feature: action : by _gen_lerobot_features()
+    # dtype: float32
+    # shape: [40]  # Same as state
+
+    ## sub_actions should be concatenated together here : by _gen_action_names()
+    ### values by manual
     timeline_offset: 1
     sub_action:
+      ### Left arm joints (7) - use observations as action (common practice)
       - names:
           - left_arm_joint_0
           - left_arm_joint_1
@@ -60,15 +174,49 @@ features:
           - left_arm_joint_5
           - left_arm_joint_6
         args:
+          ### keys and values by manual
           h5_path: observations/arm/left/joints
           range_from: 0
           range_to: 7
+
+      ### Left arm end effector pose (6)
+      - names:
+          - left_arm_pose_x
+          - left_arm_pose_y
+          - left_arm_pose_z
+          - left_arm_pose_roll
+          - left_arm_pose_pitch
+          - left_arm_pose_yaw
+        args:
+          ### keys and values by manual
+          h5_path: observations/arm/left/pose
+          range_from: 0
+          range_to: 6
+
+      ### Left arm wrench (6)
+      - names:
+          - left_arm_wrench_fx
+          - left_arm_wrench_fy
+          - left_arm_wrench_fz
+          - left_arm_wrench_tx
+          - left_arm_wrench_ty
+          - left_arm_wrench_tz
+        args:
+          ### keys and values by manual
+          h5_path: observations/arm/left/wrench
+          range_from: 0
+          range_to: 6
+
+      ### Left gripper position (1)
       - names:
           - left_effector_position
         args:
+          ### keys and values by manual
           h5_path: observations/effector/left/position
           range_from: 0
           range_to: 1
+
+      ### Right arm joints (7)
       - names:
           - right_arm_joint_0
           - right_arm_joint_1
@@ -78,12 +226,44 @@ features:
           - right_arm_joint_5
           - right_arm_joint_6
         args:
+          ### keys and values by manual
           h5_path: observations/arm/right/joints
           range_from: 0
           range_to: 7
+
+      ### Right arm end effector pose (6)
+      - names:
+          - right_arm_pose_x
+          - right_arm_pose_y
+          - right_arm_pose_z
+          - right_arm_pose_roll
+          - right_arm_pose_pitch
+          - right_arm_pose_yaw
+        args:
+          ### keys and values by manual
+          h5_path: observations/arm/right/pose
+          range_from: 0
+          range_to: 6
+
+      ### Right arm wrench (6)
+      - names:
+          - right_arm_wrench_fx
+          - right_arm_wrench_fy
+          - right_arm_wrench_fz
+          - right_arm_wrench_tx
+          - right_arm_wrench_ty
+          - right_arm_wrench_tz
+        args:
+          ### keys and values by manual
+          h5_path: observations/arm/right/wrench
+          range_from: 0
+          range_to: 6
+
+      ### Right gripper position (1)
       - names:
           - right_effector_position
         args:
+          ### keys and values by manual
           h5_path: observations/effector/right/position
           range_from: 0
           range_to: 1
