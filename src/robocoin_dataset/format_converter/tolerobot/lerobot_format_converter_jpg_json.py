@@ -3,16 +3,23 @@ LeRobot格式转换器 - JPG+JSON格式
 处理多传感器文件夹结构的数据集（alohaold, pika, mayi）
 """
 
+import json
 import logging
 from pathlib import Path
+
 import numpy as np
-import json
 from PIL import Image
 
 from robocoin_dataset.format_converter.tolerobot.constant import (
-    CAM_NAME_KEY, FEATURES_KEY, OBSERVATION_KEY, IMAGE_KEY, ARGS_KEY,
+    ARGS_KEY,
+    CAM_NAME_KEY,
+    FEATURES_KEY,
+    IMAGE_KEY,
+    OBSERVATION_KEY,
 )
-from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import LerobotFormatConverter
+from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
+    LerobotFormatConverter,
+)
 
 
 class LerobotFormatConverterJpgJson(LerobotFormatConverter):
@@ -86,8 +93,7 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         if not camera_dir.exists():
             return []
         
-        image_files = sorted(camera_dir.glob("*.jpg")) + sorted(camera_dir.glob("*.png"))
-        return image_files
+        return sorted(camera_dir.glob("*.jpg")) + sorted(camera_dir.glob("*.png"))
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
         """获取episode的帧数"""
@@ -181,7 +187,7 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         ep_dir = self._get_episode_dir(task_path, ep_idx)
         
         # 加载各种关节数据
-        buffer = {
+        return {
             'puppet_left': self._load_joint_state_data(ep_dir, 'puppetLeft'),
             'puppet_right': self._load_joint_state_data(ep_dir, 'puppetRight'),
             'master_left': self._load_joint_state_data(ep_dir, 'masterLeft'),
@@ -190,7 +196,6 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
             'gripper_right': self._load_gripper_data(ep_dir, 'pika_r'),
         }
         
-        return buffer
 
     def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> dict:
         """准备episode的动作缓冲区"""
