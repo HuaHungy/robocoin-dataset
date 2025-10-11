@@ -49,30 +49,49 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
         for task_path in self.path_task_dict.keys():
-            episodes = list(task_path.glob("*"))
-            episodes = [ep for ep in episodes if ep.is_dir()]
+            try:
+                episodes = self._get_all_episode_dirs(task_path)
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    f"Failed to find episode directories in {task_path}. "
+                    f"Error: {e}"
+                ) from e
             
             if not episodes:
-                raise FileNotFoundError(f"No episode directories found in {task_path}")
+                raise FileNotFoundError(
+                    f"No episode directories found in {task_path}"
+                )
             
             for ep_dir in episodes:
-                json_files = list(ep_dir.glob("data.json"))
-                if not json_files:
-                    raise FileNotFoundError(f"No data.json file found in {ep_dir}")
+                json_file = ep_dir / "data.json"
+                if not json_file.exists():
+                    raise FileNotFoundError(
+                        f"No data.json file found in {ep_dir}"
+                    )
                 
                 # 检查是否有对应的MP4文件
                 mp4_files = list(ep_dir.glob("*.mp4"))
                 if not mp4_files:
-                    raise FileNotFoundError(f"No MP4 files found in {ep_dir}")
+                    raise FileNotFoundError(
+                        f"No MP4 files found in {ep_dir}"
+                    )
 
     def _load_json_data(self, task_path: Path, ep_idx: int) -> dict:
         """加载JSON数据（带缓存）"""
-        episodes = sorted([ep for ep in task_path.glob("*") if ep.is_dir()])
+        episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
-            raise IndexError(f"Episode index {ep_idx} out of range")
+            raise IndexError(
+                f"Episode index {ep_idx} out of range for task_path={task_path}. "
+                f"Found {len(episodes)} episodes."
+            )
         
         ep_dir = episodes[ep_idx]
         json_file = ep_dir / "data.json"
+        
+        if not json_file.exists():
+            raise FileNotFoundError(
+                f"data.json not found in episode {ep_idx} at {ep_dir}"
+            )
         
         cache_key = str(json_file)
         if cache_key not in self._json_data_cache:
@@ -95,16 +114,61 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
-        episodes = [ep for ep in task_path.glob("*") if ep.is_dir()]
+        episodes = self._get_all_episode_dirs(task_path)
         return len(episodes)
+    
+    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
+        """获取所有episode目录（支持嵌套结构）
+        
+        该方法支持两种结构：
+        1. 扁平结构：task_path/episode_0/data.json
+        2. 嵌套结构：task_path/xiyiji-1/20250501_record0/data.json
+        """
+        # 首先检查是否是扁平结构
+        direct_episodes = [
+            ep_dir for ep_dir in task_path.glob("*") 
+            if ep_dir.is_dir() and (ep_dir / "data.json").exists()
+        ]
+        
+        if direct_episodes:
+            return sorted(direct_episodes)
+        
+        # 如果不是扁平结构，尝试嵌套结构
+        nested_episodes = [
+            ep_dir
+            for parent_dir in task_path.glob("*")
+            if parent_dir.is_dir()
+            for ep_dir in parent_dir.glob("*")
+            if ep_dir.is_dir() and (ep_dir / "data.json").exists()
+        ]
+        
+        if nested_episodes:
+            return sorted(nested_episodes)
+        
+        raise FileNotFoundError(
+            f"No episode directories with data.json found in {task_path}. "
+            f"Checked both flat structure (task_path/*/data.json) and "
+            f"nested structure (task_path/*/*/data.json)"
+        )
 
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> dict[str, list[np.ndarray]]:
         """准备episode的图像缓冲区"""
-        episodes = sorted([ep for ep in task_path.glob("*") if ep.is_dir()])
+        episodes = self._get_all_episode_dirs(task_path)
+        if ep_idx >= len(episodes):
+            raise IndexError(
+                f"Episode index {ep_idx} out of range for task_path={task_path}. "
+                f"Found {len(episodes)} episodes."
+            )
+        
         ep_dir = episodes[ep_idx]
         
         # 获取所有MP4文件
         mp4_files = sorted(ep_dir.glob("*.mp4"))
+        
+        if not mp4_files:
+            raise FileNotFoundError(
+                f"No MP4 files found in episode {ep_idx} at {ep_dir}"
+            )
         
         images = {}
         for mp4_file in mp4_files:
@@ -122,6 +186,12 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     frames.append(frame_rgb)
                 cap.release()
                 images[cam_name] = frames
+        
+        if not images:
+            raise RuntimeError(
+                f"No valid camera images loaded from episode {ep_idx} at {ep_dir}. "
+                f"Found MP4 files: {[f.name for f in mp4_files]}"
+            )
         
         return images
 

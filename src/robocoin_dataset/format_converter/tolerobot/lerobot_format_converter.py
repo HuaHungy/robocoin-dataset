@@ -340,7 +340,7 @@ class LerobotFormatConverter(ABC):
             cam_name = args_dict.get(CAM_NAME_KEY, "unknown")
             raise RuntimeError(
                 f"Failed to get sample image for camera '{cam_name}' "
-                f"from task_path={task_path}, ep_idx=0, frame_idx=0. "
+                f"from task_path={task_path}"
                 f"Original error: {type(e).__name__}: {e}"
             ) from e
 
