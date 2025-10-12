@@ -102,26 +102,62 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         return self._json_data_cache[cache_key]
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """获取episode的帧数"""
-        json_data = self._load_json_data(task_path, ep_idx)
-        if 'data' in json_data:
-            # 从任意一个数据键获取帧数（优先使用 camera 开头的键，否则使用第一个列表）
-            for key, value in json_data['data'].items():
-                if isinstance(value, list) and len(value) > 0:
-                    # 优先返回 camera 相关的键
-                    if 'camera' in key.lower():
-                        return len(value)
-            
-            # 如果没有找到 camera 键，使用第一个列表型数据
-            for key, value in json_data['data'].items():
-                if isinstance(value, list) and len(value) > 0:
-                    return len(value)
+        """获取episode的帧数
         
-        raise ValueError(
-            f"Cannot determine frame count from JSON data at "
-            f"task_path={task_path}, ep_idx={ep_idx}. "
-            f"Available keys: {list(json_data.get('data', {}).keys())}"
-        )
+        需要返回所有数据源（JSON数据和视频文件）中的最小帧数，
+        以确保所有帧都有完整的数据（observation、state、action）
+        """
+        # 1. 从JSON获取帧数
+        json_data = self._load_json_data(task_path, ep_idx)
+        json_frame_counts = []
+        
+        if 'data' in json_data:
+            for value in json_data['data'].values():
+                if isinstance(value, list) and len(value) > 0:
+                    json_frame_counts.append(len(value))
+        
+        if not json_frame_counts:
+            raise ValueError(
+                f"Cannot determine frame count from JSON data at "
+                f"task_path={task_path}, ep_idx={ep_idx}. "
+                f"Available keys: {list(json_data.get('data', {}).keys())}"
+            )
+        
+        min_json_frames = min(json_frame_counts)
+        
+        # 2. 从视频文件获取帧数
+        episodes = self._get_all_episode_dirs(task_path)
+        if ep_idx >= len(episodes):
+            # 如果episode不存在，返回JSON的最小帧数
+            return min_json_frames
+        
+        ep_dir = episodes[ep_idx]
+        mp4_files = sorted(ep_dir.glob("*.mp4"))
+        
+        video_frame_counts = []
+        for mp4_file in mp4_files:
+            cam_name = self._infer_camera_name(mp4_file.stem)
+            if cam_name:
+                cap = cv2.VideoCapture(str(mp4_file))
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.release()
+                if frame_count > 0:
+                    video_frame_counts.append(frame_count)
+        
+        # 3. 返回所有数据源中的最小帧数
+        all_frame_counts = json_frame_counts + video_frame_counts
+        min_frames = min(all_frame_counts)
+        
+        # 如果视频和JSON帧数不一致，记录警告
+        if video_frame_counts and min(video_frame_counts) != min_json_frames:
+            if self.logger:
+                self.logger.warning(
+                    f"Frame count mismatch at task_path={task_path}, ep_idx={ep_idx}: "
+                    f"JSON min={min_json_frames}, Video min={min(video_frame_counts)}, "
+                    f"Video counts={video_frame_counts}. Using minimum: {min_frames}"
+                )
+        
+        return min_frames
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
