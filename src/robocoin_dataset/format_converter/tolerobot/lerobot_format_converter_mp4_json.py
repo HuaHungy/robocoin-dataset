@@ -135,12 +135,14 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         mp4_files = sorted(ep_dir.glob("*.mp4"))
         
         video_frame_counts = []
+        video_frame_details = []  # 用于记录详细信息
         for mp4_file in mp4_files:
             cam_name = self._infer_camera_name(mp4_file.stem)
             if cam_name:
                 cap = cv2.VideoCapture(str(mp4_file))
                 frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 cap.release()
+                video_frame_details.append((mp4_file.name, cam_name, frame_count))
                 if frame_count > 0:
                     video_frame_counts.append(frame_count)
         
@@ -148,14 +150,29 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         all_frame_counts = json_frame_counts + video_frame_counts
         min_frames = min(all_frame_counts)
         
+        # 检查最小帧数是否足够（至少需要 timeline_offset + 1 帧）
+        if min_frames < 1:
+            error_msg = (
+                f"Episode has insufficient frames at task_path={task_path}, ep_idx={ep_idx}. "
+                f"Minimum frame count is {min_frames}. "
+                f"JSON frame counts: {json_frame_counts}, "
+                f"Video frame counts: {video_frame_counts}"
+            )
+            if video_frame_details:
+                error_msg += f"\nVideo details: {video_frame_details}"
+            raise ValueError(error_msg)
+        
         # 如果视频和JSON帧数不一致，记录警告
         if video_frame_counts and min(video_frame_counts) != min_json_frames:
             if self.logger:
-                self.logger.warning(
+                warning_msg = (
                     f"Frame count mismatch at task_path={task_path}, ep_idx={ep_idx}: "
                     f"JSON min={min_json_frames}, Video min={min(video_frame_counts)}, "
                     f"Video counts={video_frame_counts}. Using minimum: {min_frames}"
                 )
+                if video_frame_details:
+                    warning_msg += f"\nVideo details: {video_frame_details}"
+                self.logger.warning(warning_msg)
         
         return min_frames
 
