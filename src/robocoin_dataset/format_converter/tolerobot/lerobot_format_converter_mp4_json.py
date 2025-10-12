@@ -114,7 +114,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         if 'data' in json_data:
             for value in json_data['data'].values():
                 if isinstance(value, list) and len(value) > 0:
-                    json_frame_counts.append(len(value))
+                    json_frame_counts.append(len(value))  # noqa: PERF401
         
         if not json_frame_counts:
             raise ValueError(
