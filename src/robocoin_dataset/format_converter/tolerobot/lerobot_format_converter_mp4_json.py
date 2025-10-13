@@ -192,9 +192,33 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     )
                 
                 # 🆕 增加：验证视频帧数与JSON数据帧数是否匹配
-                if 'data' in json_data and isinstance(json_data['data'], list):
-                    expected_frame_count = len(json_data['data'])
-                    
+                expected_frame_count = None
+                
+                if 'data' in json_data:
+                    # 处理两种JSON格式：
+                    # 1. 简单格式: {"data": [frame1, frame2, ...]}
+                    # 2. yinhe格式: {"data": {"camera_front": [...], "camera_left": [...], ...}}
+                    if isinstance(json_data['data'], list):
+                        # 简单格式：data是一个列表
+                        expected_frame_count = len(json_data['data'])
+                    elif isinstance(json_data['data'], dict):
+                        # yinhe格式：data是一个字典，包含多个数据流
+                        # 使用_get_episode_frames_num的逻辑来计算最小帧数
+                        json_frame_counts = {}
+                        for key, value in json_data['data'].items():
+                            if isinstance(value, list) and len(value) > 0:
+                                json_frame_counts[key] = len(value)
+                        
+                        if json_frame_counts:
+                            expected_frame_count = min(json_frame_counts.values())
+                            if self.logger:
+                                self.logger.info(
+                                    f"🔍 Detected yinhe-style JSON format with {len(json_frame_counts)} data streams\n"
+                                    f"   📊 Frame counts: {json_frame_counts}\n"
+                                    f"   📊 Using minimum: {expected_frame_count}"
+                                )
+                
+                if expected_frame_count is not None:
                     if self.logger:
                         self.logger.info(
                             f"🔍 Validating video frame counts for episode: {ep_dir.name}\n"
@@ -211,7 +235,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                                 logger=self.logger,
                                 tolerance=0  # 要求完全匹配
                             )
-                        except ValueError as e:
+                        except ValueError as e:  # noqa: PERF203
                             # 帧数不匹配，抛出详细错误
                             raise ValueError(
                                 f"❌ MP4+JSON帧数不匹配\n"
@@ -233,7 +257,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     if self.logger:
                         self.logger.warning(
                             f"⚠️ 无法从JSON获取帧数信息：{json_file.name}\n"
-                            "💡 JSON结构可能不包含'data'列表，跳过帧数验证"
+                            "💡 JSON结构不包含有效的数据列表或字典，跳过帧数验证"
                         )
 
     def _load_json_data(self, task_path: Path, ep_idx: int) -> dict:
