@@ -16,6 +16,9 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
+from robocoin_dataset.format_converter.tolerobot.video_frame_validator import (
+    validate_video_frame_count,
+)
 
 
 class LerobotFormatConverterMp4Json(LerobotFormatConverter):
@@ -49,40 +52,200 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
         for task_path in self.path_task_dict.keys():
+            # 🆕 增加：检查task_path本身是否存在
+            if not task_path.exists():
+                parent_dir = task_path.parent
+                siblings = []
+                if parent_dir.exists():
+                    siblings = [d.name for d in parent_dir.iterdir() if d.is_dir()]
+                
+                raise FileNotFoundError(
+                    f"❌ MP4+JSON任务路径不存在\n"
+                    f"📁 请求的路径：{task_path}\n"
+                    f"📂 父目录：{parent_dir} {'(存在)' if parent_dir.exists() else '(不存在)'}\n"
+                    f"🗂️ 父目录中的子目录：\n" +
+                    "\n".join(f"   - {d}" for d in sorted(siblings)[:10]) +
+                    (f"\n   ... 还有 {len(siblings) - 10} 个目录" if len(siblings) > 10 else "") +
+                    "\n💡 请检查：\n"
+                    "   1. 路径配置是否正确\n"
+                    "   2. 数据集是否已下载或挂载\n"
+                    "   3. 路径拼写是否有误"
+                )
+            
+            if not task_path.is_dir():
+                raise ValueError(
+                    f"❌ MP4+JSON任务路径不是目录\n"
+                    f"📄 路径：{task_path}\n"
+                    f"🔍 实际类型：{'文件' if task_path.is_file() else '符号链接' if task_path.is_symlink() else '未知'}\n"
+                    "💡 任务路径必须是包含episode子目录的目录"
+                )
+            
             try:
                 episodes = self._get_all_episode_dirs(task_path)
             except FileNotFoundError as e:
+                all_items = [item.name for item in task_path.iterdir()] if task_path.exists() else []
                 raise FileNotFoundError(
-                    f"Failed to find episode directories in {task_path}. "
-                    f"Error: {e}"
+                    f"❌ MP4+JSON无法找到episode目录\n"
+                    f"📁 任务路径：{task_path}\n"
+                    f"📋 目录内容：{all_items[:10] if all_items else '(空目录)'}\n"
+                    f"⚠️ 原始错误：{str(e)}\n"
+                    "💡 请检查：\n"
+                    "   1. Episode目录是否存在\n"
+                    "   2. 目录命名是否符合规范\n"
+                    "   3. 数据集是否完整提取"
                 ) from e
             
             if not episodes:
+                all_items = [item.name for item in task_path.iterdir()]
                 raise FileNotFoundError(
-                    f"No episode directories found in {task_path}"
+                    f"❌ MP4+JSON未找到episode目录\n"
+                    f"📁 任务路径：{task_path}\n"
+                    f"📋 目录内容：{all_items[:15]}\n"
+                    "💡 期望找到包含data.json和MP4文件的episode子目录\n"
+                    "📋 请检查数据集结构是否正确"
                 )
             
             for ep_dir in episodes:
                 json_file = ep_dir / "data.json"
                 if not json_file.exists():
+                    ep_files = [f.name for f in ep_dir.iterdir() if f.is_file()]
                     raise FileNotFoundError(
-                        f"No data.json file found in {ep_dir}"
+                        f"❌ MP4+JSON数据文件缺失\n"
+                        f"📂 Episode目录：{ep_dir}\n"
+                        f"📄 期望文件：data.json\n"
+                        f"📋 目录中的文件：{ep_files[:10] if ep_files else '(无文件)'}\n"
+                        "💡 每个episode必须包含data.json文件"
                     )
+                
+                # 🆕 增加：验证JSON文件内容
+                try:
+                    import json
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        json_data = json.load(f)
+                    
+                    # 检查JSON基本结构
+                    if not isinstance(json_data, dict):
+                        raise ValueError(
+                            f"❌ MP4+JSON数据格式错误\n"
+                            f"📄 文件：{json_file}\n"
+                            f"❌ 期望类型：dict (字典)\n"
+                            f"❌ 实际类型：{type(json_data).__name__}\n"
+                            "💡 data.json应该是一个JSON对象（字典）"
+                        )
+                    
+                    # 检查是否有相机数据
+                    if not json_data:
+                        self.logger.warning(
+                            f"⚠️ JSON文件为空对象：{json_file}\n"
+                            "💡 这可能导致后续处理失败"
+                        )
+                
+                except json.JSONDecodeError as e:
+                    file_size = json_file.stat().st_size if json_file.exists() else 0
+                    raise ValueError(
+                        f"❌ MP4+JSON文件解析失败\n"
+                        f"📄 文件：{json_file}\n"
+                        f"📊 文件大小：{file_size} bytes\n"
+                        f"⚠️ 错误位置：行{e.lineno}, 列{e.colno}\n"
+                        f"⚠️ 错误信息：{e.msg}\n"
+                        "💡 可能原因：\n"
+                        "   1. JSON语法错误（缺少引号、逗号等）\n"
+                        "   2. 文件编码问题\n"
+                        "   3. 文件损坏或不完整\n"
+                        "📋 建议使用JSON验证工具检查文件格式"
+                    ) from e
+                
+                except UnicodeDecodeError as e:
+                    raise ValueError(
+                        f"❌ MP4+JSON文件编码错误\n"
+                        f"📄 文件：{json_file}\n"
+                        f"⚠️ 错误：{str(e)}\n"
+                        "💡 文件可能使用了非UTF-8编码\n"
+                        "📋 请确保JSON文件使用UTF-8编码"
+                    ) from e
+                
+                except Exception as e:
+                    raise ValueError(
+                        f"❌ MP4+JSON文件读取失败\n"
+                        f"📄 文件：{json_file}\n"
+                        f"⚠️ 错误类型：{type(e).__name__}\n"
+                        f"⚠️ 错误详情：{str(e)}\n"
+                        "💡 请检查文件权限和完整性"
+                    ) from e
                 
                 # 检查是否有对应的MP4文件
                 mp4_files = list(ep_dir.glob("*.mp4"))
                 if not mp4_files:
+                    all_files = [f.name for f in ep_dir.iterdir() if f.is_file()]
+                    video_files = [f for f in all_files if any(f.endswith(ext) for ext in ['.mp4', '.avi', '.mov', '.mkv'])]
+                    
                     raise FileNotFoundError(
-                        f"No MP4 files found in {ep_dir}"
+                        f"❌ MP4+JSON视频文件缺失\n"
+                        f"📂 Episode目录：{ep_dir}\n"
+                        f"📹 期望格式：*.mp4\n"
+                        f"📋 目录中的文件：{all_files[:10] if all_files else '(无文件)'}\n"
+                        f"🎥 其他视频格式：{video_files if video_files else '(无)'}\n"
+                        "💡 请检查：\n"
+                        "   1. 视频文件是否已录制\n"
+                        "   2. 文件扩展名是否为.mp4\n"
+                        "   3. 文件是否在正确的episode目录中"
                     )
+                
+                # 🆕 增加：验证视频帧数与JSON数据帧数是否匹配
+                if 'data' in json_data and isinstance(json_data['data'], list):
+                    expected_frame_count = len(json_data['data'])
+                    
+                    if self.logger:
+                        self.logger.info(
+                            f"🔍 Validating video frame counts for episode: {ep_dir.name}\n"
+                            f"   📊 JSON data frames: {expected_frame_count}"
+                        )
+                    
+                    # 验证每个MP4文件的帧数
+                    for mp4_file in mp4_files:
+                        try:
+                            validate_video_frame_count(
+                                video_path=mp4_file,
+                                expected_frame_count=expected_frame_count,
+                                data_source="JSON data",
+                                logger=self.logger,
+                                tolerance=0  # 要求完全匹配
+                            )
+                        except ValueError as e:
+                            # 帧数不匹配，抛出详细错误
+                            raise ValueError(
+                                f"❌ MP4+JSON帧数不匹配\n"
+                                f"📂 Episode: {ep_dir.name}\n"
+                                f"📄 Video: {mp4_file.name}\n"
+                                f"📄 JSON: {json_file.name}\n"
+                                f"{str(e)}"
+                            ) from e
+                        except RuntimeError as e:
+                            # ffprobe执行失败
+                            if self.logger:
+                                self.logger.warning(
+                                    f"⚠️ 无法验证视频帧数（跳过）\n"
+                                    f"📄 Video: {mp4_file.name}\n"
+                                    f"⚠️ 原因: {str(e)}\n"
+                                    "💡 请确保已安装ffprobe (ffmpeg的一部分)"
+                                )
+                else:
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️ 无法从JSON获取帧数信息：{json_file.name}\n"
+                            "💡 JSON结构可能不包含'data'列表，跳过帧数验证"
+                        )
 
     def _load_json_data(self, task_path: Path, ep_idx: int) -> dict:
         """加载JSON数据（带缓存）"""
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             raise IndexError(
-                f"Episode index {ep_idx} out of range for task_path={task_path}. "
-                f"Found {len(episodes)} episodes."
+                f"❌ Episode index out of range.\n"
+                f"   📁 Location: task_path={task_path}\n"
+                f"   🎯 Requested ep_idx: {ep_idx}\n"
+                f"   📊 Found episodes: {len(episodes)}\n"
+                f"   💡 Valid episode indices: 0-{len(episodes)-1}"
             )
         
         ep_dir = episodes[ep_idx]
@@ -90,14 +253,50 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         if not json_file.exists():
             raise FileNotFoundError(
-                f"data.json not found in episode {ep_idx} at {ep_dir}"
+                f"❌ JSON file not found.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📂 Episode directory: {ep_dir}\n"
+                f"   📄 Expected file: {json_file}\n"
+                f"   💡 Check if data.json exists in the episode directory."
             )
         
         cache_key = str(json_file)
         if cache_key not in self._json_data_cache:
-            with open(json_file) as f:
-                data = json.load(f)
-            self._json_data_cache[cache_key] = data
+            try:
+                with open(json_file) as f:
+                    data = json.load(f)
+                
+                # 验证JSON结构
+                if not isinstance(data, dict):
+                    raise ValueError(
+                        f"❌ Invalid JSON structure.\n"
+                        f"   📄 File: {json_file}\n"
+                        f"   ❌ Expected dict at root, but got {type(data).__name__}\n"
+                        f"   💡 JSON file should contain a dictionary at the root level."
+                    )
+                
+                self._json_data_cache[cache_key] = data
+                
+                if self.logger:
+                    self.logger.debug(
+                        f"✓ Loaded JSON data from {json_file.name} "
+                        f"(keys: {list(data.keys())})"
+                    )
+                    
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"❌ Failed to parse JSON file.\n"
+                    f"   📄 File: {json_file}\n"
+                    f"   ❌ JSON error at line {e.lineno}, column {e.colno}: {e.msg}\n"
+                    f"   💡 Check if JSON file is corrupted or has syntax errors."
+                ) from e
+            except Exception as e:
+                raise RuntimeError(
+                    f"❌ Failed to load JSON file.\n"
+                    f"   📄 File: {json_file}\n"
+                    f"   ❌ Error: {e!s}\n"
+                    f"   💡 Check file permissions and disk space."
+                ) from e
         
         return self._json_data_cache[cache_key]
 
@@ -107,72 +306,109 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         需要返回所有数据源（JSON数据和视频文件）中的最小帧数，
         以确保所有帧都有完整的数据（observation、state、action）
         """
-        # 1. 从JSON获取帧数
+        # 1. 从JSON获取帧数（记录每个字段的详细信息）
         json_data = self._load_json_data(task_path, ep_idx)
-        json_frame_counts = []
+        json_frame_counts = {}  # key -> frame_count
         
         if 'data' in json_data:
-            for value in json_data['data'].values():
+            for key, value in json_data['data'].items():
                 if isinstance(value, list) and len(value) > 0:
-                    json_frame_counts.append(len(value))  # noqa: PERF401
+                    json_frame_counts[key] = len(value)
         
         if not json_frame_counts:
             raise ValueError(
-                f"Cannot determine frame count from JSON data at "
-                f"task_path={task_path}, ep_idx={ep_idx}. "
-                f"Available keys: {list(json_data.get('data', {}).keys())}"
+                f"❌ Cannot determine frame count from JSON data.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📋 Available keys: {list(json_data.get('data', {}).keys())}\n"
+                f"   💡 No valid list data found in JSON file."
             )
         
-        min_json_frames = min(json_frame_counts)
+        min_json_frames = min(json_frame_counts.values())
+        max_json_frames = max(json_frame_counts.values())
         
-        # 2. 从视频文件获取帧数
+        # 2. 从视频文件获取帧数（记录每个相机的详细信息）
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
-            # 如果episode不存在，返回JSON的最小帧数
+            if self.logger:
+                self.logger.warning(
+                    f"Episode index {ep_idx} out of range, using JSON frame count: {min_json_frames}"
+                )
             return min_json_frames
         
         ep_dir = episodes[ep_idx]
         mp4_files = sorted(ep_dir.glob("*.mp4"))
         
-        video_frame_counts = []
-        video_frame_details = []  # 用于记录详细信息
+        video_frame_counts = {}  # camera_name -> frame_count
         for mp4_file in mp4_files:
             cam_name = self._infer_camera_name(mp4_file.stem)
             if cam_name:
                 cap = cv2.VideoCapture(str(mp4_file))
                 frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 cap.release()
-                video_frame_details.append((mp4_file.name, cam_name, frame_count))
                 if frame_count > 0:
-                    video_frame_counts.append(frame_count)
+                    video_frame_counts[cam_name] = frame_count
+                else:
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  Camera '{cam_name}' has 0 frames in file: {mp4_file.name}"
+                        )
+        
+        if not video_frame_counts:
+            raise ValueError(
+                f"❌ No valid video frames found.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, ep_dir={ep_dir}\n"
+                f"   📹 MP4 files: {[f.name for f in mp4_files]}\n"
+                f"   💡 Either no MP4 files found or all videos have 0 frames."
+            )
+        
+        min_video_frames = min(video_frame_counts.values())
+        max_video_frames = max(video_frame_counts.values())
         
         # 3. 返回所有数据源中的最小帧数
-        all_frame_counts = json_frame_counts + video_frame_counts
-        min_frames = min(all_frame_counts)
+        min_frames = min(min_json_frames, min_video_frames)
         
-        # 检查最小帧数是否足够（至少需要 timeline_offset + 1 帧）
-        if min_frames < 1:
-            error_msg = (
-                f"Episode has insufficient frames at task_path={task_path}, ep_idx={ep_idx}. "
-                f"Minimum frame count is {min_frames}. "
-                f"JSON frame counts: {json_frame_counts}, "
-                f"Video frame counts: {video_frame_counts}"
+        # 4. 详细的帧数不一致警告
+        if min_json_frames != max_json_frames or min_video_frames != max_video_frames or min_json_frames != min_video_frames:
+            # 找出帧数最少的数据源
+            all_sources = {}
+            all_sources.update({f"JSON:{k}": v for k, v in json_frame_counts.items()})
+            all_sources.update({f"Video:{k}": v for k, v in video_frame_counts.items()})
+            
+            min_source = min(all_sources, key=all_sources.get)
+            min_source_count = all_sources[min_source]
+            
+            # 找出所有帧数不同的数据源
+            mismatched_sources = {k: v for k, v in all_sources.items() if v != min_source_count}
+            
+            warning_msg = (
+                f"⚠️  Frame count mismatch detected!\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📊 Summary:\n"
+                f"      - JSON frames: min={min_json_frames}, max={max_json_frames}\n"
+                f"      - Video frames: min={min_video_frames}, max={max_video_frames}\n"
+                f"      - Will use minimum: {min_frames} frames\n"
+                f"   🔍 Bottleneck (minimum): {min_source} = {min_source_count} frames\n"
             )
-            if video_frame_details:
-                error_msg += f"\nVideo details: {video_frame_details}"
-            raise ValueError(error_msg)
-        
-        # 如果视频和JSON帧数不一致，记录警告
-        if video_frame_counts and min(video_frame_counts) != min_json_frames:
+            
+            if mismatched_sources:
+                warning_msg += f"   📋 All frame counts:\n"
+                for source, count in sorted(all_sources.items(), key=lambda x: x[1]):
+                    status = "✓" if count == min_source_count else f"⚠️ ({count - min_source_count:+d})"
+                    warning_msg += f"      {status} {source}: {count} frames\n"
+            
             if self.logger:
-                warning_msg = (
-                    f"Frame count mismatch at task_path={task_path}, ep_idx={ep_idx}: "
-                    f"JSON min={min_json_frames}, Video min={min(video_frame_counts)}, "
-                    f"Video counts={video_frame_counts}. Using minimum: {min_frames}"
-                )
-                if video_frame_details:
-                    warning_msg += f"\nVideo details: {video_frame_details}"
                 self.logger.warning(warning_msg)
+        
+        # 5. 检查帧数是否为0（这会导致后续的ValueError）
+        if min_frames == 0:
+            raise ValueError(
+                f"❌ Episode has 0 frames after applying minimum!\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📊 Frame counts:\n"
+                f"      - JSON: {dict(list(json_frame_counts.items())[:5])}{'...' if len(json_frame_counts) > 5 else ''}\n"
+                f"      - Video: {video_frame_counts}\n"
+                f"   💡 This will cause 'You must add one or several frames' error."
+            )
         
         return min_frames
 
@@ -220,8 +456,10 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             raise IndexError(
-                f"Episode index {ep_idx} out of range for task_path={task_path}. "
-                f"Found {len(episodes)} episodes."
+                f"❌ Episode index out of range.\n"
+                f"   📁 Location: task_path={task_path}\n"
+                f"   📊 Requested ep_idx={ep_idx}, but only found {len(episodes)} episodes.\n"
+                f"   💡 Check if episode directory structure is correct."
             )
         
         ep_dir = episodes[ep_idx]
@@ -231,16 +469,33 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         if not mp4_files:
             raise FileNotFoundError(
-                f"No MP4 files found in episode {ep_idx} at {ep_dir}"
+                f"❌ No MP4 files found.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📂 Episode directory: {ep_dir}\n"
+                f"   💡 Expected *.mp4 files but found none."
             )
         
         images = {}
+        failed_cameras = []
+        
         for mp4_file in mp4_files:
             # 从文件名推断相机名称
             cam_name = self._infer_camera_name(mp4_file.stem)
-            if cam_name:
+            if not cam_name:
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Cannot infer camera name from file: {mp4_file.name}, skipping..."
+                    )
+                continue
+            
+            try:
                 cap = cv2.VideoCapture(str(mp4_file))
+                if not cap.isOpened():
+                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): Cannot open video")
+                    continue
+                
                 frames = []
+                frame_idx = 0
                 while True:
                     ret, frame = cap.read()
                     if not ret:
@@ -248,14 +503,44 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     # OpenCV读取的是BGR，转换为RGB
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     frames.append(frame_rgb)
+                    frame_idx += 1
+                
                 cap.release()
-                images[cam_name] = frames
+                
+                if not frames:
+                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): 0 frames read")
+                else:
+                    images[cam_name] = frames
+                    if self.logger:
+                        self.logger.debug(
+                            f"✓ Loaded {len(frames)} frames from {cam_name} ({mp4_file.name})"
+                        )
+            except Exception as e:
+                failed_cameras.append(f"{cam_name} ({mp4_file.name}): {e!s}")
+                if self.logger:
+                    self.logger.error(
+                        f"❌ Failed to load video {mp4_file.name}: {e}"
+                    )
         
         if not images:
             raise RuntimeError(
-                f"No valid camera images loaded from episode {ep_idx} at {ep_dir}. "
-                f"Found MP4 files: {[f.name for f in mp4_files]}"
+                f"❌ No valid camera images loaded.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📂 Episode directory: {ep_dir}\n"
+                f"   📹 MP4 files found: {[f.name for f in mp4_files]}\n"
+                f"   ❌ Failed cameras:\n" + 
+                "\n".join(f"      - {fc}" for fc in failed_cameras) + "\n"
+                f"   💡 Check if video files are corrupted or in unsupported format."
             )
+        
+        # 检查所有相机的帧数是否一致
+        frame_counts = {cam: len(frames) for cam, frames in images.items()}
+        if len(set(frame_counts.values())) > 1:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  Camera frame counts are inconsistent at ep_idx={ep_idx}:\n"
+                    + "\n".join(f"      {cam}: {count} frames" for cam, count in frame_counts.items())
+                )
         
         return images
 
@@ -306,16 +591,32 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         cam_name = args_dict.get(CAM_NAME_KEY)
         if cam_name not in images_buffer:
             available_cameras = list(images_buffer.keys())
+            # 提供详细的相机帧数信息
+            cam_frame_info = {cam: len(frames) for cam, frames in images_buffer.items()}
             raise KeyError(
-                f"Camera '{cam_name}' not found in episode {ep_idx} at task_path={task_path}. "
-                f"Available cameras: {available_cameras}"
+                f"❌ Camera not found in images buffer.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📹 Requested camera: '{cam_name}'\n"
+                f"   📋 Available cameras: {available_cameras}\n"
+                f"   📊 Camera frame counts: {cam_frame_info}\n"
+                f"   💡 Check if camera name in config matches the video file names."
             )
         
         if frame_idx >= len(images_buffer[cam_name]):
+            # 显示所有相机的帧数，帮助快速定位问题
+            cam_frame_info = {cam: len(frames) for cam, frames in images_buffer.items()}
             raise IndexError(
-                f"Frame index {frame_idx} out of range for camera '{cam_name}' "
-                f"in episode {ep_idx} at task_path={task_path}. "
-                f"Camera has {len(images_buffer[cam_name])} frames."
+                f"❌ Frame index out of range for camera.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📹 Camera: '{cam_name}'\n"
+                f"   🎯 Requested frame_idx: {frame_idx}\n"
+                f"   📊 This camera has: {len(images_buffer[cam_name])} frames (valid range: 0-{len(images_buffer[cam_name])-1})\n"
+                f"   📋 All camera frame counts:\n" +
+                "\n".join(f"      - {cam}: {count} frames" for cam, count in sorted(cam_frame_info.items())) + "\n"
+                f"   💡 This camera has fewer frames than expected. Check if:\n"
+                f"      1. Video file is incomplete or corrupted\n"
+                f"      2. timeline_offset in config is causing out-of-bounds access\n"
+                f"      3. Frame count detection (_get_episode_frames_num) needs adjustment"
             )
         
         return images_buffer[cam_name][frame_idx]
@@ -336,33 +637,99 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         # 从JSON数据中提取指定路径的值
         frame_data = sub_states_buffer
+        original_buffer_type = type(frame_data).__name__
+        
         if isinstance(frame_data, dict):
             # 处理嵌套字典
             for key in json_path.split('/'):
                 if key:
+                    if not isinstance(frame_data, dict):
+                        raise ValueError(
+                            f"❌ Invalid JSON path traversal.\n"
+                            f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                            f"   🔍 JSON path: '{json_path}'\n"
+                            f"   ❌ Expected dict at key '{key}', but got {type(frame_data).__name__}\n"
+                            f"   💡 Check if json_path in config matches the actual JSON structure."
+                        )
                     frame_data = frame_data.get(key, {})
         
-        if isinstance(frame_data, list) and frame_idx < len(frame_data):
-            value = frame_data[frame_idx]
-            
-            # 如果 value 是字典（例如 {'position': [...], 'velocity': [...], ...}）
-            # 需要提取指定的字段（默认为 'position'）
-            if isinstance(value, dict):
-                # 尝试从 args_dict 获取字段名，默认使用 'position'
-                field_name = args_dict.get('field_name', 'position')
-                value = value.get(field_name, [])
-            
-            if isinstance(value, (list, tuple)):
-                # 提取指定范围的值
-                range_from = args_dict.get('range_from', 0)
-                range_to = args_dict.get('range_to', len(value))
-                return np.array(value[range_from:range_to], dtype=np.float32)
-            return np.array([value], dtype=np.float32)
+        # 检查是否成功获取到列表数据
+        if not isinstance(frame_data, list):
+            raise ValueError(
+                f"❌ Expected list data from JSON path.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   🔍 JSON path: '{json_path}'\n"
+                f"   ❌ Got {type(frame_data).__name__} instead of list\n"
+                f"   📊 Buffer type: {original_buffer_type}\n"
+                f"   💡 Check if json_path correctly points to a list in JSON data."
+            )
         
-        # 如果找不到数据，返回0
-        range_from = args_dict.get('range_from', 0)
-        range_to = args_dict.get('range_to', 1)
-        return np.zeros(range_to - range_from, dtype=np.float32)
+        if frame_idx >= len(frame_data):
+            raise IndexError(
+                f"❌ Frame index out of range in JSON data.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   🔍 JSON path: '{json_path}'\n"
+                f"   🎯 Requested frame_idx: {frame_idx}\n"
+                f"   📊 JSON data length: {len(frame_data)} (valid range: 0-{len(frame_data)-1})\n"
+                f"   💡 This JSON field has fewer entries than expected.\n"
+                f"      Check if this field is the bottleneck in _get_episode_frames_num."
+            )
+        
+        if frame_idx < 0:
+            raise IndexError(
+                f"❌ Negative frame index.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   🎯 frame_idx: {frame_idx}\n"
+                f"   💡 Frame index cannot be negative."
+            )
+        
+        value = frame_data[frame_idx]
+        
+        # 如果 value 是字典（例如 {'position': [...], 'velocity': [...], ...}）
+        # 需要提取指定的字段（默认为 'position'）
+        if isinstance(value, dict):
+            # 尝试从 args_dict 获取字段名，默认使用 'position'
+            field_name = args_dict.get('field_name', 'position')
+            if field_name not in value:
+                available_fields = list(value.keys())
+                raise KeyError(
+                    f"❌ Field not found in JSON dict value.\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                    f"   🔍 JSON path: '{json_path}'\n"
+                    f"   🎯 Requested field: '{field_name}'\n"
+                    f"   📋 Available fields: {available_fields}\n"
+                    f"   💡 Specify correct field_name in config args, or ensure JSON has this field."
+                )
+            value = value.get(field_name, [])
+        
+        if isinstance(value, (list, tuple)):
+            # 提取指定范围的值
+            range_from = args_dict.get('range_from', 0)
+            range_to = args_dict.get('range_to', len(value))
+            
+            if range_from < 0 or range_to > len(value) or range_from >= range_to:
+                raise ValueError(
+                    f"❌ Invalid range for data extraction.\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                    f"   🔍 JSON path: '{json_path}'\n"
+                    f"   🎯 Requested range: [{range_from}:{range_to}]\n"
+                    f"   📊 Value length: {len(value)}\n"
+                    f"   💡 Check range_from and range_to in config args."
+                )
+            
+            return np.array(value[range_from:range_to], dtype=np.float32)
+        
+        # 单个数值
+        try:
+            return np.array([float(value)], dtype=np.float32)
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                f"❌ Cannot convert value to float.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   🔍 JSON path: '{json_path}'\n"
+                f"   ❌ Value: {value!r} (type: {type(value).__name__})\n"
+                f"   💡 Error: {e!s}"
+            ) from e
 
     def _get_frame_sub_actions(
         self, 

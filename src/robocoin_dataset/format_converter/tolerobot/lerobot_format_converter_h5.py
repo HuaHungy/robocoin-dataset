@@ -76,9 +76,19 @@ def find_unexpected_files(directory: Path, include_hidden: bool = False) -> list
     directory = Path(directory)
 
     if not directory.exists():
-        raise FileNotFoundError(f"Dir dose not exist: {directory}.")
+        parent_dir = directory.parent
+        raise FileNotFoundError(
+            f"❌ Directory does not exist.\n"
+            f"   📂 Requested directory: {directory}\n"
+            f"   📁 Parent directory: {parent_dir} {'(exists)' if parent_dir.exists() else '(NOT FOUND)'}\n"
+            f"   💡 Check if path is correct and directory has been created"
+        )
     if not directory.is_dir():
-        raise NotADirectoryError(f"{directory} is not directory.")
+        raise NotADirectoryError(
+            f"❌ Path is not a directory.\n"
+            f"   📄 Path: {directory}\n"
+            f"   💡 This path points to a file, not a directory"
+        )
 
     unexpected_files: list[str] = []
 
@@ -106,16 +116,39 @@ def explore_hdf5_group(group, prefix="") -> None:  # noqa: ANN001
 
 def validate_h5file(h5_file_path: Path) -> list[Path]:
     if not h5_file_path.exists():
-        raise FileNotFoundError(f"{h5_file_path} does not exist")
+        parent_dir = h5_file_path.parent
+        available_files = []
+        if parent_dir.exists():
+            available_files = [f.name for f in parent_dir.glob("*.h5") + parent_dir.glob("*.hdf5")]
+        
+        raise FileNotFoundError(
+            f"❌ H5 file does not exist.\n"
+            f"   🗂️  Expected file: {h5_file_path}\n"
+            f"   📂 Parent directory: {parent_dir}\n"
+            f"   📋 H5 files in directory: {available_files if available_files else 'None'}\n"
+            f"   💡 Check if:\n"
+            f"      1. File name is correct\n"
+            f"      2. File has been created/recorded\n"
+            f"      3. Path is correct"
+        )
 
     if not h5_file_path.is_file():
-        raise Exception(f"{h5_file_path} is not a file")
+        raise Exception(
+            f"❌ Path is not a file.\n"
+            f"   📂 Path: {h5_file_path}\n"
+            f"   💡 This path points to a directory, not a file"
+        )
 
     try:
         with h5py.File(h5_file_path, "r") as h5_file:
             explore_hdf5_group(h5_file)
     except Exception as e:
-        raise Exception(f"Error validating {h5_file_path}: {e}")
+        raise Exception(
+            f"❌ Error validating H5 file.\n"
+            f"   🗂️  File: {h5_file_path}\n"
+            f"   ❌ Error: {e!s}\n"
+            f"   💡 H5 file may be corrupted or incompatible format"
+        )
 
 
 class LerobotFormatConverterHdf5(LerobotFormatConverter):
@@ -150,15 +183,34 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         unexpected_files: list[Path] = []
         for path in self.path_task_dict.keys():
             if not path.exists():
-                raise FileNotFoundError(f"{path} does not exist")
+                parent_dir = path.parent
+                raise FileNotFoundError(
+                    f"❌ Task path does not exist.\n"
+                    f"   📁 Task path: {path}\n"
+                    f"   📂 Parent directory: {parent_dir} {'(exists)' if parent_dir.exists() else '(NOT FOUND)'}\n"
+                    f"   💡 Check if task directory has been created"
+                )
             if path.is_file():
-                raise ValueError(f"{path} is a file")
+                raise ValueError(
+                    f"❌ Task path is a file, not a directory.\n"
+                    f"   📄 Path: {path}\n"
+                    f"   💡 Task path should be a directory containing episodes"
+                )
 
             unexpected_files.extend(find_unexpected_files(path))
 
         if unexpected_files:
-            err_msg = "Found unexpected files in dataset directory:"
-            err_msg += "\n".join(f"{path}" for path in unexpected_files)
+            err_msg = (
+                f"❌ Found unexpected files in dataset directory.\n"
+                f"   📂 Task paths checked: {len(self.path_task_dict)} directories\n"
+                f"   📋 Unexpected files ({len(unexpected_files)}):\n"
+            )
+            # 只显示前10个，避免输出过长
+            for file_path in unexpected_files[:10]:
+                err_msg += f"      - {file_path}\n"
+            if len(unexpected_files) > 10:
+                err_msg += f"      ... and {len(unexpected_files) - 10} more files\n"
+            err_msg += "   💡 Remove unexpected files or update allowed file rules"
             raise Exception(err_msg)
 
         invalid_h5_files = []
@@ -176,8 +228,17 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                     invalid_h5_files.append(file)
 
         if invalid_h5_files:
-            err_msg = "Found invalid h5 files:"
-            err_msg += "\n".join(f"{h5_file}" for h5_file in invalid_h5_files)
+            err_msg = (
+                f"❌ Found invalid H5 files.\n"
+                f"   📊 Total invalid files: {len(invalid_h5_files)}\n"
+                f"   🗂️  Invalid H5 files:\n"
+            )
+            # 只显示前10个
+            for h5_file in invalid_h5_files[:10]:
+                err_msg += f"      - {h5_file}\n"
+            if len(invalid_h5_files) > 10:
+                err_msg += f"      ... and {len(invalid_h5_files) - 10} more files\n"
+            err_msg += "   💡 H5 files may be corrupted or have incompatible format"
             raise Exception(err_msg)
 
         # 验证HDF5文件内部结构
@@ -248,22 +309,38 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
 
                     if missing_paths:
                         validation_errors.append(
-                            f"Missing required paths in {sample_h5_file}: {missing_paths}"
+                            f"   🗂️  File: {sample_h5_file.name}\n"
+                            f"      ❌ Missing paths: {missing_paths}"
                         )
 
                     if invalid_paths:
                         validation_errors.append(
-                            f"Invalid datasets in {sample_h5_file}: {invalid_paths}"
+                            f"   🗂️  File: {sample_h5_file.name}\n"
+                            f"      ⚠️  Invalid datasets: {invalid_paths}"
                         )
 
                     if self.logger and not missing_paths and not invalid_paths:
-                        self.logger.info(f"H5 structure validation passed for task: {task_path}")
+                        self.logger.info(f"✓ H5 structure validation passed for task: {task_path.name}")
 
             except Exception as e:
-                validation_errors.append(f"Error reading H5 file {sample_h5_file}: {e}")
+                validation_errors.append(
+                    f"   🗂️  File: {sample_h5_file.name}\n"
+                    f"      ❌ Read error: {e!s}"
+                )
 
         if validation_errors:
-            error_msg = "H5 structure validation failed:\n" + "\n".join(validation_errors)
+            error_msg = (
+                f"❌ H5 structure validation failed.\n"
+                f"   📊 Issues found in {len(validation_errors)} file(s)\n"
+                f"   📋 Validation errors:\n"
+            )
+            error_msg += "\n".join(validation_errors)
+            error_msg += (
+                f"\n   💡 Check if:\n"
+                f"      1. H5 files match expected structure\n"
+                f"      2. Config h5_path values are correct\n"
+                f"      3. All required datasets exist in H5 files"
+            )
             raise ValueError(error_msg)
 
         if self.logger:
@@ -280,15 +357,57 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         if not images_buffer:
             images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx)
 
-        h5_path = args_dict["h5_path"]
-        image_data = images_buffer[h5_path][frame_idx]
+        try:
+            h5_path = args_dict["h5_path"]
+        except KeyError as e:
+            available_keys = list(args_dict.keys())
+            raise KeyError(
+                f"❌ Missing required 'h5_path' in args_dict.\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📋 Available keys: {available_keys}\n"
+                f"   💡 args_dict must contain 'h5_path' key specifying the H5 dataset path"
+            ) from e
+
+        try:
+            image_data = images_buffer[h5_path][frame_idx]
+        except KeyError as e:
+            available_paths = list(images_buffer.keys())[:10]
+            total_paths = len(images_buffer.keys())
+            raise KeyError(
+                f"❌ H5 path not found in images buffer.\n"
+                f"   🔍 Requested path: {h5_path}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📋 Available paths (showing first 10 of {total_paths}): {available_paths}\n"
+                f"   💡 Check if h5_path is correct in your config"
+            ) from e
+        except IndexError as e:
+            try:
+                max_frames = len(images_buffer[h5_path])
+            except Exception:
+                max_frames = "unknown"
+            raise IndexError(
+                f"❌ Frame index out of range.\n"
+                f"   🎯 Requested frame: {frame_idx}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   🔍 H5 path: {h5_path}\n"
+                f"   📐 Available frames: 0 to {max_frames-1 if isinstance(max_frames, int) else max_frames}\n"
+                f"   💡 Check if frame index is within valid range"
+            ) from e
 
         if self._image_is_iobytes:
             try:
                 img = Image.open(io.BytesIO(image_data))
                 return np.array(img)
-            except Exception:
+            except Exception as e:
                 self._image_is_iobytes = False
+                # Log warning but continue with raw data
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️ Failed to decode image as bytes, falling back to raw data.\n"
+                        f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                        f"   🔍 H5 path: {h5_path}\n"
+                        f"   Error: {e!s}"
+                    )
         return image_data
 
     # @override
@@ -300,10 +419,69 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         args_dict: dict,
         sub_states_buffer: any = None,
     ) -> np.ndarray:
+        # Validate required keys
+        required_keys = ["h5_path", "range_from", "range_to"]
+        missing_keys = [key for key in required_keys if key not in args_dict]
+        
+        if missing_keys:
+            available_keys = list(args_dict.keys())
+            raise KeyError(
+                f"❌ Missing required keys in args_dict for sub_states.\n"
+                f"   ❌ Missing: {missing_keys}\n"
+                f"   📋 Available: {available_keys}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   💡 args_dict must contain: h5_path, range_from, range_to\n"
+                f"      Example: {{h5_path: '/observations/qpos', range_from: 0, range_to: 7}}"
+            )
+
         h5_path = args_dict["h5_path"]
         from_idx = args_dict["range_from"]
         to_idx = args_dict["range_to"]
-        return sub_states_buffer[h5_path][frame_idx][from_idx:to_idx]
+
+        try:
+            frame_data = sub_states_buffer[h5_path][frame_idx]
+        except KeyError as e:
+            available_paths = list(sub_states_buffer.keys())[:10]
+            total_paths = len(sub_states_buffer.keys())
+            raise KeyError(
+                f"❌ H5 path not found in sub_states buffer.\n"
+                f"   🔍 Requested path: {h5_path}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📋 Available paths (showing first 10 of {total_paths}): {available_paths}\n"
+                f"   💡 Check if h5_path is correct in your config"
+            ) from e
+        except IndexError as e:
+            try:
+                max_frames = len(sub_states_buffer[h5_path])
+            except Exception:
+                max_frames = "unknown"
+            raise IndexError(
+                f"❌ Frame index out of range.\n"
+                f"   🎯 Requested frame: {frame_idx}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   🔍 H5 path: {h5_path}\n"
+                f"   📐 Available frames: 0 to {max_frames-1 if isinstance(max_frames, int) else max_frames}\n"
+                f"   💡 Check if frame index is within valid range"
+            ) from e
+
+        # Validate slicing range
+        try:
+            data_len = len(frame_data)
+        except Exception:
+            data_len = None
+
+        if data_len is not None:
+            if from_idx < 0 or to_idx > data_len or from_idx >= to_idx:
+                raise ValueError(
+                    f"❌ Invalid slicing range for sub_states.\n"
+                    f"   🔢 Requested range: [{from_idx}:{to_idx}]\n"
+                    f"   📐 Data length: {data_len}\n"
+                    f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                    f"   🔍 H5 path: {h5_path}\n"
+                    f"   💡 Valid range should be: 0 <= range_from < range_to <= {data_len}"
+                )
+
+        return frame_data[from_idx:to_idx]
 
     # @override
     def _get_frame_sub_actions(
@@ -314,10 +492,69 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         args_dict: dict,
         sub_actions_buffer: any = None,
     ) -> np.ndarray:
+        # Validate required keys
+        required_keys = ["h5_path", "range_from", "range_to"]
+        missing_keys = [key for key in required_keys if key not in args_dict]
+        
+        if missing_keys:
+            available_keys = list(args_dict.keys())
+            raise KeyError(
+                f"❌ Missing required keys in args_dict for sub_actions.\n"
+                f"   ❌ Missing: {missing_keys}\n"
+                f"   📋 Available: {available_keys}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   💡 args_dict must contain: h5_path, range_from, range_to\n"
+                f"      Example: {{h5_path: '/action', range_from: 0, range_to: 7}}"
+            )
+
         h5_path = args_dict["h5_path"]
         from_idx = args_dict["range_from"]
         to_idx = args_dict["range_to"]
-        return sub_actions_buffer[h5_path][frame_idx][from_idx:to_idx]
+
+        try:
+            frame_data = sub_actions_buffer[h5_path][frame_idx]
+        except KeyError as e:
+            available_paths = list(sub_actions_buffer.keys())[:10]
+            total_paths = len(sub_actions_buffer.keys())
+            raise KeyError(
+                f"❌ H5 path not found in sub_actions buffer.\n"
+                f"   🔍 Requested path: {h5_path}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📋 Available paths (showing first 10 of {total_paths}): {available_paths}\n"
+                f"   💡 Check if h5_path is correct in your config"
+            ) from e
+        except IndexError as e:
+            try:
+                max_frames = len(sub_actions_buffer[h5_path])
+            except Exception:
+                max_frames = "unknown"
+            raise IndexError(
+                f"❌ Frame index out of range.\n"
+                f"   🎯 Requested frame: {frame_idx}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   🔍 H5 path: {h5_path}\n"
+                f"   📐 Available frames: 0 to {max_frames-1 if isinstance(max_frames, int) else max_frames}\n"
+                f"   💡 Check if frame index is within valid range"
+            ) from e
+
+        # Validate slicing range
+        try:
+            data_len = len(frame_data)
+        except Exception:
+            data_len = None
+
+        if data_len is not None:
+            if from_idx < 0 or to_idx > data_len or from_idx >= to_idx:
+                raise ValueError(
+                    f"❌ Invalid slicing range for sub_actions.\n"
+                    f"   🔢 Requested range: [{from_idx}:{to_idx}]\n"
+                    f"   📐 Data length: {data_len}\n"
+                    f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                    f"   🔍 H5 path: {h5_path}\n"
+                    f"   💡 Valid range should be: 0 <= range_from < range_to <= {data_len}"
+                )
+
+        return frame_data[from_idx:to_idx]
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
@@ -325,7 +562,14 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             ARGS_KEY
         ]
         if "h5_path" not in args:
-            raise ValueError("h5_path is not specified in the config")
+            available_keys = list(args.keys()) if args else []
+            raise ValueError(
+                f"❌ h5_path not specified in config.\n"
+                f"   📁 Location: observation.state.sub_state[0].args\n"
+                f"   📋 Available keys in args: {available_keys}\n"
+                f"   💡 Config must specify h5_path to determine frame count\n"
+                f"      Example: args: {{h5_path: '/observations/qpos', ...}}"
+            )
         h5_path = args["h5_path"]
 
         h5_file_path = self.task_episode_h5file_paths[task_path][ep_idx]
@@ -335,16 +579,37 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         except OSError as e:
             error_str = str(e)
             if "bad global heap collection signature" in error_str:
-                raise ValueError(f"H5 File Corruption Error (Frame Count): H5 file has corrupted global heap collection signature. "
-                               f"File path: {h5_file_path}, Task: {task_path.name}, Episode: {ep_idx}, "
-                               f"Original error: {error_str}. Please regenerate this H5 file.") from e
-            raise ValueError(f"H5 File OSError (Frame Count): Cannot read frame count from H5 file. "
-                           f"File path: {h5_file_path}, Task: {task_path.name}, Episode: {ep_idx}, "
-                           f"Original error: {error_str}") from e
+                raise ValueError(
+                    f"❌ H5 file corruption detected.\n"
+                    f"   🗂️  File: {h5_file_path.name}\n"
+                    f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                    f"   ❌ Error: Corrupted global heap collection signature\n"
+                    f"   💡 This H5 file is corrupted and must be regenerated.\n"
+                    f"      Original error: {error_str}"
+                ) from e
+            raise ValueError(
+                f"❌ Cannot read H5 file (OSError).\n"
+                f"   🗂️  File: {h5_file_path.name}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   🔍 H5 path: {h5_path}\n"
+                f"   ❌ Error: {error_str}\n"
+                f"   💡 Check if:\n"
+                f"      1. File is not corrupted\n"
+                f"      2. File is not being written to\n"
+                f"      3. File permissions are correct"
+            ) from e
         except Exception as e:
-            raise ValueError(f"H5 File Error (Frame Count): Error while reading frame count from H5 file. "
-                           f"File path: {h5_file_path}, Task: {task_path.name}, Episode: {ep_idx}, "
-                           f"H5 path: {h5_path}, Original error: {e}") from e
+            raise ValueError(
+                f"❌ Error reading frame count from H5 file.\n"
+                f"   🗂️  File: {h5_file_path.name}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   🔍 H5 path: {h5_path}\n"
+                f"   ❌ Error: {e!s}\n"
+                f"   💡 Check if:\n"
+                f"      1. h5_path exists in file\n"
+                f"      2. Dataset has valid shape\n"
+                f"      3. File format is correct"
+            ) from e
 
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:

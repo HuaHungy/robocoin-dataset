@@ -169,7 +169,22 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
         
         # 报告验证结果
         if critical_errors:
-            error_msg = "Critical validation errors found:\n" + "\n".join(critical_errors)
+            error_count = len(critical_errors)
+            error_list = "\n".join(f"      {i+1}. {err}" for i, err in enumerate(critical_errors[:10]))
+            if error_count > 10:
+                error_list += f"\n      ... and {error_count - 10} more errors"
+            
+            error_msg = (
+                f"❌ G1 dataset validation failed with {error_count} critical error(s).\n"
+                f"   📊 Total errors: {error_count}\n"
+                f"   ❌ Critical errors (showing first 10):\n"
+                f"{error_list}\n"
+                f"   💡 Common issues:\n"
+                f"      1. JSON files are corrupted or malformed\n"
+                f"      2. Required fields are missing in JSON data\n"
+                f"      3. Image files referenced in JSON don't exist\n"
+                f"      4. Camera groupings are inconsistent"
+            )
             if self.logger:
                 self.logger.error(error_msg)
             raise ValueError(error_msg)
@@ -417,27 +432,47 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
 
         if camera_idx not in camera_groups:
             available_cameras = list(camera_groups.keys())
-            error_msg = f"Camera {camera_idx} not found. Available cameras: {available_cameras}"
+            error_msg = (
+                f"❌ Camera not found in camera groups.\n"
+                f"   📹 Requested camera: {camera_idx}\n"
+                f"   🔑 Image key: {image_key}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📋 Available cameras: {available_cameras if available_cameras else 'None'}\n"
+            )
+            
+            if not available_cameras:
+                error_msg += (
+                    f"   💡 No camera data found. Check if:\n"
+                    f"      1. Images exist and are properly formatted\n"
+                    f"      2. Expected naming pattern: *0.jpg, *1.jpg (last digit = camera index)\n"
+                    f"      3. JSON references valid image files"
+                )
+            else:
+                error_msg += (
+                    f"   💡 Camera mismatch. Check if:\n"
+                    f"      1. Config uses correct camera index\n"
+                    f"      2. image_key format is correct (e.g., 'color_0', 'color_1')\n"
+                    f"      3. Dataset has images for requested camera"
+                )
             
             if self.logger:
                 self.logger.error(error_msg)
-                if not available_cameras:
-                    self.logger.error("No camera data found in the dataset. Please check if images exist and are properly formatted.")
-                    self.logger.error("Expected G1 image naming pattern: *0.jpg, *1.jpg, etc. where the last digit indicates camera index")
-                else:
-                    self.logger.info(f"Please update your configuration to use one of the available cameras: {available_cameras}")
-                    self.logger.info("Or check if your dataset has the expected camera data")
             
             raise ValueError(error_msg)
 
         camera_files = camera_groups[camera_idx]
         
         if not camera_files:
-            error_msg = f"No image files found for camera {camera_idx}"
-            if self.logger:
-                self.logger.error(error_msg)
-                self.logger.error("This could indicate missing or corrupted image data in the dataset")
-            raise ValueError(error_msg)
+            raise ValueError(
+                f"❌ No image files found for camera.\n"
+                f"   📹 Camera index: {camera_idx}\n"
+                f"   🔑 Image key: {image_key}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   💡 Check if:\n"
+                f"      1. Images exist for this camera in dataset\n"
+                f"      2. Image naming matches expected pattern\n"
+                f"      3. JSON references are correct"
+            )
 
         # 查找与frame_idx匹配的图像文件，支持稀疏采样
         target_image_path = None
@@ -473,12 +508,39 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
                 target_image_path = closest_file
 
             if target_image_path is None:
+                available_frames = []
+                for img_path in camera_files[:10]:  # 只显示前10个
+                    try:
+                        frame_num = int(img_path.stem.split("_")[0])
+                        available_frames.append(frame_num)
+                    except (ValueError, IndexError, AttributeError):
+                        pass
+                
                 raise ValueError(
-                    f"No suitable image found for frame {frame_idx} in camera {camera_idx}"
+                    f"❌ No suitable image found for frame.\n"
+                    f"   🎯 Requested frame: {frame_idx}\n"
+                    f"   📹 Camera index: {camera_idx}\n"
+                    f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                    f"   📋 Available frames (first 10): {sorted(available_frames) if available_frames else 'None'}\n"
+                    f"   📊 Total images for camera: {len(camera_files)}\n"
+                    f"   💡 Check if:\n"
+                    f"      1. Frame index matches actual recorded frames\n"
+                    f"      2. Image naming follows pattern: NNNNNN_*_{camera_idx}.jpg\n"
+                    f"      3. Dataset contains images for requested frame"
                 )
 
         if not target_image_path.exists():
-            raise ValueError(f"Image file not found: {target_image_path}")
+            raise FileNotFoundError(
+                f"❌ Image file does not exist.\n"
+                f"   🖼️  Image path: {target_image_path}\n"
+                f"   📹 Camera index: {camera_idx}\n"
+                f"   🎯 Frame index: {frame_idx}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   💡 Check if:\n"
+                f"      1. Image file was recorded\n"
+                f"      2. File path in JSON is correct\n"
+                f"      3. Dataset extraction was complete"
+            )
 
         # 读取并返回图像
         img = Image.open(target_image_path)

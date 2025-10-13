@@ -62,43 +62,120 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         
         # Check if dataset directory exists
         if not dataset_path.exists():
-            raise FileNotFoundError(f"Dataset path {dataset_path} does not exist")
+            parent_dir = dataset_path.parent
+            sibling_items = []
+            if parent_dir.exists():
+                sibling_items = [p.name for p in parent_dir.iterdir()]
+            
+            raise FileNotFoundError(
+                f"❌ LeRobot数据集路径不存在\n"
+                f"📁 请求的路径：{dataset_path}\n"
+                f"📂 父目录：{parent_dir}\n" +
+                (f"🗂️ 父目录内容：\n" + "\n".join(f"   - {item}" for item in sorted(sibling_items)[:15]) +
+                 (f"\n   ... 还有 {len(sibling_items) - 15} 项" if len(sibling_items) > 15 else "")
+                 if sibling_items else "⚠️ 父目录为空或不存在") +
+                "\n💡 LeRobot数据集应包含：\n"
+                "   - data/ (parquet文件)\n"
+                "   - meta/ (元数据)\n"
+                "   - videos/ (视频文件)\n"
+                "📋 请检查：\n"
+                "   1. 路径是否正确\n"
+                "   2. 数据集是否已下载\n"
+                "   3. 目录是否被移动或重命名"
+            )
         
-        # Check for required directories
+        # 🆕 升级：将required directories检查从warning升级为error
         required_dirs = ["data", "meta", "videos"]
         missing_dirs = []
         for dir_name in required_dirs:
             dir_path = dataset_path / dir_name
             if not dir_path.exists():
-                missing_dirs.append(str(dir_path))
+                missing_dirs.append(dir_name)
         
         if missing_dirs:
-            if self.logger:
-                self.logger.warning(f"Missing directories in LeRobot dataset: {missing_dirs}")
+            # 显示数据集目录结构
+            existing_dirs = [d.name for d in dataset_path.iterdir() if d.is_dir()]
+            existing_files = [f.name for f in dataset_path.iterdir() if f.is_file()]
+            raise FileNotFoundError(
+                f"❌ Missing required directories in LeRobot dataset\n"
+                f"   📂 Dataset path: {dataset_path}\n"
+                f"   ❌ Missing: {', '.join(missing_dirs)}\n"
+                f"   📋 Existing directories: {existing_dirs if existing_dirs else 'None'}\n"
+                f"   📋 Existing files: {existing_files[:5] if existing_files else 'None'}\n"
+                f"   💡 LeRobot format requires:\n"
+                f"      - data/ directory with parquet files\n"
+                f"      - meta/ directory with episodes.jsonl and tasks.jsonl\n"
+                f"      - videos/ directory with video files\n"
+                f"   💡 Check if:\n"
+                f"      1. Dataset was downloaded completely\n"
+                f"      2. Directory structure matches LeRobot format\n"
+                f"      3. No directories were accidentally renamed"
+            )
         
-        # Check for data files
+        # 🆕 升级：将parquet files检查从warning升级为error
         data_dir = dataset_path / "data" / "chunk-000"
         if data_dir.exists():
             parquet_files = list(data_dir.glob("*.parquet"))
             if not parquet_files:
-                if self.logger:
-                    self.logger.warning(f"No parquet files found in {data_dir}")
-            else:
-                # Enhanced validation: check parquet structure against configuration
-                self._validate_lerobot_structure(parquet_files[0])
+                # 显示data目录结构
+                data_parent = dataset_path / "data"
+                chunks = [d.name for d in data_parent.iterdir() if d.is_dir() and d.name.startswith('chunk')]
+                chunk_contents = [f.name for f in data_dir.iterdir()] if data_dir.exists() else []
+                raise FileNotFoundError(
+                    f"❌ No parquet files found in data directory\n"
+                    f"   📂 Data directory: {data_dir}\n"
+                    f"   📋 Chunk directories: {chunks if chunks else 'None'}\n"
+                    f"   📋 Contents of chunk-000: {chunk_contents if chunk_contents else 'Empty'}\n"
+                    f"   💡 LeRobot format requires .parquet files in data/chunk-000/\n"
+                    f"   💡 Check if:\n"
+                    f"      1. Data files were generated correctly\n"
+                    f"      2. Files have .parquet extension\n"
+                    f"      3. Data conversion was completed"
+                )
+            # Enhanced validation: check parquet structure against configuration
+            self._validate_lerobot_structure(parquet_files[0])
         else:
-            if self.logger:
-                self.logger.warning(f"Data directory {data_dir} does not exist")
+            # 显示data目录结构
+            data_parent = dataset_path / "data"
+            data_contents = [item.name for item in data_parent.iterdir()] if data_parent.exists() else []
+            raise FileNotFoundError(
+                f"❌ Data chunk directory does not exist\n"
+                f"   📂 Expected: {data_dir}\n"
+                f"   📂 Data directory: {data_parent}\n"
+                f"   📋 Contents: {data_contents if data_contents else 'Empty or does not exist'}\n"
+                f"   💡 LeRobot format requires data/chunk-000/ directory\n"
+                f"   💡 Check if:\n"
+                f"      1. Data was organized into chunks\n"
+                f"      2. Directory naming follows 'chunk-000' pattern\n"
+                f"      3. Data conversion created proper structure"
+            )
         
-        # Check for metadata files
+        # 🆕 升级：将metadata files检查从warning升级为error
         meta_dir = dataset_path / "meta"
         if meta_dir.exists():
             required_meta_files = ["episodes.jsonl", "tasks.jsonl"]
+            missing_files = []
             for meta_file in required_meta_files:
                 meta_file_path = meta_dir / meta_file
                 if not meta_file_path.exists():
-                    if self.logger:
-                        self.logger.warning(f"Missing metadata file: {meta_file_path}")
+                    missing_files.append(meta_file)
+            
+            if missing_files:
+                # 显示meta目录内容
+                meta_contents = [f.name for f in meta_dir.iterdir() if f.is_file()]
+                raise FileNotFoundError(
+                    f"❌ Missing required metadata files\n"
+                    f"   📂 Meta directory: {meta_dir}\n"
+                    f"   ❌ Missing files: {', '.join(missing_files)}\n"
+                    f"   📋 Existing files: {meta_contents if meta_contents else 'No files'}\n"
+                    f"   💡 LeRobot format requires:\n"
+                    f"      - episodes.jsonl: Episode metadata\n"
+                    f"      - tasks.jsonl: Task definitions\n"
+                    f"   💡 Check if:\n"
+                    f"      1. Metadata was generated during conversion\n"
+                    f"      2. Files have correct names (case-sensitive)\n"
+                    f"      3. Conversion process completed successfully"
+                )
         
         # Check for videos directory
         videos_dir = dataset_path / "videos"
@@ -463,7 +540,18 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
     def _load_episode_data(self, ep_idx: int) -> pd.DataFrame:
         """Load parquet data for a specific episode"""
         if ep_idx >= len(self.parquet_files):
-            raise ValueError(f"Episode {ep_idx} not found. Available: {len(self.parquet_files)}")
+            raise ValueError(
+                f"❌ LeRobot Episode索引超出范围\n"
+                f"🔢 请求索引：{ep_idx}\n"
+                f"📊 可用范围：0 到 {len(self.parquet_files) - 1} (共{len(self.parquet_files)}个parquet文件)\n"
+                f"📋 可用的parquet文件：\n" +
+                "\n".join(f"   [{i}] {f.name}" for i, f in enumerate(self.parquet_files[:10])) +
+                (f"\n   ... 还有 {len(self.parquet_files) - 10} 个文件" if len(self.parquet_files) > 10 else "") +
+                "\n💡 请检查：\n"
+                "   1. Episode索引是否从0开始\n"
+                "   2. 所有parquet文件是否已加载\n"
+                "   3. 数据集配置中的episode数量"
+            )
         
         parquet_file = self.parquet_files[ep_idx]
         df = pd.read_parquet(parquet_file)
@@ -501,13 +589,39 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         df = sub_states_buffer if sub_states_buffer is not None else self._load_episode_data(ep_idx)
         
         if frame_idx >= len(df):
-            raise ValueError(f"Frame {frame_idx} not found in episode {ep_idx}")
+            raise ValueError(
+                f"❌ LeRobot状态数据帧索引超出范围\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"🔢 请求帧索引：{frame_idx}\n"
+                f"📊 可用范围：0 到 {len(df) - 1} (共{len(df)}帧)\n"
+                "💡 请检查parquet文件中的实际帧数"
+            )
         
         # Extract the requested state data based on args_dict
         field_name = args_dict.get("field_name", "observation.state")
         
         if field_name not in df.columns:
-            raise ValueError(f"Field {field_name} not found in data")
+            available_columns = sorted(df.columns.tolist())
+            # 分类显示列名
+            observation_cols = [c for c in available_columns if c.startswith("observation.")]
+            action_cols = [c for c in available_columns if c.startswith("action")]
+            other_cols = [c for c in available_columns if not c.startswith(("observation.", "action"))]
+            
+            raise ValueError(
+                f"❌ LeRobot状态字段未找到\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"🔢 帧索引：{frame_idx}\n"
+                f"❌ 请求的字段：{field_name}\n"
+                f"📊 可用字段统计：\n"
+                f"   - 总字段数：{len(available_columns)}\n"
+                f"   - Observation字段：{len(observation_cols)}\n"
+                f"   - Action字段：{len(action_cols)}\n"
+                f"   - 其他字段：{len(other_cols)}\n"
+                f"📋 Observation字段列表：\n" +
+                "\n".join(f"   - {col}" for col in observation_cols[:10]) +
+                (f"\n   ... 还有 {len(observation_cols) - 10} 个字段" if len(observation_cols) > 10 else "") +
+                "\n💡 请检查converter_config中的field_name配置"
+            )
         
         frame_data = df.iloc[frame_idx][field_name]
         
@@ -531,13 +645,39 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
         df = sub_actions_buffer if sub_actions_buffer is not None else self._load_episode_data(ep_idx)
         
         if frame_idx >= len(df):
-            raise ValueError(f"Frame {frame_idx} not found in episode {ep_idx}")
+            raise ValueError(
+                f"❌ LeRobot动作数据帧索引超出范围\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"🔢 请求帧索引：{frame_idx}\n"
+                f"📊 可用范围：0 到 {len(df) - 1} (共{len(df)}帧)\n"
+                "💡 请检查parquet文件中的实际帧数"
+            )
         
         # Extract the requested action data based on args_dict
         field_name = args_dict.get("field_name", "action")
         
         if field_name not in df.columns:
-            raise ValueError(f"Field {field_name} not found in data")
+            available_columns = sorted(df.columns.tolist())
+            # 分类显示列名
+            observation_cols = [c for c in available_columns if c.startswith("observation.")]
+            action_cols = [c for c in available_columns if c.startswith("action")]
+            other_cols = [c for c in available_columns if not c.startswith(("observation.", "action"))]
+            
+            raise ValueError(
+                f"❌ LeRobot动作字段未找到\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"🔢 帧索引：{frame_idx}\n"
+                f"❌ 请求的字段：{field_name}\n"
+                f"📊 可用字段统计：\n"
+                f"   - 总字段数：{len(available_columns)}\n"
+                f"   - Observation字段：{len(observation_cols)}\n"
+                f"   - Action字段：{len(action_cols)}\n"
+                f"   - 其他字段：{len(other_cols)}\n"
+                f"📋 Action字段列表：\n" +
+                "\n".join(f"   - {col}" for col in action_cols[:10]) +
+                (f"\n   ... 还有 {len(action_cols) - 10} 个字段" if len(action_cols) > 10 else "") +
+                "\n💡 请检查converter_config中的field_name配置"
+            )
         
         frame_data = df.iloc[frame_idx][field_name]
         

@@ -167,34 +167,85 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         """Validate MMK2 dataset files and structure."""
         for task_path in self.path_task_dict.keys():
             if not task_path.exists():
-                raise FileNotFoundError(f"Task path does not exist: {task_path}")
+                parent_dir = task_path.parent
+                sibling_dirs = [d.name for d in parent_dir.iterdir() if d.is_dir()] if parent_dir.exists() else []
+                raise FileNotFoundError(
+                    f"❌ MMK2任务路径不存在\n"
+                    f"📁 请求的路径：{task_path}\n"
+                    f"📂 父目录：{parent_dir}\n"
+                    f"🗂️ 父目录中的子目录：\n" +
+                    "\n".join(f"   - {d}" for d in sorted(sibling_dirs)[:10]) +
+                    (f"\n   ... 还有 {len(sibling_dirs) - 10} 个目录" if len(sibling_dirs) > 10 else "") +
+                    "\n💡 请检查：\n"
+                    "   1. 路径是否拼写正确\n"
+                    "   2. 目录是否已被移动或删除\n"
+                    "   3. 挂载点是否正常"
+                )
             if not task_path.is_dir():
-                raise ValueError(f"Task path is not a directory: {task_path}")
+                raise ValueError(
+                    f"❌ MMK2任务路径不是目录\n"
+                    f"📄 路径：{task_path}\n"
+                    f"🔍 实际类型：{'文件' if task_path.is_file() else '符号链接' if task_path.is_symlink() else '未知'}\n"
+                    "💡 MMK2格式要求任务路径必须是包含episode子目录的目录"
+                )
             
-            # Check for required episode directories
+            # 🆕 升级：将episode检查从warning升级为error
             episode_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('episode_')]
             if not episode_dirs:
-                self.logger.warning(f"No episode directories found in {task_path}")
-            else:
-                # Enhanced validation: validate each episode's internal structure
-                for i, episode_dir in enumerate(episode_dirs):
-                    self._validate_mmk2_episode_structure(episode_dir, i)
+                # 显示目录内容帮助诊断
+                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+                all_files = [f.name for f in task_path.iterdir() if f.is_file()]
+                raise FileNotFoundError(
+                    f"❌ No episode directories found\n"
+                    f"   📂 Task path: {task_path}\n"
+                    f"   📋 Directories found: {all_dirs[:10] if all_dirs else 'None'}\n"
+                    f"   📋 Files found: {all_files[:10] if all_files else 'None'}\n"
+                    f"   💡 Expected directory pattern: episode_0000, episode_0001, ...\n"
+                    f"   💡 Check if:\n"
+                    f"      1. Dataset has been extracted correctly\n"
+                    f"      2. Episode directories are named with 'episode_' prefix\n"
+                    f"      3. Task path points to correct location"
+                )
             
-            # Validate each episode directory structure
+            # Enhanced validation: validate each episode's internal structure
+            for i, episode_dir in enumerate(episode_dirs):
+                self._validate_mmk2_episode_structure(episode_dir, i)
+            
+            # 🆕 升级：将subdirectory和image检查从warning升级为error
             for episode_dir in episode_dirs:
                 # Check for required subdirectories (observations, actions, etc.)
                 required_subdirs = ['observations']
                 for subdir in required_subdirs:
                     subdir_path = episode_dir / subdir
                     if not subdir_path.exists():
-                        self.logger.warning(f"Missing required subdirectory: {subdir_path}")
+                        # 显示episode目录结构
+                        episode_subdirs = [d.name for d in episode_dir.iterdir() if d.is_dir()]
+                        raise FileNotFoundError(
+                            f"❌ Missing required subdirectory\n"
+                            f"   📂 Episode: {episode_dir.name}\n"
+                            f"   📂 Missing: {subdir}\n"
+                            f"   📋 Existing subdirectories: {episode_subdirs if episode_subdirs else 'None'}\n"
+                            f"   💡 MMK2 format requires '{subdir}' subdirectory in each episode"
+                        )
                 
                 # Check for image files in observations
                 obs_dir = episode_dir / 'observations'
                 if obs_dir.exists():
                     image_files = list(obs_dir.glob("*.jpg")) + list(obs_dir.glob("*.png")) + list(obs_dir.glob("*.jpeg"))
                     if not image_files:
-                        self.logger.warning(f"No image files found in {obs_dir}")
+                        # 显示observations目录内容
+                        obs_contents = [f.name for f in obs_dir.iterdir()]
+                        raise FileNotFoundError(
+                            f"❌ No image files found in observations\n"
+                            f"   📂 Episode: {episode_dir.name}\n"
+                            f"   📂 Observations dir: {obs_dir}\n"
+                            f"   📋 Contents: {obs_contents[:10] if obs_contents else 'Empty directory'}\n"
+                            f"   💡 Expected image formats: .jpg, .png, .jpeg\n"
+                            f"   💡 Check if:\n"
+                            f"      1. Images were recorded properly\n"
+                            f"      2. File extensions are correct\n"
+                            f"      3. Files are in the correct subdirectory"
+                        )
 
     def _validate_mmk2_episode_structure(self, episode_dir: Path, ep_idx: int) -> None:
         """Validate internal MMK2 episode structure against configuration"""
@@ -403,7 +454,19 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         camera_dir = args_dict["camera_dir"]
 
         if "camera_groups" not in images_buffer:
-            raise ValueError("camera_groups not found in images_buffer")
+            buffer_keys = sorted(images_buffer.keys())
+            raise ValueError(
+                f"❌ MMK2图像缓冲区结构错误\n"
+                f"📁 任务路径：{task_path}\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"❌ 缺失键：camera_groups\n"
+                f"📊 缓冲区现有键：{buffer_keys}\n"
+                "💡 这通常表示：\n"
+                "   1. 图像缓冲区初始化失败\n"
+                "   2. Episode目录结构不符合MMK2格式\n"
+                "   3. 相机目录未正确加载\n"
+                "📋 请检查episode目录是否包含正确的相机子目录"
+            )
 
         # Add available_cameras info to buffer if not present
         if "available_cameras" not in images_buffer:
@@ -438,7 +501,18 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         # 处理稀疏图像：如果请求的帧索引超出范围，使用最后一个可用的图像
         if frame_idx >= len(camera_files):
             if len(camera_files) == 0:
-                raise ValueError(f"No images available for camera {camera_dir}")
+                raise ValueError(
+                    f"❌ MMK2相机目录为空\n"
+                    f"📹 相机目录：{camera_dir}\n"
+                    f"📁 任务路径：{task_path}\n"
+                    f"🔢 Episode索引：{ep_idx}\n"
+                    f"🔍 请求帧：{frame_idx}\n"
+                    "💡 该相机目录中没有任何图像文件\n"
+                    "📋 请检查：\n"
+                    "   1. 相机是否正确录制数据\n"
+                    "   2. 图像文件是否被移动或删除\n"
+                    "   3. 目录权限是否正确"
+                )
 
             # 使用最后一个可用的图像
             self.logger.warning(
@@ -449,7 +523,20 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             image_path = camera_files[frame_idx]
 
         if not image_path.exists():
-            raise ValueError(f"Image file not found: {image_path}")
+            raise ValueError(
+                f"❌ MMK2图像文件不存在\n"
+                f"🖼️ 图像路径：{image_path}\n"
+                f"📹 相机目录：{camera_dir}\n"
+                f"📁 任务路径：{task_path}\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"🔢 帧索引：{frame_idx}\n"
+                f"📊 该相机总帧数：{len(camera_files)}\n"
+                "💡 文件在索引时存在，但读取时不存在\n"
+                "📋 可能原因：\n"
+                "   1. 文件在处理过程中被删除\n"
+                "   2. 文件系统问题（磁盘错误、网络问题）\n"
+                "   3. 并发访问冲突"
+            )
 
         # 读取并返回图像
         try:
@@ -457,29 +544,48 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             return np.array(img)
         except OSError as e:
             if "truncated" in str(e):
-                raise ValueError(f"MMK2 Image Corruption Error: Image file is corrupted or truncated. "
-                               f"Image path: {image_path}, "
-                               f"File size: {image_path.stat().st_size if image_path.exists() else 'N/A'} bytes, "
-                               f"Task: {task_path.name}, "
-                               f"Episode: {ep_idx}, "
-                               f"Frame: {frame_idx}, "
-                               f"Camera: {camera_dir}, "
-                               f"Original error: {str(e)}") from e
-            raise ValueError(f"MMK2 Image Read Error: Failed to read image file. "
-                           f"Image path: {image_path}, "
-                           f"Task: {task_path.name}, "
-                           f"Episode: {ep_idx}, "
-                           f"Frame: {frame_idx}, "
-                           f"Camera: {camera_dir}, "
-                           f"Original error: {str(e)}") from e
+                file_size = image_path.stat().st_size if image_path.exists() else -1
+                raise ValueError(
+                    f"❌ MMK2图像文件损坏或截断\n"
+                    f"🖼️ 图像路径：{image_path}\n"
+                    f"📹 相机：{camera_dir}\n"
+                    f"📁 任务：{task_path.name}\n"
+                    f"🔢 Episode：{ep_idx} | 帧：{frame_idx}\n"
+                    f"📊 文件大小：{file_size} bytes\n"
+                    f"⚠️ 原始错误：{str(e)}\n"
+                    "💡 可能原因：\n"
+                    "   1. 录制过程中断（磁盘满、程序崩溃）\n"
+                    "   2. 文件传输不完整\n"
+                    "   3. 存储介质损坏\n"
+                    "🔧 建议：\n"
+                    "   1. 重新录制该episode\n"
+                    "   2. 检查磁盘健康状态\n"
+                    "   3. 使用校验和验证文件完整性"
+                ) from e
+            raise ValueError(
+                f"❌ MMK2图像读取失败\n"
+                f"🖼️ 图像路径：{image_path}\n"
+                f"📹 相机：{camera_dir}\n"
+                f"📁 任务：{task_path.name}\n"
+                f"🔢 Episode：{ep_idx} | 帧：{frame_idx}\n"
+                f"⚠️ 原始错误：{str(e)}\n"
+                "💡 可能原因：\n"
+                "   1. 文件格式不支持\n"
+                "   2. 文件权限问题\n"
+                "   3. 系统资源不足\n"
+                "📋 请检查文件格式和权限"
+            ) from e
         except Exception as e:
-            raise ValueError(f"MMK2 Image Processing Error: Unexpected error while processing image. "
-                           f"Image path: {image_path}, "
-                           f"Task: {task_path.name}, "
-                           f"Episode: {ep_idx}, "
-                           f"Frame: {frame_idx}, "
-                           f"Camera: {camera_dir}, "
-                           f"Original error: {str(e)}") from e
+            raise ValueError(
+                f"❌ MMK2图像处理意外错误\n"
+                f"🖼️ 图像路径：{image_path}\n"
+                f"📹 相机：{camera_dir}\n"
+                f"📁 任务：{task_path.name}\n"
+                f"🔢 Episode：{ep_idx} | 帧：{frame_idx}\n"
+                f"⚠️ 错误类型：{type(e).__name__}\n"
+                f"⚠️ 错误详情：{str(e)}\n"
+                "💡 请联系开发者，提供此错误信息"
+            ) from e
 
     # @override
     def _get_frame_sub_states(
@@ -671,7 +777,27 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         main_bson_file = episode_dir / "episode_0.bson"
 
         if not main_bson_file.exists():
-            raise ValueError(f"Main BSON file not found: {main_bson_file}")
+            # 列出episode目录中的所有文件
+            episode_files = list(episode_dir.glob("*")) if episode_dir.exists() else []
+            bson_files = [f for f in episode_files if f.suffix == ".bson"]
+            
+            raise ValueError(
+                f"❌ MMK2主BSON文件缺失\n"
+                f"📄 期望文件：{main_bson_file}\n"
+                f"📁 Episode目录：{episode_dir}\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"📊 目录统计：\n"
+                f"   - 总文件数：{len(episode_files)}\n"
+                f"   - BSON文件数：{len(bson_files)}\n" +
+                (f"   - BSON文件列表：\n" + "\n".join(f"      * {f.name}" for f in bson_files[:5]) if bson_files else "") +
+                "\n💡 MMK2格式要求：\n"
+                "   - 每个episode目录必须包含episode_0.bson\n"
+                "   - 该文件包含episode的元数据和帧数信息\n"
+                "📋 请检查：\n"
+                "   1. Episode是否完整录制\n"
+                "   2. 文件是否被重命名或移动\n"
+                "   3. 数据集是否按MMK2格式正确生成"
+            )
 
         try:
             with open(main_bson_file, "rb") as f:
@@ -686,7 +812,24 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
             return 0
         except Exception as e:
-            raise ValueError(f"Error reading main BSON file: {e}")
+            file_size = main_bson_file.stat().st_size if main_bson_file.exists() else -1
+            raise ValueError(
+                f"❌ MMK2 BSON文件读取失败\n"
+                f"📄 文件路径：{main_bson_file}\n"
+                f"📁 Episode目录：{episode_dir}\n"
+                f"🔢 Episode索引：{ep_idx}\n"
+                f"📊 文件大小：{file_size} bytes\n"
+                f"⚠️ 错误类型：{type(e).__name__}\n"
+                f"⚠️ 错误详情：{str(e)}\n"
+                "💡 可能原因：\n"
+                "   1. BSON文件格式损坏\n"
+                "   2. 文件不完整或截断\n"
+                "   3. BSON解析器版本不兼容\n"
+                "📋 建议：\n"
+                "   1. 验证文件完整性\n"
+                "   2. 检查BSON文件格式是否正确\n"
+                "   3. 重新生成该episode数据"
+            )
 
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:

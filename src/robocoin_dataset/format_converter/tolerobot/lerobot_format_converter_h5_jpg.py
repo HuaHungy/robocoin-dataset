@@ -69,8 +69,16 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
             ]
             
             if not episodes:
+                all_dirs = [item.name for item in task_path.glob("*") if item.is_dir()]
                 raise FileNotFoundError(
-                    f"No episode directories with aligned_joints.h5 found in {task_path}"
+                    f"❌ No episode directories found.\n"
+                    f"   📁 Task path: {task_path}\n"
+                    f"   📂 Directories found: {all_dirs if all_dirs else 'None'}\n"
+                    f"   🗂️  Expected: Directories containing 'aligned_joints.h5' file\n"
+                    f"   💡 Check if:\n"
+                    f"      1. Episode directories exist in task path\n"
+                    f"      2. Each episode has aligned_joints.h5 file\n"
+                    f"      3. File naming matches expected format"
                 )
             
             for ep_dir in episodes:
@@ -79,14 +87,28 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
                 meta_file = ep_dir / "meta_info.json"
                 
                 if not h5_file.exists():
-                    raise FileNotFoundError(f"No aligned_joints.h5 in {ep_dir}")
+                    raise FileNotFoundError(
+                        f"❌ H5 file not found.\n"
+                        f"   📁 Episode directory: {ep_dir}\n"
+                        f"   🗂️  Expected file: aligned_joints.h5\n"
+                        f"   💡 This file should contain state and action data"
+                    )
                 
                 if not camera_dir.exists():
-                    raise FileNotFoundError(f"No camera directory in {ep_dir}")
+                    available_items = [item.name for item in ep_dir.iterdir()]
+                    raise FileNotFoundError(
+                        f"❌ Camera directory not found.\n"
+                        f"   📁 Episode directory: {ep_dir}\n"
+                        f"   📂 Expected directory: camera/\n"
+                        f"   📋 Available items: {available_items}\n"
+                        f"   💡 Camera directory should contain frame subdirectories with images"
+                    )
                 
                 if not meta_file.exists():
                     if self.logger:
-                        self.logger.warning(f"No meta_info.json in {ep_dir}")
+                        self.logger.warning(
+                            f"⚠️  meta_info.json not found in {ep_dir.name} (optional file)"
+                        )
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的 episode 数量"""
@@ -108,9 +130,14 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         """获取指定的 episode 目录"""
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
+            episode_names = [ep.name for ep in episodes]
             raise IndexError(
-                f"Episode index {ep_idx} out of range for task_path={task_path}. "
-                f"Found {len(episodes)} episodes."
+                f"❌ Episode index out of range.\n"
+                f"   📁 Task path: {task_path}\n"
+                f"   🎯 Requested ep_idx: {ep_idx}\n"
+                f"   📊 Available episodes: {len(episodes)} (valid range: 0-{len(episodes)-1})\n"
+                f"   📋 Episode names: {episode_names}\n"
+                f"   💡 Check if ep_idx is within valid range"
             )
         return episodes[ep_idx]
 
@@ -156,7 +183,15 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         elif 'state/joint/position' in h5_file:
             h5_frames = h5_file['state/joint/position'].shape[0]
         else:
-            raise ValueError("Cannot determine frame count from H5 file")
+            available_keys = list(h5_file.keys())
+            raise ValueError(
+                f"❌ Cannot determine frame count from H5 file.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   🗂️  H5 file: aligned_joints.h5\n"
+                f"   📋 Available top-level keys: {available_keys}\n"
+                f"   💡 Expected 'timestamp' or 'state/joint/position' key\n"
+                f"      Check if H5 file structure matches expected format"
+            )
         
         # 获取 camera 目录中实际存在的帧
         ep_dir = self._get_episode_dir(task_path, ep_idx)
@@ -164,7 +199,15 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         frame_dirs = [d for d in camera_dir.glob("[0-9]*") if d.is_dir()]
         
         if not frame_dirs:
-            raise FileNotFoundError(f"No frame directories found in {camera_dir}")
+            available_items = [item.name for item in camera_dir.iterdir() if item.is_dir()]
+            raise FileNotFoundError(
+                f"❌ No frame directories found.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📂 Camera directory: {camera_dir}\n"
+                f"   📋 Subdirectories: {available_items if available_items else 'None'}\n"
+                f"   💡 Expected numeric frame directories (e.g., 0/, 1/, 2/...)\n"
+                f"      Each should contain camera image files"
+            )
         
         # 获取帧编号列表并排序
         frame_indices = sorted([int(d.name) for d in frame_dirs])
@@ -218,9 +261,13 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
             frame_indices = self._frame_indices_cache[cache_key]
             if frame_idx >= len(frame_indices):
                 raise IndexError(
-                    f"Frame index {frame_idx} out of range. "
-                    f"Available frames: {len(frame_indices)}, "
-                    f"task_path={task_path}, ep_idx={ep_idx}"
+                    f"❌ Frame index out of range.\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                    f"   🎯 Requested frame_idx: {frame_idx}\n"
+                    f"   📊 Available frames: {len(frame_indices)} (valid range: 0-{len(frame_indices)-1})\n"
+                    f"   🔢 Frame indices: {frame_indices[:10]}{'...' if len(frame_indices) > 10 else ''}\n"
+                    f"   💡 Note: Frame indices may not be continuous (e.g., 0,1,10,11...)\n"
+                    f"      Check if frame_idx exceeds available frame count"
                 )
             actual_frame_idx = frame_indices[frame_idx]
         else:
@@ -235,10 +282,23 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         full_path = ep_dir / image_path
         
         if not full_path.exists():
+            # 查找该帧目录下的实际文件
+            frame_dir = full_path.parent
+            available_files = []
+            if frame_dir.exists():
+                available_files = [f.name for f in frame_dir.iterdir() if f.is_file()]
+            
             raise FileNotFoundError(
-                f"Image file not found: {full_path} "
-                f"(logical frame_idx={frame_idx}, actual_frame_idx={actual_frame_idx}) "
-                f"for task_path={task_path}, ep_idx={ep_idx}"
+                f"❌ Image file not found.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   🎯 Logical frame_idx: {frame_idx}, Actual frame_idx: {actual_frame_idx}\n"
+                f"   🖼️  Expected file: {full_path}\n"
+                f"   📂 Frame directory: {frame_dir}\n"
+                f"   📋 Available files: {available_files if available_files else 'Directory not found'}\n"
+                f"   💡 Check if:\n"
+                f"      1. Image path template in config is correct: '{h5_path}'\n"
+                f"      2. Frame directory exists: camera/{actual_frame_idx}/\n"
+                f"      3. Camera image file exists with correct name"
             )
         
         # 读取图像
@@ -274,9 +334,18 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         # 检查路径是否存在
         if h5_path not in sub_states_buffer:
             available_paths = list(sub_states_buffer.keys())
+            # 提供部分匹配建议
+            similar_paths = [p for p in available_paths if any(part in p for part in h5_path.split('/'))]
             raise KeyError(
-                f"State h5_path '{h5_path}' not found in episode {ep_idx} "
-                f"at task_path={task_path}. Available paths: {available_paths}"
+                f"❌ H5 state path not found.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   🗂️  Requested h5_path: '{h5_path}'\n"
+                f"   📋 Available paths: {available_paths[:10]}{'...' if len(available_paths) > 10 else ''}\n"
+                f"   🔍 Similar paths: {similar_paths if similar_paths else 'None'}\n"
+                f"   💡 Check if:\n"
+                f"      1. h5_path in config matches H5 file structure\n"
+                f"      2. State data is under 'state/' prefix\n"
+                f"      3. Path syntax is correct (use '/' separator)"
             )
         
         dataset = sub_states_buffer[h5_path]
@@ -288,18 +357,28 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
             # 有额外的维度，需要先索引
             if frame_idx >= dataset.shape[0]:
                 raise IndexError(
-                    f"State frame index {frame_idx} out of range for h5_path '{h5_path}' "
-                    f"in episode {ep_idx} at task_path={task_path}. "
-                    f"Dataset has {dataset.shape[0]} frames."
+                    f"❌ Frame index out of range in H5 dataset.\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                    f"   🗂️  H5 path: '{h5_path}'\n"
+                    f"   🎯 Requested frame_idx: {frame_idx}\n"
+                    f"   📐 Dataset shape: {dataset.shape}\n"
+                    f"   🔢 Valid frame range: 0-{dataset.shape[0]-1}\n"
+                    f"   🔢 Array index: {array_index}, Range: [{from_idx}:{to_idx}]\n"
+                    f"   💡 Frame index exceeds first dimension of dataset"
                 )
             return dataset[frame_idx, array_index, from_idx:to_idx]
         
         # 标准的 2D 数组
         if frame_idx >= dataset.shape[0]:
             raise IndexError(
-                f"State frame index {frame_idx} out of range for h5_path '{h5_path}' "
-                f"in episode {ep_idx} at task_path={task_path}. "
-                f"Dataset has {dataset.shape[0]} frames."
+                f"❌ Frame index out of range in H5 dataset.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   🗂️  H5 path: '{h5_path}'\n"
+                f"   🎯 Requested frame_idx: {frame_idx}\n"
+                f"   📐 Dataset shape: {dataset.shape}\n"
+                f"   🔢 Valid frame range: 0-{dataset.shape[0]-1}\n"
+                f"   🔢 Extracting range: [{from_idx}:{to_idx}]\n"
+                f"   💡 Frame index exceeds dataset first dimension"
             )
         return dataset[frame_idx, from_idx:to_idx]
 
@@ -322,9 +401,18 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         # 检查路径是否存在
         if h5_path not in sub_actions_buffer:
             available_paths = list(sub_actions_buffer.keys())
+            # 提供部分匹配建议
+            similar_paths = [p for p in available_paths if any(part in p for part in h5_path.split('/'))]
             raise KeyError(
-                f"Action h5_path '{h5_path}' not found in episode {ep_idx} "
-                f"at task_path={task_path}. Available paths: {available_paths}"
+                f"❌ H5 action path not found.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   🗂️  Requested h5_path: '{h5_path}'\n"
+                f"   📋 Available paths: {available_paths[:10]}{'...' if len(available_paths) > 10 else ''}\n"
+                f"   🔍 Similar paths: {similar_paths if similar_paths else 'None'}\n"
+                f"   💡 Check if:\n"
+                f"      1. h5_path in config matches H5 file structure\n"
+                f"      2. Action data is under 'action/' prefix (not 'state/')\n"
+                f"      3. Path syntax is correct (use '/' separator)"
             )
         
         dataset = sub_actions_buffer[h5_path]
@@ -335,16 +423,26 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         if array_index is not None:
             if frame_idx >= dataset.shape[0]:
                 raise IndexError(
-                    f"Action frame index {frame_idx} out of range for h5_path '{h5_path}' "
-                    f"in episode {ep_idx} at task_path={task_path}. "
-                    f"Dataset has {dataset.shape[0]} frames."
+                    f"❌ Frame index out of range in H5 dataset.\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                    f"   🗂️  H5 path: '{h5_path}'\n"
+                    f"   🎯 Requested frame_idx: {frame_idx}\n"
+                    f"   📐 Dataset shape: {dataset.shape}\n"
+                    f"   🔢 Valid frame range: 0-{dataset.shape[0]-1}\n"
+                    f"   🔢 Array index: {array_index}, Range: [{from_idx}:{to_idx}]\n"
+                    f"   💡 Frame index exceeds first dimension of action dataset"
                 )
             return dataset[frame_idx, array_index, from_idx:to_idx]
         
         if frame_idx >= dataset.shape[0]:
             raise IndexError(
-                f"Action frame index {frame_idx} out of range for h5_path '{h5_path}' "
-                f"in episode {ep_idx} at task_path={task_path}. "
-                f"Dataset has {dataset.shape[0]} frames."
+                f"❌ Frame index out of range in H5 dataset.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   🗂️  H5 path: '{h5_path}'\n"
+                f"   🎯 Requested frame_idx: {frame_idx}\n"
+                f"   📐 Dataset shape: {dataset.shape}\n"
+                f"   🔢 Valid frame range: 0-{dataset.shape[0]-1}\n"
+                f"   🔢 Extracting range: [{from_idx}:{to_idx}]\n"
+                f"   💡 Frame index exceeds action dataset first dimension"
             )
         return dataset[frame_idx, from_idx:to_idx]

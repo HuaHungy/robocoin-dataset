@@ -52,12 +52,54 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
+        # 🆕 增加：验证所有task_path存在性
+        for task_path in self.path_task_dict.keys():
+            if not task_path.exists():
+                # 显示父目录内容
+                parent_dir = task_path.parent
+                siblings = []
+                if parent_dir.exists():
+                    siblings = [d.name for d in parent_dir.iterdir() if d.is_dir()]
+                    if len(siblings) > 15:
+                        siblings = siblings[:15] + [f"... ({len(siblings) - 15} more)"]
+                
+                raise FileNotFoundError(
+                    f"❌ Task path does not exist\n"
+                    f"   📂 Task path: {task_path}\n"
+                    f"   📂 Parent directory: {parent_dir}\n"
+                    f"   📋 Available directories in parent:\n"
+                    f"      {', '.join(siblings) if siblings else 'Parent directory not found'}\n"
+                    f"   💡 Please check:\n"
+                    f"      1. Path is correct in configuration\n"
+                    f"      2. Dataset has been downloaded/extracted\n"
+                    f"      3. No typos in directory names"
+                )
+            
+            if not task_path.is_dir():
+                raise NotADirectoryError(
+                    f"❌ Task path exists but is not a directory\n"
+                    f"   📂 Path: {task_path}\n"
+                    f"   📋 Type: {('file' if task_path.is_file() else 'unknown')}\n"
+                    f"   💡 Task path must be a directory containing episode folders"
+                )
+        
         for task_path in self.path_task_dict.keys():
             episodes = list(task_path.glob("episode*"))
             episodes = [ep for ep in episodes if ep.is_dir()]
             
             if not episodes:
-                raise FileNotFoundError(f"No episode directories found in {task_path}")
+                # 列出task_path下的所有目录，帮助用户诊断
+                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+                raise FileNotFoundError(
+                    f"❌ No episode directories found.\n"
+                    f"   📂 Task path: {task_path}\n"
+                    f"   📋 Directories found: {all_dirs if all_dirs else 'None'}\n"
+                    f"   💡 Expected directory pattern: episode0, episode1, ...\n"
+                    f"   💡 Check if:\n"
+                    f"      1. Dataset has been extracted correctly\n"
+                    f"      2. Episode directories are named correctly\n"
+                    f"      3. Task path points to correct location"
+                )
             
             for ep_dir in episodes:
                 # 检查是否有嵌套的episode目录
@@ -65,16 +107,80 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
                 if nested_ep.exists() and nested_ep.is_dir() and (nested_ep / "camera").exists():
                     ep_dir = nested_ep
                 
+                # 🆕 增加：抽样检查第一个episode的图像文件
+                if ep_dir == episodes[0]:
+                    camera_dir = ep_dir / "camera" / "color"
+                    if camera_dir.exists():
+                        # 查找第一个相机文件夹
+                        camera_folders = [d for d in camera_dir.iterdir() if d.is_dir()]
+                        if camera_folders:
+                            first_cam = camera_folders[0]
+                            image_files = list(first_cam.glob("*.jpg")) + list(first_cam.glob("*.png"))
+                            
+                            if image_files:
+                                # 尝试读取第一张图片
+                                try:
+                                    from PIL import Image
+                                    test_img = Image.open(image_files[0])
+                                    width, height = test_img.size
+                                    self.logger.info(
+                                        f"✅ 图像文件验证通过：{first_cam.name}\n"
+                                        f"   - 图像数量：{len(image_files)}\n"
+                                        f"   - 分辨率：{width}x{height}\n"
+                                        f"   - 格式：{test_img.format}"
+                                    )
+                                except Exception as e:
+                                    self.logger.warning(
+                                        f"⚠️ 无法读取图像文件\n"
+                                        f"📄 文件：{image_files[0]}\n"
+                                        f"⚠️ 错误：{str(e)}\n"
+                                        "💡 请检查图像文件是否损坏"
+                                    )
+                            else:
+                                self.logger.warning(
+                                    f"⚠️ 相机文件夹中没有图像文件\n"
+                                    f"📂 文件夹：{first_cam}\n"
+                                    "💡 期望找到 .jpg 或 .png 文件"
+                                )
+                
                 # 检查相机文件夹
                 camera_dir = ep_dir / "camera" / "color"
                 if not camera_dir.exists():
-                    raise FileNotFoundError(f"No camera/color directory in {ep_dir}")
+                    # 提供详细的目录结构信息
+                    camera_base = ep_dir / "camera"
+                    ep_subdirs = [d.name for d in ep_dir.iterdir() if d.is_dir()] if ep_dir.exists() else []
+                    camera_subdirs = [d.name for d in camera_base.iterdir() if d.is_dir()] if camera_base.exists() else []
+                    
+                    raise FileNotFoundError(
+                        f"❌ Camera color directory not found.\n"
+                        f"   📂 Expected path: {camera_dir}\n"
+                        f"   📂 Episode directory: {ep_dir}\n"
+                        f"   📋 Episode subdirectories: {ep_subdirs}\n"
+                        f"   📋 Camera subdirectories: {camera_subdirs if camera_base.exists() else 'camera/ not found'}\n"
+                        f"   💡 Expected structure: episode/camera/color/[camera_name]/\n"
+                        f"   💡 Check if:\n"
+                        f"      1. Directory structure matches expected format\n"
+                        f"      2. 'camera' and 'color' directories exist\n"
+                        f"      3. Dataset extraction was complete"
+                    )
 
     def _get_episode_dir(self, task_path: Path, ep_idx: int) -> Path:
         """获取episode目录"""
         episodes = sorted([ep for ep in task_path.glob("episode*") if ep.is_dir()])
         if ep_idx >= len(episodes):
-            raise IndexError(f"Episode index {ep_idx} out of range")
+            episode_names = [ep.name for ep in episodes[:10]]  # 只显示前10个
+            raise IndexError(
+                f"❌ Episode index out of range.\n"
+                f"   🎯 Requested episode: {ep_idx}\n"
+                f"   📂 Task path: {task_path}\n"
+                f"   📊 Total episodes: {len(episodes)}\n"
+                f"   📋 Episode directories (showing first 10): {episode_names}\n"
+                f"   📐 Valid range: 0 to {len(episodes) - 1}\n"
+                f"   💡 Check if:\n"
+                f"      1. Episode index is correct\n"
+                f"      2. All episodes have been recorded\n"
+                f"      3. Dataset is complete"
+            )
         
         ep_dir = episodes[ep_idx]
         
@@ -102,15 +208,44 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         # 从第一个可用的相机获取帧数
         camera_dir = ep_dir / "camera" / "color"
         if not camera_dir.exists():
-            raise FileNotFoundError(f"No camera directory in {ep_dir}")
+            ep_subdirs = [d.name for d in ep_dir.iterdir() if d.is_dir()] if ep_dir.exists() else []
+            
+            raise FileNotFoundError(
+                f"❌ Camera color directory not found.\n"
+                f"   📂 Expected path: {camera_dir}\n"
+                f"   📂 Episode directory: {ep_dir}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   📋 Episode subdirectories: {ep_subdirs}\n"
+                f"   💡 Expected path: episode/camera/color/\n"
+                f"   💡 Check if:\n"
+                f"      1. Episode structure is correct\n"
+                f"      2. 'camera/color' directories exist\n"
+                f"      3. Dataset was extracted properly"
+            )
         
-        for cam_folder in camera_dir.iterdir():
-            if cam_folder.is_dir():
-                images = list(cam_folder.glob("*.jpg")) + list(cam_folder.glob("*.png"))
-                if images:
-                    return len(images)
+        # 尝试从每个相机文件夹获取图像
+        camera_folders = [d for d in camera_dir.iterdir() if d.is_dir()]
+        camera_info = {}
         
-        raise ValueError(f"No images found in {ep_dir}")
+        for cam_folder in camera_folders:
+            images = list(cam_folder.glob("*.jpg")) + list(cam_folder.glob("*.png"))
+            camera_info[cam_folder.name] = len(images)
+            if images:
+                return len(images)
+        
+        # 如果没有找到任何图像，提供详细的诊断信息
+        raise ValueError(
+            f"❌ No images found in episode.\n"
+            f"   📂 Episode directory: {ep_dir}\n"
+            f"   📂 Camera color path: {camera_dir}\n"
+            f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+            f"   📋 Camera folders found: {list(camera_info.keys()) if camera_info else 'None'}\n"
+            f"   📊 Images per camera: {camera_info if camera_info else 'No cameras with images'}\n"
+            f"   💡 Check if:\n"
+            f"      1. Image files exist (.jpg or .png)\n"
+            f"      2. Camera directories contain images\n"
+            f"      3. Episode was recorded successfully"
+        )
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
@@ -224,10 +359,32 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
                 break
         
         if matched_cam is None:
-            raise KeyError(f"Camera {cam_name} not found in episode {ep_idx}. Available: {list(images_buffer.keys())}")
+            available_cameras = list(images_buffer.keys())
+            raise KeyError(
+                f"❌ Camera not found in images buffer.\n"
+                f"   📹 Requested camera: {cam_name}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📋 Available cameras: {available_cameras}\n"
+                f"   💡 Camera matching uses partial string match\n"
+                f"   💡 Check if:\n"
+                f"      1. Camera name matches config\n"
+                f"      2. Camera folder exists in episode/camera/color/\n"
+                f"      3. Images were loaded successfully for this camera"
+            )
         
         if frame_idx >= len(images_buffer[matched_cam]):
-            raise IndexError(f"Frame index {frame_idx} out of range for camera {matched_cam}")
+            max_frames = len(images_buffer[matched_cam])
+            raise IndexError(
+                f"❌ Frame index out of range.\n"
+                f"   🎯 Requested frame: {frame_idx}\n"
+                f"   📹 Camera: {matched_cam} (matched from: {cam_name})\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   📐 Available frames: 0 to {max_frames - 1} (total: {max_frames})\n"
+                f"   💡 Check if:\n"
+                f"      1. Frame index is within valid range\n"
+                f"      2. All images were loaded correctly\n"
+                f"      3. Episode has expected number of frames"
+            )
         
         return images_buffer[matched_cam][frame_idx]
 

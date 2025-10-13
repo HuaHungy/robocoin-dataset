@@ -72,12 +72,42 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         # Read task info from dataset root
         local_task_info_path = self.dataset_path / "local_task_info.yaml"
         if not local_task_info_path.exists():
-            raise FileNotFoundError(f"local_task_info.yaml not found in {self.dataset_path}")
+            # 列出数据集根目录的文件
+            root_files = [f.name for f in self.dataset_path.iterdir() if f.is_file()]
+            raise FileNotFoundError(
+                f"❌ Task info file not found.\n"
+                f"   📄 Expected file: local_task_info.yaml\n"
+                f"   📂 Dataset path: {self.dataset_path}\n"
+                f"   📋 Files in root: {root_files}\n"
+                f"   💡 Check if:\n"
+                f"      1. Dataset has been extracted correctly\n"
+                f"      2. local_task_info.yaml exists in dataset root\n"
+                f"      3. Path points to correct dataset directory"
+            )
         
-        with open(local_task_info_path) as f:
-            task_info_dict = yaml.safe_load(f)
-            task_index = task_info_dict["task_index"]
-            task = self.tasks[task_index]
+        try:
+            with open(local_task_info_path) as f:
+                task_info_dict = yaml.safe_load(f)
+                task_index = task_info_dict["task_index"]
+                task = self.tasks[task_index]
+        except KeyError as e:
+            raise ValueError(
+                f"❌ Invalid task info format.\n"
+                f"   📄 File: {local_task_info_path}\n"
+                f"   ❌ Missing key: {e!s}\n"
+                f"   💡 Expected format: {{task_index: <index>, tasks: [...]}}\n"
+                f"   💡 Check if task_info.yaml has correct structure"
+            ) from e
+        except Exception as e:
+            raise OSError(
+                f"❌ Failed to read task info file.\n"
+                f"   📄 File: {local_task_info_path}\n"
+                f"   ❌ Error: {e!s}\n"
+                f"   💡 Check if:\n"
+                f"      1. File is valid YAML format\n"
+                f"      2. File is not corrupted\n"
+                f"      3. File has read permissions"
+            ) from e
         
         # Scan for episode directories
         for subdir in self.dataset_path.iterdir():
@@ -90,24 +120,145 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                     self.logger.info(f"Found episode: {subdir.name}")
         
         if not task_paths_dict:
+            # 列出所有子目录帮助诊断
+            all_subdirs = [d.name for d in self.dataset_path.iterdir() if d.is_dir()]
             raise FileNotFoundError(
-                f"No valid episode directories found in {self.dataset_path}"
+                f"❌ No valid episode directories found.\n"
+                f"   📂 Dataset path: {self.dataset_path}\n"
+                f"   📋 Subdirectories found: {all_subdirs if all_subdirs else 'None'}\n"
+                f"   💡 Valid episode must have:\n"
+                f"      - metadata.json\n"
+                f"      - proprio_stats/proprio_stats.hdf5\n"
+                f"   💡 Check if:\n"
+                f"      1. Episodes have been recorded\n"
+                f"      2. Required files exist in episode directories\n"
+                f"      3. Dataset extraction was complete"
             )
         
         return task_paths_dict
 
     def _prevalidate_files(self) -> None:
         """Validate that required files exist for each episode."""
+        # 🆕 增加：验证所有episode_path存在性
+        for episode_path in self.path_task_dict.keys():
+            if not episode_path.exists():
+                # 显示父目录内容
+                parent_dir = episode_path.parent
+                siblings = []
+                if parent_dir.exists():
+                    siblings = [d.name for d in parent_dir.iterdir() if d.is_dir()]
+                    if len(siblings) > 15:
+                        siblings = siblings[:15] + [f"... ({len(siblings) - 15} more)"]
+                
+                raise FileNotFoundError(
+                    f"❌ Episode path does not exist\n"
+                    f"   📂 Episode path: {episode_path}\n"
+                    f"   📂 Parent directory: {parent_dir}\n"
+                    f"   📋 Available directories in parent:\n"
+                    f"      {', '.join(siblings) if siblings else 'Parent directory not found'}\n"
+                    f"   💡 Please check:\n"
+                    f"      1. Path is correct in configuration\n"
+                    f"      2. Dataset has been downloaded/extracted\n"
+                    f"      3. No typos in directory names"
+                )
+            
+            if not episode_path.is_dir():
+                raise NotADirectoryError(
+                    f"❌ Episode path exists but is not a directory\n"
+                    f"   📂 Path: {episode_path}\n"
+                    f"   📋 Type: {('file' if episode_path.is_file() else 'unknown')}\n"
+                    f"   💡 Episode path must be a directory containing metadata, proprio_stats, etc."
+                )
+        
         for episode_path in self.path_task_dict.keys():
             # Check metadata
             metadata_file = episode_path / "metadata.json"
             if not metadata_file.exists():
-                raise FileNotFoundError(f"metadata.json not found in {episode_path}")
+                episode_files = [f.name for f in episode_path.iterdir() if f.is_file()]
+                raise FileNotFoundError(
+                    f"❌ Metadata file not found.\n"
+                    f"   📄 Expected file: metadata.json\n"
+                    f"   📂 Episode path: {episode_path}\n"
+                    f"   📋 Files in episode: {episode_files}\n"
+                    f"   💡 Check if:\n"
+                    f"      1. Episode was recorded completely\n"
+                    f"      2. metadata.json exists in episode root\n"
+                    f"      3. File name is exactly 'metadata.json'"
+                )
+            
+            # 🆕 增加：验证metadata.json内容
+            try:
+                import json
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                    if not isinstance(metadata, dict):
+                        self.logger.warning(
+                            f"⚠️ Metadata不是字典格式\n"
+                            f"📄 文件：{metadata_file}\n"
+                            f"📋 类型：{type(metadata).__name__}\n"
+                            "💡 期望JSON对象（字典）"
+                        )
+                    else:
+                        self.logger.info(
+                            f"✅ Metadata验证通过：{metadata_file.name}\n"
+                            f"   - 键数量：{len(metadata)}\n"
+                            f"   - 主要键：{list(metadata.keys())[:5]}"
+                        )
+            except json.JSONDecodeError as e:
+                self.logger.warning(
+                    f"⚠️ Metadata JSON解析失败\n"
+                    f"📄 文件：{metadata_file}\n"
+                    f"⚠️ 错误：第{e.lineno}行，第{e.colno}列\n"
+                    f"   {str(e)}\n"
+                    "💡 请检查JSON文件格式是否正确"
+                )
+            except Exception as e:
+                self.logger.warning(f"⚠️ 无法读取metadata文件：{e}")
             
             # Check H5 file
             h5_file = episode_path / "proprio_stats" / "proprio_stats.hdf5"
             if not h5_file.exists():
-                raise FileNotFoundError(f"proprio_stats.hdf5 not found in {episode_path}")
+                proprio_dir = episode_path / "proprio_stats"
+                proprio_files = []
+                if proprio_dir.exists():
+                    proprio_files = [f.name for f in proprio_dir.iterdir() if f.is_file()]
+                
+                raise FileNotFoundError(
+                    f"❌ Proprio stats H5 file not found.\n"
+                    f"   📄 Expected file: proprio_stats.hdf5\n"
+                    f"   📂 Expected path: {h5_file}\n"
+                    f"   📂 Episode path: {episode_path}\n"
+                    f"   📋 Files in proprio_stats/: {proprio_files if proprio_dir.exists() else 'Directory not found'}\n"
+                    f"   💡 Check if:\n"
+                    f"      1. proprio_stats directory exists\n"
+                    f"      2. proprio_stats.hdf5 file exists\n"
+                    f"      3. Episode recording was complete"
+                )
+            
+            # 🆕 增加：验证H5文件内容
+            try:
+                import h5py
+                with h5py.File(h5_file, 'r') as f:
+                    datasets = list(f.keys())
+                    if not datasets:
+                        self.logger.warning(
+                            f"⚠️ H5文件为空\n"
+                            f"📄 文件：{h5_file}\n"
+                            "💡 这可能导致后续转换失败"
+                        )
+                    else:
+                        self.logger.info(
+                            f"✅ H5文件验证通过：{h5_file.name}\n"
+                            f"   - 数据集数量：{len(datasets)}\n"
+                            f"   - 数据集列表：{datasets[:5]}"
+                        )
+            except Exception as e:
+                self.logger.warning(
+                    f"⚠️ 无法读取H5文件\n"
+                    f"📄 文件：{h5_file}\n"
+                    f"⚠️ 错误：{str(e)}\n"
+                    "💡 请检查H5文件是否损坏"
+                )
             
             # Check video files
             video_dir = episode_path / "camera" / "video"
@@ -180,7 +331,23 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         """
         video_path = task_path / "camera" / "video" / f"{cam_name}.mp4"
         if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
+            video_dir = task_path / "camera" / "video"
+            available_videos = []
+            if video_dir.exists():
+                available_videos = [f.name for f in video_dir.glob("*.mp4")]
+            
+            raise FileNotFoundError(
+                f"❌ Video file not found.\n"
+                f"   📹 Camera: {cam_name}\n"
+                f"   📄 Expected file: {video_path.name}\n"
+                f"   📂 Video directory: {video_dir}\n"
+                f"   📂 Episode path: {task_path}\n"
+                f"   📋 Available videos: {available_videos if available_videos else 'None'}\n"
+                f"   💡 Check if:\n"
+                f"      1. Camera name matches video file name\n"
+                f"      2. Video file exists in camera/video/\n"
+                f"      3. Video recording was successful"
+            )
         return video_path
 
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> Any:
@@ -290,12 +457,37 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         # Fallback: load from video
         video_path = self._get_video_file_path(task_path, ep_idx, cam_name)
         cap = cv2.VideoCapture(str(video_path))
+        
+        if not cap.isOpened():
+            raise OSError(
+                f"❌ Cannot open video file.\n"
+                f"   📹 Camera: {cam_name}\n"
+                f"   📄 Video file: {video_path}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   💡 Check if:\n"
+                f"      1. Video file is not corrupted\n"
+                f"      2. Video codec is supported by OpenCV\n"
+                f"      3. File permissions are correct"
+            )
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         cap.release()
         
         if not ret:
-            raise ValueError(f"Failed to read frame {frame_idx} from {video_path}")
+            raise ValueError(
+                f"❌ Failed to read frame from video.\n"
+                f"   🎯 Requested frame: {frame_idx}\n"
+                f"   📹 Camera: {cam_name}\n"
+                f"   📄 Video file: {video_path}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   📐 Total frames in video: {total_frames}\n"
+                f"   💡 Check if:\n"
+                f"      1. Frame index is within valid range (0 to {total_frames-1})\n"
+                f"      2. Video file is not corrupted\n"
+                f"      3. Video was recorded completely"
+            )
         
         return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 

@@ -15,6 +15,9 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     ACTION_KEY, SUB_ACTION_KEY, ARGS_KEY, CAM_NAME_KEY, NAME_KEY,
 )
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import LerobotFormatConverter
+from robocoin_dataset.format_converter.tolerobot.video_frame_validator import (
+    validate_video_frame_count,
+)
 
 
 class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
@@ -54,6 +57,9 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             if not episodes:
                 raise FileNotFoundError(f"No episode directories found in {task_path}")
             
+            # 🆕 增加：只验证第一个episode的帧数（作为抽样检查）
+            first_episode_validated = False
+            
             for ep_dir in episodes:
                 h5_files = list(ep_dir.glob("*.hdf5")) + list(ep_dir.glob("*.h5"))
                 if not h5_files:
@@ -63,6 +69,55 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 mp4_files = list(ep_dir.glob("*.mp4"))
                 if not mp4_files:
                     self.logger.warning(f"No MP4 files found in {ep_dir}")
+                    continue
+                
+                # 🆕 增加：对第一个episode验证视频帧数与H5数据帧数是否匹配
+                if not first_episode_validated and mp4_files:
+                    h5_file = h5_files[0]
+                    try:
+                        # 从H5文件获取预期帧数
+                        expected_frame_count = None
+                        with h5py.File(h5_file, 'r') as f:
+                            if 'action' in f:
+                                expected_frame_count = f['action'].shape[0]
+                            elif 'qpos' in f:
+                                expected_frame_count = f['qpos'].shape[0]
+                        
+                        if expected_frame_count is not None:
+                            if self.logger:
+                                self.logger.info(
+                                    f"🔍 Validating video frame counts for episode: {ep_dir.name}\n"
+                                    f"   📊 H5 data frames: {expected_frame_count}"
+                                )
+                            
+                            # 验证每个MP4文件的帧数
+                            for mp4_file in mp4_files:
+                                try:
+                                    validate_video_frame_count(
+                                        video_path=mp4_file,
+                                        expected_frame_count=expected_frame_count,
+                                        data_source="H5 file",
+                                        logger=self.logger,
+                                        tolerance=1  # 允许±1帧误差
+                                    )
+                                except ValueError as e:
+                                    self.logger.warning(
+                                        f"⚠️ 视频帧数不匹配\n"
+                                        f"📂 Episode: {ep_dir.name}\n"
+                                        f"📄 Video: {mp4_file.name}\n"
+                                        f"{str(e)}"
+                                    )
+                                except RuntimeError as e:
+                                    self.logger.warning(
+                                        f"⚠️ 无法验证视频帧数\n"
+                                        f"📄 Video: {mp4_file.name}\n"
+                                        f"⚠️ 原因: {str(e)}"
+                                    )
+                            
+                            first_episode_validated = True
+                    except Exception as e:
+                        if self.logger:
+                            self.logger.warning(f"⚠️ H5文件帧数读取失败: {e}")
 
     def _get_episode_h5_file(self, task_path: Path, ep_idx: int) -> Path:
         """获取episode的HDF5文件路径"""

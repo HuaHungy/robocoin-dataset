@@ -77,32 +77,59 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
             self.sync_analyzer = TimeSyncAnalyzer(self.logger)
 
     def _prevalidate_files(self) -> None:
-        """验证ROS bag数据集文件结构 - 使用非阻塞验证模式"""
+        """验证ROS bag数据集文件结构 - 区分critical errors和warnings"""
         validation_warnings = []
+        critical_errors = []  # 🆕 区分critical errors
         
         for path in self.path_task_dict.keys():
             try:
+                # 🆕 路径不存在是critical error，必须报错
                 if not path.exists():
-                    warning_msg = f"Path does not exist: {path}"
-                    validation_warnings.append(warning_msg)
-                    if self.logger:
-                        self.logger.warning(warning_msg)
-                    continue
+                    parent_dir = path.parent
+                    siblings = []
+                    if parent_dir.exists():
+                        siblings = [d.name for d in parent_dir.iterdir() if d.is_dir()]
                     
-                if path.is_file():
-                    warning_msg = f"Expected directory but found file: {path}"
-                    validation_warnings.append(warning_msg)
-                    if self.logger:
-                        self.logger.warning(warning_msg)
+                    critical_errors.append(
+                        f"❌ Rosbag任务路径不存在\n"
+                        f"📁 请求的路径：{path}\n"
+                        f"📂 父目录：{parent_dir} {'(存在)' if parent_dir.exists() else '(不存在)'}\n"
+                        f"🗂️ 父目录中的子目录：\n" +
+                        "\n".join(f"   - {d}" for d in sorted(siblings)[:10]) +
+                        (f"\n   ... 还有 {len(siblings) - 10} 个目录" if len(siblings) > 10 else "")
+                    )
+                    continue
+                
+                # 🆕 不是目录是critical error
+                if not path.is_dir():
+                    critical_errors.append(
+                        f"❌ Rosbag路径不是目录\n"
+                        f"📄 路径：{path}\n"
+                        f"🔍 实际类型：{'文件' if path.is_file() else '符号链接' if path.is_symlink() else '未知'}\n"
+                        "💡 任务路径必须是包含.bag文件的目录"
+                    )
                     continue
 
-                # 检查是否有.bag文件
+                # 🆕 没有bag文件是critical error
                 bag_files = list(path.glob("*.bag"))
                 if not bag_files:
-                    warning_msg = f"No .bag files found in {path}"
-                    validation_warnings.append(warning_msg)
-                    if self.logger:
-                        self.logger.warning(warning_msg)
+                    # 列出目录内容帮助诊断
+                    all_files = [f.name for f in path.iterdir() if f.is_file()]
+                    all_dirs = [d.name for d in path.iterdir() if d.is_dir()]
+                    other_bag_files = [f for f in all_files if '.bag' in f.lower()]
+                    
+                    critical_errors.append(
+                        f"❌ Rosbag文件缺失\n"
+                        f"📁 目录：{path}\n"
+                        f"📄 期望文件：*.bag\n"
+                        f"📋 目录中的文件：{all_files[:10] if all_files else '(无文件)'}\n"
+                        f"📂 目录中的子目录：{all_dirs[:10] if all_dirs else '(无子目录)'}\n"
+                        f"🔍 可疑文件：{other_bag_files if other_bag_files else '(无)'}\n"
+                        "💡 请检查：\n"
+                        "   1. Bag文件是否已录制\n"
+                        "   2. 文件扩展名是否为.bag\n"
+                        "   3. 文件是否在正确的目录中"
+                    )
                     continue
                 
                 # 验证每个bag文件
@@ -125,12 +152,41 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
                             self.logger.warning(warning_msg)
                         
             except Exception as e:
-                warning_msg = f"Failed to validate path {path}: {e}"
-                validation_warnings.append(warning_msg)
-                if self.logger:
-                    self.logger.warning(warning_msg)
+                # 🆕 捕获验证过程中的意外异常
+                critical_errors.append(
+                    f"❌ Rosbag路径验证异常\n"
+                    f"📁 路径：{path}\n"
+                    f"⚠️ 错误类型：{type(e).__name__}\n"
+                    f"⚠️ 错误详情：{str(e)}"
+                )
         
-        # 记录总体验证结果，但不抛出异常
+        # 🆕 如果有critical errors，必须抛出异常阻止转换
+        if critical_errors:
+            error_count = len(critical_errors)
+            error_list = "\n\n".join(f"{i+1}. {err}" for i, err in enumerate(critical_errors[:5]))
+            if error_count > 5:
+                error_list += f"\n\n... 还有 {error_count - 5} 个critical错误"
+            
+            error_msg = (
+                f"❌ Rosbag数据集验证失败：发现{error_count}个critical错误\n"
+                f"📊 Critical错误必须修复才能继续转换\n"
+                f"\n{'='*60}\n"
+                f"{error_list}\n"
+                f"{'='*60}\n"
+                f"\n💡 常见问题：\n"
+                f"   1. 路径配置错误或目录不存在\n"
+                f"   2. Bag文件未录制或被移动\n"
+                f"   3. 目录结构不符合预期\n"
+                f"   4. 文件权限或挂载问题\n"
+                f"\n📋 请先修复这些critical错误，然后重新运行转换"
+            )
+            
+            if self.logger:
+                self.logger.error(error_msg)
+            
+            raise FileNotFoundError(error_msg)
+        
+        # warnings可以继续记录，但不阻止转换
         if validation_warnings:
             if self.logger:
                 self.logger.info(f"ROS bag validation completed with {len(validation_warnings)} warnings")
@@ -140,7 +196,7 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
                     self.logger.info(f"  ... and {len(validation_warnings) - 5} more warnings")
         else:
             if self.logger:
-                self.logger.info("ROS bag validation completed successfully")
+                self.logger.info("✅ ROS bag validation completed successfully - no errors or warnings")
 
     def _validate_rosbag_structure(self, bag_file: Path, ep_idx: int) -> None:
         """Validate internal ROS bag structure against configuration"""
@@ -359,8 +415,46 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
             # 图像数据现在是numpy数组了
             if isinstance(image_data, np.ndarray):
                 return image_data
-            raise ValueError(f"Expected numpy array, got {type(image_data)}")
-        raise ValueError(f"No image data found for topic {topic_name} at frame {frame_idx}")
+            raise ValueError(
+                f"❌ Rosbag图像数据类型错误\n"
+                f"📹 话题名称：{topic_name}\n"
+                f"🔢 帧索引：{frame_idx}\n"
+                f"📊 期望类型：numpy.ndarray\n"
+                f"❌ 实际类型：{type(image_data).__name__}\n"
+                f"💡 可能原因：\n"
+                f"   1. 图像解码失败\n"
+                f"   2. CompressedImage消息格式不正确\n"
+                f"   3. 数据预处理步骤出错\n"
+                f"📋 请检查图像话题的消息类型和解码逻辑"
+            )
+        
+        # 收集调试信息
+        available_topics = sorted(images_buffer.keys())
+        if topic_name in images_buffer:
+            buffer_length = len(images_buffer[topic_name])
+            raise ValueError(
+                f"❌ Rosbag图像帧索引超出范围\n"
+                f"📹 话题名称：{topic_name}\n"
+                f"🔢 请求帧索引：{frame_idx}\n"
+                f"📊 可用帧范围：0 到 {buffer_length - 1} (共{buffer_length}帧)\n"
+                f"💡 话题存在但帧索引无效，可能原因：\n"
+                f"   1. 时间对齐导致帧数不一致\n"
+                f"   2. 某些帧的图像消息丢失\n"
+                f"   3. 帧索引计算错误"
+            )
+        else:
+            raise ValueError(
+                f"❌ Rosbag图像话题未找到\n"
+                f"📹 请求的话题：{topic_name}\n"
+                f"🔢 帧索引：{frame_idx}\n"
+                f"📊 缓冲区中可用的话题：\n" +
+                "\n".join(f"   - {topic} ({len(images_buffer[topic])}帧)" for topic in available_topics[:10]) +
+                (f"\n   ... 还有 {len(available_topics) - 10} 个话题" if len(available_topics) > 10 else "") +
+                f"\n💡 请检查：\n"
+                f"   1. converter_config中的topic_name配置\n"
+                f"   2. rosbag文件中是否包含此话题\n"
+                f"   3. 话题名称拼写是否正确"
+            )
 
     # @override
     def _get_frame_sub_states(
@@ -381,7 +475,29 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
                 return state_data[from_idx:to_idx]
             # 转换为numpy数组再切片
             return np.array(state_data, dtype=np.float32)[from_idx:to_idx]
-        raise ValueError(f"No state data found for topic {topic_name} at frame {frame_idx}")
+        
+        # 收集调试信息
+        available_topics = sorted(sub_states_buffer.keys())
+        if topic_name in sub_states_buffer:
+            buffer_length = len(sub_states_buffer[topic_name])
+            raise ValueError(
+                f"❌ Rosbag状态数据帧索引超出范围\n"
+                f"📊 话题名称：{topic_name}\n"
+                f"🔢 请求帧索引：{frame_idx}\n"
+                f"📐 数据切片：[{from_idx}:{to_idx}]\n"
+                f"📊 可用帧范围：0 到 {buffer_length - 1} (共{buffer_length}帧)\n"
+                "💡 话题存在但帧索引无效"
+            )
+        raise ValueError(
+            f"❌ Rosbag状态话题未找到\n"
+            f"📊 请求的话题：{topic_name}\n"
+            f"🔢 帧索引：{frame_idx}\n"
+            f"📐 数据切片：[{from_idx}:{to_idx}]\n"
+            f"📋 缓冲区中可用的话题：\n" +
+            "\n".join(f"   - {topic} ({len(sub_states_buffer[topic])}帧)" for topic in available_topics[:10]) +
+            (f"\n   ... 还有 {len(available_topics) - 10} 个话题" if len(available_topics) > 10 else "") +
+            "\n💡 请检查话题名称和rosbag文件内容"
+        )
 
     # @override
     def _get_frame_sub_actions(
@@ -402,7 +518,29 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
                 return action_data[from_idx:to_idx]
             # 转换为numpy数组再切片
             return np.array(action_data, dtype=np.float32)[from_idx:to_idx]
-        raise ValueError(f"No action data found for topic {topic_name} at frame {frame_idx}")
+        
+        # 收集调试信息
+        available_topics = sorted(sub_actions_buffer.keys())
+        if topic_name in sub_actions_buffer:
+            buffer_length = len(sub_actions_buffer[topic_name])
+            raise ValueError(
+                f"❌ Rosbag动作数据帧索引超出范围\n"
+                f"🎯 话题名称：{topic_name}\n"
+                f"🔢 请求帧索引：{frame_idx}\n"
+                f"📐 数据切片：[{from_idx}:{to_idx}]\n"
+                f"📊 可用帧范围：0 到 {buffer_length - 1} (共{buffer_length}帧)\n"
+                "💡 话题存在但帧索引无效"
+            )
+        raise ValueError(
+            f"❌ Rosbag动作话题未找到\n"
+            f"🎯 请求的话题：{topic_name}\n"
+            f"🔢 帧索引：{frame_idx}\n"
+            f"📐 数据切片：[{from_idx}:{to_idx}]\n"
+            f"📋 缓冲区中可用的话题：\n" +
+            "\n".join(f"   - {topic} ({len(sub_actions_buffer[topic])}帧)" for topic in available_topics[:10]) +
+            (f"\n   ... 还有 {len(available_topics) - 10} 个话题" if len(available_topics) > 10 else "") +
+            "\n💡 请检查话题名称和rosbag文件内容"
+        )
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
@@ -537,20 +675,46 @@ class LerobotFormatConverterRosbag(LerobotFormatConverter):
         
         # 安全检查：确保task_path存在且ep_idx在有效范围内
         if task_path not in self.task_episode_rosbagfile_paths:
-            error_msg = f"Task path {task_path} not found in rosbag file paths"
+            available_tasks = sorted(self.task_episode_rosbagfile_paths.keys())
+            error_msg = (
+                f"❌ Rosbag任务路径未找到\n"
+                f"📁 请求的任务路径：{task_path}\n"
+                f"📊 已加载的任务路径：\n" +
+                "\n".join(f"   - {p}" for p in available_tasks[:10]) +
+                (f"\n   ... 还有 {len(available_tasks) - 10} 个任务" if len(available_tasks) > 10 else "") +
+                f"\n💡 任务总数：{len(available_tasks)}\n"
+                "📋 请检查任务路径是否正确加载"
+            )
             if self.logger:
                 self.logger.error(error_msg)
             raise ValueError(error_msg)
             
         episode_files = self.task_episode_rosbagfile_paths[task_path]
         if ep_idx >= len(episode_files):
-            error_msg = f"Episode index {ep_idx} out of range. Available episodes: {len(episode_files)} for task {task_path}"
+            error_msg = (
+                f"❌ Rosbag Episode索引超出范围\n"
+                f"📁 任务路径：{task_path}\n"
+                f"🔢 请求索引：{ep_idx}\n"
+                f"📊 可用范围：0 到 {len(episode_files) - 1} (共{len(episode_files)}个文件)\n"
+                f"📋 可用的rosbag文件：\n" +
+                "\n".join(f"   [{i}] {f.name}" for i, f in enumerate(episode_files[:10])) +
+                (f"\n   ... 还有 {len(episode_files) - 10} 个文件" if len(episode_files) > 10 else "")
+            )
             if self.logger:
                 self.logger.error(error_msg)
             raise IndexError(error_msg)
             
         if not episode_files:
-            error_msg = f"No rosbag files found for task {task_path}"
+            error_msg = (
+                f"❌ Rosbag文件列表为空\n"
+                f"📁 任务路径：{task_path}\n"
+                f"🔍 搜索的文件类型：.bag\n"
+                "💡 可能原因：\n"
+                "   1. 目录中没有.bag文件\n"
+                "   2. 文件扩展名不正确\n"
+                "   3. 文件被移动或删除\n"
+                "📋 请检查任务目录的rosbag文件"
+            )
             if self.logger:
                 self.logger.error(error_msg)
             raise ValueError(error_msg)

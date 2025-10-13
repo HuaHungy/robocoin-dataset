@@ -38,7 +38,15 @@ def decode_image_bytes(img_bytes: bytes, typestore) -> np.ndarray:  # noqa: ANN0
         np.ndarray: RGB图像数组
     """
     if Image is None:
-        raise ImportError("PIL is required for image decoding.")
+        raise ImportError(
+            "❌ MCAP图像解码失败：PIL库未安装\n"
+            "📦 缺失依赖：Pillow (PIL)\n"
+            "🔧 解决方法：\n"
+            "   pip install Pillow\n"
+            "   或\n"
+            "   pip install robocoin-dataset[mcap]\n"
+            "💡 说明：MCAP格式使用CompressedImage消息，需要PIL解码JPEG/PNG图像"
+        )
     
     # 反序列化CompressedImage消息
     try:
@@ -181,7 +189,16 @@ int32 lift_pos
         # 读取dataset根目录的local_task_info.yaml获取task_index
         local_task_info_path = self.dataset_path / "local_task_info.yaml"
         if not local_task_info_path.exists():
-            raise FileNotFoundError(f"local_task_info.yaml not found in {self.dataset_path}")
+            raise FileNotFoundError(
+                f"❌ MCAP数据集配置文件缺失\n"
+                f"📁 数据集路径：{self.dataset_path}\n"
+                f"📄 缺失文件：local_task_info.yaml\n"
+                f"🔍 搜索位置：{local_task_info_path}\n"
+                f"💡 该文件应包含：\n"
+                f"   - task_index: 任务索引\n"
+                f"   - 其他任务相关配置\n"
+                f"📋 请确保数据集根目录包含此配置文件"
+            )
         
         with open(local_task_info_path) as f:
             task_info_dict = yaml.safe_load(f)
@@ -198,15 +215,120 @@ int32 lift_pos
                     self.logger.info(f"Found task path: {subdir} with {len(mcap_files)} mcap files")
         
         if not task_paths_dict:
-            raise FileNotFoundError(f"No directories with .mcap files found in {self.dataset_path}")
+            # 统计目录结构信息
+            total_subdirs = sum(1 for p in self.dataset_path.iterdir() if p.is_dir())
+            all_files = list(self.dataset_path.rglob("*"))
+            file_types = {}
+            for f in all_files:
+                if f.is_file():
+                    ext = f.suffix or "(无扩展名)"
+                    file_types[ext] = file_types.get(ext, 0) + 1
+            
+            raise FileNotFoundError(
+                f"❌ MCAP数据集目录结构错误：未找到包含MCAP文件的子目录\n"
+                f"📁 数据集路径：{self.dataset_path}\n"
+                f"🗂️ 目录结构统计：\n"
+                f"   - 子目录数量：{total_subdirs}\n"
+                f"   - 文件类型分布：{dict(sorted(file_types.items(), key=lambda x: x[1], reverse=True))}\n"
+                f"🎯 期望结构：\n"
+                f"   dataset/\n"
+                f"   ├── local_task_info.yaml\n"
+                f"   ├── episode_001/\n"
+                f"   │   └── data.mcap\n"
+                f"   └── episode_002/\n"
+                f"       └── data.mcap\n"
+                f"💡 每个episode应该在单独的子目录中，包含至少一个.mcap文件"
+            )
         
         return task_paths_dict
 
     def _prevalidate_files(self) -> None:
+        # 🆕 增加：验证所有path存在性
+        for path in self.path_task_dict.keys():
+            if not path.exists():
+                # 显示父目录内容
+                parent_dir = path.parent
+                siblings = []
+                if parent_dir.exists():
+                    siblings = [d.name for d in parent_dir.iterdir() if d.is_dir()]
+                    if len(siblings) > 15:
+                        siblings = siblings[:15] + [f"... ({len(siblings) - 15} more)"]
+                
+                raise FileNotFoundError(
+                    f"❌ Task path does not exist\n"
+                    f"   📂 Task path: {path}\n"
+                    f"   📂 Parent directory: {parent_dir}\n"
+                    f"   📋 Available directories in parent:\n"
+                    f"      {', '.join(siblings) if siblings else 'Parent directory not found'}\n"
+                    f"   💡 Please check:\n"
+                    f"      1. Path is correct in configuration\n"
+                    f"      2. Dataset has been downloaded/extracted\n"
+                    f"      3. No typos in directory names"
+                )
+            
+            if not path.is_dir():
+                raise NotADirectoryError(
+                    f"❌ Task path exists but is not a directory\n"
+                    f"   📂 Path: {path}\n"
+                    f"   📋 Type: {('file' if path.is_file() else 'unknown')}\n"
+                    f"   💡 Task path must be a directory containing MCAP files"
+                )
+        
         for path in self.path_task_dict.keys():
             mcap_files = list(path.rglob("*.mcap"))
             if not mcap_files:
-                raise FileNotFoundError(f"No .mcap files found in {path}")
+                # 收集目录信息
+                all_files = list(path.rglob("*"))
+                file_count = sum(1 for f in all_files if f.is_file())
+                dir_count = sum(1 for d in all_files if d.is_dir())
+                file_extensions = set(f.suffix for f in all_files if f.is_file() and f.suffix)
+                
+                raise FileNotFoundError(
+                    f"❌ Episode目录验证失败：缺少MCAP文件\n"
+                    f"📁 Episode路径：{path}\n"
+                    f"📊 目录内容统计：\n"
+                    f"   - 文件数量：{file_count}\n"
+                    f"   - 子目录数量：{dir_count}\n"
+                    f"   - 文件扩展名：{sorted(file_extensions) if file_extensions else '(无)'}\n"
+                    f"🔍 搜索范围：递归搜索所有子目录\n"
+                    f"💡 MCAP格式要求：\n"
+                    f"   - 每个episode目录必须包含至少一个.mcap文件\n"
+                    f"   - 文件可以在任意深度的子目录中\n"
+                    f"📋 请检查：\n"
+                    f"   1. 文件扩展名是否正确（.mcap）\n"
+                    f"   2. 文件是否在正确的目录中\n"
+                    f"   3. 是否已完成数据录制"
+                )
+            
+            # 🆕 增加：验证第一个MCAP文件可读性
+            try:
+                from mcap.reader import make_reader
+                first_mcap = mcap_files[0]
+                with open(first_mcap, "rb") as f:
+                    reader = make_reader(f)
+                    summary = reader.get_summary()
+                    if summary:
+                        self.logger.info(
+                            f"✅ MCAP文件验证通过：{first_mcap.name}\n"
+                            f"   - 文件大小：{first_mcap.stat().st_size / 1024 / 1024:.2f} MB\n"
+                            f"   - 消息数量：{summary.statistics.message_count if summary.statistics else 'N/A'}\n"
+                            f"   - 通道数量：{len(summary.channels) if summary.channels else 'N/A'}"
+                        )
+                    else:
+                        self.logger.warning(
+                            f"⚠️ MCAP文件无摘要信息\n"
+                            f"📄 文件：{first_mcap}\n"
+                            "💡 文件可能为空或格式不完整"
+                        )
+            except ImportError:
+                self.logger.warning("⚠️ mcap库未安装，跳过MCAP文件内容验证")
+            except Exception as e:
+                self.logger.warning(
+                    f"⚠️ 无法读取MCAP文件\n"
+                    f"📄 文件：{first_mcap}\n"
+                    f"⚠️ 错误：{str(e)}\n"
+                    "💡 请检查MCAP文件是否损坏"
+                )
 
     def _get_episode_mcap_file(self, task_path: Path, ep_idx: int) -> Path:
         # 先在任务路径下查找mcap文件
@@ -215,7 +337,19 @@ int32 lift_pos
         if not mcap_files:
             mcap_files = sorted(list(task_path.rglob("*.mcap")))
         if ep_idx >= len(mcap_files):
-            raise IndexError(f"Episode index {ep_idx} out of range for {task_path}")
+            raise IndexError(
+                f"❌ Episode索引超出范围\n"
+                f"📁 任务路径：{task_path}\n"
+                f"🔢 请求索引：{ep_idx}\n"
+                f"📊 可用范围：0 到 {len(mcap_files) - 1} (共{len(mcap_files)}个文件)\n"
+                f"📋 可用的MCAP文件：\n" +
+                "\n".join(f"   [{i}] {f.name}" for i, f in enumerate(mcap_files[:10])) +
+                (f"\n   ... 还有 {len(mcap_files) - 10} 个文件" if len(mcap_files) > 10 else "") +
+                f"\n💡 请检查：\n"
+                f"   1. Episode索引是否从0开始计数\n"
+                f"   2. 是否所有episode都已录制完成\n"
+                f"   3. 配置文件中的episode数量是否正确"
+            )
         return mcap_files[ep_idx]
 
     def _get_first_frame_sample(self, mcap_file: Path) -> dict[str, np.ndarray]:
@@ -440,7 +574,19 @@ int32 lift_pos
                 image_config[NAME_KEY] = DEFAULT_IMAGE_SHAPE_NAMES
                 image_config[SHAPE_KEY] = image.shape
             else:
-                raise ValueError(f"Camera {cam_name} not found in MCAP file sample")
+                available_cameras = sorted(sample_images.keys())
+                raise ValueError(
+                    f"❌ 相机配置错误：MCAP文件中未找到指定相机\n"
+                    f"📹 请求的相机：{cam_name}\n"
+                    f"📊 MCAP文件中可用的相机：\n" +
+                    "\n".join(f"   - {cam}" for cam in available_cameras) +
+                    (f"\n💡 相机数量：{len(available_cameras)}" if available_cameras else "\n⚠️ MCAP文件中没有任何相机数据") +
+                    f"\n🔍 话题映射来源：converter_config[{FEATURES_KEY}][{OBSERVATION_KEY}][{IMAGE_KEY}]\n"
+                    "📋 请检查：\n"
+                    "   1. converter_config中的cam_name是否与MCAP话题匹配\n"
+                    "   2. MCAP文件是否包含所有配置的相机话题\n"
+                    "   3. 话题名称是否正确（mcap_topic字段）"
+                )
 
     def _get_frame_image(self, task_path: Path, ep_idx: int, frame_idx: int, args_dict: dict, images_buffer: Any = None) -> np.ndarray:  # noqa: ANN401
         cam_name = args_dict.get("cam_name")
