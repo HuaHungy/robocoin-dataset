@@ -186,13 +186,19 @@ agilex_cobot_decoupled_magic:
   verison_description: aloha robot with HDF5 data and MP4 videos
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
   class: LerobotFormatConverterH5Mp4
-  converter_config_path: converter_config_aloha_h5_mp4.yaml
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_h5_mp4.yaml
+
+- version: h5_mp4_new
+  verison_description: aloha robot with HDF5 data and MP4 videos, new version
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_h5_mp4_new.yaml
 
 - version: mult_sensor
   verison_description: aloha robot with multiple sensor folder structure
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
   class: LerobotFormatConverterJpgJson
-  converter_config_path: converter_config_aloha_mult_sensor.yaml
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_mult_sensor.yaml
 
 agilex_pika_sense:
 - version: default_version
