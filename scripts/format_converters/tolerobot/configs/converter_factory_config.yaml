@@ -224,10 +224,28 @@ yinhe:
 
 zhipingfang:
 - version: default_version
-  verison_description: zhipingfang robot with nested HDF5 structure
+  verison_description: zhipingfang full config (with arm pose + all cameras)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_zhipingfang.yaml
+
+- version: no_arm_pose
+  verison_description: zhipingfang without arm pose (left/right pose empty, all cameras available)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_no_arm_pose.yaml
+
+- version: no_left_chest_cam
+  verison_description: zhipingfang without left/chest cameras (with arm pose, only head+right cameras)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_no_left_chest_cam.yaml
+
+- version: minimal
+  verison_description: zhipingfang minimal config (no arm pose + no left/chest cameras)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_minimal.yaml
 
 agilex_pika:
 - version: default_version

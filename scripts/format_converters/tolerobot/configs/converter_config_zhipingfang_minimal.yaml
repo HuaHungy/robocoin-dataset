@@ -1,0 +1,189 @@
+### 智平方数据集配置 - 最小版本
+### 
+### 使用场景：同时缺失 arm pose 和 left/chest 相机数据
+### - observations/arm/left/pose: EMPTY
+### - observations/arm/right/pose: EMPTY  
+### - observations/camera/rgb/left/images: 可能缺失
+### - observations/camera/rgb/chest/images: 可能缺失
+### 
+### 这是最保守的配置，只使用最稳定的字段
+
+### fps by manual
+fps: 30
+
+features:
+  observation:
+    images:
+      ### 只使用最稳定的 head 和 right wrist 相机
+      - cam_name: camera_head_rgb
+        args:
+          h5_path: observations/camera/rgb/head/images
+
+      - cam_name: camera_right_wrist_rgb
+        args:
+          h5_path: observations/camera/rgb/right/images
+
+    state:
+      ### 简化的 state 定义
+      ### 只包含最稳定、最常有数据的字段
+      ### shape: [26] = 6 left wrench + 1 left gripper + 6 right wrench + 1 right gripper + 10 torso + 2 neck
+      
+      sub_state:
+        ### Left arm wrench (6) - 这个字段通常有数据
+        - names:
+            - left_arm_wrench_fx
+            - left_arm_wrench_fy
+            - left_arm_wrench_fz
+            - left_arm_wrench_tx
+            - left_arm_wrench_ty
+            - left_arm_wrench_tz
+          args:
+            h5_path: observations/arm/left/wrench
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Left gripper position (1)
+        - names:
+            - left_effector_position
+          args:
+            h5_path: observations/effector/left/position
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+        ### Right arm wrench (6) - 这个字段通常有数据
+        - names:
+            - right_arm_wrench_fx
+            - right_arm_wrench_fy
+            - right_arm_wrench_fz
+            - right_arm_wrench_tx
+            - right_arm_wrench_ty
+            - right_arm_wrench_tz
+          args:
+            h5_path: observations/arm/right/wrench
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Right gripper position (1)
+        - names:
+            - right_effector_position
+          args:
+            h5_path: observations/effector/right/position
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+        ### Torso joints (4) - 躯干关节
+        - names:
+            - torso_joint_0
+            - torso_joint_1
+            - torso_joint_2
+            - torso_joint_3
+          args:
+            h5_path: observations/torso/joints
+            range_from: 0
+            range_to: 4
+          convert_func: to_float32
+
+        ### Torso pose (4) - 躯干位姿
+        - names:
+            - torso_pose_0
+            - torso_pose_1
+            - torso_pose_2
+            - torso_pose_3
+          args:
+            h5_path: observations/torso/pose
+            range_from: 0
+            range_to: 4
+          convert_func: to_float32
+
+        ### Torso state (2) - 改为 2 维，避免使用可能为空的字段
+        - names:
+            - torso_state_0
+            - torso_state_1
+          args:
+            h5_path: observations/torso/joints  # 复用 joints 的前2维
+            range_from: 0
+            range_to: 2
+          convert_func: to_float32
+
+        ### Neck joints (2) - 颈部关节
+        - names:
+            - neck_joint_0
+            - neck_joint_1
+          args:
+            h5_path: observations/neck/joints
+            range_from: 0
+            range_to: 2
+          convert_func: to_float32
+
+        ### Chassis pose (3) - xyz
+        - names:
+            - chassis_pose_x
+            - chassis_pose_y
+            - chassis_pose_z
+          args:
+            h5_path: observations/chassis/pose
+            range_from: 0
+            range_to: 3
+          convert_func: to_float32
+
+        ### Chassis velocity (3) - vx, vy, vtheta
+        - names:
+            - chassis_vel_x
+            - chassis_vel_y
+            - chassis_vel_theta
+          args:
+            h5_path: observations/chassis/vel
+            range_from: 0
+            range_to: 3
+          convert_func: to_float32
+
+        ### Chassis status (4)
+        - names:
+            - chassis_status_0
+            - chassis_status_1
+            - chassis_status_2
+            - chassis_status_3
+          args:
+            h5_path: observations/chassis/status
+            range_from: 0
+            range_to: 4
+          convert_func: to_float32
+
+  action:
+    ### Actions 通常记录在 action/ 组下
+    ### 如果没有 action 数据，可以复用 observation 的数据
+    ### 这里我们使用 wrench 数据作为 action（力控场景常见）
+    
+    timeline_offset: 0  # 不使用 timeline offset
+
+    sub_action:
+      ### 使用 wrench 作为 action（12维：left 6 + right 6）
+      - names:
+          - left_arm_wrench_fx
+          - left_arm_wrench_fy
+          - left_arm_wrench_fz
+          - left_arm_wrench_tx
+          - left_arm_wrench_ty
+          - left_arm_wrench_tz
+        args:
+          h5_path: observations/arm/left/wrench
+          range_from: 0
+          range_to: 6
+        convert_func: to_float32
+
+      - names:
+          - right_arm_wrench_fx
+          - right_arm_wrench_fy
+          - right_arm_wrench_fz
+          - right_arm_wrench_tx
+          - right_arm_wrench_ty
+          - right_arm_wrench_tz
+        args:
+          h5_path: observations/arm/right/wrench
+          range_from: 0
+          range_to: 6
+        convert_func: to_float32

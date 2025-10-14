@@ -60,26 +60,17 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         self._h5_file_cache.clear()
 
     def _prevalidate_files(self) -> None:
-        """验证数据集文件完整性"""
+        """验证数据集文件完整性
+        
+        使用 _get_all_episode_dirs() 进行递归搜索，支持任意深度的嵌套结构（最多5层）
+        """
         for task_path in self.path_task_dict.keys():
-            # 查找所有 episode 目录（包含 aligned_joints.h5 的目录）
-            episodes = [
-                item for item in task_path.glob("*")
-                if item.is_dir() and (item / "aligned_joints.h5").exists()
-            ]
-            
-            if not episodes:
-                all_dirs = [item.name for item in task_path.glob("*") if item.is_dir()]
-                raise FileNotFoundError(
-                    f"❌ No episode directories found.\n"
-                    f"   📁 Task path: {task_path}\n"
-                    f"   📂 Directories found: {all_dirs if all_dirs else 'None'}\n"
-                    f"   🗂️  Expected: Directories containing 'aligned_joints.h5' file\n"
-                    f"   💡 Check if:\n"
-                    f"      1. Episode directories exist in task path\n"
-                    f"      2. Each episode has aligned_joints.h5 file\n"
-                    f"      3. File naming matches expected format"
-                )
+            # 使用现有的递归搜索方法查找所有 episode 目录
+            try:
+                episodes = self._get_all_episode_dirs(task_path)
+            except FileNotFoundError:
+                # _get_all_episode_dirs() 已经会抛出详细的错误信息
+                raise
             
             for ep_dir in episodes:
                 h5_file = ep_dir / "aligned_joints.h5"
@@ -152,9 +143,42 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         episodes = find_episode_dirs(task_path)
         
         if not episodes:
+            # 收集目录结构用于错误诊断（显示前3层）
+            def collect_dir_structure(path: Path, max_depth: int = 3, current_depth: int = 0, prefix: str = "") -> list[str]:
+                """收集目录结构用于诊断"""
+                if current_depth >= max_depth:
+                    return []
+                
+                structure = []
+                try:
+                    items = sorted([item for item in path.iterdir() if item.is_dir() and not item.name.startswith('.')],
+                                   key=lambda x: x.name)
+                    for item in items[:10]:  # 每层最多显示10个目录
+                        indent = "  " * current_depth
+                        structure.append(f"{indent}{prefix}{item.name}/")
+                        if current_depth < max_depth - 1:
+                            structure.extend(collect_dir_structure(item, max_depth, current_depth + 1, ""))
+                    if len(items) > 10:
+                        indent = "  " * current_depth
+                        structure.append(f"{indent}... and {len(items) - 10} more directories")
+                except (PermissionError, OSError):
+                    pass
+                return structure
+            
+            dir_structure = collect_dir_structure(task_path)
+            structure_str = "\n".join(dir_structure) if dir_structure else "Empty or inaccessible"
+            
             raise FileNotFoundError(
-                f"No episode directories found in {task_path}. "
-                f"Episode directories should contain 'aligned_joints.h5' file."
+                f"❌ No episode directories found.\n"
+                f"   📁 Task path: {task_path}\n"
+                f"   🔍 Searched up to 5 levels deep\n"
+                f"   📂 Directory structure (first 3 levels):\n{structure_str}\n"
+                f"   🗂️  Expected: Directories containing 'aligned_joints.h5' file\n"
+                f"   💡 Check if:\n"
+                f"      1. Episode directories exist under task path\n"
+                f"      2. Each episode directory contains 'aligned_joints.h5' file\n"
+                f"      3. File permissions are correct\n"
+                f"      4. Directory names don't start with '.' or '@' (these are skipped)"
             )
         
         return sorted(episodes)

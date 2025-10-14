@@ -1,0 +1,183 @@
+### 智平方数据集配置 - 无 left/chest camera 版本
+### 
+### 使用场景：当 left 和 chest RGB 相机数据缺失时使用
+### - observations/camera/rgb/left/images: 可能为空或缺失
+### - observations/camera/rgb/chest/images: 可能为空或缺失
+### - 保留 head 和 right wrist 相机
+### - 包含完整的 arm pose 数据
+
+### fps by manual
+fps: 30
+
+features:
+  observation:
+    images:
+      ### 只使用稳定的 head 和 right wrist 相机
+      - cam_name: camera_head_rgb
+        args:
+          h5_path: observations/camera/rgb/head/images
+
+      - cam_name: camera_right_wrist_rgb
+        args:
+          h5_path: observations/camera/rgb/right/images
+
+    state:
+      ### 完整的 state 定义（包含 arm pose）
+      ### shape: [40] = 7 left joints + 6 left pose + 6 left wrench + 1 left gripper + 7 right joints + 6 right pose + 6 right wrench + 1 right gripper
+      
+      sub_state:
+        ### Left arm joints (7)
+        - names:
+            - left_arm_joint_0
+            - left_arm_joint_1
+            - left_arm_joint_2
+            - left_arm_joint_3
+            - left_arm_joint_4
+            - left_arm_joint_5
+            - left_arm_joint_6
+          args:
+            h5_path: observations/arm/left/joints
+            range_from: 0
+            range_to: 7
+          convert_func: to_float32
+
+        ### Left arm end effector pose (6) - xyz + rpy
+        - names:
+            - left_arm_pose_x
+            - left_arm_pose_y
+            - left_arm_pose_z
+            - left_arm_pose_roll
+            - left_arm_pose_pitch
+            - left_arm_pose_yaw
+          args:
+            h5_path: observations/arm/left/pose
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Left arm wrench (6) - force xyz + torque xyz
+        - names:
+            - left_arm_wrench_fx
+            - left_arm_wrench_fy
+            - left_arm_wrench_fz
+            - left_arm_wrench_tx
+            - left_arm_wrench_ty
+            - left_arm_wrench_tz
+          args:
+            h5_path: observations/arm/left/wrench
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Left gripper position (1)
+        - names:
+            - left_effector_position
+          args:
+            h5_path: observations/effector/left/position
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+        ### Right arm joints (7)
+        - names:
+            - right_arm_joint_0
+            - right_arm_joint_1
+            - right_arm_joint_2
+            - right_arm_joint_3
+            - right_arm_joint_4
+            - right_arm_joint_5
+            - right_arm_joint_6
+          args:
+            h5_path: observations/arm/right/joints
+            range_from: 0
+            range_to: 7
+          convert_func: to_float32
+
+        ### Right arm end effector pose (6) - xyz + rpy
+        - names:
+            - right_arm_pose_x
+            - right_arm_pose_y
+            - right_arm_pose_z
+            - right_arm_pose_roll
+            - right_arm_pose_pitch
+            - right_arm_pose_yaw
+          args:
+            h5_path: observations/arm/right/pose
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Right arm wrench (6) - force xyz + torque xyz
+        - names:
+            - right_arm_wrench_fx
+            - right_arm_wrench_fy
+            - right_arm_wrench_fz
+            - right_arm_wrench_tx
+            - right_arm_wrench_ty
+            - right_arm_wrench_tz
+          args:
+            h5_path: observations/arm/right/wrench
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Right gripper position (1)
+        - names:
+            - right_effector_position
+          args:
+            h5_path: observations/effector/right/position
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+  action:
+    timeline_offset: 1
+    
+    sub_action:
+      ### Left arm joints
+      - names:
+          - left_arm_joint_0
+          - left_arm_joint_1
+          - left_arm_joint_2
+          - left_arm_joint_3
+          - left_arm_joint_4
+          - left_arm_joint_5
+          - left_arm_joint_6
+        args:
+          h5_path: observations/arm/left/joints
+          range_from: 0
+          range_to: 7
+        convert_func: to_float32
+
+      ### Left gripper
+      - names:
+          - left_effector_position
+        args:
+          h5_path: observations/effector/left/position
+          range_from: 0
+          range_to: 1
+        convert_func: to_float32
+
+      ### Right arm joints
+      - names:
+          - right_arm_joint_0
+          - right_arm_joint_1
+          - right_arm_joint_2
+          - right_arm_joint_3
+          - right_arm_joint_4
+          - right_arm_joint_5
+          - right_arm_joint_6
+        args:
+          h5_path: observations/arm/right/joints
+          range_from: 0
+          range_to: 7
+        convert_func: to_float32
+
+      ### Right gripper
+      - names:
+          - right_effector_position
+        args:
+          h5_path: observations/effector/right/position
+          range_from: 0
+          range_to: 1
+        convert_func: to_float32
