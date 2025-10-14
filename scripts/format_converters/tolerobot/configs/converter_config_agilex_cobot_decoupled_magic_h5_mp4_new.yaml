@@ -1,30 +1,22 @@
-fps: 10
+fps: 50
 features:
   observation:
     images:
-      # 高位相机 (俯视视角)
       - cam_name: cam_high_rgb
         args:
-          cam_name: cam_high
+          cam_name: cam_high_rgb
           video_file_pattern: "*cam_high.mp4"
-
-      # 左腕相机 (左臂手腕视角)
       - cam_name: cam_left_wrist_rgb
         args:
-          cam_name: cam_left_wrist
+          cam_name: cam_left_wrist_rgb
           video_file_pattern: "*cam_left_wrist.mp4"
-
-      # 右腕相机 (右臂手腕视角)
       - cam_name: cam_right_wrist_rgb
         args:
-          cam_name: cam_right_wrist
+          cam_name: cam_right_wrist_rgb
           video_file_pattern: "*cam_right_wrist.mp4"
 
     state:
-      # 状态向量: 26维 (左臂13维 + 右臂13维)
-      # 每个臂: 7维关节+夹爪 + 3维末端位置 + 3维末端旋转
       sub_state:
-        # 左臂关节状态 (7维: 6个关节 + 1个夹爪)
         - names:
             - left_arm_joint_1_rad
             - left_arm_joint_2_rad
@@ -32,41 +24,10 @@ features:
             - left_arm_joint_4_rad
             - left_arm_joint_5_rad
             - left_arm_joint_6_rad
-          args:
-            h5_path: observations/qpos
-            range_from: 0
-            range_to: 6
-
-        # 左臂夹爪
-        - names:
             - left_gripper_open
           args:
-            h5_path: observations/qpos
-            range_from: 10
-            range_to: 11
-
-        # 左臂末端执行器位置 (3维: x, y, z)
-        - names:
-            - left_eef_pos_x_m
-            - left_eef_pos_y_m
-            - left_eef_pos_z_m
-          args:
-            h5_path: observations/qpos
-            range_from: 30
-            range_to: 33
-
-        # 左臂末端执行器旋转 (6D -> 3维欧拉角)
-        - names:
-            - left_eef_rot_euler_x_rad
-            - left_eef_rot_euler_y_rad
-            - left_eef_rot_euler_z_rad
-          args:
-            h5_path: observations/qpos
-            range_from: 33
-            range_to: 39
-          convert_func: rot6d_to_euler_xyz
-
-        # 右臂关节状态 (7维: 6个关节 + 1个夹爪)
+            range_from: 0
+            range_to: 7
         - names:
             - right_arm_joint_1_rad
             - right_arm_joint_2_rad
@@ -74,47 +35,14 @@ features:
             - right_arm_joint_4_rad
             - right_arm_joint_5_rad
             - right_arm_joint_6_rad
-          args:
-            h5_path: observations/qpos
-            range_from: 50
-            range_to: 56
-
-        # 右臂夹爪
-        - names:
             - right_gripper_open
           args:
-            h5_path: observations/qpos
-            range_from: 60
-            range_to: 61
-
-        # 右臂末端执行器位置 (3维: x, y, z)
-        - names:
-            - right_eef_pos_x_m
-            - right_eef_pos_y_m
-            - right_eef_pos_z_m
-          args:
-            h5_path: observations/qpos
-            range_from: 80
-            range_to: 83
-
-        # 右臂末端执行器旋转 (6D -> 3维欧拉角)
-        - names:
-            - right_eef_rot_euler_x_rad
-            - right_eef_rot_euler_y_rad
-            - right_eef_rot_euler_z_rad
-          args:
-            h5_path: observations/qpos
-            range_from: 83
-            range_to: 89
-          convert_func: rot6d_to_euler_xyz
+            range_from: 7
+            range_to: 14
 
   action:
-    # 动作向量: 26维 (左臂13维 + 右臂13维)
-    # 每个臂: 7维关节+夹爪 + 3维末端位置 + 3维末端旋转
-    # timeline_offset=1 表示预测下一个时刻的动作
     timeline_offset: 1
     sub_action:
-      # 左臂关节动作 (6维关节)
       - names:
           - left_arm_joint_1_rad
           - left_arm_joint_2_rad
@@ -122,41 +50,10 @@ features:
           - left_arm_joint_4_rad
           - left_arm_joint_5_rad
           - left_arm_joint_6_rad
-        args:
-          h5_path: action
-          range_from: 0
-          range_to: 6
-
-      # 左臂夹爪动作
-      - names:
           - left_gripper_open
         args:
-          h5_path: action
-          range_from: 10
-          range_to: 11
-
-      # 左臂末端执行器位置动作 (3维: x, y, z)
-      - names:
-          - left_eef_pos_x_m
-          - left_eef_pos_y_m
-          - left_eef_pos_z_m
-        args:
-          h5_path: action
-          range_from: 30
-          range_to: 33
-
-      # 左臂末端执行器旋转动作 (6D -> 3维欧拉角)
-      - names:
-          - left_eef_rot_euler_x_rad
-          - left_eef_rot_euler_y_rad
-          - left_eef_rot_euler_z_rad
-        args:
-          h5_path: action
-          range_from: 33
-          range_to: 39
-        convert_func: rot6d_to_euler_xyz
-
-      # 右臂关节动作 (6维关节)
+          range_from: 0
+          range_to: 7
       - names:
           - right_arm_joint_1_rad
           - right_arm_joint_2_rad
@@ -164,36 +61,7 @@ features:
           - right_arm_joint_4_rad
           - right_arm_joint_5_rad
           - right_arm_joint_6_rad
-        args:
-          h5_path: action
-          range_from: 50
-          range_to: 56
-
-      # 右臂夹爪动作
-      - names:
           - right_gripper_open
         args:
-          h5_path: action
-          range_from: 60
-          range_to: 61
-
-      # 右臂末端执行器位置动作 (3维: x, y, z)
-      - names:
-          - right_eef_pos_x_m
-          - right_eef_pos_y_m
-          - right_eef_pos_z_m
-        args:
-          h5_path: action
-          range_from: 80
-          range_to: 83
-
-      # 右臂末端执行器旋转动作 (6D -> 3维欧拉角)
-      - names:
-          - right_eef_rot_euler_x_rad
-          - right_eef_rot_euler_y_rad
-          - right_eef_rot_euler_z_rad
-        args:
-          h5_path: action
-          range_from: 83
-          range_to: 89
-        convert_func: rot6d_to_euler_xyz
+          range_from: 7
+          range_to: 14
