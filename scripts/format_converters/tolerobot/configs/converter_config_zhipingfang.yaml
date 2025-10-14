@@ -23,20 +23,20 @@ features:
         # dtype: video
         # lerobot_feature: observations.images.camera_right_rgb : by _gen_lerobot_features()
 
-      ### values by manual - RGB cameras with images
-      - cam_name: cam_left_wrist_rgb
-        args:
-          ### keys and values by manual
-          h5_path: observations/camera/rgb/left/images
+      # ### values by manual - RGB cameras with images
+      # - cam_name: cam_left_wrist_rgb
+      #   args:
+      #     ### keys and values by manual
+      #     h5_path: observations/camera/rgb/left/images
 
-        ### values by function
-        # dtype: video
-        # lerobot_feature: observations.images.camera_left_wrist_rgb : by _gen_lerobot_features()
+      #   ### values by function
+      #   # dtype: video
+      #   # lerobot_feature: observations.images.camera_left_wrist_rgb : by _gen_lerobot_features()
       
-      - cam_name: camera_chest_rgb
-        args:
-          ### keys and values by manual
-          h5_path: observations/camera/rgb/chest/images
+      # - cam_name: camera_chest_rgb
+      #   args:
+      #     ### keys and values by manual
+      #     h5_path: observations/camera/rgb/chest/images
 
         ### values by function
         # dtype: video
