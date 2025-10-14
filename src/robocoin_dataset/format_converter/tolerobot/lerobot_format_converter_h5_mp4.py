@@ -219,8 +219,14 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         # 遍历配置中的所有相机
         image_configs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]
         for image_config in image_configs:
-            cam_name = image_config.get(CAM_NAME_KEY)
-            video_pattern = image_config.get(ARGS_KEY, {}).get('video_file_pattern', '*')
+            # 使用 args 中的 cam_name，这样与 _get_frame_image 中的键一致
+            args = image_config.get(ARGS_KEY, {})
+            cam_name = args.get(CAM_NAME_KEY)
+            video_pattern = args.get('video_file_pattern', '*')
+            
+            if not cam_name:
+                self.logger.warning(f"No cam_name specified in args for camera config: {image_config}")
+                continue
             
             # 查找匹配的视频文件
             mp4_files = list(ep_dir.glob(video_pattern))

@@ -50,9 +50,18 @@ class LeFormatConverterTaskClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
-            dataset_path = Path(task_content.get(DATASET_PATH))
+            # 去除路径字符串中的前导和尾随空格
+            dataset_path_str = task_content.get(DATASET_PATH)
+            if isinstance(dataset_path_str, str):
+                dataset_path_str = dataset_path_str.strip()
+            dataset_path = Path(dataset_path_str)
+            
             device_model = task_content.get(DEVICE_MODEL)
-            output_path = Path(task_content.get(LEFORMAT_PATH))
+            
+            output_path_str = task_content.get(LEFORMAT_PATH)
+            if isinstance(output_path_str, str):
+                output_path_str = output_path_str.strip()
+            output_path = Path(output_path_str)
             converter_config = task_content.get(CONVERTER_CONFIG)
             repo_id = task_content.get(REPO_ID)
             device_model = task_content.get(DEVICE_MODEL, None)

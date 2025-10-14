@@ -690,8 +690,20 @@ class LerobotFormatConverterFactory:
         logger: logging.Logger | None = None,
         converter_log_dir: Path | None = None,
     ) -> LerobotFormatConverter:
+        # 确保 dataset_path 是 Path 对象，并处理可能的字符串空格问题
+        if isinstance(dataset_path, str):
+            dataset_path = Path(dataset_path.strip())
+        elif isinstance(dataset_path, Path):
+            # 如果已经是 Path 对象，重新构造以去除可能的空格
+            dataset_path = Path(str(dataset_path).strip())
+        
         if not dataset_path.exists():
-            raise FileNotFoundError(f"Dataset path {dataset_path} does not exist.")
+            raise FileNotFoundError(
+                f"Dataset path {dataset_path} does not exist.\n"
+                f"  Path repr: {repr(str(dataset_path))}\n"
+                f"  Path length: {len(str(dataset_path))}\n"
+                f"  Please check for trailing spaces or special characters."
+            )
 
         # Create logger from converter_log_dir if provided and logger is None
         if logger is None and converter_log_dir is not None:

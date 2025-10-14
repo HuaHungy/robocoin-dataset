@@ -112,18 +112,51 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的 episode 数量"""
-        episodes = [
-            item for item in task_path.glob("*")
-            if item.is_dir() and (item / "aligned_joints.h5").exists()
-        ]
+        episodes = self._get_all_episode_dirs(task_path)
         return len(episodes)
 
     def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
-        """获取所有 episode 目录"""
-        episodes = [
-            item for item in task_path.glob("*")
-            if item.is_dir() and (item / "aligned_joints.h5").exists()
-        ]
+        """获取所有 episode 目录（支持嵌套结构）
+        
+        该方法支持多种结构：
+        1. 扁平结构：task_path/episode_0/aligned_joints.h5
+        2. 嵌套结构：task_path/sub_dir1/sub_dir2/episode_0/aligned_joints.h5
+        
+        判断标准：包含 aligned_joints.h5 文件的目录即为 episode 目录
+        """
+        def find_episode_dirs(path: Path, max_depth: int = 5, current_depth: int = 0) -> list[Path]:
+            """递归查找episode目录（最多支持5层嵌套）"""
+            if current_depth > max_depth:
+                return []
+            
+            episode_dirs = []
+            
+            # 检查当前目录是否是episode目录（包含 aligned_joints.h5）
+            h5_file = path / "aligned_joints.h5"
+            if h5_file.exists():
+                episode_dirs.append(path)
+                return episode_dirs  # 找到episode目录后不再向下搜索
+            
+            # 否则继续向下搜索子目录
+            try:
+                for sub_dir in path.iterdir():
+                    # 跳过隐藏目录和特殊目录（以 . 或 @ 开头）
+                    if sub_dir.is_dir() and not sub_dir.name.startswith('.') and not sub_dir.name.startswith('@'):
+                        episode_dirs.extend(find_episode_dirs(sub_dir, max_depth, current_depth + 1))
+            except PermissionError:
+                if self.logger:
+                    self.logger.warning(f"Permission denied when accessing {path}")
+            
+            return episode_dirs
+        
+        episodes = find_episode_dirs(task_path)
+        
+        if not episodes:
+            raise FileNotFoundError(
+                f"No episode directories found in {task_path}. "
+                f"Episode directories should contain 'aligned_joints.h5' file."
+            )
+        
         return sorted(episodes)
 
     def _get_episode_dir(self, task_path: Path, ep_idx: int) -> Path:
