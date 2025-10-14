@@ -48,65 +48,71 @@ features:
       # lerobot_feature: observation.state : by _gen_lerobot_features()
       # dtype: float32 
       # shape: [54]  # 14 joint pos + 12 leg pos + 12 dexhand pos + 2 head pos + 14 joint vel
+      
+      ### 数据结构说明：
+      ### - Joint positions (14): [0-6] 左臂7个关节 + [7-13] 右臂7个关节
+      ### - Leg positions (12): [0-5] 左腿6个关节 + [6-11] 右腿6个关节  
+      ### - Dexhand positions (12): [0-5] 左手6个关节 + [6-11] 右手6个关节
+      ### - Joint velocities (14): [0-6] 左臂速度 + [7-13] 右臂速度
 
       ## sub_states should be concatenated together here : by _gen_state_names()
       sub_state:
-        ### Joint positions (14)
+        ### Joint positions (14) - 左臂7个 + 右臂7个
         - names: 
-            - joint_pos_0
-            - joint_pos_1
-            - joint_pos_2
-            - joint_pos_3
-            - joint_pos_4
-            - joint_pos_5
-            - joint_pos_6
-            - joint_pos_7
-            - joint_pos_8
-            - joint_pos_9
-            - joint_pos_10
-            - joint_pos_11
-            - joint_pos_12
-            - joint_pos_13
+            - left_arm_joint_0
+            - left_arm_joint_1
+            - left_arm_joint_2
+            - left_arm_joint_3
+            - left_arm_joint_4
+            - left_arm_joint_5
+            - left_arm_joint_6
+            - right_arm_joint_0
+            - right_arm_joint_1
+            - right_arm_joint_2
+            - right_arm_joint_3
+            - right_arm_joint_4
+            - right_arm_joint_5
+            - right_arm_joint_6
           args:
             ### keys and values by manual
             h5_path: state/joint/position
             range_from: 0
             range_to: 14
 
-        ### Leg positions (12)
+        ### Leg positions (12) - 左腿6个 + 右腿6个
         - names: 
-            - leg_pos_0
-            - leg_pos_1
-            - leg_pos_2
-            - leg_pos_3
-            - leg_pos_4
-            - leg_pos_5
-            - leg_pos_6
-            - leg_pos_7
-            - leg_pos_8
-            - leg_pos_9
-            - leg_pos_10
-            - leg_pos_11
+            - left_leg_pos_0
+            - left_leg_pos_1
+            - left_leg_pos_2
+            - left_leg_pos_3
+            - left_leg_pos_4
+            - left_leg_pos_5
+            - right_leg_pos_0
+            - right_leg_pos_1
+            - right_leg_pos_2
+            - right_leg_pos_3
+            - right_leg_pos_4
+            - right_leg_pos_5
           args:
             ### keys and values by manual
             h5_path: state/leg/position
             range_from: 0
             range_to: 12
 
-        ### Dexhand positions (12)
+        ### Dexhand positions (12) - 左手6个 + 右手6个
         - names: 
-            - dexhand_pos_0
-            - dexhand_pos_1
-            - dexhand_pos_2
-            - dexhand_pos_3
-            - dexhand_pos_4
-            - dexhand_pos_5
-            - dexhand_pos_6
-            - dexhand_pos_7
-            - dexhand_pos_8
-            - dexhand_pos_9
-            - dexhand_pos_10
-            - dexhand_pos_11
+            - left_dexhand_pos_0
+            - left_dexhand_pos_1
+            - left_dexhand_pos_2
+            - left_dexhand_pos_3
+            - left_dexhand_pos_4
+            - left_dexhand_pos_5
+            - right_dexhand_pos_0
+            - right_dexhand_pos_1
+            - right_dexhand_pos_2
+            - right_dexhand_pos_3
+            - right_dexhand_pos_4
+            - right_dexhand_pos_5
           args:
             ### keys and values by manual
             h5_path: state/effector/position(dexhand)
@@ -123,22 +129,22 @@ features:
             range_from: 0
             range_to: 2
 
-        ### Joint velocities (14)
+        ### Joint velocities (14) - 左臂速度7个 + 右臂速度7个
         - names: 
-            - joint_vel_0
-            - joint_vel_1
-            - joint_vel_2
-            - joint_vel_3
-            - joint_vel_4
-            - joint_vel_5
-            - joint_vel_6
-            - joint_vel_7
-            - joint_vel_8
-            - joint_vel_9
-            - joint_vel_10
-            - joint_vel_11
-            - joint_vel_12
-            - joint_vel_13
+            - left_arm_vel_0
+            - left_arm_vel_1
+            - left_arm_vel_2
+            - left_arm_vel_3
+            - left_arm_vel_4
+            - left_arm_vel_5
+            - left_arm_vel_6
+            - right_arm_vel_0
+            - right_arm_vel_1
+            - right_arm_vel_2
+            - right_arm_vel_3
+            - right_arm_vel_4
+            - right_arm_vel_5
+            - right_arm_vel_6
           args:
             ### keys and values by manual
             h5_path: state/joint/velocity
@@ -150,67 +156,73 @@ features:
     # lerobot_feature: action : by _gen_lerobot_features()
     # dtype: float32
     # shape: [54]  # Same as state
+    
+    ### 数据结构说明（与 state 相同）：
+    ### - Joint positions (14): [0-6] 左臂 + [7-13] 右臂
+    ### - Leg positions (12): [0-5] 左腿 + [6-11] 右腿  
+    ### - Dexhand positions (12): [0-5] 左手 + [6-11] 右手
+    ### - Joint velocities (14): [0-6] 左臂速度 + [7-13] 右臂速度
 
     ## sub_actions should be concatenated together here : by _gen_action_names()
     ### values by manual
     timeline_offset: 1
     sub_action:
-      ### Joint positions (14)
+      ### Joint positions (14) - 左臂7个 + 右臂7个
       - names: 
-          - joint_pos_0
-          - joint_pos_1
-          - joint_pos_2
-          - joint_pos_3
-          - joint_pos_4
-          - joint_pos_5
-          - joint_pos_6
-          - joint_pos_7
-          - joint_pos_8
-          - joint_pos_9
-          - joint_pos_10
-          - joint_pos_11
-          - joint_pos_12
-          - joint_pos_13
+          - left_arm_joint_0
+          - left_arm_joint_1
+          - left_arm_joint_2
+          - left_arm_joint_3
+          - left_arm_joint_4
+          - left_arm_joint_5
+          - left_arm_joint_6
+          - right_arm_joint_0
+          - right_arm_joint_1
+          - right_arm_joint_2
+          - right_arm_joint_3
+          - right_arm_joint_4
+          - right_arm_joint_5
+          - right_arm_joint_6
         args:
           ### keys and values by manual
           h5_path: action/joint/position
           range_from: 0
           range_to: 14
 
-      ### Leg positions (12)
+      ### Leg positions (12) - 左腿6个 + 右腿6个
       - names: 
-          - leg_pos_0
-          - leg_pos_1
-          - leg_pos_2
-          - leg_pos_3
-          - leg_pos_4
-          - leg_pos_5
-          - leg_pos_6
-          - leg_pos_7
-          - leg_pos_8
-          - leg_pos_9
-          - leg_pos_10
-          - leg_pos_11
+          - left_leg_pos_0
+          - left_leg_pos_1
+          - left_leg_pos_2
+          - left_leg_pos_3
+          - left_leg_pos_4
+          - left_leg_pos_5
+          - right_leg_pos_0
+          - right_leg_pos_1
+          - right_leg_pos_2
+          - right_leg_pos_3
+          - right_leg_pos_4
+          - right_leg_pos_5
         args:
           ### keys and values by manual
           h5_path: action/leg/position
           range_from: 0
           range_to: 12
 
-      ### Dexhand positions (12)
+      ### Dexhand positions (12) - 左手6个 + 右手6个
       - names: 
-          - dexhand_pos_0
-          - dexhand_pos_1
-          - dexhand_pos_2
-          - dexhand_pos_3
-          - dexhand_pos_4
-          - dexhand_pos_5
-          - dexhand_pos_6
-          - dexhand_pos_7
-          - dexhand_pos_8
-          - dexhand_pos_9
-          - dexhand_pos_10
-          - dexhand_pos_11
+          - left_dexhand_pos_0
+          - left_dexhand_pos_1
+          - left_dexhand_pos_2
+          - left_dexhand_pos_3
+          - left_dexhand_pos_4
+          - left_dexhand_pos_5
+          - right_dexhand_pos_0
+          - right_dexhand_pos_1
+          - right_dexhand_pos_2
+          - right_dexhand_pos_3
+          - right_dexhand_pos_4
+          - right_dexhand_pos_5
         args:
           ### keys and values by manual
           h5_path: action/effector/position(dexhand)
@@ -227,22 +239,22 @@ features:
           range_from: 0
           range_to: 2
 
-      ### Joint velocities (14) - using state velocity as action is common
+      ### Joint velocities (14) - 左臂速度7个 + 右臂速度7个 (using state velocity as action)
       - names: 
-          - joint_vel_0
-          - joint_vel_1
-          - joint_vel_2
-          - joint_vel_3
-          - joint_vel_4
-          - joint_vel_5
-          - joint_vel_6
-          - joint_vel_7
-          - joint_vel_8
-          - joint_vel_9
-          - joint_vel_10
-          - joint_vel_11
-          - joint_vel_12
-          - joint_vel_13
+          - left_arm_vel_0
+          - left_arm_vel_1
+          - left_arm_vel_2
+          - left_arm_vel_3
+          - left_arm_vel_4
+          - left_arm_vel_5
+          - left_arm_vel_6
+          - right_arm_vel_0
+          - right_arm_vel_1
+          - right_arm_vel_2
+          - right_arm_vel_3
+          - right_arm_vel_4
+          - right_arm_vel_5
+          - right_arm_vel_6
         args:
           ### keys and values by manual
           h5_path: state/joint/velocity

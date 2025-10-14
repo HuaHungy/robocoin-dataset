@@ -24,6 +24,12 @@ galaxea_r1_lite:
   class: LerobotFormatConverterRosbag
   converter_config_path: converter_config_galaxea_r1_lite.yaml
 
+- version: h5_version
+  verison_description: galaxea r1 lite H5 format (qpos + eepose, no images)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_galaxea_r1_lite_h5.yaml
+
 unitree_g1:
 - version: default_version
   verison_description: two arms and two hands (6 joints each), one rgb cameras with high
