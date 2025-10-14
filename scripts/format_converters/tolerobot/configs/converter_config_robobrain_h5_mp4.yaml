@@ -1,0 +1,106 @@
+### RoboBrain数据集配置 - H5+MP4格式
+### 数据集: cube_reset (拾取立方体并放置到凹槽中)
+### 设备: agilex_cobot_magic_aloha (双臂协作机器人)
+### 
+### 数据结构分析:
+### - HDF5文件: 0.hdf5
+###   - action: shape=(544, 128), dtype=float32
+###   - observations/qpos: shape=(544, 128), dtype=float32  
+###   - observations/images/cam_high: shape=(544,), dtype=object (对应0_cam_high.mp4)
+###   - observations/images/cam_left_wrist: shape=(544,), dtype=object (对应0_cam_left_wrist.mp4)
+###   - observations/images/cam_right_wrist: shape=(544,), dtype=object (对应0_cam_right_wrist.mp4)
+###
+### - MP4视频文件:
+###   - 0_cam_high.mp4: 640x480, 10fps, 544帧
+###   - 0_cam_left_wrist.mp4: 640x480, 10fps, 544帧  
+###   - 0_cam_right_wrist.mp4: 640x480, 10fps, 544帧
+###
+### 维度映射 (前14维为标准ALOHA格式):
+###   - 维度 0-5: 左臂6个关节角度 (left_arm_joint_1-6)
+###   - 维度 6: 左臂夹爪开合 (left_gripper_open)
+###   - 维度 7-12: 右臂6个关节角度 (right_arm_joint_1-6)
+###   - 维度 13: 右臂夹爪开合 (right_gripper_open)
+###
+### 注意: 原始数据是128维，但大部分维度为0，这里只使用前14维标准配置
+
+fps: 10
+features:
+  observation:
+    images:
+      # 高位相机 (俯视视角)
+      - cam_name: cam_high_rgb
+        args:
+          cam_name: cam_high
+          video_file_pattern: "*cam_high.mp4"
+
+      # 左腕相机 (左臂手腕视角)
+      - cam_name: cam_left_wrist_rgb
+        args:
+          cam_name: cam_left_wrist
+          video_file_pattern: "*cam_left_wrist.mp4"
+
+      # 右腕相机 (右臂手腕视角)
+      - cam_name: cam_right_wrist_rgb
+        args:
+          cam_name: cam_right_wrist
+          video_file_pattern: "*cam_right_wrist.mp4"
+
+    state:
+      # 状态向量: 14维 (左臂7维 + 右臂7维)
+      sub_state:
+        # 左臂状态 (7维: 6个关节 + 1个夹爪)
+        - names:
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
+            - left_gripper_open
+          args:
+            range_from: 0
+            range_to: 7
+
+        # 右臂状态 (7维: 6个关节 + 1个夹爪)
+        - names:
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_gripper_open
+          args:
+            range_from: 7
+            range_to: 14
+
+  action:
+    # 动作向量: 14维 (左臂7维 + 右臂7维)
+    # timeline_offset=1 表示预测下一个时刻的动作
+    timeline_offset: 1
+    sub_action:
+      # 左臂动作 (7维: 6个关节 + 1个夹爪)
+      - names:
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
+          - left_gripper_open
+        args:
+          range_from: 0
+          range_to: 7
+
+      # 右臂动作 (7维: 6个关节 + 1个夹爪)
+      - names:
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_gripper_open
+        args:
+          range_from: 7
+          range_to: 14

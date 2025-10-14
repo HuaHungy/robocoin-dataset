@@ -239,11 +239,10 @@ mayi:
 
 robobrain:
 - version: default_version
-- version: h5_mp4
-  verison_description: aloha robot with HDF5 data and MP4 videos
+  verison_description: RoboBrain cube_reset task with HDF5 state/action data and MP4 videos
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
   class: LerobotFormatConverterH5Mp4
-  converter_config_path: converter_config_aloha_h5_mp4.yaml
+  converter_config_path: converter_config_robobrain_h5_mp4.yaml
 
 ruantong_a2d:
 - version: default_version
