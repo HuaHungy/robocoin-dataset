@@ -51,11 +51,17 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
         for task_path in self.path_task_dict.keys():
-            episodes = list(task_path.glob("*"))
-            episodes = [ep for ep in episodes if ep.is_dir()]
-            
-            if not episodes:
-                raise FileNotFoundError(f"No episode directories found in {task_path}")
+            # 使用新的递归查找方法
+            try:
+                episodes = self._get_all_episode_dirs(task_path)
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    f"❌ H5+MP4 format validation failed\n"
+                    f"📁 Task path: {task_path}\n"
+                    f"⚠️ {str(e)}\n"
+                    f"💡 Hint: Episode directories should contain .hdf5 or .h5 files.\n"
+                    f"         The converter supports nested directory structures."
+                ) from e
             
             # 🆕 增加：只验证第一个episode的帧数（作为抽样检查）
             first_episode_validated = False
@@ -121,9 +127,9 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
 
     def _get_episode_h5_file(self, task_path: Path, ep_idx: int) -> Path:
         """获取episode的HDF5文件路径"""
-        episodes = sorted([ep for ep in task_path.glob("*") if ep.is_dir()])
+        episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
-            raise IndexError(f"Episode index {ep_idx} out of range")
+            raise IndexError(f"Episode index {ep_idx} out of range (0-{len(episodes)-1})")
         
         ep_dir = episodes[ep_idx]
         h5_files = list(ep_dir.glob("*.hdf5")) + list(ep_dir.glob("*.h5"))
@@ -154,14 +160,56 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             else:
                 raise ValueError(f"Cannot determine frame count from {h5_file}")
 
+    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
+        """获取所有episode目录（支持嵌套结构）
+        
+        该方法支持两种结构：
+        1. 扁平结构：task_path/episode_0/*.hdf5
+        2. 嵌套结构：task_path/sub_dir1/sub_dir2/episode_0/*.hdf5
+        
+        判断标准：包含.hdf5或.h5文件的目录即为episode目录
+        """
+        def find_episode_dirs(path: Path, max_depth: int = 3, current_depth: int = 0) -> list[Path]:
+            """递归查找episode目录"""
+            if current_depth > max_depth:
+                return []
+            
+            episode_dirs = []
+            
+            # 检查当前目录是否是episode目录（包含HDF5文件）
+            h5_files = list(path.glob("*.hdf5")) + list(path.glob("*.h5"))
+            if h5_files:
+                episode_dirs.append(path)
+                return episode_dirs  # 找到episode目录后不再向下搜索
+            
+            # 否则继续向下搜索子目录
+            try:
+                for sub_dir in path.iterdir():
+                    if sub_dir.is_dir():
+                        episode_dirs.extend(find_episode_dirs(sub_dir, max_depth, current_depth + 1))
+            except PermissionError:
+                if self.logger:
+                    self.logger.warning(f"Permission denied when accessing {path}")
+            
+            return episode_dirs
+        
+        episodes = find_episode_dirs(task_path)
+        
+        if not episodes:
+            raise FileNotFoundError(
+                f"No episode directories found in {task_path}. "
+                f"An episode directory should contain at least one .hdf5 or .h5 file."
+            )
+        
+        return sorted(episodes)
+    
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
-        episodes = [ep for ep in task_path.glob("*") if ep.is_dir()]
-        return len(episodes)
+        return len(self._get_all_episode_dirs(task_path))
 
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> dict[str, list[np.ndarray]]:
         """准备episode的图像缓冲区"""
-        episodes = sorted([ep for ep in task_path.glob("*") if ep.is_dir()])
+        episodes = self._get_all_episode_dirs(task_path)
         ep_dir = episodes[ep_idx]
         
         images = {}
