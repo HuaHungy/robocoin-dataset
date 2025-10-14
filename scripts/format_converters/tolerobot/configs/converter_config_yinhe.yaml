@@ -22,14 +22,14 @@ features:
             - body_joint_1
             - body_joint_2
           args:
-            json_path: body_state_joint_position
+            json_path: state_body_joint_position
             range_from: 0
             range_to: 3
         - names:
             - head_joint_0
             - head_joint_1
           args:
-            json_path: front_head_state_joint_position
+            json_path: state_front_head_joint
             range_from: 0
             range_to: 2
         - names:
@@ -41,13 +41,13 @@ features:
             - left_arm_joint_5
             - left_arm_joint_6
           args:
-            json_path: left_arm_state_joint_position
+            json_path: state_left_arm_joint_position
             range_from: 0
             range_to: 7
         - names:
             - left_gripper_width
           args:
-            json_path: left_arm_state_gripper_width
+            json_path: state_left_arm_gripper_width
             range_from: 0
             range_to: 1
         - names:
@@ -59,13 +59,13 @@ features:
             - right_arm_joint_5
             - right_arm_joint_6
           args:
-            json_path: right_arm_state_joint_position
+            json_path: state_right_arm_joint_position
             range_from: 0
             range_to: 7
         - names:
             - right_gripper_width
           args:
-            json_path: right_arm_state_gripper_width
+            json_path: state_right_arm_gripper_width
             range_from: 0
             range_to: 1
 
@@ -77,14 +77,14 @@ features:
           - body_joint_1
           - body_joint_2
         args:
-          json_path: body_state_joint_position
+          json_path: state_body_joint_position
           range_from: 0
           range_to: 3
       - names:
           - head_joint_0
           - head_joint_1
         args:
-          json_path: front_head_state_joint_position
+          json_path: state_front_head_joint
           range_from: 0
           range_to: 2
       - names:
@@ -96,7 +96,7 @@ features:
           - left_arm_joint_5
           - left_arm_joint_6
         args:
-          json_path: left_arm_cmd_joint_position
+          json_path: cmd_left_joint_state
           range_from: 0
           range_to: 7
       - names:
@@ -108,6 +108,6 @@ features:
           - right_arm_joint_5
           - right_arm_joint_6
         args:
-          json_path: right_arm_cmd_joint_position
+          json_path: cmd_right_joint_state
           range_from: 0
           range_to: 7

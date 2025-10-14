@@ -163,14 +163,16 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
     def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
         """获取所有episode目录（支持嵌套结构）
         
-        该方法支持两种结构：
+        该方法支持多种结构：
         1. 扁平结构：task_path/episode_0/*.hdf5
-        2. 嵌套结构：task_path/sub_dir1/sub_dir2/episode_0/*.hdf5
+        2. 2层嵌套：task_path/color/episode_0/*.hdf5
+        3. 3层嵌套：task_path/color/batch/episode_0/*.hdf5
+        4. 4层嵌套：task_path/task_variant/color/batch/episode_0/*.hdf5
         
         判断标准：包含.hdf5或.h5文件的目录即为episode目录
         """
-        def find_episode_dirs(path: Path, max_depth: int = 3, current_depth: int = 0) -> list[Path]:
-            """递归查找episode目录"""
+        def find_episode_dirs(path: Path, max_depth: int = 5, current_depth: int = 0) -> list[Path]:
+            """递归查找episode目录（最多支持5层嵌套）"""
             if current_depth > max_depth:
                 return []
             
@@ -185,7 +187,8 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             # 否则继续向下搜索子目录
             try:
                 for sub_dir in path.iterdir():
-                    if sub_dir.is_dir():
+                    # 跳过隐藏目录和特殊目录（以 . 或 @ 开头）
+                    if sub_dir.is_dir() and not sub_dir.name.startswith('.') and not sub_dir.name.startswith('@'):
                         episode_dirs.extend(find_episode_dirs(sub_dir, max_depth, current_depth + 1))
             except PermissionError:
                 if self.logger:
