@@ -964,7 +964,18 @@ class VideoSubtaskAnnotation:
 
                         if success:
                             for episode in data:
-                                video_url = episode["video"]
+                                pattern = r"^observation\.images\.(.+)$"
+                                video_url = episode.get("video", None)
+                                if video_url is None:
+                                    for key in episode.keys():
+                                        match = re.match(pattern, key)
+                                        if match:
+                                            video_url = episode.get(key, None)
+                                            if video_url is None:
+                                                raise ValueError(
+                                                    f"{file} 中没有找到视频链接，请检查"
+                                                )
+                                            break
                                 for range_annotation in episode["videoLabels"]:
                                     # 数据库中的帧索引从0开始, 并且使用左闭右开的区间表达
                                     # 原始标注文件使用了从1开始的帧索引，并且使用左闭右闭的区间表达，因此start帧序号需要减1
