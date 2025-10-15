@@ -5,16 +5,21 @@ LeRobot格式转换器 - H5+MP4格式
 
 import logging
 from pathlib import Path
-from typing import Any
-import numpy as np
-import h5py
+
 import cv2
+import h5py
+import numpy as np
 
 from robocoin_dataset.format_converter.tolerobot.constant import (
-    FEATURES_KEY, OBSERVATION_KEY, IMAGE_KEY, STATE_KEY, SUB_STATE_KEY,
-    ACTION_KEY, SUB_ACTION_KEY, ARGS_KEY, CAM_NAME_KEY, NAME_KEY,
+    ARGS_KEY,
+    CAM_NAME_KEY,
+    FEATURES_KEY,
+    IMAGE_KEY,
+    OBSERVATION_KEY,
 )
-from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import LerobotFormatConverter
+from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
+    LerobotFormatConverter,
+)
 from robocoin_dataset.format_converter.tolerobot.video_frame_validator import (
     validate_video_frame_count,
 )
@@ -106,7 +111,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                                         logger=self.logger,
                                         tolerance=1  # 允许±1帧误差
                                     )
-                                except ValueError as e:
+                                except ValueError as e:  # noqa: PERF203
                                     self.logger.warning(
                                         f"⚠️ 视频帧数不匹配\n"
                                         f"📂 Episode: {ep_dir.name}\n"
@@ -144,21 +149,70 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         if video_key not in self._video_readers:
             cap = cv2.VideoCapture(str(video_path))
             if not cap.isOpened():
-                raise IOError(f"Cannot open video file: {video_path}")
+                raise OSError(f"Cannot open video file: {video_path}")
             self._video_readers[video_key] = cap
         return self._video_readers[video_key]
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """获取episode的帧数"""
+        """获取episode的帧数
+        
+        策略：取所有数据源（H5数据 + 所有视频）的最小帧数
+        这样可以避免视频帧数不足导致的索引越界错误
+        """
+        episodes = self._get_all_episode_dirs(task_path)
+        if ep_idx >= len(episodes):
+            raise IndexError(f"Episode index {ep_idx} out of range (0-{len(episodes)-1})")
+        
+        ep_dir = episodes[ep_idx]
         h5_file = self._get_episode_h5_file(task_path, ep_idx)
+        
+        frame_counts = []
+        
+        # 1. 获取 H5 数据帧数
         with h5py.File(h5_file, 'r') as f:
-            # 从action或qpos数据获取帧数
             if 'action' in f:
-                return f['action'].shape[0]
+                h5_frames = f['action'].shape[0]
             elif 'qpos' in f:
-                return f['qpos'].shape[0]
+                h5_frames = f['qpos'].shape[0]
             else:
                 raise ValueError(f"Cannot determine frame count from {h5_file}")
+            
+            frame_counts.append(('H5 data', h5_frames))
+        
+        # 2. 获取所有视频的帧数
+        mp4_files = list(ep_dir.glob("*.mp4"))
+        for mp4_file in mp4_files:
+            try:
+                cap = cv2.VideoCapture(str(mp4_file))
+                if cap.isOpened():
+                    video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    frame_counts.append((mp4_file.name, video_frames))
+                    cap.release()
+                else:
+                    if self.logger:
+                        self.logger.warning(f"⚠️ Cannot open video: {mp4_file.name}")
+            except Exception as e:  # noqa: PERF203
+                if self.logger:
+                    self.logger.warning(f"⚠️ Error reading video frames from {mp4_file.name}: {e}")
+        
+        if not frame_counts:
+            raise ValueError(f"No valid data sources found in episode {ep_dir}")
+        
+        # 3. 取最小值（确保所有数据源都有对应的帧）
+        min_frames = min(count for _, count in frame_counts)
+        
+        # 4. 记录帧数差异（用于调试）
+        if self.logger and len(frame_counts) > 1:
+            max_frames = max(count for _, count in frame_counts)
+            if max_frames - min_frames > 5:  # 差异超过5帧时记录
+                diff_info = "\n".join([f"      - {name}: {count} frames" for name, count in frame_counts])
+                self.logger.debug(
+                    f"📊 Frame count mismatch in episode {ep_dir.name}:\n"
+                    f"{diff_info}\n"
+                    f"   ✅ Using minimum: {min_frames} frames"
+                )
+        
+        return min_frames
 
     def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
         """获取所有episode目录（支持嵌套结构）
@@ -237,7 +291,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             mp4_file = mp4_files[0]  # 使用第一个匹配的文件
             cap = cv2.VideoCapture(str(mp4_file))
             if not cap.isOpened():
-                raise IOError(f"Cannot open video file: {mp4_file}")
+                raise OSError(f"Cannot open video file: {mp4_file}")
             
             frames = []
             while True:
@@ -277,8 +331,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         with h5py.File(h5_file, 'r') as f:
             if 'qpos' in f:
                 return np.array(f['qpos'])
-            else:
-                raise ValueError(f"No qpos data in {h5_file}")
+            raise ValueError(f"No qpos data in {h5_file}")
 
     def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> np.ndarray:
         """准备episode的动作缓冲区"""
@@ -286,8 +339,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         with h5py.File(h5_file, 'r') as f:
             if 'action' in f:
                 return np.array(f['action'])
-            else:
-                raise ValueError(f"No action data in {h5_file}")
+            raise ValueError(f"No action data in {h5_file}")
 
     def _get_frame_image(
         self, 
@@ -344,7 +396,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         
         return sub_actions_buffer[frame_idx, from_idx:to_idx].astype(np.float32)
 
-    def __del__(self):
+    def __del__(self) -> None:
         """清理视频读取器"""
         for cap in self._video_readers.values():
             if cap.isOpened():
