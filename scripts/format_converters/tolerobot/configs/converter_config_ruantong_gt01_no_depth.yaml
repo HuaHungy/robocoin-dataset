@@ -1,0 +1,207 @@
+### 软通天擎配置 - GT01 格式（无 depth 无 hand 相机版本）
+### 
+### 使用场景：GT01 格式数据，只有 4 个鱼眼和头部相机，没有 depth 和 hand 相机
+### 可用相机：
+### - camera/{frame_idx}/head_color.jpg ✅
+### - camera/{frame_idx}/head_center_fisheye_color.jpg ✅
+### - camera/{frame_idx}/back_left_fisheye_color.jpg ✅
+### - camera/{frame_idx}/back_right_fisheye_color.jpg ✅
+
+fps: 30
+
+features:
+  observation:
+    images:
+      ### 头部彩色相机
+      - cam_name: head_color
+        args:
+          h5_path: camera/{frame_idx}/head_color.jpg
+          file_type: jpg
+
+      ### 头部中心鱼眼相机
+      - cam_name: head_center_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/head_center_fisheye_color.jpg
+          file_type: jpg
+
+      ### 左后鱼眼相机
+      - cam_name: back_left_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/back_left_fisheye_color.jpg
+          file_type: jpg
+
+      ### 右后鱼眼相机
+      - cam_name: back_right_fisheye_color
+        args:
+          h5_path: camera/{frame_idx}/back_right_fisheye_color.jpg
+          file_type: jpg
+
+    state:
+      sub_state:
+        ### 躯干关节 (6)
+        - names:
+            - torso_joint_0
+            - torso_joint_1
+            - torso_joint_2
+            - torso_joint_3
+            - torso_joint_4
+            - torso_joint_5
+          args:
+            h5_path: state/torso
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### 左臂关节 (7)
+        - names:
+            - left_arm_joint_0
+            - left_arm_joint_1
+            - left_arm_joint_2
+            - left_arm_joint_3
+            - left_arm_joint_4
+            - left_arm_joint_5
+            - left_arm_joint_6
+          args:
+            h5_path: state/left_arm
+            range_from: 0
+            range_to: 7
+          convert_func: to_float32
+
+        ### 左手关节 (6)
+        - names:
+            - left_hand_joint_0
+            - left_hand_joint_1
+            - left_hand_joint_2
+            - left_hand_joint_3
+            - left_hand_joint_4
+            - left_hand_joint_5
+          args:
+            h5_path: state/left_hand
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### 右臂关节 (7)
+        - names:
+            - right_arm_joint_0
+            - right_arm_joint_1
+            - right_arm_joint_2
+            - right_arm_joint_3
+            - right_arm_joint_4
+            - right_arm_joint_5
+            - right_arm_joint_6
+          args:
+            h5_path: state/right_arm
+            range_from: 0
+            range_to: 7
+          convert_func: to_float32
+
+        ### 右手关节 (6)
+        - names:
+            - right_hand_joint_0
+            - right_hand_joint_1
+            - right_hand_joint_2
+            - right_hand_joint_3
+            - right_hand_joint_4
+            - right_hand_joint_5
+          args:
+            h5_path: state/right_hand
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### 头部关节 (2)
+        - names:
+            - head_joint_0
+            - head_joint_1
+          args:
+            h5_path: state/head
+            range_from: 0
+            range_to: 2
+          convert_func: to_float32
+
+  action:
+    ### Action: 34D = 6 torso + 7 left_arm + 6 left_hand + 7 right_arm + 6 right_hand + 2 head
+    
+    sub_action:
+      ### 躯干关节 (6)
+      - names:
+          - torso_joint_0
+          - torso_joint_1
+          - torso_joint_2
+          - torso_joint_3
+          - torso_joint_4
+          - torso_joint_5
+        args:
+          h5_path: action/torso
+          range_from: 0
+          range_to: 6
+        convert_func: to_float32
+
+      ### 左臂关节 (7)
+      - names:
+          - left_arm_joint_0
+          - left_arm_joint_1
+          - left_arm_joint_2
+          - left_arm_joint_3
+          - left_arm_joint_4
+          - left_arm_joint_5
+          - left_arm_joint_6
+        args:
+          h5_path: action/left_arm
+          range_from: 0
+          range_to: 7
+        convert_func: to_float32
+
+      ### 左手关节 (6)
+      - names:
+          - left_hand_joint_0
+          - left_hand_joint_1
+          - left_hand_joint_2
+          - left_hand_joint_3
+          - left_hand_joint_4
+          - left_hand_joint_5
+        args:
+          h5_path: action/left_hand
+          range_from: 0
+          range_to: 6
+        convert_func: to_float32
+
+      ### 右臂关节 (7)
+      - names:
+          - right_arm_joint_0
+          - right_arm_joint_1
+          - right_arm_joint_2
+          - right_arm_joint_3
+          - right_arm_joint_4
+          - right_arm_joint_5
+          - right_arm_joint_6
+        args:
+          h5_path: action/right_arm
+          range_from: 0
+          range_to: 7
+        convert_func: to_float32
+
+      ### 右手关节 (6)
+      - names:
+          - right_hand_joint_0
+          - right_hand_joint_1
+          - right_hand_joint_2
+          - right_hand_joint_3
+          - right_hand_joint_4
+          - right_hand_joint_5
+        args:
+          h5_path: action/right_hand
+          range_from: 0
+          range_to: 6
+        convert_func: to_float32
+
+      ### 头部关节 (2)
+      - names:
+          - head_joint_0
+          - head_joint_1
+        args:
+          h5_path: action/head
+          range_from: 0
+          range_to: 2
+        convert_func: to_float32
