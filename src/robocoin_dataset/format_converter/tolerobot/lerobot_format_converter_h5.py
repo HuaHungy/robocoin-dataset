@@ -1,9 +1,11 @@
 import io
 import logging
+import tempfile
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
+import cv2
 import h5py
 import numpy as np
 from natsort import natsorted
@@ -368,6 +370,32 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                 f"   💡 args_dict must contain 'h5_path' key specifying the H5 dataset path"
             ) from e
 
+        # 根据配置检查是否使用压缩视频格式
+        use_compressed_video = args_dict.get("use_compressed_video", False)
+        
+        if use_compressed_video:
+            # 使用压缩视频格式
+            video_path = h5_path.replace('/images', '/video')
+            video_index_path = h5_path.replace('/images', '/video_index')
+            
+            if video_path not in images_buffer or video_index_path not in images_buffer:
+                available_paths = list(images_buffer.keys())[:10]
+                raise KeyError(
+                    f"❌ Compressed video format configured but video data not found.\n"
+                    f"   🔍 Expected video path: {video_path}\n"
+                    f"   🔍 Expected index path: {video_index_path}\n"
+                    f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                    f"   📋 Available paths (showing first 10): {available_paths}\n"
+                    f"   💡 Set use_compressed_video: false in config if using normal image format"
+                )
+            
+            return self._get_frame_from_compressed_video(
+                task_path, ep_idx, frame_idx, 
+                images_buffer[video_path],
+                images_buffer[video_index_path],
+                h5_path
+            )
+
         try:
             image_data = images_buffer[h5_path][frame_idx]
         except KeyError as e:
@@ -409,6 +437,88 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                         f"   Error: {e!s}"
                     )
         return image_data
+
+    def _get_frame_from_compressed_video(
+        self,
+        task_path: Path,
+        ep_idx: int,
+        frame_idx: int,
+        video_data: np.ndarray,
+        video_index: np.ndarray,
+        h5_path: str,
+    ) -> np.ndarray:
+        """
+        从压缩视频数据中提取指定帧
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode 索引
+            frame_idx: 帧索引
+            video_data: 压缩的视频数据（void 类型的 numpy 数组）
+            video_index: 视频索引数组，表示帧到字节的映射
+            h5_path: H5 路径（用于日志）
+        
+        Returns:
+            解码后的图像数组 (H, W, C)
+        """
+        try:
+            # 将 void 类型转换为字节
+            if isinstance(video_data, np.void) or (isinstance(video_data, np.ndarray) and video_data.dtype.kind == 'V'):
+                video_bytes = np.array(video_data).tobytes()
+            else:
+                video_bytes = bytes(video_data)
+            
+            # 创建临时文件保存视频
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+                tmp_file.write(video_bytes)
+            
+            try:
+                # 使用 OpenCV 读取视频
+                cap = cv2.VideoCapture(tmp_path)
+                if not cap.isOpened():
+                    raise RuntimeError(f"Failed to open video file: {tmp_path}")
+                
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                
+                # 获取总的机械臂数据帧数（从第一个非空的 state 数据推断）
+                # 假设所有 state 数据帧数相同
+                # TODO: 可以从配置或 H5 文件的其他字段获取更准确的值
+                total_arm_frames = 327  # 硬编码，后续可以改进
+                
+                # 计算视频帧索引（使用最近邻插值）
+                # 将机械臂帧映射到视频帧
+                if total_frames > 0:
+                    video_frame_idx = min(int(frame_idx * total_frames / total_arm_frames), total_frames - 1)
+                else:
+                    video_frame_idx = 0
+                
+                # 跳转到指定帧
+                cap.set(cv2.CAP_PROP_POS_FRAMES, video_frame_idx)
+                ret, frame = cap.read()
+                cap.release()
+                
+                if not ret:
+                    raise RuntimeError(f"Failed to read frame {video_frame_idx} from video (total: {total_frames})")
+                
+                # OpenCV 读取的是 BGR 格式，转换为 RGB
+                return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+            finally:
+                # 清理临时文件
+                import os
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                    
+        except Exception as e:
+            if self.logger:
+                self.logger.error(
+                    f"❌ Failed to decode compressed video frame.\n"
+                    f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                    f"   🔍 H5 path: {h5_path}\n"
+                    f"   Error: {e!s}"
+                )
+            raise
 
     # @override
     def _get_frame_sub_states(
@@ -644,10 +754,31 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         self.h5_buffer.h5_data = {}
 
         h5_file_path = self.task_episode_h5file_paths[task_path][ep_idx]
+        
+        # 收集所有配置的相机路径及其 use_compressed_video 设置
+        camera_configs = {}
+        for image_config in self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(IMAGE_KEY, []):
+            if ARGS_KEY in image_config and "h5_path" in image_config[ARGS_KEY]:
+                h5_path = image_config[ARGS_KEY]["h5_path"]
+                use_compressed = image_config[ARGS_KEY].get("use_compressed_video", False)
+                camera_configs[h5_path] = use_compressed
 
         def _get_dataset(name: str, obj: any) -> None:
             if isinstance(obj, h5py.Dataset):
                 try:
+                    # 检查这个路径是否是配置中的图像路径
+                    is_image_path = name in camera_configs
+                    
+                    if is_image_path:
+                        use_compressed = camera_configs[name]
+                        if use_compressed:
+                            # 如果配置使用压缩视频，跳过加载 images，改为加载 video 和 video_index
+                            # 跳过 images 路径，不加载
+                            if self.logger:
+                                self.logger.debug(f"Skipping images path {name}, will load video data instead")
+                            return
+                        # 否则正常加载 images
+                    
                     self.h5_buffer.h5_data[name] = obj[()]
                 except Exception as e:
                     # 提供详细的H5文件错误诊断信息
@@ -670,6 +801,29 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         try:
             with h5py.File(h5_file_path, "r") as h5_file:
                 h5_file.visititems(_get_dataset)
+                
+                # 对于配置了 use_compressed_video 的相机，额外加载 video 和 video_index
+                for h5_path, use_compressed in camera_configs.items():
+                    if use_compressed:
+                        video_path = h5_path.replace('/images', '/video')
+                        video_index_path = h5_path.replace('/images', '/video_index')
+                        
+                        if video_path in h5_file:
+                            self.h5_buffer.h5_data[video_path] = h5_file[video_path][()]
+                            if self.logger:
+                                self.logger.debug(f"Loaded compressed video: {video_path}")
+                        else:
+                            if self.logger:
+                                self.logger.warning(f"Video path not found: {video_path}")
+                        
+                        if video_index_path in h5_file:
+                            self.h5_buffer.h5_data[video_index_path] = h5_file[video_index_path][()]
+                            if self.logger:
+                                self.logger.debug(f"Loaded video index: {video_index_path}")
+                        else:
+                            if self.logger:
+                                self.logger.warning(f"Video index path not found: {video_index_path}")
+                
                 self.h5_buffer.task_path = task_path
                 self.h5_buffer.ep_idx = ep_idx
         except OSError as e:

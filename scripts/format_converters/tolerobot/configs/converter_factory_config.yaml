@@ -289,6 +289,25 @@ zhipingfang:
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_zhipingfang_dual_arm_no_pose_no_left_chest_cam.yaml
 
+# Compressed Video Format Versions (use_compressed_video: true)
+- version: left_arm_with_pose_compressed_video
+  verison_description: zhipingfang single left arm with pose (compressed video format - images stored as MP4)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_left_arm_with_pose_compressed_video.yaml
+
+- version: right_arm_with_pose_compressed_video
+  verison_description: zhipingfang single right arm with pose (compressed video format - images stored as MP4)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_right_arm_with_pose_compressed_video.yaml
+
+- version: dual_arm_with_pose_compressed_video
+  verison_description: zhipingfang dual arm with pose (compressed video format - images stored as MP4)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_dual_arm_with_pose_compressed_video.yaml
+
 agilex_pika:
 - version: default_version
   verison_description: agilex pika robot with multiple sensors and JPG+JSON
