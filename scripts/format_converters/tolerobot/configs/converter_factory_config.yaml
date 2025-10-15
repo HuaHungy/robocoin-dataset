@@ -265,6 +265,30 @@ zhipingfang:
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_zhipingfang_dual_arm_no_pose.yaml
 
+- version: left_arm_with_pose_no_left_cam
+  verison_description: zhipingfang single left arm with pose, but left camera missing (only head camera, left joints + pose + wrench + gripper)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_left_arm_with_pose_no_left_cam.yaml
+
+- version: right_arm_with_pose_no_right_cam
+  verison_description: zhipingfang single right arm with pose, but right camera missing (only head camera, right joints + pose + wrench + gripper)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_right_arm_with_pose_no_right_cam.yaml
+
+- version: dual_arm_with_pose_no_left_chest_cam
+  verison_description: zhipingfang dual arm with pose, but left and chest cameras missing (head + right cameras only, full pose data)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_dual_arm_with_pose_no_left_chest_cam.yaml
+
+- version: dual_arm_no_pose_no_left_chest_cam
+  verison_description: zhipingfang dual arm without pose, and left and chest cameras missing (head + right cameras only, no pose data)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_dual_arm_no_pose_no_left_chest_cam.yaml
+
 agilex_pika:
 - version: default_version
   verison_description: agilex pika robot with multiple sensors and JPG+JSON
