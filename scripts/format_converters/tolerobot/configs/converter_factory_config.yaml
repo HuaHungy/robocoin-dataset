@@ -276,7 +276,13 @@ robobrain:
 
 ruantong_a2d:
 - version: default_version
-  verison_description: Ruantong A2D humanoid robot with H5 state/action data and JPG images
+  verison_description: Ruantong A2D humanoid robot with H5 state/action data and JPG images (full camera set)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_jpg
   class: LerobotFormatConverterH5Jpg
   converter_config_path: converter_config_ruantong.yaml
+
+- version: gt02_version
+  verison_description: Ruantong A2D gt02/rt format with minimal camera set (head, hand_left, hand_right + depth)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_jpg
+  class: LerobotFormatConverterH5Jpg
+  converter_config_path: converter_config_ruantong_gt02.yaml

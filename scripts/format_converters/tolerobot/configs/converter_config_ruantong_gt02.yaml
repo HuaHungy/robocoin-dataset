@@ -1,0 +1,194 @@
+### fps by manual
+fps: 30
+features:
+  observation:
+    images:
+
+    ### values by manual
+    - cam_name: head_color
+      args:
+
+        ### key and values by manual
+        h5_path: camera/{frame_idx}/head_color.jpg
+        file_type: jpg
+
+
+      ### values by function
+      # dtype: video
+      # shape: [480, 640, 3]
+      # names: [height, width, channels]
+      # lerobot_feature: observations.images.head_color : by _gen_lerobot_features()
+        
+
+    ### values by manual
+    - cam_name: head_depth
+      args:
+
+        ### keys and values by manual
+        h5_path: camera/{frame_idx}/head_depth.png
+        file_type: png
+
+      ### values by function
+      # dtype: video
+      # shape: [480, 640, 3]
+      # names: [height, width, channels]
+      # lerobot_feature: observations.images.head_depth : by _gen_lerobot_features()
+
+    ### values by manual
+    - cam_name: hand_left_color
+      args:
+        ### keys and values by manual
+        h5_path: camera/{frame_idx}/hand_left_color.jpg
+        file_type: jpg
+
+      ### values by function
+      # dtype: video
+      # shape: [480, 640, 3]
+      # names: [height, width, channels]
+      # lerobot_feature: observations.images.hand_left_color : by _gen_lerobot_features()
+
+    ### values by manual
+    - cam_name: hand_left_depth
+      args:
+        ### keys and values by manual
+        h5_path: camera/{frame_idx}/hand_left_depth.png
+        file_type: png
+
+      ### values by function
+      # dtype: video
+      # shape: [480, 640, 3]
+      # names: [height, width, channels]
+      # lerobot_feature: observations.images.hand_left_depth : by _gen_lerobot_features()
+
+    ### values by manual
+    - cam_name: hand_right_color
+      args:
+        ### keys and values by manual
+        h5_path: camera/{frame_idx}/hand_right_color.jpg
+        file_type: jpg
+
+      ### values by function
+      # dtype: video
+      # shape: [480, 640, 3]
+      # names: [height, width, channels]
+      # lerobot_feature: observations.images.hand_right_color : by _gen_lerobot_features()
+
+    ### values by manual
+    - cam_name: hand_right_depth
+      args:
+        ### keys and values by manual
+        h5_path: camera/{frame_idx}/hand_right_depth.png
+        file_type: png
+
+      ### values by function
+      # dtype: video
+      # shape: [480, 640, 3]
+      # names: [height, width, channels]
+      # lerobot_feature: observations.images.hand_right_depth : by _gen_lerobot_features()
+
+
+    state:
+      ### values by function
+      # lerobot_feature: observation.state : by _gen_lerobot_features()
+      # dtype: float32 
+      # shape: [20] (18 robot positions + 2 gripper positions)
+
+      ## sub_states should be concatenated together here : by _gen_state_names()
+      sub_state:
+      - names: 
+        - robot_pos_0
+        - robot_pos_1
+        - robot_pos_2
+        - robot_pos_3
+        - robot_pos_4
+        - robot_pos_5
+        - robot_pos_6
+        - robot_pos_7
+        - robot_pos_8
+        - robot_pos_9
+        - robot_pos_10
+        - robot_pos_11
+        - robot_pos_12
+        - robot_pos_13
+        - robot_pos_14
+        - robot_pos_15
+        - robot_pos_16
+        - robot_pos_17
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/robot/positions
+          range_from: 0
+          range_to: 18
+        
+        ### values by manual
+        convert_func: to_float32
+      
+      - names: 
+        - left_gripper_pos
+        - right_gripper_pos
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/gripper/positions
+          range_from: 0
+          range_to: 2
+
+        ### values by manual
+        convert_func: to_float32
+
+
+  action:
+    ### values by function
+    # lerobot_feature: observation.action: by _gen_lerobot_features()
+    # dtype: float32 
+    # shape: [20] (18 robot positions + 2 gripper positions)
+    # NOTE: In this dataset, action fields are all NaN - using state as action
+
+    ### values by manual
+    timeline_offset: 1
+    sub_action:
+
+      - names: 
+        - robot_pos_0
+        - robot_pos_1
+        - robot_pos_2
+        - robot_pos_3
+        - robot_pos_4
+        - robot_pos_5
+        - robot_pos_6
+        - robot_pos_7
+        - robot_pos_8
+        - robot_pos_9
+        - robot_pos_10
+        - robot_pos_11
+        - robot_pos_12
+        - robot_pos_13
+        - robot_pos_14
+        - robot_pos_15
+        - robot_pos_16
+        - robot_pos_17
+
+        args:
+          ### keys and values by manual
+          # NOTE: Using state/robot/positions because action/robot/positions is all NaN
+          h5_path: /state/robot/positions
+          range_from: 0
+          range_to: 18
+        
+        ### values by manual
+        convert_func: to_float32
+      
+      - names: 
+        - left_gripper_pos
+        - right_gripper_pos
+
+        args:
+          ### keys and values by manual
+          # NOTE: Using state/gripper/positions because action/gripper/positions is all NaN
+          h5_path: /state/gripper/positions
+          range_from: 0
+          range_to: 2
+
+        ### values by manual
+        convert_func: to_float32
