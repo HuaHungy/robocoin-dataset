@@ -1,0 +1,123 @@
+### 智平方数据集配置 - 左臂单臂版本
+### 
+### 使用场景：单左臂操作，右臂和部分相机数据为空
+### - observations/camera/rgb/head/images: ✅ 有数据
+### - observations/camera/rgb/left/images: ✅ 有数据
+### - observations/camera/rgb/right/images: ❌ 空
+### - observations/camera/rgb/chest/images: ❌ 空
+### - observations/arm/left/*: ✅ 有数据
+### - observations/arm/right/*: ❌ 空
+### 
+### 适用于 PCB 抓拿放取等单臂任务
+
+### fps by manual
+fps: 30
+
+features:
+  observation:
+    images:
+      ### 只使用有数据的 head 和 left wrist 相机
+      - cam_name: camera_head_rgb
+        args:
+          h5_path: observations/camera/rgb/head/images
+
+      - cam_name: camera_left_wrist_rgb
+        args:
+          h5_path: observations/camera/rgb/left/images
+
+    state:
+      ### 单左臂 state 定义
+      ### shape: [21] = 7 left joints + 6 left pose + 6 left wrench + 1 left gripper + 1 placeholder
+      
+      sub_state:
+        ### Left arm joints (7)
+        - names:
+            - left_arm_joint_0
+            - left_arm_joint_1
+            - left_arm_joint_2
+            - left_arm_joint_3
+            - left_arm_joint_4
+            - left_arm_joint_5
+            - left_arm_joint_6
+          args:
+            h5_path: observations/arm/left/joints
+            range_from: 0
+            range_to: 7
+          convert_func: to_float32
+
+        ### Left arm end effector pose (6) - xyz + rpy
+        - names:
+            - left_arm_pose_x
+            - left_arm_pose_y
+            - left_arm_pose_z
+            - left_arm_pose_roll
+            - left_arm_pose_pitch
+            - left_arm_pose_yaw
+          args:
+            h5_path: observations/arm/left/pose
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Left arm wrench (6) - force xyz + torque xyz
+        - names:
+            - left_arm_wrench_fx
+            - left_arm_wrench_fy
+            - left_arm_wrench_fz
+            - left_arm_wrench_tx
+            - left_arm_wrench_ty
+            - left_arm_wrench_tz
+          args:
+            h5_path: observations/arm/left/wrench
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Left gripper position (1)
+        - names:
+            - left_effector_position
+          args:
+            h5_path: observations/effector/left/position
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+        ### Timestamp as extra state (1) - 用于填充，避免维度问题
+        - names:
+            - timestamp_normalized
+          args:
+            h5_path: observations/timestamp
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+  action:
+    ### 单左臂 action 定义
+    ### shape: [8] = 7 left joints + 1 left gripper
+    
+    timeline_offset: 1
+    
+    sub_action:
+      ### Left arm joints (7)
+      - names:
+          - left_arm_joint_0
+          - left_arm_joint_1
+          - left_arm_joint_2
+          - left_arm_joint_3
+          - left_arm_joint_4
+          - left_arm_joint_5
+          - left_arm_joint_6
+        args:
+          h5_path: observations/arm/left/joints
+          range_from: 0
+          range_to: 7
+        convert_func: to_float32
+
+      ### Left gripper (1)
+      - names:
+          - left_effector_position
+        args:
+          h5_path: observations/effector/left/position
+          range_from: 0
+          range_to: 1
+        convert_func: to_float32
