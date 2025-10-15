@@ -1,22 +1,21 @@
-### 智平方数据集配置 - 左臂单臂版本
+### 智平方数据集配置 - 左臂单臂版本（不包含 arm pose）
 ### 
-### 使用场景：单左臂操作，右臂和部分相机数据为空
+### 使用场景：单左臂操作，右臂数据为空，左臂 pose 数据为空
 ### - observations/camera/rgb/head/images: ✅ 有数据
 ### - observations/camera/rgb/left/images: ✅ 有数据
 ### - observations/camera/rgb/right/images: ❌ 空
 ### - observations/camera/rgb/chest/images: ❌ 空
-### - observations/arm/left/*: ✅ 有数据
+### - observations/arm/left/joints: ✅ 有数据
+### - observations/arm/left/pose: ❌ 空
+### - observations/arm/left/wrench: ✅ 有数据
 ### - observations/arm/right/*: ❌ 空
-### 
-### 适用于 PCB 抓拿放取等单臂任务
 
-### fps by manual
 fps: 30
 
 features:
   observation:
     images:
-      ### 只使用有数据的 head 和 left wrist 相机
+      ### 左臂相机：head + left wrist
       - cam_name: camera_head_rgb
         args:
           h5_path: observations/camera/rgb/head/images
@@ -26,8 +25,7 @@ features:
           h5_path: observations/camera/rgb/left/images
 
     state:
-      ### 单左臂 state 定义
-      ### shape: [21] = 7 left joints + 6 left pose + 6 left wrench + 1 left gripper + 1 placeholder
+      ### State: 15D = 7 left joints + 6 left wrench + 1 left gripper + 1 timestamp
       
       sub_state:
         ### Left arm joints (7)
@@ -43,20 +41,6 @@ features:
             h5_path: observations/arm/left/joints
             range_from: 0
             range_to: 7
-          convert_func: to_float32
-
-        ### Left arm end effector pose (6) - xyz + rpy
-        - names:
-            - left_arm_pose_x
-            - left_arm_pose_y
-            - left_arm_pose_z
-            - left_arm_pose_roll
-            - left_arm_pose_pitch
-            - left_arm_pose_yaw
-          args:
-            h5_path: observations/arm/left/pose
-            range_from: 0
-            range_to: 6
           convert_func: to_float32
 
         ### Left arm wrench (6) - force xyz + torque xyz
@@ -82,7 +66,7 @@ features:
             range_to: 1
           convert_func: to_float32
 
-        ### Timestamp as extra state (1) - 用于填充，避免维度问题
+        ### Timestamp (1) - filler to match dimensions
         - names:
             - timestamp_normalized
           args:
@@ -92,8 +76,8 @@ features:
           convert_func: to_float32
 
   action:
-    ### 单左臂 action 定义
-    ### shape: [8] = 7 left joints + 1 left gripper
+    ### Action: 14D = 7 left joints + 6 left wrench + 1 left gripper
+    ### 使用 timeline_offset: 1 从下一帧获取 action
     
     timeline_offset: 1
     
@@ -111,6 +95,20 @@ features:
           h5_path: observations/arm/left/joints
           range_from: 0
           range_to: 7
+        convert_func: to_float32
+
+      ### Left arm wrench (6)
+      - names:
+          - left_arm_wrench_fx
+          - left_arm_wrench_fy
+          - left_arm_wrench_fz
+          - left_arm_wrench_tx
+          - left_arm_wrench_ty
+          - left_arm_wrench_tz
+        args:
+          h5_path: observations/arm/left/wrench
+          range_from: 0
+          range_to: 6
         convert_func: to_float32
 
       ### Left gripper (1)
