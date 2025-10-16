@@ -233,13 +233,11 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             err_msg = (
                 f"❌ Found invalid H5 files.\n"
                 f"   📊 Total invalid files: {len(invalid_h5_files)}\n"
-                f"   🗂️  Invalid H5 files:\n"
+                f"   🗂️  Complete list of invalid H5 files:\n"
             )
-            # 只显示前10个
-            for h5_file in invalid_h5_files[:10]:
+            # 列出所有的 invalid H5 文件
+            for h5_file in invalid_h5_files:
                 err_msg += f"      - {h5_file}\n"
-            if len(invalid_h5_files) > 10:
-                err_msg += f"      ... and {len(invalid_h5_files) - 10} more files\n"
             err_msg += "   💡 H5 files may be corrupted or have incompatible format"
             raise Exception(err_msg)
 
