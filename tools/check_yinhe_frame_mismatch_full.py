@@ -386,13 +386,27 @@ def main():
     # 打印汇总
     print_summary(results)
     
-    # 保存详细结果到 JSON
-    output_file = Path(args.output)
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
+    # 只保存有严重问题的 episodes 到 JSON
+    problem_episodes = [r for r in results if r.get('has_problem', False)]
     
-    print(f"\n💾 详细结果已保存到: {output_file}")
-    print(f"📊 统计: {len([r for r in results if r.get('has_mismatch', False)])}/{len(results)} episodes 有问题")
+    output_file = Path(args.output)
+    output_data = {
+        'summary': {
+            'total_episodes': len(results),
+            'episodes_with_problems': len(problem_episodes),
+            'problem_rate': f"{len(problem_episodes)/len(results)*100:.2f}%" if results else "0%",
+            'scan_date': str(Path.cwd()),  # 可以改为实际日期
+        },
+        'problem_episodes': problem_episodes
+    }
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(output_data, f, indent=2, ensure_ascii=False)
+    
+    print(f"\n💾 严重问题 episodes 已保存到: {output_file}")
+    print(f"📊 统计: {len(problem_episodes)}/{len(results)} episodes 有严重问题 (会导致转换失败)")
+    if len(problem_episodes) < len(results):
+        print(f"✅ 已过滤掉 {len(results) - len(problem_episodes)} 个正常 episodes，只保存问题数据")
 
 
 if __name__ == '__main__':
