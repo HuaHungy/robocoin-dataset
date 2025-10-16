@@ -36,172 +36,341 @@ features:
           h5_path: camera/{frame_idx}/back_right_fisheye_color.jpg
           file_type: jpg
 
+
     state:
+      ### values by function
+      # lerobot_feature: observation.state : by _gen_lerobot_features()
+      # dtype: float32 
+      # shape: [41]
+
+      ## sub_states should be concatenated together here : by _gen_state_names(), such as:
+      # names: 
+      # - joint_pos_0
+      # - ...
+      # - joint_pos_13
+      # - ...
       sub_state:
-        ### 躯干关节 (6)
-        - names:
-            - torso_joint_0
-            - torso_joint_1
-            - torso_joint_2
-            - torso_joint_3
-            - torso_joint_4
-            - torso_joint_5
-          args:
-            h5_path: state/torso
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
+      - names: 
+        - left_arm_joint_1
+        - left_arm_joint_2
+        - left_arm_joint_3
+        - left_arm_joint_4
+        - left_arm_joint_5
+        - left_arm_joint_6
+        - left_arm_joint_7
 
-        ### 左臂关节 (7)
-        - names:
-            - left_arm_joint_0
-            - left_arm_joint_1
-            - left_arm_joint_2
-            - left_arm_joint_3
-            - left_arm_joint_4
-            - left_arm_joint_5
-            - left_arm_joint_6
-          args:
-            h5_path: state/left_arm
-            range_from: 0
-            range_to: 7
-          convert_func: to_float32
-
-        ### 左手关节 (6)
-        - names:
-            - left_hand_joint_0
-            - left_hand_joint_1
-            - left_hand_joint_2
-            - left_hand_joint_3
-            - left_hand_joint_4
-            - left_hand_joint_5
-          args:
-            h5_path: state/left_hand
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
-
-        ### 右臂关节 (7)
-        - names:
-            - right_arm_joint_0
-            - right_arm_joint_1
-            - right_arm_joint_2
-            - right_arm_joint_3
-            - right_arm_joint_4
-            - right_arm_joint_5
-            - right_arm_joint_6
-          args:
-            h5_path: state/right_arm
-            range_from: 0
-            range_to: 7
-          convert_func: to_float32
-
-        ### 右手关节 (6)
-        - names:
-            - right_hand_joint_0
-            - right_hand_joint_1
-            - right_hand_joint_2
-            - right_hand_joint_3
-            - right_hand_joint_4
-            - right_hand_joint_5
-          args:
-            h5_path: state/right_hand
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
-
-        ### 头部关节 (2)
-        - names:
-            - head_joint_0
-            - head_joint_1
-          args:
-            h5_path: state/head
-            range_from: 0
-            range_to: 2
-          convert_func: to_float32
-
-  action:
-    ### Action: 34D = 6 torso + 7 left_arm + 6 left_hand + 7 right_arm + 6 right_hand + 2 head
-    
-    sub_action:
-      ### 躯干关节 (6)
-      - names:
-          - torso_joint_0
-          - torso_joint_1
-          - torso_joint_2
-          - torso_joint_3
-          - torso_joint_4
-          - torso_joint_5
         args:
-          h5_path: action/torso
-          range_from: 0
-          range_to: 6
-        convert_func: to_float32
-
-      ### 左臂关节 (7)
-      - names:
-          - left_arm_joint_0
-          - left_arm_joint_1
-          - left_arm_joint_2
-          - left_arm_joint_3
-          - left_arm_joint_4
-          - left_arm_joint_5
-          - left_arm_joint_6
-        args:
-          h5_path: action/left_arm
+          ### keys and values by manual
+          h5_path: /state/joint/position
           range_from: 0
           range_to: 7
+        
+        ### values by manual
+        convert_func: to_float32
+      
+      - names: 
+        - right_arm_joint_1
+        - right_arm_joint_2
+        - right_arm_joint_3
+        - right_arm_joint_4
+        - right_arm_joint_5
+        - right_arm_joint_6
+        - right_arm_joint_7
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/joint/position
+          range_from: 7
+          range_to: 14
+
+        ### values by manual
         convert_func: to_float32
 
-      ### 左手关节 (6)
-      - names:
-          - left_hand_joint_0
-          - left_hand_joint_1
-          - left_hand_joint_2
-          - left_hand_joint_3
-          - left_hand_joint_4
-          - left_hand_joint_5
+      ### values by manual
+      - names: 
+        - left_end_pos_x
+        - left_end_pos_y
+        - left_end_pos_z
         args:
-          h5_path: action/left_hand
+          ### keys and values by manual
+          h5_path: /state/end/position
           range_from: 0
-          range_to: 6
+          range_to: 3
+          array_index: 0
+
+        ### values by manual
         convert_func: to_float32
 
-      ### 右臂关节 (7)
-      - names:
-          - right_arm_joint_0
-          - right_arm_joint_1
-          - right_arm_joint_2
-          - right_arm_joint_3
-          - right_arm_joint_4
-          - right_arm_joint_5
-          - right_arm_joint_6
+      - names: 
+        - left_end_quat_x
+        - left_end_quat_y
+        - left_end_quat_z
+        - left_end_quat_w
+
         args:
-          h5_path: action/right_arm
+          ### keys and values by manual
+          h5_path: /state/end/orientation
           range_from: 0
-          range_to: 7
+          range_to: 4
+          array_index: 0
+        
+        ### values by manual
         convert_func: to_float32
 
-      ### 右手关节 (6)
-      - names:
-          - right_hand_joint_0
-          - right_hand_joint_1
-          - right_hand_joint_2
-          - right_hand_joint_3
-          - right_hand_joint_4
-          - right_hand_joint_5
+
+      ### values by manual
+      - names: 
+        - right_end_pos_x
+        - right_end_pos_y
+        - right_end_pos_z
+
         args:
-          h5_path: action/right_hand
+          ### keys and values by manual
+          h5_path: /state/end/position
           range_from: 0
-          range_to: 6
+          range_to: 3
+          array_index: 1
+
+        ### values by manual
         convert_func: to_float32
 
-      ### 头部关节 (2)
-      - names:
-          - head_joint_0
-          - head_joint_1
+      ### values by manual
+      - names: 
+        - right_end_quat_x
+        - right_end_quat_y
+        - right_end_quat_z
+        - right_end_quat_w
         args:
-          h5_path: action/head
+          ### keys and values by manual
+          h5_path: /state/end/orientation
+          range_from: 0
+          range_to: 4
+          array_index: 1
+
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - waist_yaw
+        - waist_pitch
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/waist/position
           range_from: 0
           range_to: 2
+        
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - head_yaw
+        - head_pitch
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/head/position
+          range_from: 0
+          range_to: 2
+        
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - left_effector_pos
+        - right_effector_pos
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/effector/position
+          range_from: 0
+          range_to: 2
+        
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - robot_pos_x
+        - robot_pos_y
+        - robot_pos_z
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/robot/position
+          range_from: 0
+          range_to: 3
+        
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - robot_quat_x
+        - robot_quat_y
+        - robot_quat_z
+        - robot_quat_w
+
+        args:
+          ### keys and values by manual
+          h5_path: /state/robot/orientation
+          range_from: 0
+          range_to: 4
+        
+        ### values by manual
+        convert_func: to_float32
+
+
+  action:
+    ### values by function
+    # lerobot_feature: observation.action: by _gen_lerobot_features()
+    # dtype: float32 
+    # shape: [34]
+
+    ## sub_actions should be concatenated together here, : by _gen_acton_names(), such as:
+    # names:
+    # - joint_pos_0
+    # - ...
+    # - joint_pos_13
+    # - ...
+
+    ### values by manual
+    timeline_offset: 1
+    sub_action:
+
+      - names: 
+        - left_arm_joint_1
+        - left_arm_joint_2
+        - left_arm_joint_3
+        - left_arm_joint_4
+        - left_arm_joint_5
+        - left_arm_joint_6
+        - left_arm_joint_7
+
+        args:
+          ### keys and values by manual
+          h5_path: /action/joint/position
+          range_from: 0
+          range_to: 7
+        
+        ### values by manual
+        convert_func: to_float32
+      
+      - names: 
+        - right_arm_joint_1
+        - right_arm_joint_2
+        - right_arm_joint_3
+        - right_arm_joint_4
+        - right_arm_joint_5
+        - right_arm_joint_6
+        - right_arm_joint_7
+
+        args:
+          ### keys and values by manual
+          h5_path: /action/joint/position
+          range_from: 7
+          range_to: 14
+
+        ### values by manual
+        convert_func: to_float32
+
+      ### values by manual
+      - names: 
+        - left_end_pos_x
+        - left_end_pos_y
+        - left_end_pos_z
+        args:
+          ### keys and values by manual
+          h5_path: /action/end/position
+          range_from: 0
+          range_to: 3
+          array_index: 0
+
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - left_end_quat_x
+        - left_end_quat_y
+        - left_end_quat_z
+        - left_end_quat_w
+
+        args:
+          ### keys and values by manual
+          h5_path: /action/end/orientation
+          range_from: 0
+          range_to: 4
+          array_index: 0
+        
+        ### values by manual
+        convert_func: to_float32
+
+
+      ### values by manual
+      - names: 
+        - right_end_pos_x
+        - right_end_pos_y
+        - right_end_pos_z
+
+        args:
+          ### keys and values by manual
+          h5_path: /action/end/position
+          range_from: 0
+          range_to: 3
+          array_index: 1
+
+        ### values by manual
+        convert_func: to_float32
+
+      ### values by manual
+      - names: 
+        - right_end_quat_x
+        - right_end_quat_y
+        - right_end_quat_z
+        - right_end_quat_w
+        args:
+          ### keys and values by manual
+          h5_path: /action/end/orientation
+          range_from: 0
+          range_to: 4
+          array_index: 1
+
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - waist_yaw
+        - waist_pitch
+
+        args:
+          ### keys and values by manual
+          h5_path: /action/waist/position
+          range_from: 0
+          range_to: 2
+        
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - head_yaw
+        - head_pitch
+
+        args:
+          ### keys and values by manual
+          h5_path: /action/head/position
+          range_from: 0
+          range_to: 2
+        
+        ### values by manual
+        convert_func: to_float32
+
+      - names: 
+        - left_effector_pos
+        - right_effector_pos
+
+        args:
+          ### keys and values by manual
+          h5_path: /action/effector/position
+          range_from: 0
+          range_to: 2
+        
+        ### values by manual
         convert_func: to_float32
