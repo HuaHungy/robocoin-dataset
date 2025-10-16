@@ -410,6 +410,33 @@ class LerobotFormatConverter(ABC):
                     args_dict=args_dict,
                     images_buffer=images_buffer,
                 )
+                
+                # 验证图像数据
+                if not isinstance(image, np.ndarray):
+                    raise TypeError(
+                        f"❌ Invalid image data type\n"
+                        f"   🎥 Camera: {args_dict.get(CAM_NAME_KEY, 'unknown')}\n"
+                        f"   📁 Location: task={task_path.name}, ep={ep_idx}, frame={frame_idx}\n"
+                        f"   💡 Expected: numpy.ndarray, Got: {type(image).__name__}"
+                    )
+                
+                if image.size == 0:
+                    raise ValueError(
+                        f"❌ Empty image data\n"
+                        f"   🎥 Camera: {args_dict.get(CAM_NAME_KEY, 'unknown')}\n"
+                        f"   📁 Location: task={task_path.name}, ep={ep_idx}, frame={frame_idx}\n"
+                        f"   📐 Image shape: {image.shape}\n"
+                        f"   💡 Image has no pixels - source may be corrupted"
+                    )
+                
+                if len(image.shape) != 3 or image.shape[2] != 3:
+                    self.logger.warning(
+                        f"⚠️ Unexpected image shape\n"
+                        f"   🎥 Camera: {args_dict.get(CAM_NAME_KEY, 'unknown')}\n"
+                        f"   📁 Location: task={task_path.name}, ep={ep_idx}, frame={frame_idx}\n"
+                        f"   📐 Expected shape: (H, W, 3), Got: {image.shape}"
+                    )
+                
                 images[lerobot_feature] = image
             except Exception as e:  # noqa: PERF203
                 raise Exception(f"Failed to get frame images for {lerobot_feature} failed") from e
@@ -655,7 +682,45 @@ class LerobotFormatConverter(ABC):
                             ) from e
 
                     if not is_test:
-                        dataset.save_episode()
+                        try:
+                            dataset.save_episode()
+                        except OSError as e:
+                            # 特别处理图像文件损坏的情况
+                            error_msg = str(e)
+                            if "unrecognized data stream" in error_msg or "image file" in error_msg.lower():
+                                if self.logger:
+                                    self.logger.error(
+                                        f"❌ Image file corruption detected during episode encoding\n"
+                                        f"   📁 Task path: {task_path}\n"
+                                        f"   📊 Episode: {task_ep_idx} (global: {ep_idx})\n"
+                                        f"   💡 One or more image files are corrupted or invalid\n"
+                                        f"   🔍 Check temporary image files in output directory\n"
+                                        f"   Original error: {error_msg}"
+                                    )
+                                raise RuntimeError(
+                                    f"❌ Corrupted image file(s) in episode {task_ep_idx} (global: {ep_idx})\n"
+                                    f"   📁 Task: {task_path}\n"
+                                    f"   💡 Possible causes:\n"
+                                    f"      1. Source image/video files are corrupted\n"
+                                    f"      2. Disk I/O error during frame extraction\n"
+                                    f"      3. Insufficient disk space\n"
+                                    f"   🔧 Suggested actions:\n"
+                                    f"      1. Verify source data integrity\n"
+                                    f"      2. Check disk space and permissions\n"
+                                    f"      3. Re-run conversion for this episode"
+                                ) from e
+                            raise
+                        except Exception as e:
+                            if self.logger:
+                                self.logger.error(
+                                    f"Failed to save episode: task_path={task_path}, "
+                                    f"episode={task_ep_idx}, global_ep_idx={ep_idx}. "
+                                    f"Error: {e}"
+                                )
+                            raise RuntimeError(
+                                f"Failed to save episode {task_ep_idx} (global episode {ep_idx}) "
+                                f"at task_path={task_path}"
+                            ) from e
                     yield (task, task_ep_idx, ep_idx)
                     ep_idx += 1
                 except Exception as e:  # noqa: PERF203
