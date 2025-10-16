@@ -1,0 +1,119 @@
+### 软通天擎 GT02 数据集配置 - 新格式
+### H5 结构：
+### - /state/robot/positions (346, 18) - 18个关节
+### - /state/gripper/positions (346, 2) - 2个夹爪
+### - /action/* 全是 nan，使用 timeline_offset
+
+fps: 30
+
+features:
+  observation:
+    images:
+      - cam_name: head_color
+        args:
+          h5_path: camera/{frame_idx}/head_color.jpg
+          file_type: jpg
+
+      - cam_name: head_depth
+        args:
+          h5_path: camera/{frame_idx}/head_depth.png
+          file_type: png
+
+      - cam_name: hand_left_color
+        args:
+          h5_path: camera/{frame_idx}/hand_left_color.jpg
+          file_type: jpg
+
+      - cam_name: hand_left_depth
+        args:
+          h5_path: camera/{frame_idx}/hand_left_depth.png
+          file_type: png
+
+      - cam_name: hand_right_color
+        args:
+          h5_path: camera/{frame_idx}/hand_right_color.jpg
+          file_type: jpg
+
+      - cam_name: hand_right_depth
+        args:
+          h5_path: camera/{frame_idx}/hand_right_depth.png
+          file_type: png
+
+    state:
+      sub_state:
+        # 机器人关节 18维 - /state/robot/positions
+        - names: 
+            - robot_joint_0
+            - robot_joint_1
+            - robot_joint_2
+            - robot_joint_3
+            - robot_joint_4
+            - robot_joint_5
+            - robot_joint_6
+            - robot_joint_7
+            - robot_joint_8
+            - robot_joint_9
+            - robot_joint_10
+            - robot_joint_11
+            - robot_joint_12
+            - robot_joint_13
+            - robot_joint_14
+            - robot_joint_15
+            - robot_joint_16
+            - robot_joint_17
+          args:
+            h5_path: /state/robot/positions
+            range_from: 0
+            range_to: 18
+          convert_func: to_float32
+        
+        # 夹爪位置 2维 - /state/gripper/positions
+        - names:
+            - gripper_left_position
+            - gripper_right_position
+          args:
+            h5_path: /state/gripper/positions
+            range_from: 0
+            range_to: 2
+          convert_func: to_float32
+
+  action:
+    # Action 全是 nan，使用 timeline_offset
+    timeline_offset: 1
+    
+    sub_action:
+      # 机器人关节 18维
+      - names: 
+          - robot_joint_0
+          - robot_joint_1
+          - robot_joint_2
+          - robot_joint_3
+          - robot_joint_4
+          - robot_joint_5
+          - robot_joint_6
+          - robot_joint_7
+          - robot_joint_8
+          - robot_joint_9
+          - robot_joint_10
+          - robot_joint_11
+          - robot_joint_12
+          - robot_joint_13
+          - robot_joint_14
+          - robot_joint_15
+          - robot_joint_16
+          - robot_joint_17
+        args:
+          h5_path: /state/robot/positions
+          range_from: 0
+          range_to: 18
+        convert_func: to_float32
+      
+      # 夹爪位置 2维
+      - names:
+          - gripper_left_position
+          - gripper_right_position
+        args:
+          h5_path: /state/gripper/positions
+          range_from: 0
+          range_to: 2
+        convert_func: to_float32
