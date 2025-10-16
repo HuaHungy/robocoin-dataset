@@ -574,7 +574,34 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                 f"   💡 Check if frame index is within valid range"
             ) from e
 
-        # Validate slicing range
+        # Check if frame_data is a scalar (0-dimensional)
+        if not isinstance(frame_data, np.ndarray):
+            frame_data = np.array(frame_data)
+        
+        if frame_data.ndim == 0:
+            # Scalar value - cannot slice
+            if from_idx == 0 and to_idx == 1:
+                # Special case: extracting a single scalar value
+                return np.array([frame_data.item()])
+            
+            raise ValueError(
+                f"❌ Cannot slice scalar data.\n"
+                f"   🔢 Requested range: [{from_idx}:{to_idx}]\n"
+                f"   📐 Data shape: {frame_data.shape} (scalar)\n"
+                f"   📊 Data value: {frame_data}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   🔍 H5 path: {h5_path}\n"
+                "   💡 Possible causes:\n"
+                "      1. H5 data is stored as scalar instead of array\n"
+                "      2. Wrong H5 path in config (pointing to wrong dataset)\n"
+                "      3. Config expects array but data is single value\n"
+                "   🔧 Solutions:\n"
+                "      1. If data is single value, use range_from: 0, range_to: 1\n"
+                "      2. Check H5 file structure to verify data dimensions\n"
+                "      3. Update config to match actual H5 data structure"
+            )
+        
+        # Validate slicing range for array data
         try:
             data_len = len(frame_data)
         except Exception:
@@ -586,6 +613,7 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                     f"❌ Invalid slicing range for sub_states.\n"
                     f"   🔢 Requested range: [{from_idx}:{to_idx}]\n"
                     f"   📐 Data length: {data_len}\n"
+                    f"   📐 Data shape: {frame_data.shape}\n"
                     f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
                     f"   🔍 H5 path: {h5_path}\n"
                     f"   💡 Valid range should be: 0 <= range_from < range_to <= {data_len}"
