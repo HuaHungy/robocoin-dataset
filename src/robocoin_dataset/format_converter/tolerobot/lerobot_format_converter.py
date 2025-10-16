@@ -756,6 +756,7 @@ class LerobotFormatConverterFactory:
         converter_log_dir: Path | None = None,
     ) -> LerobotFormatConverter:
         # 确保 dataset_path 是 Path 对象，并处理可能的字符串空格问题
+        original_path = dataset_path
         if isinstance(dataset_path, str):
             dataset_path = Path(dataset_path.strip())
         elif isinstance(dataset_path, Path):
@@ -763,12 +764,57 @@ class LerobotFormatConverterFactory:
             dataset_path = Path(str(dataset_path).strip())
         
         if not dataset_path.exists():
-            raise FileNotFoundError(
-                f"Dataset path {dataset_path} does not exist.\n"
-                f"  Path repr: {repr(str(dataset_path))}\n"
-                f"  Path length: {len(str(dataset_path))}\n"
-                f"  Please check for trailing spaces or special characters."
+            # 尝试额外的诊断信息
+            parent = dataset_path.parent
+            parent_exists = parent.exists() if parent else False
+            
+            error_msg = (
+                f"❌ Dataset path does not exist.\n"
+                f"   📁 Requested path: {dataset_path}\n"
+                f"   📝 Original input: {repr(original_path)}\n"
+                f"   📏 Path length: {len(str(dataset_path))}\n"
+                f"   🔤 Path bytes: {str(dataset_path).encode('utf-8')}\n"
             )
+            
+            if parent_exists:
+                try:
+                    siblings = list(parent.iterdir())
+                    sibling_names = [s.name for s in siblings]
+                    target_name = dataset_path.name
+                    
+                    error_msg += (
+                        f"   📂 Parent directory exists: {parent}\n"
+                        f"   🎯 Looking for: {repr(target_name)}\n"
+                        f"   📋 Available in parent ({len(sibling_names)} items):\n"
+                    )
+                    
+                    # 显示前10个
+                    for name in sibling_names[:10]:
+                        match_indicator = "✅" if name == target_name else "  "
+                        error_msg += f"      {match_indicator} {repr(name)}\n"
+                    
+                    if len(sibling_names) > 10:
+                        error_msg += f"      ... and {len(sibling_names) - 10} more\n"
+                    
+                    # 尝试找相似的名字
+                    similar = [n for n in sibling_names if target_name in n or n in target_name]
+                    if similar and target_name not in sibling_names:
+                        error_msg += f"   🔍 Similar names found: {similar}\n"
+                        
+                except Exception as e:
+                    error_msg += f"   ⚠️ Could not list parent directory: {e}\n"
+            else:
+                error_msg += f"   ❌ Parent directory does not exist: {parent}\n"
+            
+            error_msg += (
+                "   💡 Possible causes:\n"
+                "      1. Path contains trailing/leading spaces\n"
+                "      2. Path contains invisible Unicode characters\n"
+                "      3. Database path is outdated or incorrect\n"
+                "      4. File was moved or deleted\n"
+            )
+            
+            raise FileNotFoundError(error_msg)
 
         # Create logger from converter_log_dir if provided and logger is None
         if logger is None and converter_log_dir is not None:
