@@ -172,6 +172,8 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         with h5py.File(h5_file, 'r') as f:
             if 'action' in f:
                 h5_frames = f['action'].shape[0]
+            elif 'observations/qpos' in f:
+                h5_frames = f['observations/qpos'].shape[0]
             elif 'qpos' in f:
                 h5_frames = f['qpos'].shape[0]
             else:
@@ -204,13 +206,19 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         # 4. 记录帧数差异（用于调试）
         if self.logger and len(frame_counts) > 1:
             max_frames = max(count for _, count in frame_counts)
-            if max_frames - min_frames > 5:  # 差异超过5帧时记录
+            if max_frames - min_frames > 1:  # 差异超过1帧时记录（降低阈值以便及时发现问题）
                 diff_info = "\n".join([f"      - {name}: {count} frames" for name, count in frame_counts])
-                self.logger.debug(
-                    f"📊 Frame count mismatch in episode {ep_dir.name}:\n"
+                self.logger.warning(
+                    f"⚠️ Frame count mismatch in episode {ep_dir.name}:\n"
                     f"{diff_info}\n"
-                    f"   ✅ Using minimum: {min_frames} frames"
+                    f"   ✅ Using minimum: {min_frames} frames to avoid index errors"
                 )
+        
+        if self.logger:
+            self.logger.debug(
+                f"📊 Episode {ep_idx} ({ep_dir.name}): {min_frames} frames "
+                f"(from {len(frame_counts)} data sources)"
+            )
         
         return min_frames
 
@@ -355,10 +363,30 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         
         cam_name = args_dict.get(CAM_NAME_KEY)
         if cam_name not in images_buffer:
-            raise KeyError(f"Camera {cam_name} not found in episode {ep_idx}")
+            available_cams = list(images_buffer.keys())
+            raise KeyError(
+                f"❌ Camera not found in images buffer.\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   🎥 Requested camera: {cam_name}\n"
+                f"   📋 Available cameras: {available_cams}\n"
+                f"   💡 Check if camera name in config matches video files"
+            )
         
         if frame_idx >= len(images_buffer[cam_name]):
-            raise IndexError(f"Frame index {frame_idx} out of range for camera {cam_name}")
+            # 获取所有相机的帧数用于诊断
+            frame_counts = {cam: len(frames) for cam, frames in images_buffer.items()}
+            raise IndexError(
+                f"❌ Frame index out of range for camera video.\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   🎥 Camera: {cam_name}\n"
+                f"   🎯 Requested frame: {frame_idx}\n"
+                f"   📐 Available frames: 0 to {len(images_buffer[cam_name])-1} ({len(images_buffer[cam_name])} total)\n"
+                f"   📊 All camera frame counts: {frame_counts}\n"
+                f"   💡 Possible causes:\n"
+                f"      1. Video file is corrupted or incomplete\n"
+                f"      2. Different cameras have different frame counts (inconsistent videos)\n"
+                f"      3. timeline_offset in action requires accessing frame beyond video length"
+            )
         
         return images_buffer[cam_name][frame_idx]
 
