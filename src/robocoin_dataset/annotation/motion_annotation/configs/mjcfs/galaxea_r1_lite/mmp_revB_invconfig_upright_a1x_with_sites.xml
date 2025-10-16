@@ -116,7 +116,7 @@
                         <joint name="left_gripper_finger_joint2" pos="0 0 0" axis="0 1 0" type="slide" range="-0.05 0" actuatorfrcrange="-100 100" />
                         <geom type="mesh" rgba="0.807843 0.843137 0.905882 1" mesh="left_gripper_finger_link2" />
                       </body>
-                    <site name="left_eef_site" pos="0 0 0" size="0.05" rgba="0 1 0 0.5" type="sphere" /><site name="left_eef_sitexaxis" pos="0.025 0 0" size="0.025 0.0025 0.0025" rgba="0 1 0 0.5" type="box" /><site name="left_eef_siteyaxis" pos="0 0.05 0" size="0.0025 0.05 0.0025" rgba="0 1 0 0.5" type="box" /><site name="left_eef_sitezaxis" pos="0 0 0.1" size="0.0025 0.0025 0.1" rgba="0 1 0 0.5" type="box" /></body>
+                    </body>
                   </body>
                 </body>
               </body>
@@ -157,7 +157,7 @@
                         <joint name="right_gripper_finger_joint2" pos="0 0 0" axis="0 1 0" type="slide" range="-0.05 0" actuatorfrcrange="-100 100" />
                         <geom type="mesh" rgba="0.807843 0.843137 0.905882 1" mesh="right_gripper_finger_link2" />
                       </body>
-                    <site name="right_eef_site" pos="0 0 0" size="0.05" rgba="1 0 0 0.5" type="sphere" /><site name="right_eef_sitexaxis" pos="0.025 0 0" size="0.025 0.0025 0.0025" rgba="1 0 0 0.5" type="box" /><site name="right_eef_siteyaxis" pos="0 0.05 0" size="0.0025 0.05 0.0025" rgba="1 0 0 0.5" type="box" /><site name="right_eef_sitezaxis" pos="0 0 0.1" size="0.0025 0.0025 0.1" rgba="1 0 0 0.5" type="box" /></body>
+                    </body>
                   </body>
                 </body>
               </body>

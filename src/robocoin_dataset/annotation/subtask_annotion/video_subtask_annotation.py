@@ -41,6 +41,7 @@ from robocoin_dataset.database.models import (
 )
 
 FRAME_SAMPLE_NUM = 10
+MAX_SUBTASK_NUM = 5
 
 
 def compute_sha256(filepath: str | Path) -> str:
@@ -2375,7 +2376,15 @@ class VideoSubtaskAnnotation:
                 [None] * len(df), dtype="object"
             )  # 显式初始化为 object
             for i in range(len(episode_st_anno_indices_list)):
-                df.at[i, "subtask_indices"] = episode_st_anno_indices_list[i]
+                frame_anno_indices = episode_st_anno_indices_list[i]
+                if len(frame_anno_indices) > MAX_SUBTASK_NUM:
+                    frame_anno_indices = frame_anno_indices[:MAX_SUBTASK_NUM]
+                elif len(frame_anno_indices) < MAX_SUBTASK_NUM:
+                    frame_anno_indices.extend(
+                        [optimized_subtask_annotations_dict["null"]]
+                        * (MAX_SUBTASK_NUM - len(frame_anno_indices))
+                    )
+                df.at[i, "subtask_indices"] = frame_anno_indices
 
             df.to_parquet(parquet_file_path)
 

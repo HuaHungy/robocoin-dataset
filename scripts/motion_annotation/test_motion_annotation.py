@@ -4,9 +4,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from robocoin_dataset.annotation.motion_annotation.compute_lerobot_eef import LerobotFkSolver
-from robocoin_dataset.annotation.motion_annotation.configs.aloha_config import (
-    AlohaConfig,
-    AlohaConfigWithoutEEF,
+from robocoin_dataset.annotation.motion_annotation.configs.agilex_cobot_magic import (
+    AgilexCobotMagicConfig,
+    AgilexCobotMagicWithoutEEFConfig,
 )
 from robocoin_dataset.annotation.motion_annotation.configs.realman_rmc_aidal import (
     RealmanRmcAidalConfig,
@@ -74,9 +74,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    config = AlohaConfig()
-    config = AlohaConfigWithoutEEF()
     config = RealmanRmcAidalConfig()
+    config = AgilexCobotMagicConfig()
+    config = AgilexCobotMagicWithoutEEFConfig()
     config.view_frequency = args.frequency
 
     solver = LerobotFkSolver(config, args.repo_path)

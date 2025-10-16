@@ -9,15 +9,13 @@ from .mujoco_fk import MujocoFK
 
 
 class LerobotFkSolverConfig:
-    left_arm_state_mjcf_joints_dict: dict[str, str] | None = None
-    right_arm_state_mjcf_joints_dict: dict[str, str] | None = None
+    state_lejoint_mjcfjoints_dict: dict[str, str] | None = None
     left_arm_state_eefpos_list: list[str] | None = None
     right_arm_state_eefpos_list: list[str] | None = None
     left_arm_state_eefeuler_list: list[str] | None = None
     right_arm_state_eefeuler_list: list[str] | None = None
 
-    left_arm_action_mjcf_joints_dict: dict[str, str] | None = None
-    right_arm_action_mjcf_joints_dict: dict[str, str] | None = None
+    action_lejoint_mjcfjoints_dict: dict[str, str] | None = None
     left_arm_action_eefpos_list: list[str] | None = None
     right_arm_action_eefpos_list: list[str] | None = None
     left_arm_action_eefeuler_list: list[str] | None = None
@@ -36,15 +34,13 @@ class LerobotFkSolver:
         self.mjcf_path = Path(config.mjcf_path).expanduser().resolve()
         self.repo_path = Path(repo_path).expanduser().resolve()
 
-        self.left_arm_state_mjcf_joints_dict = config.left_arm_state_mjcf_joints_dict
-        self.right_arm_state_mjcf_joints_dict = config.right_arm_state_mjcf_joints_dict
+        self.state_lejoint_mjcfjoints_dict = config.state_lejoint_mjcfjoints_dict
         self.left_arm_state_eefpos_list = config.left_arm_state_eefpos_list
         self.right_arm_state_eefpos_list = config.right_arm_state_eefpos_list
         self.left_arm_state_eefeuler_list = config.left_arm_state_eefeuler_list
         self.right_arm_state_eefeuler_list = config.right_arm_state_eefeuler_list
 
-        self.left_arm_action_mjcf_joints_dict = config.left_arm_action_mjcf_joints_dict
-        self.right_arm_action_mjcf_joints_dict = config.right_arm_action_mjcf_joints_dict
+        self.action_lejoint_mjcfjoints_dict = config.action_lejoint_mjcfjoints_dict
         self.left_arm_action_eefpos_list = config.left_arm_action_eefpos_list
         self.right_arm_action_eefpos_list = config.right_arm_action_eefpos_list
         self.left_arm_action_eefeuler_list = config.left_arm_action_eefeuler_list
@@ -104,10 +100,7 @@ class LerobotFkSolver:
 
         mjcf_joints = self.mujoco_fk_solver.get_joint_names()
 
-        state_mjcf_joints_dict = (
-            self.left_arm_state_mjcf_joints_dict | self.right_arm_state_mjcf_joints_dict
-        )
-        for state_name, mjcf_joint_name in state_mjcf_joints_dict.items():
+        for state_name, mjcf_joint_name in self.state_lejoint_mjcfjoints_dict.items():
             if mjcf_joint_name not in mjcf_joints:
                 raise Exception(
                     f"State {state_name} has mjcf joint {mjcf_joint_name} which is not in the mjcf file."
@@ -116,10 +109,7 @@ class LerobotFkSolver:
             if state_name not in state_names:
                 raise Exception(f"State {state_name} not found in info.json")
 
-        action_mjcf_joints_dict = (
-            self.left_arm_action_mjcf_joints_dict | self.right_arm_action_mjcf_joints_dict
-        )
-        for action_name, mjcf_joint_name in action_mjcf_joints_dict.items():
+        for action_name, mjcf_joint_name in self.action_lejoint_mjcfjoints_dict.items():
             if mjcf_joint_name not in mjcf_joints:
                 raise Exception(
                     f"Action {action_name} has mjcf joint {mjcf_joint_name} which is not in the mjcf file."
@@ -136,29 +126,17 @@ class LerobotFkSolver:
             state_names: list[str] = json_data["features"]["observation.state"]["names"]
             action_names: list[str] = json_data["features"]["action"]["names"]
 
-        self.left_arm_stateid_mjcf_jointid_dict = {}
-        for state_name, mjcf_joint_name in self.left_arm_state_mjcf_joints_dict.items():
+        self.state_lejointid_mjcfjointid_dict = {}
+        for state_name, mjcf_joint_name in self.state_lejoint_mjcfjoints_dict.items():
             state_id = state_names.index(state_name)
             mjcf_joint_id = self.mujoco_fk_solver.get_joint_id(mjcf_joint_name)
-            self.left_arm_stateid_mjcf_jointid_dict[state_id] = mjcf_joint_id
+            self.state_lejointid_mjcfjointid_dict[state_id] = mjcf_joint_id
 
-        self.right_arm_stateid_mjcf_jointid_dict = {}
-        for state_name, mjcf_joint_name in self.right_arm_state_mjcf_joints_dict.items():
-            state_id = state_names.index(state_name)
-            mjcf_joint_id = self.mujoco_fk_solver.get_joint_id(mjcf_joint_name)
-            self.right_arm_stateid_mjcf_jointid_dict[state_id] = mjcf_joint_id
-
-        self.left_arm_actionid_mjcf_jointid_dict = {}
-        for action_name, mjcf_joint_name in self.left_arm_action_mjcf_joints_dict.items():
+        self.action_lejointid_mjcfjointid_dict = {}
+        for action_name, mjcf_joint_name in self.action_lejoint_mjcfjoints_dict.items():
             action_id = action_names.index(action_name)
             mjcf_joint_id = self.mujoco_fk_solver.get_joint_id(mjcf_joint_name)
-            self.left_arm_actionid_mjcf_jointid_dict[action_id] = mjcf_joint_id
-
-        self.right_arm_actionid_mjcf_jointid_dict = {}
-        for action_name, mjcf_joint_name in self.right_arm_action_mjcf_joints_dict.items():
-            action_id = action_names.index(action_name)
-            mjcf_joint_id = self.mujoco_fk_solver.get_joint_id(mjcf_joint_name)
-            self.right_arm_actionid_mjcf_jointid_dict[action_id] = mjcf_joint_id
+            self.action_lejointid_mjcfjointid_dict[action_id] = mjcf_joint_id
 
         self.left_arm_state_eefposid_list = [
             state_names.index(name) for name in self.left_arm_state_eefpos_list
@@ -259,21 +237,19 @@ class LerobotFkSolver:
         df = pd.read_parquet(parquet_file_path)
 
         if is_state:
-            left_arm_joint_indices_dict = self.left_arm_stateid_mjcf_jointid_dict
-            right_arm_joint_indices_dict = self.right_arm_stateid_mjcf_jointid_dict
+            lejointid_mjcfjointid_dict = self.state_lejointid_mjcfjointid_dict
             parquet_data = df["observation.state"]
         else:
-            left_arm_joint_indices_dict = self.left_arm_actionid_mjcf_jointid_dict
-            right_arm_joint_indices_dict = self.right_arm_actionid_mjcf_jointid_dict
+            lejointid_mjcfjointid_dict = self.action_lejointid_mjcfjointid_dict
             parquet_data = df["action"]
 
-        joint_indices_dict = left_arm_joint_indices_dict | right_arm_joint_indices_dict
+        lejointid_mjcfjointid_dict
 
         fk_results = []
         for frame_data in parquet_data:
             joint_qpos: dict[int, float] = {}
-            for joint_id, mjcf_joint_id in joint_indices_dict.items():
-                joint_qpos[mjcf_joint_id] = frame_data[joint_id]
+            for lejoint_id, mjcfjoint_id in lejointid_mjcfjointid_dict.items():
+                joint_qpos[mjcfjoint_id] = frame_data[lejoint_id]
             frame_result = self.mujoco_fk_solver.fk(joint_qpos)
             fk_results.append(frame_result)
             self._sync_viewer()
