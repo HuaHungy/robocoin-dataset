@@ -471,7 +471,29 @@ class LerobotFormatConverter(ABC):
 
             sub_states_datas.append(sub_states_data)
 
-        return {lerobot_feature: np.concatenate(sub_states_datas)}
+        # 检查所有 sub_states 的维度是否一致
+        try:
+            return {lerobot_feature: np.concatenate(sub_states_datas)}
+        except ValueError as e:
+            # 提供详细的维度信息
+            shapes_info = []
+            for idx, data in enumerate(sub_states_datas):
+                state_config = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][SUB_STATE_KEY][idx]
+                names = state_config.get('names', ['unknown'])
+                args = state_config.get(ARGS_KEY, {})
+                shapes_info.append(f"   [{idx}] {names[0]}: shape={data.shape}, ndim={data.ndim}, dtype={data.dtype}, args={args}")
+            
+            shapes_str = "\n".join(shapes_info)
+            raise ValueError(
+                f"❌ Cannot concatenate sub_states due to dimension mismatch.\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📊 Sub-states dimensions:\n"
+                f"{shapes_str}\n"
+                f"   ❌ Original error: {str(e)}\n"
+                f"   💡 All sub_states must have the same number of dimensions (ndim)\n"
+                f"   💡 Most likely cause: One sub_state returns 2D array instead of 1D\n"
+                f"   💡 Solution: Ensure all _get_frame_sub_states() return 1D arrays"
+            ) from e
 
     def _get_frame_actions(
         self, task_path: Path, ep_idx: int, frame_idx: int, actions_buffer: any = None
@@ -501,7 +523,29 @@ class LerobotFormatConverter(ABC):
                         ).astype(np.float32)
             sub_actions_datas.append(sub_actions_data)
 
-        return {lerobot_feature: np.concatenate(sub_actions_datas)}
+        # 检查所有 sub_actions 的维度是否一致
+        try:
+            return {lerobot_feature: np.concatenate(sub_actions_datas)}
+        except ValueError as e:
+            # 提供详细的维度信息
+            shapes_info = []
+            for idx, data in enumerate(sub_actions_datas):
+                action_config = self.converter_config[FEATURES_KEY][ACTION_KEY][SUB_ACTION_KEY][idx]
+                names = action_config.get('names', ['unknown'])
+                args = action_config.get(ARGS_KEY, {})
+                shapes_info.append(f"   [{idx}] {names[0]}: shape={data.shape}, ndim={data.ndim}, dtype={data.dtype}, args={args}")
+            
+            shapes_str = "\n".join(shapes_info)
+            raise ValueError(
+                f"❌ Cannot concatenate sub_actions due to dimension mismatch.\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
+                f"   📊 Sub-actions dimensions:\n"
+                f"{shapes_str}\n"
+                f"   ❌ Original error: {str(e)}\n"
+                f"   💡 All sub_actions must have the same number of dimensions (ndim)\n"
+                f"   💡 Most likely cause: One sub_action returns 2D array instead of 1D\n"
+                f"   💡 Solution: Ensure all _get_frame_sub_actions() return 1D arrays"
+            ) from e
 
     def _get_lerobot_datas(
         self,
