@@ -257,35 +257,50 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         ep_dir = self._get_episode_dir(task_path, ep_idx)
         
         images = {}
-        camera_dir = ep_dir / "camera" / "color"
         
-        if camera_dir.exists():
-            # 遍历配置中的所有相机
-            image_configs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]
-            for image_config in image_configs:
-                cam_name = image_config.get(CAM_NAME_KEY)
-                camera_folder = image_config.get(ARGS_KEY, {}).get('camera_folder')
-                
-                if not camera_folder:
-                    # 如果没有指定camera_folder，尝试使用cam_name的前缀匹配
-                    for cam_folder in camera_dir.iterdir():
+        # 遍历配置中的所有相机
+        image_configs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]
+        for image_config in image_configs:
+            cam_name = image_config.get(CAM_NAME_KEY)
+            args = image_config.get(ARGS_KEY, {})
+            camera_folder = args.get('camera_folder')
+            is_depth = args.get('is_depth', False)
+            
+            # 确定相机目录类型（color 或 depth）
+            if is_depth:
+                camera_base_dir = ep_dir / "camera" / "depth"
+            else:
+                camera_base_dir = ep_dir / "camera" / "color"
+            
+            if not camera_folder:
+                # 如果没有指定camera_folder，尝试使用cam_name的前缀匹配
+                if camera_base_dir.exists():
+                    for cam_folder in camera_base_dir.iterdir():
                         if cam_folder.is_dir() and cam_name and (cam_name in cam_folder.name or cam_folder.name in cam_name):
                             camera_folder = cam_folder.name
                             break
-                
-                if camera_folder:
-                    cam_folder_path = camera_dir / camera_folder
-                    if cam_folder_path.exists():
-                        image_files = sorted(cam_folder_path.glob("*.jpg")) + sorted(cam_folder_path.glob("*.png"))
-                        
-                        frames = []
-                        for img_file in image_files:
-                            img = Image.open(img_file)
-                            img_rgb = np.array(img.convert("RGB"))
-                            frames.append(img_rgb)
-                        
-                        if frames:
-                            images[cam_name] = frames
+            
+            if camera_folder:
+                cam_folder_path = camera_base_dir / camera_folder
+                if cam_folder_path.exists():
+                    image_files = sorted(cam_folder_path.glob("*.jpg")) + sorted(cam_folder_path.glob("*.png"))
+                    
+                    frames = []
+                    for img_file in image_files:
+                        img = Image.open(img_file)
+                        if is_depth:
+                            # 深度图保持单通道或转换为适当格式
+                            img_array = np.array(img)
+                            # 如果是单通道，扩展为3通道以兼容LeRobot格式
+                            if img_array.ndim == 2:
+                                img_array = np.stack([img_array] * 3, axis=-1)
+                        else:
+                            # RGB图像
+                            img_array = np.array(img.convert("RGB"))
+                        frames.append(img_array)
+                    
+                    if frames:
+                        images[cam_name] = frames
         
         return images
 
@@ -317,19 +332,60 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         
         return data
 
+    def _load_imu_data(self, ep_dir: Path, imu_side: str) -> list[dict]:
+        """加载IMU数据"""
+        imu_dir = ep_dir / "imu" / "9axis" / imu_side
+        if not imu_dir.exists():
+            return []
+        
+        json_files = sorted(imu_dir.glob("*.json"))
+        data = []
+        for json_file in json_files:
+            with open(json_file) as f:
+                data.append(json.load(f))
+        
+        return data
+
+    def _load_localization_data(self, ep_dir: Path, localization_side: str) -> list[dict]:
+        """加载定位/位姿数据"""
+        localization_dir = ep_dir / "localization" / "pose" / localization_side
+        if not localization_dir.exists():
+            return []
+        
+        json_files = sorted(localization_dir.glob("*.json"))
+        data = []
+        for json_file in json_files:
+            with open(json_file) as f:
+                data.append(json.load(f))
+        
+        return data
+
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> dict:
         """准备episode的状态缓冲区"""
         ep_dir = self._get_episode_dir(task_path, ep_idx)
         
-        # 加载各种关节数据
-        return {
+        # 加载各种数据
+        buffer = {
+            # 关节数据（pika, aloha等）
             'puppet_left': self._load_joint_state_data(ep_dir, 'puppetLeft'),
             'puppet_right': self._load_joint_state_data(ep_dir, 'puppetRight'),
             'master_left': self._load_joint_state_data(ep_dir, 'masterLeft'),
             'master_right': self._load_joint_state_data(ep_dir, 'masterRight'),
-            'gripper_left': self._load_gripper_data(ep_dir, 'pika_l'),
-            'gripper_right': self._load_gripper_data(ep_dir, 'pika_r'),
+            
+            # 夹爪数据
+            'gripper_pika_l': self._load_gripper_data(ep_dir, 'pika_l'),
+            'gripper_pika_r': self._load_gripper_data(ep_dir, 'pika_r'),
+            
+            # IMU数据（mayi）
+            'imu_pika_l': self._load_imu_data(ep_dir, 'pika_l'),
+            'imu_pika_r': self._load_imu_data(ep_dir, 'pika_r'),
+            
+            # 定位数据（mayi）
+            'localization_pika_l': self._load_localization_data(ep_dir, 'pika_l'),
+            'localization_pika_r': self._load_localization_data(ep_dir, 'pika_r'),
         }
+        
+        return buffer
         
 
     def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> dict:
@@ -400,34 +456,94 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         if sub_states_buffer is None:
             sub_states_buffer = self._prepare_episode_states_buffer(task_path, ep_idx)
         
-        joint_type = args_dict.get('joint_type', 'puppet_left')
-        field_name = args_dict.get('field_name', 'position')
+        data_type = args_dict.get('data_type', 'joint')
         
-        if joint_type not in sub_states_buffer:
-            # 返回零值
-            range_from = args_dict.get('range_from', 0)
-            range_to = args_dict.get('range_to', 7)
-            return np.zeros(range_to - range_from, dtype=np.float32)
+        # 处理不同的数据类型
+        if data_type == 'gripper':
+            # 夹爪数据: {"angle": 1.72, "distance": 0}
+            gripper_side = args_dict.get('gripper_side', 'pika_l')
+            field_name = args_dict.get('field_name', 'angle')
+            
+            buffer_key = f'gripper_{gripper_side}'
+            if buffer_key not in sub_states_buffer or not sub_states_buffer[buffer_key]:
+                return np.zeros(1, dtype=np.float32)
+            
+            data = sub_states_buffer[buffer_key]
+            if frame_idx >= len(data):
+                return np.zeros(1, dtype=np.float32)
+            
+            frame_data = data[frame_idx]
+            if field_name in frame_data:
+                return np.array([frame_data[field_name]], dtype=np.float32)
+            return np.zeros(1, dtype=np.float32)
         
-        data = sub_states_buffer[joint_type]
-        if frame_idx >= len(data):
-            range_from = args_dict.get('range_from', 0)
-            range_to = args_dict.get('range_to', 7)
-            return np.zeros(range_to - range_from, dtype=np.float32)
+        elif data_type == 'imu':
+            # IMU数据: {"angular_velocity": {"x": -0.313, "y": -0.076, "z": -0.313}, ...}
+            imu_side = args_dict.get('imu_side', 'pika_l')
+            field_name = args_dict.get('field_name', 'angular_velocity')
+            subfields = args_dict.get('subfields', ['x', 'y', 'z'])
+            
+            buffer_key = f'imu_{imu_side}'
+            if buffer_key not in sub_states_buffer or not sub_states_buffer[buffer_key]:
+                return np.zeros(len(subfields), dtype=np.float32)
+            
+            data = sub_states_buffer[buffer_key]
+            if frame_idx >= len(data):
+                return np.zeros(len(subfields), dtype=np.float32)
+            
+            frame_data = data[frame_idx]
+            if field_name in frame_data and isinstance(frame_data[field_name], dict):
+                values = [frame_data[field_name].get(sf, 0.0) for sf in subfields]
+                return np.array(values, dtype=np.float32)
+            return np.zeros(len(subfields), dtype=np.float32)
         
-        frame_data = data[frame_idx]
-        if field_name in frame_data:
-            values = frame_data[field_name]
-            if isinstance(values, list):
+        elif data_type == 'localization':
+            # 定位数据: {"x": -0.043, "y": 0.087, "z": -0.176, "roll": 0.049, "pitch": 0.913, "yaw": 0.080}
+            localization_side = args_dict.get('localization_side', 'pika_l')
+            field_names = args_dict.get('field_names', ['x', 'y', 'z', 'roll', 'pitch', 'yaw'])
+            
+            buffer_key = f'localization_{localization_side}'
+            if buffer_key not in sub_states_buffer or not sub_states_buffer[buffer_key]:
+                return np.zeros(len(field_names), dtype=np.float32)
+            
+            data = sub_states_buffer[buffer_key]
+            if frame_idx >= len(data):
+                return np.zeros(len(field_names), dtype=np.float32)
+            
+            frame_data = data[frame_idx]
+            values = [frame_data.get(fn, 0.0) for fn in field_names]
+            return np.array(values, dtype=np.float32)
+        
+        else:
+            # 默认：关节数据 (joint_type, field_name, range)
+            joint_type = args_dict.get('joint_type', 'puppet_left')
+            field_name = args_dict.get('field_name', 'position')
+            
+            if joint_type not in sub_states_buffer:
+                # 返回零值
                 range_from = args_dict.get('range_from', 0)
-                range_to = args_dict.get('range_to', len(values))
-                return np.array(values[range_from:range_to], dtype=np.float32)
-            return np.array([values], dtype=np.float32)
-        
-        # 默认返回零值
-        range_from = args_dict.get('range_from', 0)
-        range_to = args_dict.get('range_to', 7)
-        return np.zeros(range_to - range_from, dtype=np.float32)
+                range_to = args_dict.get('range_to', 7)
+                return np.zeros(range_to - range_from, dtype=np.float32)
+            
+            data = sub_states_buffer[joint_type]
+            if frame_idx >= len(data):
+                range_from = args_dict.get('range_from', 0)
+                range_to = args_dict.get('range_to', 7)
+                return np.zeros(range_to - range_from, dtype=np.float32)
+            
+            frame_data = data[frame_idx]
+            if field_name in frame_data:
+                values = frame_data[field_name]
+                if isinstance(values, list):
+                    range_from = args_dict.get('range_from', 0)
+                    range_to = args_dict.get('range_to', len(values))
+                    return np.array(values[range_from:range_to], dtype=np.float32)
+                return np.array([values], dtype=np.float32)
+            
+            # 默认返回零值
+            range_from = args_dict.get('range_from', 0)
+            range_to = args_dict.get('range_to', 7)
+            return np.zeros(range_to - range_from, dtype=np.float32)
 
     def _get_frame_sub_actions(
         self, 
@@ -438,9 +554,16 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         sub_actions_buffer: dict | None = None
     ) -> np.ndarray:
         """获取指定帧的子动作"""
-        # 使用master数据作为action
-        if args_dict.get('joint_type', '').startswith('puppet'):
-            args_dict = args_dict.copy()
-            args_dict['joint_type'] = args_dict['joint_type'].replace('puppet', 'master')
+        # 对于新数据类型（gripper, imu, localization），直接使用相同的逻辑
+        data_type = args_dict.get('data_type', 'joint')
         
-        return self._get_frame_sub_states(task_path, ep_idx, frame_idx, args_dict, sub_actions_buffer)
+        if data_type in ['gripper', 'imu', 'localization']:
+            # 新数据类型：直接调用 _get_frame_sub_states
+            return self._get_frame_sub_states(task_path, ep_idx, frame_idx, args_dict, sub_actions_buffer)
+        else:
+            # 传统关节数据：使用master数据作为action
+            if args_dict.get('joint_type', '').startswith('puppet'):
+                args_dict = args_dict.copy()
+                args_dict['joint_type'] = args_dict['joint_type'].replace('puppet', 'master')
+            
+            return self._get_frame_sub_states(task_path, ep_idx, frame_idx, args_dict, sub_actions_buffer)
