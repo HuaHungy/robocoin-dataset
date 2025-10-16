@@ -2,110 +2,275 @@ fps: 30
 features:
   observation:
     images:
-      - cam_name: realsense_c_rgb
+      # 5个 RGB 相机
+      - cam_name: camera_realsense_c_rgb
         args:
-          cam_name: realsense_c_rgb
-          camera_folder: "camera_realsense_c"
+          cam_name: camera_realsense_c_rgb
+          camera_folder: camera_realsense_c
       - cam_name: pikaDepthCamera_l_rgb
         args:
           cam_name: pikaDepthCamera_l_rgb
-          camera_folder: "pikaDepthCamera_l"
+          camera_folder: pikaDepthCamera_l
       - cam_name: pikaDepthCamera_r_rgb
         args:
           cam_name: pikaDepthCamera_r_rgb
-          camera_folder: "pikaDepthCamera_r"
+          camera_folder: pikaDepthCamera_r
       - cam_name: pikaFisheyeCamera_l_rgb
         args:
           cam_name: pikaFisheyeCamera_l_rgb
-          camera_folder: "pikaFisheyeCamera_l"
+          camera_folder: pikaFisheyeCamera_l
       - cam_name: pikaFisheyeCamera_r_rgb
         args:
           cam_name: pikaFisheyeCamera_r_rgb
-          camera_folder: "pikaFisheyeCamera_r"
+          camera_folder: pikaFisheyeCamera_r
+      
+      # 3个深度相机
+      - cam_name: pikaDepthCamera_c_depth
+        args:
+          cam_name: pikaDepthCamera_c_depth
+          camera_folder: pikaDepthCamera_c
+          is_depth: true
+      - cam_name: pikaDepthCamera_l_depth
+        args:
+          cam_name: pikaDepthCamera_l_depth
+          camera_folder: pikaDepthCamera_l
+          is_depth: true
+      - cam_name: pikaDepthCamera_r_depth
+        args:
+          cam_name: pikaDepthCamera_r_depth
+          camera_folder: pikaDepthCamera_r
+          is_depth: true
 
     state:
       sub_state:
+        # 左夹爪 (angle + distance)
         - names:
-            - pika_left_joint_0
-            - pika_left_joint_1
-            - pika_left_joint_2
-            - pika_left_joint_3
-            - pika_left_joint_4
-            - pika_left_joint_5
-            - pika_left_joint_6
+            - mayi_left_gripper_angle
           args:
-            joint_type: puppet_left
-            field_name: position
-            range_from: 0
-            range_to: 7
+            data_type: gripper
+            gripper_side: pika_l
+            field_name: angle
         - names:
-            - pika_right_joint_0
-            - pika_right_joint_1
-            - pika_right_joint_2
-            - pika_right_joint_3
-            - pika_right_joint_4
-            - pika_right_joint_5
-            - pika_right_joint_6
+            - mayi_left_gripper_distance
           args:
-            joint_type: puppet_right
-            field_name: position
-            range_from: 0
-            range_to: 7
+            data_type: gripper
+            gripper_side: pika_l
+            field_name: distance
+        
+        # 右夹爪 (angle + distance)
         - names:
-            - pika_left_gripper
+            - mayi_right_gripper_angle
           args:
-            joint_type: gripper_left
-            field_name: position
-            range_from: 0
-            range_to: 1
+            data_type: gripper
+            gripper_side: pika_r
+            field_name: angle
         - names:
-            - pika_right_gripper
+            - mayi_right_gripper_distance
           args:
-            joint_type: gripper_right
-            field_name: position
-            range_from: 0
-            range_to: 1
+            data_type: gripper
+            gripper_side: pika_r
+            field_name: distance
+        
+        # 左手 IMU (10个维度: 3 angular_velocity + 3 linear_acceleration + 4 orientation)
+        - names:
+            - mayi_left_imu_angular_velocity_x
+            - mayi_left_imu_angular_velocity_y
+            - mayi_left_imu_angular_velocity_z
+          args:
+            data_type: imu
+            imu_side: pika_l
+            field_name: angular_velocity
+            subfields: [x, y, z]
+        - names:
+            - mayi_left_imu_linear_acceleration_x
+            - mayi_left_imu_linear_acceleration_y
+            - mayi_left_imu_linear_acceleration_z
+          args:
+            data_type: imu
+            imu_side: pika_l
+            field_name: linear_acceleration
+            subfields: [x, y, z]
+        - names:
+            - mayi_left_imu_orientation_w
+            - mayi_left_imu_orientation_x
+            - mayi_left_imu_orientation_y
+            - mayi_left_imu_orientation_z
+          args:
+            data_type: imu
+            imu_side: pika_l
+            field_name: orientation
+            subfields: [w, x, y, z]
+        
+        # 右手 IMU (10个维度)
+        - names:
+            - mayi_right_imu_angular_velocity_x
+            - mayi_right_imu_angular_velocity_y
+            - mayi_right_imu_angular_velocity_z
+          args:
+            data_type: imu
+            imu_side: pika_r
+            field_name: angular_velocity
+            subfields: [x, y, z]
+        - names:
+            - mayi_right_imu_linear_acceleration_x
+            - mayi_right_imu_linear_acceleration_y
+            - mayi_right_imu_linear_acceleration_z
+          args:
+            data_type: imu
+            imu_side: pika_r
+            field_name: linear_acceleration
+            subfields: [x, y, z]
+        - names:
+            - mayi_right_imu_orientation_w
+            - mayi_right_imu_orientation_x
+            - mayi_right_imu_orientation_y
+            - mayi_right_imu_orientation_z
+          args:
+            data_type: imu
+            imu_side: pika_r
+            field_name: orientation
+            subfields: [w, x, y, z]
+        
+        # 左手位姿 (6个维度: x, y, z, roll, pitch, yaw)
+        - names:
+            - mayi_left_pose_x
+            - mayi_left_pose_y
+            - mayi_left_pose_z
+            - mayi_left_pose_roll
+            - mayi_left_pose_pitch
+            - mayi_left_pose_yaw
+          args:
+            data_type: localization
+            localization_side: pika_l
+            field_names: [x, y, z, roll, pitch, yaw]
+        
+        # 右手位姿 (6个维度)
+        - names:
+            - mayi_right_pose_x
+            - mayi_right_pose_y
+            - mayi_right_pose_z
+            - mayi_right_pose_roll
+            - mayi_right_pose_pitch
+            - mayi_right_pose_yaw
+          args:
+            data_type: localization
+            localization_side: pika_r
+            field_names: [x, y, z, roll, pitch, yaw]
 
   action:
     timeline_offset: 1
     sub_action:
+      # Action 使用相同的数据（因为没有master-puppet区分）
+      # 左夹爪
       - names:
-          - pika_left_joint_0
-          - pika_left_joint_1
-          - pika_left_joint_2
-          - pika_left_joint_3
-          - pika_left_joint_4
-          - pika_left_joint_5
-          - pika_left_joint_6
+          - mayi_left_gripper_angle
         args:
-          joint_type: master_left
-          field_name: position
-          range_from: 0
-          range_to: 7
+          data_type: gripper
+          gripper_side: pika_l
+          field_name: angle
       - names:
-          - pika_right_joint_0
-          - pika_right_joint_1
-          - pika_right_joint_2
-          - pika_right_joint_3
-          - pika_right_joint_4
-          - pika_right_joint_5
-          - pika_right_joint_6
+          - mayi_left_gripper_distance
         args:
-          joint_type: master_right
-          field_name: position
-          range_from: 0
-          range_to: 7
+          data_type: gripper
+          gripper_side: pika_l
+          field_name: distance
+      
+      # 右夹爪
       - names:
-          - pika_left_gripper
+          - mayi_right_gripper_angle
         args:
-          joint_type: gripper_left
-          field_name: position
-          range_from: 0
-          range_to: 1
+          data_type: gripper
+          gripper_side: pika_r
+          field_name: angle
       - names:
-          - pika_right_gripper
+          - mayi_right_gripper_distance
         args:
-          joint_type: gripper_right
-          field_name: position
-          range_from: 0
-          range_to: 1
+          data_type: gripper
+          gripper_side: pika_r
+          field_name: distance
+      
+      # 左手 IMU
+      - names:
+          - mayi_left_imu_angular_velocity_x
+          - mayi_left_imu_angular_velocity_y
+          - mayi_left_imu_angular_velocity_z
+        args:
+          data_type: imu
+          imu_side: pika_l
+          field_name: angular_velocity
+          subfields: [x, y, z]
+      - names:
+          - mayi_left_imu_linear_acceleration_x
+          - mayi_left_imu_linear_acceleration_y
+          - mayi_left_imu_linear_acceleration_z
+        args:
+          data_type: imu
+          imu_side: pika_l
+          field_name: linear_acceleration
+          subfields: [x, y, z]
+      - names:
+          - mayi_left_imu_orientation_w
+          - mayi_left_imu_orientation_x
+          - mayi_left_imu_orientation_y
+          - mayi_left_imu_orientation_z
+        args:
+          data_type: imu
+          imu_side: pika_l
+          field_name: orientation
+          subfields: [w, x, y, z]
+      
+      # 右手 IMU
+      - names:
+          - mayi_right_imu_angular_velocity_x
+          - mayi_right_imu_angular_velocity_y
+          - mayi_right_imu_angular_velocity_z
+        args:
+          data_type: imu
+          imu_side: pika_r
+          field_name: angular_velocity
+          subfields: [x, y, z]
+      - names:
+          - mayi_right_imu_linear_acceleration_x
+          - mayi_right_imu_linear_acceleration_y
+          - mayi_right_imu_linear_acceleration_z
+        args:
+          data_type: imu
+          imu_side: pika_r
+          field_name: linear_acceleration
+          subfields: [x, y, z]
+      - names:
+          - mayi_right_imu_orientation_w
+          - mayi_right_imu_orientation_x
+          - mayi_right_imu_orientation_y
+          - mayi_right_imu_orientation_z
+        args:
+          data_type: imu
+          imu_side: pika_r
+          field_name: orientation
+          subfields: [w, x, y, z]
+      
+      # 左手位姿
+      - names:
+          - mayi_left_pose_x
+          - mayi_left_pose_y
+          - mayi_left_pose_z
+          - mayi_left_pose_roll
+          - mayi_left_pose_pitch
+          - mayi_left_pose_yaw
+        args:
+          data_type: localization
+          localization_side: pika_l
+          field_names: [x, y, z, roll, pitch, yaw]
+      
+      # 右手位姿
+      - names:
+          - mayi_right_pose_x
+          - mayi_right_pose_y
+          - mayi_right_pose_z
+          - mayi_right_pose_roll
+          - mayi_right_pose_pitch
+          - mayi_right_pose_yaw
+        args:
+          data_type: localization
+          localization_side: pika_r
+          field_names: [x, y, z, roll, pitch, yaw]

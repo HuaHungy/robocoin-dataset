@@ -366,13 +366,17 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         
         # 加载各种数据
         buffer = {
-            # 关节数据（pika, aloha等）
-            'puppet_left': self._load_joint_state_data(ep_dir, 'puppetLeft'),
-            'puppet_right': self._load_joint_state_data(ep_dir, 'puppetRight'),
-            'master_left': self._load_joint_state_data(ep_dir, 'masterLeft'),
-            'master_right': self._load_joint_state_data(ep_dir, 'masterRight'),
+            # 关节数据（pika, aloha, agilex_cobot等）
+            'puppetLeft': self._load_joint_state_data(ep_dir, 'puppetLeft'),
+            'puppetRight': self._load_joint_state_data(ep_dir, 'puppetRight'),
+            'puppet_left': self._load_joint_state_data(ep_dir, 'puppetLeft'),  # 别名
+            'puppet_right': self._load_joint_state_data(ep_dir, 'puppetRight'),  # 别名
+            'masterLeft': self._load_joint_state_data(ep_dir, 'masterLeft'),
+            'masterRight': self._load_joint_state_data(ep_dir, 'masterRight'),
+            'master_left': self._load_joint_state_data(ep_dir, 'masterLeft'),  # 别名
+            'master_right': self._load_joint_state_data(ep_dir, 'masterRight'),  # 别名
             
-            # 夹爪数据
+            # 夹爪数据（mayi）
             'gripper_pika_l': self._load_gripper_data(ep_dir, 'pika_l'),
             'gripper_pika_r': self._load_gripper_data(ep_dir, 'pika_r'),
             
@@ -380,9 +384,11 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
             'imu_pika_l': self._load_imu_data(ep_dir, 'pika_l'),
             'imu_pika_r': self._load_imu_data(ep_dir, 'pika_r'),
             
-            # 定位数据（mayi）
+            # 定位数据（mayi: pika_l/pika_r, agilex_cobot: puppetLeft/puppetRight）
             'localization_pika_l': self._load_localization_data(ep_dir, 'pika_l'),
             'localization_pika_r': self._load_localization_data(ep_dir, 'pika_r'),
+            'localization_puppetLeft': self._load_localization_data(ep_dir, 'puppetLeft'),
+            'localization_puppetRight': self._load_localization_data(ep_dir, 'puppetRight'),
         }
         
         return buffer

@@ -127,12 +127,12 @@ discover_robotics_aitbot_mmk2:
   converter_config_path: converter_config_discover_robotics_aitbot_mmk2_third_view.yaml
 
 
-agiex_pika_sense_single:
+agilex_pika_sense_single:
 - version: default_version
   verison_description: one arm and one gripper, one rgb camera with high 
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
   class: LerobotFormatConverterHdf5
-  converter_config_path: converter_config_agiex_pika_sense_single.yaml
+  converter_config_path: converter_config_agilex_pika_sense_single.yaml
 
 visionpro:
 - version: default_version
@@ -204,12 +204,6 @@ agilex_cobot_decoupled_magic:
   class: LerobotFormatConverterJpgJson
   converter_config_path: converter_config_agilex_cobot_decoupled_magic_mult_sensor.yaml
 
-agilex_pika_sense:
-- version: default_version
-  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_pika
-  class: LerobotFormatConverterPika
-  converter_config_path: converter_config_agilex_pika_sense.yaml
 
 single_arm_ur5:
 - version: default_version
@@ -306,19 +300,13 @@ zhipingfang:
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_zhipingfang_dual_arm_with_pose_compressed_video.yaml
 
-agilex_pika:
+
+agilex_pika_sense:
 - version: default_version
   verison_description: agilex pika robot with multiple sensors and JPG+JSON
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
   class: LerobotFormatConverterJpgJson
-  converter_config_path: converter_config_pika.yaml
-
-mayi:
-- version: default_version
-  verison_description: mayi robot with multiple sensors and JPG+JSON
-  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
-  class: LerobotFormatConverterJpgJson
-  converter_config_path: converter_config_mayi.yaml
+  converter_config_path: converter_config_agilex_pika_sense.yaml
 
 robobrain:
 - version: default_version

@@ -1,0 +1,183 @@
+fps: 50
+features:
+  observation:
+    images:
+      # 3个 RGB 相机
+      - cam_name: camera_front_rgb
+        args:
+          cam_name: camera_front_rgb
+          camera_folder: front
+      - cam_name: camera_left_rgb
+        args:
+          cam_name: camera_left_rgb
+          camera_folder: left
+      - cam_name: camera_right_rgb
+        args:
+          cam_name: camera_right_rgb
+          camera_folder: right
+      
+      # 3个深度相机
+      - cam_name: camera_front_depth
+        args:
+          cam_name: camera_front_depth
+          camera_folder: front
+          is_depth: true
+      - cam_name: camera_left_depth
+        args:
+          cam_name: camera_left_depth
+          camera_folder: left
+          is_depth: true
+      - cam_name: camera_right_depth
+        args:
+          cam_name: camera_right_depth
+          camera_folder: right
+          is_depth: true
+
+    state:
+      sub_state:
+        # 左臂关节 (6维) - position[0:6]
+        - names:
+            - puppet_left_joint_0
+            - puppet_left_joint_1
+            - puppet_left_joint_2
+            - puppet_left_joint_3
+            - puppet_left_joint_4
+            - puppet_left_joint_5
+          args:
+            joint_type: puppetLeft
+            field_name: position
+            range_from: 0
+            range_to: 6
+        
+        # 左夹爪 (1维) - position[6]
+        - names:
+            - puppet_left_gripper
+          args:
+            joint_type: puppetLeft
+            field_name: position
+            range_from: 6
+            range_to: 7
+        
+        # 右臂关节 (6维) - position[0:6]
+        - names:
+            - puppet_right_joint_0
+            - puppet_right_joint_1
+            - puppet_right_joint_2
+            - puppet_right_joint_3
+            - puppet_right_joint_4
+            - puppet_right_joint_5
+          args:
+            joint_type: puppetRight
+            field_name: position
+            range_from: 0
+            range_to: 6
+        
+        # 右夹爪 (1维) - position[6]
+        - names:
+            - puppet_right_gripper
+          args:
+            joint_type: puppetRight
+            field_name: position
+            range_from: 6
+            range_to: 7
+        
+        # 左手位姿 (6维) - localization
+        - names:
+            - puppet_left_pose_x
+            - puppet_left_pose_y
+            - puppet_left_pose_z
+            - puppet_left_pose_roll
+            - puppet_left_pose_pitch
+            - puppet_left_pose_yaw
+          args:
+            data_type: localization
+            localization_side: puppetLeft
+            field_names: [x, y, z, roll, pitch, yaw]
+        
+        # 右手位姿 (6维) - localization
+        - names:
+            - puppet_right_pose_x
+            - puppet_right_pose_y
+            - puppet_right_pose_z
+            - puppet_right_pose_roll
+            - puppet_right_pose_pitch
+            - puppet_right_pose_yaw
+          args:
+            data_type: localization
+            localization_side: puppetRight
+            field_names: [x, y, z, roll, pitch, yaw]
+
+  action:
+    timeline_offset: 1
+    sub_action:
+      # 左臂关节 (6维) - 使用 timeline_offset，不使用 master
+      - names:
+          - puppet_left_joint_0
+          - puppet_left_joint_1
+          - puppet_left_joint_2
+          - puppet_left_joint_3
+          - puppet_left_joint_4
+          - puppet_left_joint_5
+        args:
+          joint_type: puppetLeft
+          field_name: position
+          range_from: 0
+          range_to: 6
+      
+      # 左夹爪 (1维)
+      - names:
+          - puppet_left_gripper
+        args:
+          joint_type: puppetLeft
+          field_name: position
+          range_from: 6
+          range_to: 7
+      
+      # 右臂关节 (6维)
+      - names:
+          - puppet_right_joint_0
+          - puppet_right_joint_1
+          - puppet_right_joint_2
+          - puppet_right_joint_3
+          - puppet_right_joint_4
+          - puppet_right_joint_5
+        args:
+          joint_type: puppetRight
+          field_name: position
+          range_from: 0
+          range_to: 6
+      
+      # 右夹爪 (1维)
+      - names:
+          - puppet_right_gripper
+        args:
+          joint_type: puppetRight
+          field_name: position
+          range_from: 6
+          range_to: 7
+      
+      # 左手位姿 (6维)
+      - names:
+          - puppet_left_pose_x
+          - puppet_left_pose_y
+          - puppet_left_pose_z
+          - puppet_left_pose_roll
+          - puppet_left_pose_pitch
+          - puppet_left_pose_yaw
+        args:
+          data_type: localization
+          localization_side: puppetLeft
+          field_names: [x, y, z, roll, pitch, yaw]
+      
+      # 右手位姿 (6维)
+      - names:
+          - puppet_right_pose_x
+          - puppet_right_pose_y
+          - puppet_right_pose_z
+          - puppet_right_pose_roll
+          - puppet_right_pose_pitch
+          - puppet_right_pose_yaw
+        args:
+          data_type: localization
+          localization_side: puppetRight
+          field_names: [x, y, z, roll, pitch, yaw]
