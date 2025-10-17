@@ -300,6 +300,11 @@ zhipingfang:
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_zhipingfang_dual_arm_with_pose_compressed_video.yaml
 
+- version: dual_arm_no_pose_compressed_video
+  verison_description: zhipingfang dual arm without pose (compressed video format - images stored as MP4)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_zhipingfang_dual_arm_no_pose_compressed_video.yaml
 
 agilex_pika_sense:
 - version: default_version

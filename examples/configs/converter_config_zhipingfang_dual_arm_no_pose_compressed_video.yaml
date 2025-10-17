@@ -1,0 +1,264 @@
+# Zhipingfang Dual Arm (No Pose) with Compressed Video Configuration
+# Dataset: 智平方 30k数采-第一批 task_58 补采
+# Features:
+#   - Dual arm (left + right) with 7 joints each
+#   - NO arm pose (pose data is empty)
+#   - Compressed video format (video + video_index)
+#   - Gripper data (effector/position) - shape=(frames, 1) ✅ FIXED
+#   - 8 cameras: 4 RGB + 4 Depth (chest, head, left, right)
+#   - Chassis, neck, torso data available but not used in state
+
+fps: 30
+video:
+  enabled: true
+
+features:
+  ### ==================== OBSERVATIONS ====================
+  observation:
+    ### ========== IMAGES (8 cameras: 4 RGB + 4 Depth) ==========
+    images:
+      ### RGB Cameras (4)
+      - names:
+          - observation.images.chest
+        lerobot_feature: observation.images.chest
+        args:
+          h5_path: observations/camera/rgb/chest/video
+          video_index_key: observations/camera/rgb/chest/video_index
+        use_compressed_video: true
+
+      - names:
+          - observation.images.head
+        lerobot_feature: observation.images.head
+        args:
+          h5_path: observations/camera/rgb/head/video
+          video_index_key: observations/camera/rgb/head/video_index
+        use_compressed_video: true
+
+      - names:
+          - observation.images.left
+        lerobot_feature: observation.images.left
+        args:
+          h5_path: observations/camera/rgb/left/video
+          video_index_key: observations/camera/rgb/left/video_index
+        use_compressed_video: true
+
+      - names:
+          - observation.images.right
+        lerobot_feature: observation.images.right
+        args:
+          h5_path: observations/camera/rgb/right/video
+          video_index_key: observations/camera/rgb/right/video_index
+        use_compressed_video: true
+
+      ### Depth Cameras (4)
+      - names:
+          - observation.images.chest_depth
+        lerobot_feature: observation.images.chest_depth
+        args:
+          h5_path: observations/camera/depth/chest/video
+          video_index_key: observations/camera/depth/chest/video_index
+        use_compressed_video: true
+
+      - names:
+          - observation.images.head_depth
+        lerobot_feature: observation.images.head_depth
+        args:
+          h5_path: observations/camera/depth/head/video
+          video_index_key: observations/camera/depth/head/video_index
+        use_compressed_video: true
+
+      - names:
+          - observation.images.left_depth
+        lerobot_feature: observation.images.left_depth
+        args:
+          h5_path: observations/camera/depth/left/video
+          video_index_key: observations/camera/depth/left/video_index
+        use_compressed_video: true
+
+      - names:
+          - observation.images.right_depth
+        lerobot_feature: observation.images.right_depth
+        args:
+          h5_path: observations/camera/depth/right/video
+          video_index_key: observations/camera/depth/right/video_index
+        use_compressed_video: true
+
+    ### ========== STATE (29D) ==========
+    state:
+      lerobot_feature: observation.state
+      sub_state:
+        ### Left arm joints (7)
+        - names:
+            - left_arm_joint_0
+            - left_arm_joint_1
+            - left_arm_joint_2
+            - left_arm_joint_3
+            - left_arm_joint_4
+            - left_arm_joint_5
+            - left_arm_joint_6
+          args:
+            h5_path: observations/arm/left/joints
+            range_from: 0
+            range_to: 7
+          convert_func: to_float32
+
+        ### Left arm wrench (6) - force/torque sensor
+        - names:
+            - left_arm_wrench_fx
+            - left_arm_wrench_fy
+            - left_arm_wrench_fz
+            - left_arm_wrench_tx
+            - left_arm_wrench_ty
+            - left_arm_wrench_tz
+          args:
+            h5_path: observations/arm/left/wrench
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Left gripper position (1)
+        - names:
+            - left_effector_position
+          args:
+            h5_path: observations/effector/left/position
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+        ### Right arm joints (7)
+        - names:
+            - right_arm_joint_0
+            - right_arm_joint_1
+            - right_arm_joint_2
+            - right_arm_joint_3
+            - right_arm_joint_4
+            - right_arm_joint_5
+            - right_arm_joint_6
+          args:
+            h5_path: observations/arm/right/joints
+            range_from: 0
+            range_to: 7
+          convert_func: to_float32
+
+        ### Right arm wrench (6)
+        - names:
+            - right_arm_wrench_fx
+            - right_arm_wrench_fy
+            - right_arm_wrench_fz
+            - right_arm_wrench_tx
+            - right_arm_wrench_ty
+            - right_arm_wrench_tz
+          args:
+            h5_path: observations/arm/right/wrench
+            range_from: 0
+            range_to: 6
+          convert_func: to_float32
+
+        ### Right gripper position (1)
+        - names:
+            - right_effector_position
+          args:
+            h5_path: observations/effector/right/position
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+        ### Timestamp (1) - normalized to [0, 1]
+        - names:
+            - timestamp_normalized
+          args:
+            h5_path: observations/timestamp
+            range_from: 0
+            range_to: 1
+          convert_func: to_float32
+
+  ### ==================== ACTIONS ====================
+  # Action: Copy from observation state (29D)
+  # Since no explicit action data, we use current state as action
+  action:
+    lerobot_feature: action
+    sub_action:
+      ### Left arm target (7 joints)
+      - names:
+          - left_arm_joint_0
+          - left_arm_joint_1
+          - left_arm_joint_2
+          - left_arm_joint_3
+          - left_arm_joint_4
+          - left_arm_joint_5
+          - left_arm_joint_6
+        args:
+          h5_path: observations/arm/left/joints
+          range_from: 0
+          range_to: 7
+        convert_func: to_float32
+
+      ### Left arm wrench (6)
+      - names:
+          - left_arm_wrench_fx
+          - left_arm_wrench_fy
+          - left_arm_wrench_fz
+          - left_arm_wrench_tx
+          - left_arm_wrench_ty
+          - left_arm_wrench_tz
+        args:
+          h5_path: observations/arm/left/wrench
+          range_from: 0
+          range_to: 6
+        convert_func: to_float32
+
+      ### Left gripper (1)
+      - names:
+          - left_effector_position
+        args:
+          h5_path: observations/effector/left/position
+          range_from: 0
+          range_to: 1
+        convert_func: to_float32
+
+      ### Right arm target (7 joints)
+      - names:
+          - right_arm_joint_0
+          - right_arm_joint_1
+          - right_arm_joint_2
+          - right_arm_joint_3
+          - right_arm_joint_4
+          - right_arm_joint_5
+          - right_arm_joint_6
+        args:
+          h5_path: observations/arm/right/joints
+          range_from: 0
+          range_to: 7
+        convert_func: to_float32
+
+      ### Right arm wrench (6)
+      - names:
+          - right_arm_wrench_fx
+          - right_arm_wrench_fy
+          - right_arm_wrench_fz
+          - right_arm_wrench_tx
+          - right_arm_wrench_ty
+          - right_arm_wrench_tz
+        args:
+          h5_path: observations/arm/right/wrench
+          range_from: 0
+          range_to: 6
+        convert_func: to_float32
+
+      ### Right gripper (1)
+      - names:
+          - right_effector_position
+        args:
+          h5_path: observations/effector/right/position
+          range_from: 0
+          range_to: 1
+        convert_func: to_float32
+
+      ### Timestamp (1)
+      - names:
+          - timestamp_normalized
+        args:
+          h5_path: observations/timestamp
+          range_from: 0
+          range_to: 1
+        convert_func: to_float32
