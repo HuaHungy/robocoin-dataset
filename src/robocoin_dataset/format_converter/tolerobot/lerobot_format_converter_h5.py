@@ -617,7 +617,34 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                     f"   💡 Valid range should be: 0 <= range_from < range_to <= {data_len}"
                 )
 
-        return frame_data[from_idx:to_idx]
+        result = frame_data[from_idx:to_idx]
+        
+        # 🔧 Ensure result is 1D array for concatenation
+        # Special handling for unexpected 2D data (e.g., zhipingfang effector data)
+        if result.ndim > 1:
+            # If result is (1, N) where we expected (N,), squeeze the first dimension
+            # Example: zhipingfang effector has shape (frames, 1000) but config expects (frames, 1)
+            # After slicing [0:1], we get (1,) when accessing 1D frame_data, or (1, 1000) if frame_data is 2D
+            if result.shape[0] == 1:
+                # Squeeze only the first dimension: (1, N) → (N,)
+                result = result.squeeze(axis=0)
+                if self.logger:
+                    self.logger.debug(
+                        f"🔧 Squeezed first dimension: {h5_path} "
+                        f"from shape {frame_data[from_idx:to_idx].shape} to {result.shape}"
+                    )
+            else:
+                # Fallback: flatten entirely
+                original_shape = result.shape
+                result = result.flatten()
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Flattening unexpected 2D result:\n"
+                        f"   Path: {h5_path}\n"
+                        f"   Original shape: {original_shape} → Flattened: {result.shape}"
+                    )
+        
+        return result
 
     # @override
     def _get_frame_sub_actions(
@@ -690,7 +717,31 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                     f"   💡 Valid range should be: 0 <= range_from < range_to <= {data_len}"
                 )
 
-        return frame_data[from_idx:to_idx]
+        result = frame_data[from_idx:to_idx]
+        
+        # 🔧 Ensure result is 1D array for concatenation
+        # Special handling for unexpected 2D data
+        if result.ndim > 1:
+            if result.shape[0] == 1:
+                # Squeeze only the first dimension: (1, N) → (N,)
+                result = result.squeeze(axis=0)
+                if self.logger:
+                    self.logger.debug(
+                        f"🔧 Squeezed first dimension for actions: {h5_path} "
+                        f"from shape {frame_data[from_idx:to_idx].shape} to {result.shape}"
+                    )
+            else:
+                # Fallback: flatten entirely
+                original_shape = result.shape
+                result = result.flatten()
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Flattening unexpected 2D actions result:\n"
+                        f"   Path: {h5_path}\n"
+                        f"   Original shape: {original_shape} → Flattened: {result.shape}"
+                    )
+        
+        return result
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
