@@ -333,3 +333,9 @@ ruantong_a2d:
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_jpg
   class: LerobotFormatConverterH5Jpg
   converter_config_path: converter_config_ruantong_gt01_no_depth.yaml
+
+- version: gt02_new_version
+  verison_description: Ruantong A2D GT02 format with 4 fisheye cameras + depth camera
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_jpg
+  class: LerobotFormatConverterH5Jpg
+  converter_config_path: converter_config_ruantong_gt02_new.yaml
