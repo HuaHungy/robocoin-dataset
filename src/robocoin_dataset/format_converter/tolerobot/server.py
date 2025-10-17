@@ -226,6 +226,28 @@ class LeFormatConverterTaskServer(TaskServer):
             dataset_item = (
                 session.query(DatasetDB).filter(DatasetDB.dataset_uuid == item.dataset_uuid).first()
             )
+            
+            # 检查 dataset_item 是否存在
+            if dataset_item is None:
+                self.logger.error(
+                    f"❌ Dataset not found in DatasetDB.\n"
+                    f"   🔍 dataset_uuid: {item.dataset_uuid}\n"
+                    f"   📋 device_model: {item.device_model}\n"
+                    f"   💡 DmvAnnotationDB has this UUID but DatasetDB doesn't\n"
+                    f"   💡 This indicates database inconsistency - skipping this item"
+                )
+                continue  # 跳过这个无效的项，继续处理下一个
+            
+            # 检查 yaml_file_path 是否存在
+            if not dataset_item.yaml_file_path:
+                self.logger.error(
+                    f"❌ Dataset has no yaml_file_path.\n"
+                    f"   🔍 dataset_uuid: {item.dataset_uuid}\n"
+                    f"   📋 dataset_name: {dataset_item.dataset_name}\n"
+                    f"   💡 yaml_file_path is NULL or empty - skipping this item"
+                )
+                continue
+            
             dataset_path = str(Path(dataset_item.yaml_file_path).parent)
             dataset_name = dataset_item.dataset_name
             leformat_path = str(
