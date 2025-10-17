@@ -1,0 +1,98 @@
+# Galaxea R1 Lite - H5 + MP4 版本
+# 数据结构：
+#   - H5 file: qpos (14D), action (14D)
+#   - MP4 videos: cam_high, cam_left_wrist, cam_right_wrist
+#   - 命名: {episode_idx}_cam_{camera_name}.mp4
+#
+# 与 h5_version 的区别：
+#   - 有视频数据（3个相机）
+#   - 没有 eepose 数据（只有 qpos）
+#   - State: 14D (qpos only)
+#   - Action: 14D (qpos only)
+
+fps: 30
+video:
+  enabled: true
+
+features:
+  ### ==================== OBSERVATIONS ====================
+  observation:
+    ### ========== IMAGES (3 cameras) ==========
+    images:
+      ### High camera
+      - names:
+          - observation.images.cam_high
+        lerobot_feature: observation.images.cam_high
+        args:
+          cam_name: cam_high
+          video_file_pattern: "*cam_high.mp4"
+
+      ### Left wrist camera
+      - names:
+          - observation.images.cam_left_wrist
+        lerobot_feature: observation.images.cam_left_wrist
+        args:
+          cam_name: cam_left_wrist
+          video_file_pattern: "*cam_left_wrist.mp4"
+
+      ### Right wrist camera
+      - names:
+          - observation.images.cam_right_wrist
+        lerobot_feature: observation.images.cam_right_wrist
+        args:
+          cam_name: cam_right_wrist
+          video_file_pattern: "*cam_right_wrist.mp4"
+
+    ### ========== STATE (14D: qpos only) ==========
+    state:
+      lerobot_feature: observation.state
+      sub_state:
+        ### Joint positions (14D) - 左臂7个 + 右臂7个
+        - names: 
+            - left_arm_qpos_0
+            - left_arm_qpos_1
+            - left_arm_qpos_2
+            - left_arm_qpos_3
+            - left_arm_qpos_4
+            - left_arm_qpos_5
+            - left_arm_qpos_6
+            - right_arm_qpos_0
+            - right_arm_qpos_1
+            - right_arm_qpos_2
+            - right_arm_qpos_3
+            - right_arm_qpos_4
+            - right_arm_qpos_5
+            - right_arm_qpos_6
+          args:
+            h5_path: qpos
+            range_from: 0
+            range_to: 14
+          convert_func: to_float32
+
+  ### ==================== ACTIONS ====================
+  action:
+    lerobot_feature: action
+    timeline_offset: 1
+    
+    sub_action:
+      ### Joint positions (14D) - 左臂7个 + 右臂7个
+      - names: 
+          - left_arm_qpos_0
+          - left_arm_qpos_1
+          - left_arm_qpos_2
+          - left_arm_qpos_3
+          - left_arm_qpos_4
+          - left_arm_qpos_5
+          - left_arm_qpos_6
+          - right_arm_qpos_0
+          - right_arm_qpos_1
+          - right_arm_qpos_2
+          - right_arm_qpos_3
+          - right_arm_qpos_4
+          - right_arm_qpos_5
+          - right_arm_qpos_6
+        args:
+          h5_path: action
+          range_from: 0
+          range_to: 14
+        convert_func: to_float32
