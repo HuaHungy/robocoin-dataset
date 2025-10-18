@@ -789,7 +789,7 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                 f"📊 目录统计：\n"
                 f"   - 总文件数：{len(episode_files)}\n"
                 f"   - BSON文件数：{len(bson_files)}\n" +
-                (f"   - BSON文件列表：\n" + "\n".join(f"      * {f.name}" for f in bson_files[:5]) if bson_files else "") +
+                ("   - BSON文件列表：\n" + "\n".join(f"      * {f.name}" for f in bson_files[:5]) if bson_files else "") +
                 "\n💡 MMK2格式要求：\n"
                 "   - 每个episode目录必须包含episode_0.bson\n"
                 "   - 该文件包含episode的元数据和帧数信息\n"
