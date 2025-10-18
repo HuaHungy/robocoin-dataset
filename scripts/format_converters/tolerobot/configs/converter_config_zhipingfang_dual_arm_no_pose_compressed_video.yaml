@@ -21,6 +21,7 @@ features:
       - names:
           - observation.images.chest
         lerobot_feature: observation.images.chest
+        cam_name: chest
         args:
           h5_path: observations/camera/rgb/chest/video
           video_index_key: observations/camera/rgb/chest/video_index
@@ -29,6 +30,7 @@ features:
       - names:
           - observation.images.head
         lerobot_feature: observation.images.head
+        cam_name: head
         args:
           h5_path: observations/camera/rgb/head/video
           video_index_key: observations/camera/rgb/head/video_index
@@ -37,6 +39,7 @@ features:
       - names:
           - observation.images.left
         lerobot_feature: observation.images.left
+        cam_name: left
         args:
           h5_path: observations/camera/rgb/left/video
           video_index_key: observations/camera/rgb/left/video_index
@@ -45,6 +48,7 @@ features:
       - names:
           - observation.images.right
         lerobot_feature: observation.images.right
+        cam_name: right
         args:
           h5_path: observations/camera/rgb/right/video
           video_index_key: observations/camera/rgb/right/video_index
@@ -54,6 +58,7 @@ features:
       - names:
           - observation.images.chest_depth
         lerobot_feature: observation.images.chest_depth
+        cam_name: chest_depth
         args:
           h5_path: observations/camera/depth/chest/video
           video_index_key: observations/camera/depth/chest/video_index
@@ -62,6 +67,7 @@ features:
       - names:
           - observation.images.head_depth
         lerobot_feature: observation.images.head_depth
+        cam_name: head_depth
         args:
           h5_path: observations/camera/depth/head/video
           video_index_key: observations/camera/depth/head/video_index
@@ -70,6 +76,7 @@ features:
       - names:
           - observation.images.left_depth
         lerobot_feature: observation.images.left_depth
+        cam_name: left_depth
         args:
           h5_path: observations/camera/depth/left/video
           video_index_key: observations/camera/depth/left/video_index
@@ -78,6 +85,7 @@ features:
       - names:
           - observation.images.right_depth
         lerobot_feature: observation.images.right_depth
+        cam_name: right_depth
         args:
           h5_path: observations/camera/depth/right/video
           video_index_key: observations/camera/depth/right/video_index
