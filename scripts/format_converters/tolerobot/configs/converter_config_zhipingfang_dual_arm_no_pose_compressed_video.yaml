@@ -25,7 +25,7 @@ features:
         args:
           h5_path: observations/camera/rgb/chest/video
           video_index_key: observations/camera/rgb/chest/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
       - names:
           - observation.images.head
@@ -34,7 +34,7 @@ features:
         args:
           h5_path: observations/camera/rgb/head/video
           video_index_key: observations/camera/rgb/head/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
       - names:
           - observation.images.left
@@ -43,7 +43,7 @@ features:
         args:
           h5_path: observations/camera/rgb/left/video
           video_index_key: observations/camera/rgb/left/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
       - names:
           - observation.images.right
@@ -52,7 +52,7 @@ features:
         args:
           h5_path: observations/camera/rgb/right/video
           video_index_key: observations/camera/rgb/right/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
       ### Depth Cameras (4)
       - names:
@@ -62,7 +62,7 @@ features:
         args:
           h5_path: observations/camera/depth/chest/video
           video_index_key: observations/camera/depth/chest/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
       - names:
           - observation.images.head_depth
@@ -71,7 +71,7 @@ features:
         args:
           h5_path: observations/camera/depth/head/video
           video_index_key: observations/camera/depth/head/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
       - names:
           - observation.images.left_depth
@@ -80,7 +80,7 @@ features:
         args:
           h5_path: observations/camera/depth/left/video
           video_index_key: observations/camera/depth/left/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
       - names:
           - observation.images.right_depth
@@ -89,7 +89,7 @@ features:
         args:
           h5_path: observations/camera/depth/right/video
           video_index_key: observations/camera/depth/right/video_index
-        use_compressed_video: true
+          use_compressed_video: true
 
     ### ========== STATE (29D) ==========
     state:
