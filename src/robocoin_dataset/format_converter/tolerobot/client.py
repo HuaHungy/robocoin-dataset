@@ -105,6 +105,11 @@ class LeFormatConverterTaskClient(TaskClient):
                 self.logger.info(
                     f"Converted episode {task_ep_idx} of task {task_content}, total ep_idx is:{ep_idx}"
                 )
+            
+            # Save episode source mapping after conversion completes
+            if not is_test:
+                converter.save_episode_source_mapping()
+            
             return {}
 
         except Exception as e:

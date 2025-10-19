@@ -105,6 +105,9 @@ class LerobotFormatConverter(ABC):
         self.image_writer_processes = image_writer_processes
         self.image_writer_threads = image_writer_threads
 
+        # Episode source file mapping: {global_ep_idx: {task, task_ep_idx, source_files}}
+        self.episode_source_mapping: dict[int, dict] = {}
+
         self._prevalidate_files()
 
     @abstractmethod
@@ -151,6 +154,22 @@ class LerobotFormatConverter(ABC):
     @abstractmethod
     def _get_task_episodes_num(self, task_path: Path) -> int:
         raise NotImplementedError
+
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 episode 的源文件信息
+        
+        Returns:
+            dict: 包含源文件信息的字典，例如：
+                {
+                    "episode_directory": str,  # episode 目录路径
+                    "h5_files": list[str],     # H5 文件列表（如果有）
+                    "image_directories": list[str],  # 图像目录列表（如果有）
+                    "json_files": list[str],   # JSON 文件列表（如果有）
+                    "other_files": list[str],  # 其他相关文件
+                }
+        """
+        # 默认实现：返回空字典，子类可以覆盖此方法提供详细信息
+        return {}
 
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> any:
         return None
@@ -765,6 +784,17 @@ class LerobotFormatConverter(ABC):
                                 f"Failed to save episode {task_ep_idx} (global episode {ep_idx}) "
                                 f"at task_path={task_path}"
                             ) from e
+                    
+                    # Collect source file mapping information
+                    source_files = self._get_episode_source_files(task_path, task_ep_idx)
+                    self.episode_source_mapping[ep_idx] = {
+                        "task": task,
+                        "task_path": str(task_path),
+                        "task_ep_idx": task_ep_idx,
+                        "global_ep_idx": ep_idx,
+                        "source_files": source_files,
+                    }
+                    
                     yield (task, task_ep_idx, ep_idx)
                     ep_idx += 1
                 except Exception as e:  # noqa: PERF203
@@ -778,6 +808,48 @@ class LerobotFormatConverter(ABC):
                         f"Failed to process episode {task_ep_idx} (global episode {ep_idx}) "
                         f"at task_path={task_path}"
                     ) from e
+
+    def save_episode_source_mapping(self, mapping_filename: str = "episode_source_mapping.json") -> None:
+        """保存 episode 源文件映射到 JSON 文件
+        
+        生成的文件将与 meta.json, info.json 等文件同级，位于转换后的数据集根目录
+        
+        Args:
+            mapping_filename: 映射文件名，默认为 "episode_source_mapping.json"
+        """
+        import json
+        
+        mapping_file = self.output_path / mapping_filename
+        
+        # 转换为更易读的格式
+        formatted_mapping = {
+            "dataset_info": {
+                "source_dataset_path": str(self.dataset_path),
+                "output_dataset_path": str(self.output_path),
+                "repo_id": self.repo_id,
+                "device_model": self.device_model,
+                "total_episodes": len(self.episode_source_mapping),
+            },
+            "episodes": []
+        }
+        
+        # 按 global_ep_idx 排序
+        for ep_idx in sorted(self.episode_source_mapping.keys()):
+            ep_info = self.episode_source_mapping[ep_idx]
+            formatted_mapping["episodes"].append({
+                "global_episode_index": ep_info["global_ep_idx"],
+                "task": ep_info["task"],
+                "task_episode_index": ep_info["task_ep_idx"],
+                "task_path": ep_info["task_path"],
+                "source_files": ep_info["source_files"],
+            })
+        
+        with open(mapping_file, 'w', encoding='utf-8') as f:
+            json.dump(formatted_mapping, f, indent=2, ensure_ascii=False)
+        
+        if self.logger:
+            self.logger.info(f"✅ Episode source mapping saved to: {mapping_file}")
+            self.logger.info(f"   Total episodes mapped: {len(self.episode_source_mapping)}")
 
     def get_episodes_num(self) -> int:
         return sum(self._get_task_episodes_num(task) for task in self.path_task_dict.keys())

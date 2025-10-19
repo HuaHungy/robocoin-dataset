@@ -279,6 +279,44 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         max_frame_idx = frame_indices[-1]
         return min(h5_frames, max_frame_idx + 1, len(frame_indices))
 
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 episode 的源文件信息（override）
+        
+        Returns:
+            dict: 包含源文件详细信息
+        """
+        ep_dir = self._get_episode_dir(task_path, ep_idx)
+        
+        # 相对路径（相对于 dataset_path）
+        relative_ep_dir = ep_dir.relative_to(self.dataset_path)
+        
+        # 收集所有源文件
+        h5_file = ep_dir / "aligned_joints.h5"
+        meta_file = ep_dir / "meta_info.json"
+        camera_dir = ep_dir / "camera"
+        
+        source_info = {
+            "episode_directory": str(relative_ep_dir),
+            "episode_directory_absolute": str(ep_dir),
+            "h5_file": str(h5_file.relative_to(self.dataset_path)) if h5_file.exists() else None,
+            "meta_file": str(meta_file.relative_to(self.dataset_path)) if meta_file.exists() else None,
+            "camera_directory": str(camera_dir.relative_to(self.dataset_path)) if camera_dir.exists() else None,
+        }
+        
+        # 统计图像文件数量（不列出所有文件，只统计数量以节省空间）
+        if camera_dir.exists():
+            frame_dirs = [d for d in camera_dir.glob("[0-9]*") if d.is_dir()]
+            image_count = 0
+            for frame_dir in frame_dirs:
+                image_count += len(list(frame_dir.glob("*.jpg")))
+                image_count += len(list(frame_dir.glob("*.png")))
+            
+            source_info["image_frames_count"] = len(frame_dirs)
+            source_info["total_images_count"] = image_count
+        
+        return source_info
+
+
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> dict:
         """准备 episode 的图像缓冲区
         

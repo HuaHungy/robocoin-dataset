@@ -110,6 +110,10 @@ def convert2lerobot(
         unit="episode",
     ):
         logger.info(f"Converted episode {task_ep_idx} of task {task}, total ep_idx is:{ep_idx}")
+    
+    # Save episode source mapping after conversion completes
+    if not is_test:
+        converter.save_episode_source_mapping()
 
 
 def main() -> None:
