@@ -415,7 +415,44 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             for sub_state in self.converter_config["features"]["observation"]["state"]["sub_state"]:
                 h5_path = sub_state[ARGS_KEY]["h5_path"]
                 if h5_path not in states_buffer:
-                    states_buffer[h5_path] = np.array(f[h5_path])
+                    try:
+                        states_buffer[h5_path] = np.array(f[h5_path])
+                    except KeyError:
+                        # H5路径不存在，收集可用路径信息
+                        available_paths = []
+                        
+                        def collect_paths(name, obj):
+                            if isinstance(obj, h5py.Dataset):
+                                available_paths.append(name)
+                        
+                        f.visititems(collect_paths)
+                        
+                        error_msg = (
+                            f"❌ H5 路径不存在\n"
+                            f"   📁 H5 文件: {h5_file.name}\n"
+                            f"   🔍 期望路径: {h5_path}\n"
+                            f"   📊 文件中实际存在的数据集路径:\n"
+                        )
+                        for path in sorted(available_paths[:20]):  # 只显示前20个
+                            error_msg += f"      - {path}\n"
+                        if len(available_paths) > 20:
+                            error_msg += f"      ... 还有 {len(available_paths) - 20} 个路径\n"
+                        
+                        error_msg += (
+                            f"   💡 可能原因:\n"
+                            f"      1. 配置文件中的 h5_path 拼写错误\n"
+                            f"      2. H5 文件结构与配置不匹配\n"
+                            f"      3. 数据采集时未记录该数据项\n"
+                            f"   🔧 解决方法:\n"
+                            f"      1. 检查配置文件 converter_config_leju_waibu.yaml\n"
+                            f"      2. 使用 h5dump 或 HDFView 查看 H5 文件结构\n"
+                            f"      3. 更新配置使用实际存在的路径\n"
+                        )
+                        
+                        if self.logger:
+                            self.logger.error(error_msg)
+                        
+                        raise KeyError(error_msg)
         
         return states_buffer
 
@@ -436,11 +473,48 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             for sub_action in self.converter_config["features"]["action"]["sub_action"]:
                 h5_path = sub_action[ARGS_KEY]["h5_path"]
                 if h5_path not in actions_buffer:
-                    # Special handling for joint velocity in actions (use state velocity)
-                    if h5_path == "state/joint/velocity":
-                        actions_buffer[h5_path] = np.array(f[h5_path])
-                    else:
-                        actions_buffer[h5_path] = np.array(f[h5_path])
+                    try:
+                        # Special handling for joint velocity in actions (use state velocity)
+                        if h5_path == "state/joint/velocity":
+                            actions_buffer[h5_path] = np.array(f[h5_path])
+                        else:
+                            actions_buffer[h5_path] = np.array(f[h5_path])
+                    except KeyError:
+                        # H5路径不存在，收集可用路径信息
+                        available_paths = []
+                        
+                        def collect_paths(name, obj):
+                            if isinstance(obj, h5py.Dataset):
+                                available_paths.append(name)
+                        
+                        f.visititems(collect_paths)
+                        
+                        error_msg = (
+                            f"❌ H5 路径不存在 (action)\n"
+                            f"   📁 H5 文件: {h5_file.name}\n"
+                            f"   🔍 期望路径: {h5_path}\n"
+                            f"   📊 文件中实际存在的数据集路径:\n"
+                        )
+                        for path in sorted(available_paths[:20]):  # 只显示前20个
+                            error_msg += f"      - {path}\n"
+                        if len(available_paths) > 20:
+                            error_msg += f"      ... 还有 {len(available_paths) - 20} 个路径\n"
+                        
+                        error_msg += (
+                            "   💡 可能原因:\n"
+                            "      1. 配置文件中的 h5_path 拼写错误\n"
+                            "      2. H5 文件结构与配置不匹配\n"
+                            "      3. 数据采集时未记录该数据项\n"
+                            "   🔧 解决方法:\n"
+                            "      1. 检查配置文件 converter_config_leju_waibu.yaml\n"
+                            "      2. 使用 h5dump 或 HDFView 查看 H5 文件结构\n"
+                            "      3. 更新配置使用实际存在的路径\n"
+                        )
+                        
+                        if self.logger:
+                            self.logger.error(error_msg)
+                        
+                        raise KeyError(error_msg)
         
         return actions_buffer
 

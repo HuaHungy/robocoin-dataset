@@ -702,112 +702,154 @@ class LerobotFormatConverter(ABC):
         pass
 
     def convert(self, is_test: bool = False) -> Iterable[tuple[str, int, int]]:
-        if not is_test:
-            dataset = self._create_lerobot_dataset()
-        ep_idx = 0
-        for task_path, task in self.path_task_dict.items():
-            episodes_num = self._get_task_episodes_num(task_path)
-            if is_test:
-                episodes_num = 1
-            for task_ep_idx in range(episodes_num):
-                try:
-                    images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
-                        task_path, task_ep_idx
-                    )
-                    for frame_data in self._gen_episode_frames(
-                        task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
-                    ):
-                        try:
-                            lerobot_datas = self._get_lerobot_datas(
-                                task_path=task_path,
-                                ep_idx=task_ep_idx,
-                                frame_idx=frame_data[FRAME_IDX_KEY],
-                                images_buffer=images_buffer,
-                                states_buffer=states_buffer,
-                                actions_buffer=actions_buffer,
-                            )
-
-                            if not is_test:
-                                dataset.add_frame(
-                                    frame=lerobot_datas,
-                                    task=task,
+        dataset = None
+        try:
+            if not is_test:
+                dataset = self._create_lerobot_dataset()
+            ep_idx = 0
+            for task_path, task in self.path_task_dict.items():
+                episodes_num = self._get_task_episodes_num(task_path)
+                if is_test:
+                    episodes_num = 1
+                for task_ep_idx in range(episodes_num):
+                    try:
+                        images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
+                            task_path, task_ep_idx
+                        )
+                        for frame_data in self._gen_episode_frames(
+                            task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
+                        ):
+                            try:
+                                lerobot_datas = self._get_lerobot_datas(
+                                    task_path=task_path,
+                                    ep_idx=task_ep_idx,
+                                    frame_idx=frame_data[FRAME_IDX_KEY],
+                                    images_buffer=images_buffer,
+                                    states_buffer=states_buffer,
+                                    actions_buffer=actions_buffer,
                                 )
-                        except Exception as e:  # noqa: PERF203
-                            if self.logger:
-                                self.logger.error(
-                                    f"Failed to process frame: task_path={task_path}, "
-                                    f"episode={task_ep_idx}, frame={frame_data[FRAME_IDX_KEY]}. "
-                                    f"Error: {e}"
-                                )
-                            raise RuntimeError(
-                                f"Failed to process frame {frame_data[FRAME_IDX_KEY]} "
-                                f"of episode {task_ep_idx} at task_path={task_path}"
-                            ) from e
 
-                    if not is_test:
-                        try:
-                            dataset.save_episode()
-                        except OSError as e:
-                            # 特别处理图像文件损坏的情况
-                            error_msg = str(e)
-                            if "unrecognized data stream" in error_msg or "image file" in error_msg.lower():
+                                if not is_test:
+                                    dataset.add_frame(
+                                        frame=lerobot_datas,
+                                        task=task,
+                                    )
+                            except Exception as e:  # noqa: PERF203
                                 if self.logger:
                                     self.logger.error(
-                                        f"❌ Image file corruption detected during episode encoding\n"
-                                        f"   📁 Task path: {task_path}\n"
-                                        f"   📊 Episode: {task_ep_idx} (global: {ep_idx})\n"
-                                        f"   💡 One or more image files are corrupted or invalid\n"
-                                        f"   🔍 Check temporary image files in output directory\n"
-                                        f"   Original error: {error_msg}"
+                                        f"Failed to process frame: task_path={task_path}, "
+                                        f"episode={task_ep_idx}, frame={frame_data[FRAME_IDX_KEY]}. "
+                                        f"Error: {e}"
                                     )
                                 raise RuntimeError(
-                                    f"❌ Corrupted image file(s) in episode {task_ep_idx} (global: {ep_idx})\n"
-                                    f"   📁 Task: {task_path}\n"
-                                    f"   💡 Possible causes:\n"
-                                    f"      1. Source image/video files are corrupted\n"
-                                    f"      2. Disk I/O error during frame extraction\n"
-                                    f"      3. Insufficient disk space\n"
-                                    f"   🔧 Suggested actions:\n"
-                                    f"      1. Verify source data integrity\n"
-                                    f"      2. Check disk space and permissions\n"
-                                    f"      3. Re-run conversion for this episode"
+                                    f"Failed to process frame {frame_data[FRAME_IDX_KEY]} "
+                                    f"of episode {task_ep_idx} at task_path={task_path}"
                                 ) from e
-                            raise
+
+                        if not is_test:
+                            try:
+                                dataset.save_episode()
+                            except OSError as e:
+                                # 特别处理图像文件损坏的情况
+                                error_msg = str(e)
+                                if "unrecognized data stream" in error_msg or "image file" in error_msg.lower():
+                                    if self.logger:
+                                        self.logger.error(
+                                            f"❌ Image file corruption detected during episode encoding\n"
+                                            f"   📁 Task path: {task_path}\n"
+                                            f"   📊 Episode: {task_ep_idx} (global: {ep_idx})\n"
+                                            f"   💡 One or more image files are corrupted or invalid\n"
+                                            f"   🔍 Check temporary image files in output directory\n"
+                                            f"   Original error: {error_msg}"
+                                        )
+                                    raise RuntimeError(
+                                        f"❌ Corrupted image file(s) in episode {task_ep_idx} (global: {ep_idx})\n"
+                                        f"   📁 Task: {task_path}\n"
+                                        f"   💡 Possible causes:\n"
+                                        f"      1. Source image/video files are corrupted\n"
+                                        f"      2. Disk I/O error during frame extraction\n"
+                                        f"      3. Insufficient disk space\n"
+                                        f"   🔧 Suggested actions:\n"
+                                        f"      1. Verify source data integrity\n"
+                                        f"      2. Check disk space and permissions\n"
+                                        f"      3. Re-run conversion for this episode"
+                                    ) from e
+                                raise
+                            except Exception as e:
+                                if self.logger:
+                                    self.logger.error(
+                                        f"Failed to save episode: task_path={task_path}, "
+                                        f"episode={task_ep_idx}, global_ep_idx={ep_idx}. "
+                                        f"Error: {e}"
+                                    )
+                                raise RuntimeError(
+                                    f"Failed to save episode {task_ep_idx} (global episode {ep_idx}) "
+                                    f"at task_path={task_path}"
+                                ) from e
+                        
+                        # Collect source file mapping information
+                        source_files = self._get_episode_source_files(task_path, task_ep_idx)
+                        self.episode_source_mapping[ep_idx] = {
+                            "task": task,
+                            "task_path": str(task_path),
+                            "task_ep_idx": task_ep_idx,
+                            "global_ep_idx": ep_idx,
+                            "source_files": source_files,
+                        }
+                        
+                        yield (task, task_ep_idx, ep_idx)
+                        ep_idx += 1
+                    except Exception as e:  # noqa: PERF203
+                        if self.logger:
+                            self.logger.error(
+                                f"Failed to process episode: task_path={task_path}, "
+                                f"episode={task_ep_idx}, global_ep_idx={ep_idx}. "
+                                f"Error: {e}"
+                            )
+                        raise RuntimeError(
+                            f"Failed to process episode {task_ep_idx} (global episode {ep_idx}) "
+                            f"at task_path={task_path}"
+                        ) from e
+        finally:
+            # 清理资源：确保 LeRobotDataset 内部的异步 image writer 和其他多进程资源被释放
+            if dataset is not None:
+                try:
+                    if self.logger:
+                        self.logger.info("Cleaning up dataset resources...")
+
+                    # 1) Stop image writer if available (this will stop processes/threads used for async image writing)
+                    if hasattr(dataset, "stop_image_writer"):
+                        try:
+                            dataset.stop_image_writer()
+                            if self.logger:
+                                self.logger.info("✅ Dataset image writer stopped")
                         except Exception as e:
                             if self.logger:
-                                self.logger.error(
-                                    f"Failed to save episode: task_path={task_path}, "
-                                    f"episode={task_ep_idx}, global_ep_idx={ep_idx}. "
-                                    f"Error: {e}"
-                                )
-                            raise RuntimeError(
-                                f"Failed to save episode {task_ep_idx} (global episode {ep_idx}) "
-                                f"at task_path={task_path}"
-                            ) from e
-                    
-                    # Collect source file mapping information
-                    source_files = self._get_episode_source_files(task_path, task_ep_idx)
-                    self.episode_source_mapping[ep_idx] = {
-                        "task": task,
-                        "task_path": str(task_path),
-                        "task_ep_idx": task_ep_idx,
-                        "global_ep_idx": ep_idx,
-                        "source_files": source_files,
-                    }
-                    
-                    yield (task, task_ep_idx, ep_idx)
-                    ep_idx += 1
-                except Exception as e:  # noqa: PERF203
+                                self.logger.warning(f"⚠️ Error while stopping image writer: {e}")
+
+                    # 2) Wait for image writer to finish if such a method exists
+                    if hasattr(dataset, "_wait_image_writer"):
+                        try:
+                            dataset._wait_image_writer()
+                            if self.logger:
+                                self.logger.info("✅ Image writer joined successfully")
+                        except Exception as e:
+                            if self.logger:
+                                self.logger.warning(f"⚠️ Error while waiting for image writer: {e}")
+
+                    # 3) Call consolidate() if available (legacy API in some forks)
+                    if hasattr(dataset, "consolidate"):
+                        try:
+                            dataset.consolidate()
+                            if self.logger:
+                                self.logger.info("✅ Dataset consolidated successfully")
+                        except Exception as e:
+                            if self.logger:
+                                self.logger.warning(f"⚠️ Error during dataset consolidate: {e}")
+
+                except Exception as e:
                     if self.logger:
-                        self.logger.error(
-                            f"Failed to process episode: task_path={task_path}, "
-                            f"episode={task_ep_idx}, global_ep_idx={ep_idx}. "
-                            f"Error: {e}"
-                        )
-                    raise RuntimeError(
-                        f"Failed to process episode {task_ep_idx} (global episode {ep_idx}) "
-                        f"at task_path={task_path}"
-                    ) from e
+                        self.logger.warning(f"⚠️ General error during dataset cleanup: {e}")
 
     def save_episode_source_mapping(self, mapping_filename: str = "episode_source_mapping.json") -> None:
         """保存 episode 源文件映射到 JSON 文件
