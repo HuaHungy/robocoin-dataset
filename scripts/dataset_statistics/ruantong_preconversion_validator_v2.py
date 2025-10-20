@@ -418,7 +418,12 @@ class RuantongValidatorV2:
                 
                 # 创建error目录
                 error_dir = episode_path.parent / "error"
-                error_dir.mkdir(exist_ok=True)
+                try:
+                    error_dir.mkdir(exist_ok=True)
+                except PermissionError:
+                    print(f"  ❌ 无权限创建error目录: {error_dir}")
+                    print(f"     请检查目录权限或使用sudo运行")
+                    continue
                 
                 # 移动整个episode目录
                 dest = error_dir / episode_path.name
@@ -428,12 +433,21 @@ class RuantongValidatorV2:
                     continue
                 
                 import shutil
-                shutil.move(str(episode_path), str(dest))
-                moved_count += 1
-                
-                if self.verbose:
-                    print(f"  📦 已移动: {result.dataset_name}/{result.episode_id} -> error/")
+                try:
+                    shutil.move(str(episode_path), str(dest))
+                    moved_count += 1
+                    
+                    if self.verbose:
+                        print(f"  📦 已移动: {result.dataset_name}/{result.episode_id} -> error/")
+                except PermissionError:
+                    print(f"  ❌ 无权限移动: {episode_path}")
+                    print(f"     源: {episode_path}")
+                    print(f"     目标: {dest}")
+                    print(f"     请检查目录权限或使用sudo运行")
             
+            except PermissionError as e:
+                print(f"  ❌ 权限错误 {result.episode_path}: {e}")
+                print(f"     提示: 可能需要使用 sudo 或修改目录权限")
             except Exception as e:
                 print(f"  ❌ 移动失败 {result.episode_path}: {e}")
         
@@ -524,19 +538,35 @@ class RuantongValidatorV2:
                     f.write("\n建议措施:\n")
                     
                     if "缺失" in issue['error'] and "jpg" in issue['error'].lower():
+                        # 相机图片配置问题
                         camera_name = issue['error'].split(':')[1].strip().split()[0] if ':' in issue['error'] else "未知相机"
-                        f.write(f"  1. 检查 converter config 中是否错误配置了 {camera_name}\n")
-                        f.write(f"  2. 检查 device_model_annotation.yaml 中的 device_model_version\n")
-                        f.write(f"  3. 确认该数据集是否真的包含 {camera_name}\n")
+                        f.write(f"  ❌ 相机配置问题: {camera_name}\n")
+                        f.write(f"  1. 检查 converter config 的 observation.images 中是否错误配置了 {camera_name}\n")
+                        f.write("  2. 检查 device_model_annotation.yaml 中的 device_model_version\n")
+                        f.write(f"  3. 确认该数据集是否真的包含 {camera_name} 相机\n")
+                        f.write("  4. 对比其他正常的数据集版本，看是否版本标注错误\n")
                     elif "H5缺少路径" in issue['error']:
+                        # H5路径配置问题
                         h5_path = issue['error'].split(':')[1].strip() if ':' in issue['error'] else "未知路径"
-                        f.write(f"  1. 检查 converter config 中的 h5_path 配置: {h5_path}\n")
-                        f.write(f"  2. 使用 h5dump 或 h5py 查看实际的H5文件结构\n")
-                        f.write(f"  3. 确认 device_model_version 是否正确\n")
+                        f.write(f"  ❌ H5路径配置问题: {h5_path}\n")
+                        f.write(f"  1. 检查 converter config 的 action/state 配置中的 h5_path: {h5_path}\n")
+                        f.write("  2. 使用以下命令查看实际的H5文件结构:\n")
+                        f.write("     python3 -c \"import h5py; f=h5py.File('aligned_joints.h5'); f.visit(print)\"\n")
+                        f.write("  3. 确认 device_model_version 是否正确对应了该数据的H5结构\n")
+                        f.write("  4. 如果H5结构已变更，需要更新converter config或创建新版本配置\n")
+                    elif "H5读取失败" in issue['error']:
+                        # H5文件损坏
+                        f.write("  ❌ H5文件问题（可能是数据采集或存储问题）\n")
+                        f.write("  1. 这可能不是配置问题，而是数据质量问题\n")
+                        f.write("  2. 检查H5文件是否完整或损坏\n")
+                        f.write("  3. 如果大量episode都有此问题，可能是采集过程有误\n")
                     else:
+                        # 其他配置问题
+                        f.write("  ❌ 一般配置问题\n")
                         f.write("  1. 检查 device_model_annotation.yaml 配置\n")
                         f.write("  2. 检查 converter config 文件\n")
                         f.write("  3. 确认 device_model 和 version 的对应关系\n")
+                        f.write("  4. 查看factory config (converter_factory_config.yaml)的映射关系\n")
                     
                     f.write("\n" + "-"*70 + "\n\n")
                 
