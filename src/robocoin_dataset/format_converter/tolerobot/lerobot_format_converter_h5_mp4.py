@@ -6,6 +6,7 @@ LeRobot格式转换器 - H5+MP4格式
 import logging
 from pathlib import Path
 
+import av
 import cv2
 import h5py
 import numpy as np
@@ -297,20 +298,24 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 continue
             
             mp4_file = mp4_files[0]  # 使用第一个匹配的文件
-            cap = cv2.VideoCapture(str(mp4_file))
-            if not cap.isOpened():
-                raise OSError(f"Cannot open video file: {mp4_file}")
             
-            frames = []
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                # OpenCV读取的是BGR，转换为RGB
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(frame_rgb)
-            cap.release()
-            images[cam_name] = frames
+            # 使用 PyAV 读取视频（支持 AV1 等更多编码格式）
+            try:
+                container = av.open(str(mp4_file))
+                frames = []
+                
+                for frame in container.decode(video=0):
+                    # PyAV 直接转换为 RGB 格式的 numpy array
+                    img = frame.to_ndarray(format='rgb24')
+                    frames.append(img)
+                
+                container.close()
+                images[cam_name] = frames
+                
+                self.logger.info(f"Loaded {len(frames)} frames from {mp4_file.name} using PyAV")
+                
+            except Exception as e:
+                raise OSError(f"Cannot open or decode video file {mp4_file}: {e}")
         
         return images
 

@@ -100,7 +100,7 @@ features:
         args:
           topic_name: /hdas/feedback_torso
           range_from: 0
-          range_to: 2
+          range_to: 3
         # messages: sensor_msgs/msg/JointState
 
       ### chassis state - wheels or mobile base (3 chassis) 
