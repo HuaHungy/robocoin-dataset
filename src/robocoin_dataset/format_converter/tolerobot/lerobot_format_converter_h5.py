@@ -302,8 +302,22 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                                 dataset = h5_file[required_path]
                                 if not isinstance(dataset, h5py.Dataset):
                                     invalid_paths.append(f"{required_path} (not a dataset)")
-                                elif len(dataset.shape) == 0:
-                                    invalid_paths.append(f"{required_path} (empty dataset)")
+                                else:
+                                    # 对于 video 数据集，shape=() 是正常的（单个压缩视频blob）
+                                    # 对于其他数据集，shape=(0,) 或包含0维度的shape是空数据集
+                                    is_video_dataset = '/video' in required_path and not required_path.endswith('/video_index')
+                                    
+                                    if is_video_dataset:
+                                        # Video datasets: scalar shape=() is valid (compressed video blob)
+                                        # Only flag if it has dimensions with 0 size like shape=(0,) or (10, 0, 3)
+                                        if len(dataset.shape) > 0 and any(dim == 0 for dim in dataset.shape):
+                                            invalid_paths.append(f"{required_path} (empty video dataset with shape {dataset.shape})")
+                                    else:
+                                        # Non-video datasets: both shape=() and shape=(0,) are suspicious
+                                        if len(dataset.shape) == 0:
+                                            invalid_paths.append(f"{required_path} (scalar dataset, expected array)")
+                                        elif any(dim == 0 for dim in dataset.shape):
+                                            invalid_paths.append(f"{required_path} (empty dataset with shape {dataset.shape})")
                             except Exception as e:
                                 invalid_paths.append(f"{required_path} (error: {e})")
 
