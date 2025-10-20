@@ -776,7 +776,66 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         h5_file_path = self.task_episode_h5file_paths[task_path][ep_idx]
         try:
             with h5py.File(h5_file_path, "r") as h5_file:
-                return h5_file[h5_path].shape[0]
+                # 获取参考帧数
+                reference_frame_count = h5_file[h5_path].shape[0]
+                
+                # ⭐ 新增：检查所有 sub_state 的帧数是否一致
+                frame_count_issues = []
+                all_sub_states = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][SUB_STATE_KEY]
+                
+                for i, sub_state in enumerate(all_sub_states):
+                    sub_state_args = sub_state.get(ARGS_KEY, {})
+                    if "h5_path" not in sub_state_args:
+                        continue
+                    
+                    check_h5_path = sub_state_args["h5_path"]
+                    if check_h5_path not in h5_file:
+                        continue  # 路径不存在，其他地方会报错
+                    
+                    dataset = h5_file[check_h5_path]
+                    shape = dataset.shape
+                    
+                    # 跳过视频压缩数据（shape=()）
+                    if 'video' in check_h5_path.lower() and shape == ():
+                        continue
+                    
+                    # 跳过空数据集（某些arm未使用时shape[0]=0）
+                    if len(shape) > 0 and shape[0] == 0:
+                        continue
+                    
+                    # 检查帧数
+                    if len(shape) > 0:
+                        current_frame_count = shape[0]
+                        if current_frame_count != reference_frame_count:
+                            frame_count_issues.append(
+                                f"    sub_state[{i}] {check_h5_path}: {current_frame_count} 帧"
+                            )
+                
+                # 如果发现帧数不一致，抛出详细错误
+                if frame_count_issues:
+                    raise ValueError(
+                        f"❌ H5数据集帧数不一致（数据质量问题）\n"
+                        f"   🗂️  文件: {h5_file_path.name}\n"
+                        f"   📁 完整路径: {h5_file_path}\n"
+                        f"   📍 任务: {task_path.name}\n"
+                        f"   📍 Episode索引: {ep_idx}\n"
+                        f"   \n"
+                        f"   📊 参考帧数（来自 sub_state[0]）:\n"
+                        f"    {h5_path}: {reference_frame_count} 帧\n"
+                        f"   \n"
+                        f"   ❌ 以下数据集帧数不一致:\n"
+                        + "\n".join(frame_count_issues) + "\n"
+                        f"   \n"
+                        f"   💡 这是数据采集时的问题，不同传感器的数据长度不一致。\n"
+                        f"   🔧 解决方案：\n"
+                        f"      1. 移动此文件到 error/ 文件夹：\n"
+                        f"         mkdir -p '{h5_file_path.parent}/error'\n"
+                        f"         mv '{h5_file_path}' '{h5_file_path.parent}/error/'\n"
+                        f"      2. 或者重新采集这个episode的数据\n"
+                        f"      3. 或者修改数据采集脚本确保所有传感器同步"
+                    )
+                
+                return reference_frame_count
         except OSError as e:
             error_str = str(e)
             if "bad global heap collection signature" in error_str:

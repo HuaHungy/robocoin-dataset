@@ -179,25 +179,62 @@ class YinheValidatorV2:
         对于银河数据集：device_model_annotation.yaml 在任务目录级别
         银河通用/fold_clothe/device_model_annotation.yaml
         
+        银河数据集已知所有任务（硬编码以确保完整性）：
+        1. fold_clothe - 叠衣服
+        2. steamer_storage_baozi - 放包子
+        3. take_snack - 取零食
+        4. use_dryer - 使用烘干机
+        5. use_washing_machine - 使用洗衣机
+        
         Returns:
             [(yaml_path, version), ...]
         """
         print("🔍 查找 device_model_annotation.yaml 文件...")
         
-        # 银河数据集：只需遍历一级子目录（任务目录）
+        # 银河数据集：硬编码所有已知任务，确保不遗漏
+        KNOWN_TASKS = [
+            "fold_clothe",
+            "steamer_storage_baozi", 
+            "take_snack",
+            "use_dryer",
+            "use_washing_machine"
+        ]
+        
         yaml_files = []
+        found_tasks = []
+        missing_tasks = []
+        
         try:
+            # 先检查硬编码的任务
+            for task_name in KNOWN_TASKS:
+                task_dir = self.data_root / task_name
+                if task_dir.exists() and task_dir.is_dir():
+                    yaml_path = task_dir / "device_model_annotation.yaml"
+                    if yaml_path.exists():
+                        yaml_files.append(yaml_path)
+                        found_tasks.append(task_name)
+                    else:
+                        missing_tasks.append(f"{task_name} (无device文件)")
+                else:
+                    missing_tasks.append(f"{task_name} (目录不存在)")
+            
+            # 再检查是否有其他未知任务
             for task_dir in self.data_root.iterdir():
-                if not task_dir.is_dir():
+                if not task_dir.is_dir() or task_dir.name in KNOWN_TASKS:
                     continue
                 
                 yaml_path = task_dir / "device_model_annotation.yaml"
                 if yaml_path.exists():
                     yaml_files.append(yaml_path)
+                    found_tasks.append(task_dir.name)
+                    print(f"  ⚠️  发现未知任务: {task_dir.name}")
         
         except Exception as e:
             print(f"⚠️  遍历目录失败: {e}")
             return []
+        
+        if missing_tasks:
+            print(f"  ⚠️  缺少任务: {', '.join(missing_tasks)}")
         
         # 读取版本信息
         datasets = []
@@ -235,7 +272,12 @@ class YinheValidatorV2:
         """
         快速查找episodes（通过 data.json 特征文件）
         
-        银河数据集结构: task_dir/robot_id/YYYYMMDD_recordN/data.json
+        银河数据集有两种结构:
+        1. 简单结构: task_dir/robot_id/episode/data.json
+           例如: fold_clothe/dieyifu-11/20250915_101229_record0/data.json
+        
+        2. 复杂结构: task_dir/subtask/robot_id/episode/data.json  
+           例如: use_washing_machine/clothes_into_washing_machine/xiyiji-11/20250915_101229_record0/data.json
         
         Args:
             dataset_base: device_model_annotation.yaml 所在目录（任务目录）
@@ -246,26 +288,38 @@ class YinheValidatorV2:
         """
         episodes = []
         
-        try:
-            # 遍历 robot_id 目录
-            for robot_dir in dataset_base.iterdir():
-                if not robot_dir.is_dir():
-                    continue
-                
-                # 遍历 episode 目录
-                for episode_dir in robot_dir.iterdir():
-                    if not episode_dir.is_dir():
+        def _search_episodes(search_dir: Path, depth: int = 0, max_depth: int = 3):
+            """递归搜索episodes，限制深度避免过深"""
+            if depth > max_depth:
+                return
+            
+            if max_episodes and len(episodes) >= max_episodes:
+                return
+            
+            try:
+                for item in search_dir.iterdir():
+                    if not item.is_dir():
                         continue
                     
-                    # 检查是否有 data.json（episode特征文件）
-                    if (episode_dir / "data.json").exists():
-                        episodes.append(episode_dir)
-                        
+                    # 检查是否是episode目录（包含data.json）
+                    if (item / "data.json").exists():
+                        episodes.append(item)
                         if max_episodes and len(episodes) >= max_episodes:
-                            return episodes
+                            return
+                    else:
+                        # 继续往下搜索
+                        _search_episodes(item, depth + 1, max_depth)
+            
+            except PermissionError:
+                pass
+            except Exception as e:
+                if self.verbose:
+                    print(f"    ⚠️  遍历 {search_dir.name} 失败: {e}")
         
+        try:
+            _search_episodes(dataset_base, depth=0, max_depth=3)
         except Exception as e:
-            print(f"  ⚠️  遍历失败: {e}")
+            print(f"  ⚠️  搜索失败: {e}")
         
         return episodes
     

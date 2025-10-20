@@ -517,12 +517,62 @@ def _validate_episode_worker(task: tuple) -> ValidationResult:
     elif h5_file.stat().st_size == 0:
         errors.append("文件大小为0")
     else:
-        # 检查H5内部结构（只检查keys，不加载数据）
+        # 检查H5内部结构
         try:
             with h5py.File(h5_file, 'r') as f:
+                # 检查是否存在所有必需路径
                 for path in required_h5_paths:
                     if path not in f:
                         errors.append(f"H5缺少路径: {path}")
+                
+                # ⭐ 新增：检查帧数一致性
+                # 收集所有非空数据集的帧数（shape[0]）
+                frame_counts = {}
+                video_datasets = set()  # 视频数据集（允许shape=()）
+                
+                for path in required_h5_paths:
+                    if path not in f:
+                        continue  # 跳过缺失的路径
+                    
+                    dataset = f[path]
+                    shape = dataset.shape
+                    
+                    # 检测视频数据集：通常包含'video'关键字且可能是压缩格式
+                    if 'video' in path.lower():
+                        video_datasets.add(path)
+                        if shape == ():
+                            # 视频压缩数据，shape=()是正常的
+                            continue
+                    
+                    # 对于非视频数据集，检查帧数
+                    if len(shape) > 0 and shape[0] > 0:  # 有维度且帧数>0
+                        frame_counts[path] = shape[0]
+                    elif len(shape) > 0 and shape[0] == 0:
+                        # 空数据集（如right arm when not used）
+                        pass  # 这是正常的，某些arm可能未使用
+                    elif shape != ():
+                        # 非视频但shape异常
+                        warnings.append(f"数据集 {path} 形状异常: {shape}")
+                
+                # 检查帧数是否一致
+                if len(frame_counts) > 0:
+                    unique_counts = set(frame_counts.values())
+                    if len(unique_counts) > 1:
+                        # 帧数不一致！
+                        errors.append(
+                            f"帧数不一致: " + 
+                            ", ".join([f"{path}={count}" for path, count in sorted(frame_counts.items())])
+                        )
+                        
+                        # 额外的警告：说明哪些帧数是主要的
+                        from collections import Counter
+                        count_freq = Counter(frame_counts.values())
+                        most_common_count, most_common_freq = count_freq.most_common(1)[0]
+                        warnings.append(
+                            f"最常见帧数: {most_common_count} "
+                            f"({most_common_freq}/{len(frame_counts)} 个数据集)"
+                        )
+                        
         except Exception as e:
             errors.append(f"H5读取失败: {e}")
     
