@@ -317,6 +317,79 @@ class ZhipingfangValidatorV2:
         
         return results
     
+    def move_error_episodes(self, results: list[ValidationResult], error_threshold: float = 0.9) -> tuple[int, int]:
+        """
+        移动有问题的episodes到error文件夹
+        
+        Args:
+            results: 验证结果列表
+            error_threshold: 错误率阈值，超过此值的错误类型被认为是配置问题，不移动文件
+            
+        Returns:
+            (moved_count, skipped_count): 移动的数量和跳过的数量
+        """
+        if not results:
+            return 0, 0
+        
+        # 1. 先检测配置问题
+        total = len(results)
+        invalid_results = [r for r in results if not r.is_valid]
+        
+        # 统计错误类型
+        error_types = {}
+        for result in invalid_results:
+            for error in result.errors:
+                error_types[error] = error_types.get(error, 0) + 1
+        
+        # 识别配置问题（错误率>=阈值）
+        config_error_patterns = set()
+        for error, count in error_types.items():
+            if count / total >= error_threshold:
+                config_error_patterns.add(error)
+        
+        # 2. 移动非配置问题的episode
+        moved_count = 0
+        skipped_count = 0
+        
+        for result in invalid_results:
+            # 检查是否所有错误都是配置问题
+            is_config_issue = all(err in config_error_patterns for err in result.errors)
+            
+            if is_config_issue:
+                skipped_count += 1
+                if self.verbose:
+                    print(f"  ⏭️  跳过（配置问题）: {result.dataset_name}/{result.episode_name}")
+                continue
+            
+            # 移动到error文件夹
+            try:
+                episode_path = Path(result.episode_path)
+                if not episode_path.exists():
+                    continue
+                
+                # 创建error目录
+                error_dir = episode_path.parent / "error"
+                error_dir.mkdir(exist_ok=True)
+                
+                # 移动整个episode文件
+                dest = error_dir / episode_path.name
+                if dest.exists():
+                    if self.verbose:
+                        print(f"  ⚠️  目标已存在: {dest}")
+                    continue
+                
+                import shutil
+                shutil.move(str(episode_path), str(dest))
+                moved_count += 1
+                
+                if self.verbose:
+                    print(f"  📦 已移动: {result.dataset_name}/{result.episode_name} -> error/")
+            
+            except Exception as e:
+                print(f"  ❌ 移动失败 {result.episode_path}: {e}")
+        
+        return moved_count, skipped_count
+    
     def print_summary(self, results: list[ValidationResult], output_file: Optional[str] = None):
         """打印验证总结并检测配置问题"""
         if not results:
@@ -500,6 +573,11 @@ def main():
         type=Path,
         help="配置问题报告输出文件路径（默认：validation_config_issues.txt）"
     )
+    parser.add_argument(
+        "--move-errors",
+        action="store_true",
+        help="自动移动有问题的episodes到error文件夹（配置问题除外）"
+    )
     
     args = parser.parse_args()
     
@@ -513,6 +591,8 @@ def main():
     print("🚀 智平方数据集验证器 v2 (高性能版)")
     print(f"📁 数据集: {args.dataset_path}")
     print(f"⚙️  并行度: {args.workers}")
+    if args.move_errors:
+        print("🔧 错误移动模式: 开启")
     print()
     
     validator = ZhipingfangValidatorV2(
@@ -524,6 +604,13 @@ def main():
     
     results = validator.validate_all(max_episodes=args.max_episodes)
     validator.print_summary(results, output_file=str(output_file))
+    
+    # 移动错误文件
+    if args.move_errors:
+        print("\n📦 开始移动错误episodes...")
+        moved, skipped = validator.move_error_episodes(results)
+        print(f"✅ 移动完成: {moved} 个episodes已移动到error文件夹")
+        print(f"⏭️  跳过: {skipped} 个episodes（配置问题）")
     
     invalid_count = sum(1 for r in results if not r.is_valid)
     sys.exit(0 if invalid_count == 0 else 1)
