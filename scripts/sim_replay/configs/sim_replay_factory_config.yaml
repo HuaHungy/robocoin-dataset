@@ -11,18 +11,17 @@ realman_rmc_aidal:
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.realman_rmc_aidal_config
   mujoco_sim_replay_config_class: RealmanRmcAidalLerobotSimReplayConfig
 
-# galaxea_r1_lite:
-# - version: default_version
-#   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
-#   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_rosbag
-#   class: LerobotFormatConverterRosbag
-#   converter_config_path: converter_config_galaxea_r1_lite.yaml
+galaxea_r1_lite:
+- version: default_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
+  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
 
-# - version: h5_version
-#   verison_description: galaxea r1 lite H5 format (qpos + eepose, no images)
-#   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
-#   class: LerobotFormatConverterHdf5
-#   converter_config_path: converter_config_galaxea_r1_lite_h5.yaml
+
+- version: h5_version
+  verison_description: galaxea r1 lite H5 format (qpos + eepose, no images)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
+  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
 
 unitree_g1:
 - version: default_version

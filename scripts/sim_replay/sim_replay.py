@@ -87,21 +87,21 @@ if __name__ == "__main__":
 """usage:
 # agilex_cobot_decoupled_magic
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path ./db/datasets.db \
+    --db_file_path /mnt/db/datasets.db \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
     --device_model agilex_cobot_decoupled_magic \
     --log_dir ./logs/sim_replay
 
 # realman_rmc_aidal
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path ./db/datasets.db \
+    --db_file_path /mnt/db/datasets.db \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
     --device_model realman_rmc_aidal \
     --log_dir ./logs/sim_replay
 
 # unitree_g1
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path ./db/datasets.db \
+    --db_file_path /mnt/db/datasets.db \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
     --device_model unitree_g1 \
     --log_dir ./logs/sim_replay
