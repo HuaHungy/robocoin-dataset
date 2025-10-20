@@ -8,8 +8,14 @@ from robocoin_dataset.annotation.motion_annotation.configs.agilex_cobot_magic im
     AgilexCobotMagicConfig,
     AgilexCobotMagicWithoutEEFConfig,
 )
-from robocoin_dataset.annotation.motion_annotation.configs.realman_rmc_aidal import (
-    RealmanRmcAidalConfig,
+from robocoin_dataset.annotation.motion_annotation.configs.galaxea_ri_lite import (
+    GalaxeaR1LiteConfig,
+)
+from robocoin_dataset.annotation.motion_annotation.configs.realman_rmc_aidal_config import (
+    RealmanRmcAidalSimFkConfig,
+)
+from robocoin_dataset.annotation.motion_annotation.configs.unitree_g1 import (
+    UnitreeG129DofConfig,
 )
 
 
@@ -74,33 +80,37 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    config = RealmanRmcAidalConfig()
+    config = RealmanRmcAidalSimFkConfig()
     config = AgilexCobotMagicConfig()
     config = AgilexCobotMagicWithoutEEFConfig()
-    config.view_frequency = args.frequency
+    config = GalaxeaR1LiteConfig()
+    config = UnitreeG129DofConfig()
+    config = RealmanRmcAidalSimFkConfig()
 
     solver = LerobotFkSolver(config, args.repo_path)
 
     solver.start_viewer()
+    solver._load
 
     episode_num = solver.get_episode_num()
 
     eefpos_and_eefeuler = solver.get_episode_eefpos_and_eefeuler(0, is_state=True)
     fk_result = solver.episode_fk(0, is_state=False)
+    print(fk_result[0])
 
-    eefpos = get_pos_in_list(eefpos_and_eefeuler)
-    fk_result_pos = get_pos_in_list(fk_result)
+    # eefpos = get_pos_in_list(eefpos_and_eefeuler)
+    # fk_result_pos = get_pos_in_list(fk_result)
 
-    delta_eef_pos_data = [data - eefpos[0] for data in eefpos]
-    delta_fk_pos_data = [data - fk_result_pos[0] for data in fk_result_pos]
+    # delta_eef_pos_data = [data - eefpos[0] for data in eefpos]
+    # delta_fk_pos_data = [data - fk_result_pos[0] for data in fk_result_pos]
 
-    max_error = 0
-    for data1, data2 in zip(delta_eef_pos_data, delta_fk_pos_data):
-        error = data1 - data2
-        if max_error < np.max(np.abs(error)):
-            max_error = np.max(np.abs(error))
-        max_error = np.max(np.abs(error))
-    print(max_error)
+    # max_error = 0
+    # for data1, data2 in zip(delta_eef_pos_data, delta_fk_pos_data):
+    #     error = data1 - data2
+    #     if max_error < np.max(np.abs(error)):
+    #         max_error = np.max(np.abs(error))
+    #     max_error = np.max(np.abs(error))
+    # print(max_error)
 
     # eefquat = get_quat_in_list(eefpos_and_eefeuler)
     # fk_result_quat = get_quat_in_list(fk_result)
@@ -116,5 +126,5 @@ if __name__ == "__main__":
 
 
 """usage:
-python scripts/motion_annotation/test_motion_annotation.py /mnt/nas/synnas/docker2/robocoin-datasets/agilex_cobot_decoupled_magic_wipe_table/
+python scripts/motion_annotation/test_motion_annotation.py /mnt/nas/synnas/docker2/robocoin-datasets/agilex_cobot_decoupled_magic_wipe_table/ 30
 """

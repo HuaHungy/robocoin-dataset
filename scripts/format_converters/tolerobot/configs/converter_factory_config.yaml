@@ -4,18 +4,24 @@ realman_rmc_aidal:
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
   class: LerobotFormatConverterHdf5
   converter_config_path: converter_config_realman_rmc_aidal.yaml
+  mujoco_sim_config_module: robocoin_dataset.annotation.motion_annotation.configs.realman_rmc_aidal
+  mujoco_sim_config_class: RealmanRmcAidalMotionAnnotationConfig
 
 - version: mcap_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist, mcap format
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mcap
   class: LerobotFormatConverterRealmanRmcAidalMcap
   converter_config_path: converter_config_realman_rmc_aidal_mcap.yaml
+  mujoco_sim_config_module: robocoin_dataset.annotation.motion_annotation.configs.realman_rmc_aidal
+  mujoco_sim_config_class: RealmanRmcAidalMotionAnnotationConfig
 
 - version: mcap_simple_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist, mcap format, simplified without end effector pose
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mcap
   class: LerobotFormatConverterRealmanRmcAidalMcap
   converter_config_path: converter_config_realman_rmc_aidal_mcap_simple.yaml
+  mujoco_sim_config_module: robocoin_dataset.annotation.motion_annotation.configs.realman_rmc_aidal
+  mujoco_sim_config_class: RealmanRmcAidalMotionAnnotationConfig
 
 galaxea_r1_lite:
 - version: default_version
@@ -49,7 +55,6 @@ unitree_g1:
   class: LerobotFormatConverterG1
   converter_config_path: converter_config_unitree_g1_dex3v1.yaml
 
-
 - version: twocam_hand_version
   verison_description: two arms and two hands (6 joints each), two rgb cameras with high_up and high_down
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
@@ -61,7 +66,6 @@ unitree_g1:
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_g1
   class: LerobotFormatConverterG1
   converter_config_path: converter_config_unitree_g1_twocam_dex3v1.yaml
-
 
 - version: threecam_hand_version
   verison_description: two arms and two hands (6 joints each), three rgb cameras with high, left wrist, right wrist

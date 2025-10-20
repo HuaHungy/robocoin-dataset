@@ -341,3 +341,21 @@ class LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB(Base):
     convert_path = Column(String(255), index=True, nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_msg = Column(Text, index=True, nullable=True)
+
+
+class LeformatDatasetSimReplayStatusDB(Base):
+    __tablename__ = "leformat_dataset_simulation_replay_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(Text, index=True, nullable=True)
+
+
+class LeformatDatasetMotionAnnotationStatusDB(Base):
+    __tablename__ = "leformat_dataset_motion_annotation_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(Text, index=True, nullable=True)
