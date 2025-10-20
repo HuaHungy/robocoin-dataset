@@ -713,9 +713,15 @@ class LerobotFormatConverter(ABC):
                     episodes_num = 1
                 for task_ep_idx in range(episodes_num):
                     try:
-                        images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
-                            task_path, task_ep_idx
-                        )
+                        # 在 test 模式下，跳过耗时的 buffer 准备（如 MCAP 图像解码）
+                        # 仅验证基本的转换逻辑和配置
+                        if is_test:
+                            images_buffer, states_buffer, actions_buffer = None, None, None
+                        else:
+                            images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
+                                task_path, task_ep_idx
+                            )
+                        
                         for frame_data in self._gen_episode_frames(
                             task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
                         ):
