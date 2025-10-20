@@ -672,15 +672,30 @@ def _validate_episode_worker(task: tuple) -> ValidationResult:
             episode_name=str(episode_dir.name)
         )
     
-    # 检查视频
+    # 检查视频并获取帧数
+    video_frame_counts = {}
     for video_name in required_videos:
         video_path = episode_dir / video_name
         if not video_path.exists():
             errors.append(f"缺失: {video_name}")
         elif video_path.stat().st_size == 0:
             errors.append(f"空文件: {video_name}")
+        else:
+            # 获取视频帧数（使用cv2，需要导入）
+            try:
+                import cv2
+                cap = cv2.VideoCapture(str(video_path))
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.release()
+                if frame_count > 0:
+                    video_frame_counts[video_name] = frame_count
+                else:
+                    warnings.append(f"{video_name}: 帧数为0")
+            except Exception as e:
+                warnings.append(f"{video_name}: 无法读取帧数 ({e})")
     
-    # 检查JSON
+    # 检查JSON并获取帧数
+    json_frame_counts = {}
     json_path = episode_dir / "data.json"
     if not json_path.exists():
         errors.append("缺失: data.json")
@@ -700,8 +715,38 @@ def _validate_episode_worker(task: tuple) -> ValidationResult:
                         errors.append(f"字段类型错误: {field}")
                     elif len(data_section[field]) == 0:
                         errors.append(f"字段为空: {field}")
+                    else:
+                        # 记录JSON字段的帧数
+                        json_frame_counts[field] = len(data_section[field])
         except Exception as e:
             errors.append(f"JSON错误: {e}")
+    
+    # ⭐ 新增：检查帧数一致性
+    if json_frame_counts or video_frame_counts:
+        all_frame_counts = {}
+        all_frame_counts.update({f"JSON:{k}": v for k, v in json_frame_counts.items()})
+        all_frame_counts.update({f"Video:{k}": v for k, v in video_frame_counts.items()})
+        
+        if len(all_frame_counts) > 0:
+            unique_counts = set(all_frame_counts.values())
+            
+            # 如果帧数不一致
+            if len(unique_counts) > 1:
+                min_count = min(all_frame_counts.values())
+                max_count = max(all_frame_counts.values())
+                diff_ratio = (max_count - min_count) / max_count if max_count > 0 else 0
+                
+                # 如果差异超过10%，视为严重问题
+                if diff_ratio > 0.1:
+                    errors.append(
+                        f"帧数不一致(差异{diff_ratio*100:.1f}%): " +
+                        ", ".join([f"{k}={v}" for k, v in sorted(all_frame_counts.items(), key=lambda x: x[1])])
+                    )
+                else:
+                    # 差异小于10%，只是警告（可能是正常的同步误差）
+                    warnings.append(
+                        f"帧数轻微不一致(差异{diff_ratio*100:.1f}%): min={min_count}, max={max_count}"
+                    )
     
     if not (episode_dir / "report.txt").exists():
         warnings.append("缺失report.txt")

@@ -20,25 +20,19 @@ features:
     ### ========== IMAGES (3 cameras) ==========
     images:
       ### High camera
-      - names:
-          - observation.images.cam_high
-        lerobot_feature: observation.images.cam_high
+      - cam_name: cam_high
         args:
           cam_name: cam_high
           video_file_pattern: "*cam_high.mp4"
 
       ### Left wrist camera
-      - names:
-          - observation.images.cam_left_wrist
-        lerobot_feature: observation.images.cam_left_wrist
+      - cam_name: cam_left_wrist
         args:
           cam_name: cam_left_wrist
           video_file_pattern: "*cam_left_wrist.mp4"
 
       ### Right wrist camera
-      - names:
-          - observation.images.cam_right_wrist
-        lerobot_feature: observation.images.cam_right_wrist
+      - cam_name: cam_right_wrist
         args:
           cam_name: cam_right_wrist
           video_file_pattern: "*cam_right_wrist.mp4"
