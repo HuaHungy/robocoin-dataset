@@ -62,6 +62,15 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
     def _get_dataset_task_paths(self) -> dict[Path, str]:
         """Find all episode directories containing metadata.json and proprio_stats.hdf5.
         
+        Leju dataset structure:
+        dataset_path/ (e.g., Scan_code_for_weighing/)
+          ├── local_dataset_info.yaml
+          └── subtask/ (e.g., more_scan_code_for_weighing/)
+              ├── local_task_info.yaml  ← Task info at subtask level
+              └── episode_uuid/
+                  ├── metadata.json
+                  └── proprio_stats/proprio_stats.hdf5
+        
         Returns:
             dict mapping episode directory paths to task names
         """
@@ -69,63 +78,69 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         
         task_paths_dict = {}
         
-        # Read task info from dataset root
-        local_task_info_path = self.dataset_path / "local_task_info.yaml"
-        if not local_task_info_path.exists():
-            # 列出数据集根目录的文件
+        # Look for subtask directories (one level down from dataset_path)
+        # Each subtask directory should contain local_task_info.yaml
+        subtask_dirs = [d for d in self.dataset_path.iterdir() if d.is_dir()]
+        
+        if not subtask_dirs:
             root_files = [f.name for f in self.dataset_path.iterdir() if f.is_file()]
             raise FileNotFoundError(
-                f"❌ Task info file not found.\n"
-                f"   📄 Expected file: local_task_info.yaml\n"
-                f"   📂 Dataset path: {self.dataset_path}\n"
+                f"❌ No subtask directories found.\n"
+                f"    Dataset path: {self.dataset_path}\n"
                 f"   📋 Files in root: {root_files}\n"
-                f"   💡 Check if:\n"
-                f"      1. Dataset has been extracted correctly\n"
-                f"      2. local_task_info.yaml exists in dataset root\n"
-                f"      3. Path points to correct dataset directory"
+                f"   💡 Expected structure: dataset_path/subtask/episodes/\n"
+                f"   💡 Check if dataset has been extracted correctly"
             )
         
-        try:
-            with open(local_task_info_path) as f:
-                task_info_dict = yaml.safe_load(f)
-                task_index = task_info_dict["task_index"]
-                task = self.tasks[task_index]
-        except KeyError as e:
-            raise ValueError(
-                f"❌ Invalid task info format.\n"
-                f"   📄 File: {local_task_info_path}\n"
-                f"   ❌ Missing key: {e!s}\n"
-                f"   💡 Expected format: {{task_index: <index>, tasks: [...]}}\n"
-                f"   💡 Check if task_info.yaml has correct structure"
-            ) from e
-        except Exception as e:
-            raise OSError(
-                f"❌ Failed to read task info file.\n"
-                f"   📄 File: {local_task_info_path}\n"
-                f"   ❌ Error: {e!s}\n"
-                f"   💡 Check if:\n"
-                f"      1. File is valid YAML format\n"
-                f"      2. File is not corrupted\n"
-                f"      3. File has read permissions"
-            ) from e
-        
-        # Scan for episode directories
-        for subdir in self.dataset_path.iterdir():
-            if subdir.is_dir():
-                metadata_file = subdir / "metadata.json"
-                h5_file = subdir / "proprio_stats" / "proprio_stats.hdf5"
-                
-                if metadata_file.exists() and h5_file.exists():
-                    task_paths_dict[subdir] = task
-                    self.logger.info(f"Found episode: {subdir.name}")
+        # Process each subtask directory
+        for subtask_dir in subtask_dirs:
+            local_task_info_path = subtask_dir / "local_task_info.yaml"
+            
+            if not local_task_info_path.exists():
+                self.logger.warning(f"⚠️  Skipping {subtask_dir.name}: no local_task_info.yaml found")
+                continue
+            
+            # Read task info from subtask directory
+            try:
+                with open(local_task_info_path) as f:
+                    task_info_dict = yaml.safe_load(f)
+                    task_index = task_info_dict["task_index"]
+                    task = self.tasks[task_index]
+            except KeyError as e:
+                self.logger.warning(
+                    f"⚠️  Skipping {subtask_dir.name}: Invalid task info format.\n"
+                    f"   📄 File: {local_task_info_path}\n"
+                    f"   ❌ Missing key: {e!s}"
+                )
+                continue
+            except Exception as e:
+                self.logger.warning(
+                    f"⚠️  Skipping {subtask_dir.name}: Failed to read task info.\n"
+                    f"   📄 File: {local_task_info_path}\n"
+                    f"   ❌ Error: {e!s}"
+                )
+                continue
+            
+            # Scan for episode directories in this subtask
+            episode_count = 0
+            for episode_dir in subtask_dir.iterdir():
+                if episode_dir.is_dir():
+                    metadata_file = episode_dir / "metadata.json"
+                    h5_file = episode_dir / "proprio_stats" / "proprio_stats.hdf5"
+                    
+                    if metadata_file.exists() and h5_file.exists():
+                        task_paths_dict[episode_dir] = task
+                        episode_count += 1
+            
+            self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}'")
         
         if not task_paths_dict:
-            # 列出所有子目录帮助诊断
-            all_subdirs = [d.name for d in self.dataset_path.iterdir() if d.is_dir()]
+            # List all subtask directories to help diagnose
+            all_subtasks = [d.name for d in subtask_dirs]
             raise FileNotFoundError(
-                f"❌ No valid episode directories found.\n"
+                f"❌ No valid episode directories found in any subtask.\n"
                 f"   📂 Dataset path: {self.dataset_path}\n"
-                f"   📋 Subdirectories found: {all_subdirs if all_subdirs else 'None'}\n"
+                f"   📋 Subtasks found: {all_subtasks}\n"
                 f"   💡 Valid episode must have:\n"
                 f"      - metadata.json\n"
                 f"      - proprio_stats/proprio_stats.hdf5\n"
