@@ -9,18 +9,20 @@ def upsert_leformat_convert(
     session: Session,
     ds_uuid: str,
     convert_status: TaskStatus,
-    convert_version_uuid: str = "",
+    # convert_version_uuid: str = "",
     err_message: str | None = None,
     leformat_path: str | None = None,
     is_test: bool = False,
 ) -> None:
     """
-    Upsert LeFormatConvertDB 记录。
+    Upsert LeFormatConvertDB 或 LeFormatConvertTestDB 记录。
+    
     :param session: 已打开的 SQLAlchemy Session（由调用方管理生命周期）
     :param ds_uuid: 数据集 UUID
     :param convert_status: 转换状态
-    :param update_message: 可选，更新消息
-    :param leformat_path: 可选，输出路径
+    :param err_message: 可选，错误消息或状态更新信息
+    :param leformat_path: 可选，转换输出路径
+    :param is_test: 是否为测试模式（True=使用 LeFormatConvertTestDB，False=使用 LeFormatConvertDB）
     """
     try:
         if is_test:
@@ -40,7 +42,7 @@ def upsert_leformat_convert(
                 dataset_uuid=ds_uuid,
                 convert_status=convert_status,
                 convert_path=leformat_path,
-                convert_version_uuid=convert_version_uuid,
+                # convert_version_uuid=convert_version_uuid,
                 err_message=err_message,
                 updated_at=datetime.now(),
             )
@@ -48,7 +50,7 @@ def upsert_leformat_convert(
             # 更新现有记录
             item.convert_status = convert_status
             item.updated_at = datetime.now()
-            convert_version_uuid = (convert_version_uuid,)
+            # convert_version_uuid = (convert_version_uuid,)
             if err_message is not None:
                 item.err_message = err_message
             if leformat_path is not None:

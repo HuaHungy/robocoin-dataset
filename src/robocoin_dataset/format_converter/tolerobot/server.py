@@ -1,5 +1,6 @@
 import logging
-import uuid
+
+# import uuid
 from pathlib import Path
 
 import yaml
@@ -301,15 +302,15 @@ class LeFormatConverterTaskServer(TaskServer):
         task_status_msg = task_result_content.get(ERR_MSG)
 
         convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+        # convert_version_uuid = uuid.uuid4()
 
-        convert_version_uuid = uuid.uuid4()
         with self.db.with_session() as session:
             upsert_leformat_convert(
                 session=session,
                 ds_uuid=ds_uuid,
                 convert_status=convert_status,
                 leformat_path=leformat_path,
-                convert_version_uuid=convert_version_uuid,
+                # convert_version_uuid=convert_version_uuid,
                 err_message=task_status_msg,
                 is_test=self.is_test,
             )
