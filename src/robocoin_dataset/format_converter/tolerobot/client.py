@@ -96,15 +96,30 @@ class LeFormatConverterTaskClient(TaskClient):
 
             self.logger.info(f"converter_log_dir: {converter_log_dir}")
             total_episodes = converter.get_episodes_num()
+            
+            # 转换过程中周期性检查服务器连接状态
+            episode_count = 0
             for task_content, task_ep_idx, ep_idx in tqdm(
                 converter.convert(is_test),
                 total=total_episodes,
                 desc="Converting Dataset",
                 unit="episode",
             ):
+                # 每处理一个 episode，检查一次连接状态
+                if not self.connected or (self.websocket and self.websocket.closed):
+                    error_msg = (
+                        f"❌ Server connection lost during conversion!\n"
+                        f"   📊 Progress: {episode_count}/{total_episodes} episodes completed\n"
+                        f"   📁 Dataset: {dataset_path}\n"
+                        f"   ⚠️  Aborting conversion to prevent data inconsistency"
+                    )
+                    self.logger.error(error_msg)
+                    raise ConnectionError(error_msg)
+                
                 self.logger.info(
                     f"Converted episode {task_ep_idx} of task {task_content}, total ep_idx is:{ep_idx}"
                 )
+                episode_count += 1
             
             # Save episode source mapping after conversion completes
             if not is_test:

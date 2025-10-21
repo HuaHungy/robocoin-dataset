@@ -721,7 +721,7 @@ class LerobotFormatConverter(ABC):
                             images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
                                 task_path, task_ep_idx
                             )
-                        
+                        images_buffer, states_buffer, actions_buffer = None, None, None
                         for frame_data in self._gen_episode_frames(
                             task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
                         ):
