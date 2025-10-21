@@ -75,7 +75,7 @@ def load_converter_config(device_model: str) -> tuple[dict, str, str]:
     # 加载factory配置
     factory_config_path = (
         project_root / 
-        "src/robocoin_dataset/format_converter/tolerobot/configs/converter_factory_config.yaml"
+        "scripts/format_converters/tolerobot/configs/converter_factory_config.yaml"
     )
     
     with open(factory_config_path, 'r', encoding='utf-8') as f:
@@ -93,7 +93,7 @@ def load_converter_config(device_model: str) -> tuple[dict, str, str]:
     # 加载具体的converter配置
     converter_config_path = (
         project_root / 
-        "src/robocoin_dataset/format_converter/tolerobot/configs" /
+        "scripts/format_converters/tolerobot/configs" /
         model_config['converter_config']
     )
     
