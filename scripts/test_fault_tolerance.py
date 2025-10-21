@@ -21,8 +21,10 @@ import logging
 import sys
 from pathlib import Path
 
-# 添加项目根目录到Python路径
+# 添加项目根目录和src目录到Python路径
 project_root = Path(__file__).parent.parent
+src_dir = project_root / "src"
+sys.path.insert(0, str(src_dir))
 sys.path.insert(0, str(project_root))
 
 
@@ -127,7 +129,8 @@ def run_conversion_test(
     Returns:
         转换报告字典
     """
-    from robocoin_dataset.format_converter.tolerobot import LerobotFormatConverterFactory
+    # 直接从模块导入
+    from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import LerobotFormatConverterFactory
     
     logger.info("="*70)
     logger.info("开始容错机制测试")
