@@ -1061,17 +1061,29 @@ class LerobotFormatConverterFactory:
 
         module = importlib.import_module(converter_module_path)
         convertor_class = getattr(module, converter_class_name)
-        return convertor_class(
-            dataset_path=dataset_path,
-            output_path=output_path,
-            converter_config=converter_config,
-            repo_id=repo_id,
-            device_model=device_model,
-            logger=logger,
-            video_backend=video_backend,
-            image_writer_processes=image_writer_processes,
-            image_writer_threads=image_writer_threads,
-            strict_episodes=strict_episodes,
-            failure_threshold=failure_threshold,
-            min_valid_frame_ratio=min_valid_frame_ratio,
-        )
+        
+        # 构建基础参数
+        init_kwargs = {
+            'dataset_path': dataset_path,
+            'output_path': output_path,
+            'converter_config': converter_config,
+            'repo_id': repo_id,
+            'device_model': device_model,
+            'logger': logger,
+            'video_backend': video_backend,
+            'image_writer_processes': image_writer_processes,
+            'image_writer_threads': image_writer_threads,
+        }
+        
+        # 检查子类是否支持新的容错参数（向后兼容）
+        import inspect
+        sig = inspect.signature(convertor_class.__init__)
+        
+        if 'strict_episodes' in sig.parameters:
+            init_kwargs['strict_episodes'] = strict_episodes
+        if 'failure_threshold' in sig.parameters:
+            init_kwargs['failure_threshold'] = failure_threshold
+        if 'min_valid_frame_ratio' in sig.parameters:
+            init_kwargs['min_valid_frame_ratio'] = min_valid_frame_ratio
+        
+        return convertor_class(**init_kwargs)

@@ -197,6 +197,17 @@ def run_conversion_test(
             min_valid_frame_ratio=min_valid_frame_ratio,
         )
         logger.info("✓ 创建转换器成功")
+        
+        # 检查转换器是否支持容错参数
+        has_fault_tolerance = hasattr(converter, 'strict_episodes')
+        if has_fault_tolerance:
+            logger.info(f"✓ 转换器支持容错机制")
+            logger.info(f"  - 严格模式episodes: {converter.strict_episodes}")
+            logger.info(f"  - 失败率阈值: {converter.failure_threshold:.1%}")
+            logger.info(f"  - 最小有效帧比例: {converter.min_valid_frame_ratio:.1%}")
+        else:
+            logger.warning("⚠ 此转换器尚未支持容错机制")
+            logger.warning("  本次测试将使用传统模式运行")
     except Exception as e:
         logger.error(f"✗ 创建转换器失败: {e}")
         raise
