@@ -35,6 +35,9 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         video_backend: str = "pyav",
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
+        strict_episodes: int = 3,
+        failure_threshold: float = 0.8,
+        min_valid_frame_ratio: float = 0.5,
     ) -> None:
         super().__init__(
             dataset_path=dataset_path,
@@ -46,9 +49,13 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             video_backend=video_backend,
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
+            strict_episodes=strict_episodes,
+            failure_threshold=failure_threshold,
+            min_valid_frame_ratio=min_valid_frame_ratio,
         )
         self._json_data_cache = {}  # 缓存JSON数据
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
+        self._video_caps = {}  # 延迟加载的VideoCapture对象缓存 {(task_path, ep_idx, cam_name): cv2.VideoCapture}
 
     def convert(self, is_test: bool = False) -> None:
         """重写父类方法以设置test模式标志
