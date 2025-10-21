@@ -217,33 +217,9 @@ def run_conversion_test(
     logger.info("开始转换...")
     logger.info("")
     
-    # 检查数据集大小
-    try:
-        total_tasks = len(converter.path_task_dict)
-        logger.info(f"检测到 {total_tasks} 个任务")
-        
-        # 显示第一个任务的episode数量
-        # 注意：这可能会触发文件扫描，大数据集可能很慢
-        logger.info("正在扫描episode文件（大数据集可能需要几分钟）...")
-        import time
-        start_time = time.time()
-        
-        first_task = list(converter.path_task_dict.keys())[0]
-        first_task_episodes = converter._get_task_episodes_num(first_task)
-        
-        scan_time = time.time() - start_time
-        logger.info(f"✓ 扫描完成（耗时 {scan_time:.1f} 秒）")
-        logger.info(f"第一个任务有 {first_task_episodes} 个episodes")
-        
-        if test_mode:
-            logger.info("测试模式：只转换第一个episode")
-    except Exception as e:
-        logger.warning(f"无法获取任务信息: {e}")
-    
     converted_episodes = []
     
     try:
-        logger.info("开始迭代转换...")
         for task, task_ep_idx, global_ep_idx in converter.convert(is_test=test_mode):
             converted_episodes.append({
                 'task': task,
