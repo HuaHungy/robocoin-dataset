@@ -48,6 +48,20 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             image_writer_threads=image_writer_threads,
         )
         self._json_data_cache = {}  # 缓存JSON数据
+        self._is_test_mode = False  # Test模式标志（限制加载帧数）
+
+    def convert(self, is_test: bool = False) -> None:
+        """重写父类方法以设置test模式标志
+        
+        Args:
+            is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        """
+        self._is_test_mode = is_test
+        if is_test and self.logger:
+            self.logger.info("🧪 Mp4Json Converter running in TEST mode - will only load first 11 frames per video")
+        
+        # 调用父类的转换逻辑
+        super().convert(is_test=is_test)
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -357,6 +371,9 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                 self.logger.warning(
                     f"Episode index {ep_idx} out of range, using JSON frame count: {min_json_frames}"
                 )
+            # 🧪 Test模式：限制帧数
+            if self._is_test_mode:
+                min_json_frames = min(10, min_json_frames)
             return min_json_frames
         
         ep_dir = episodes[ep_idx]
@@ -390,6 +407,12 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         # 3. 返回所有数据源中的最小帧数
         min_frames = min(min_json_frames, min_video_frames)
+        
+        # 🧪 Test模式：限制帧数
+        if self._is_test_mode:
+            min_frames = min(10, min_frames)
+            if self.logger:
+                self.logger.debug(f"🧪 Test mode: limiting episode {ep_idx} to {min_frames} frames")
         
         # 4. 详细的帧数不一致警告
         if min_json_frames != max_json_frames or min_video_frames != max_video_frames or min_json_frames != min_video_frames:
@@ -475,8 +498,25 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             f"nested structure (task_path/*/*/data.json)"
         )
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> dict[str, list[np.ndarray]]:
-        """准备episode的图像缓冲区"""
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:
+        """准备episode的图像缓冲区
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: Episode索引
+            is_test: 是否为测试模式。测试模式只加载前11帧（10帧数据+1帧用于action offset）
+            
+        Returns:
+            字典，键为相机名称，值为帧列表
+        """
+        # 🧪 确定要加载的最大帧数
+        max_frames = None
+        if is_test or self._is_test_mode:
+            # Test模式：只加载11帧（10帧数据 + 1帧用于timeline_offset）
+            max_frames = 11
+            if self.logger:
+                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames for episode {ep_idx}")
+        
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             raise IndexError(
@@ -512,6 +552,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     )
                 continue
             
+            cap = None
             try:
                 cap = cv2.VideoCapture(str(mp4_file))
                 if not cap.isOpened():
@@ -521,6 +562,12 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                 frames = []
                 frame_idx = 0
                 while True:
+                    # 🧪 Test模式：限制加载帧数
+                    if max_frames is not None and frame_idx >= max_frames:
+                        if self.logger:
+                            self.logger.debug(f"🧪 Stopped loading {cam_name} at frame {frame_idx} (max_frames={max_frames})")
+                        break
+                    
                     ret, frame = cap.read()
                     if not ret:
                         break
@@ -528,8 +575,6 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     frames.append(frame_rgb)
                     frame_idx += 1
-                
-                cap.release()
                 
                 if not frames:
                     failed_cameras.append(f"{cam_name} ({mp4_file.name}): 0 frames read")
@@ -545,6 +590,9 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     self.logger.error(
                         f"❌ Failed to load video {mp4_file.name}: {e}"
                     )
+            finally:
+                if cap:
+                    cap.release()
         
         if not images:
             raise RuntimeError(

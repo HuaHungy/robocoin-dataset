@@ -811,9 +811,9 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                                 f"    sub_state[{i}] {check_h5_path}: {current_frame_count} 帧"
                             )
                 
-                # 如果发现帧数不一致，抛出详细错误
+                # 如果发现帧数不一致，自动移动文件到 error/ 并返回 -1（跳过标记）
                 if frame_count_issues:
-                    raise ValueError(
+                    error_msg = (
                         f"❌ H5数据集帧数不一致（数据质量问题）\n"
                         f"   🗂️  文件: {h5_file_path.name}\n"
                         f"   📁 完整路径: {h5_file_path}\n"
@@ -824,16 +824,58 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                         f"    {h5_path}: {reference_frame_count} 帧\n"
                         f"   \n"
                         f"   ❌ 以下数据集帧数不一致:\n"
-                        + "\n".join(frame_count_issues) + "\n"
-                        f"   \n"
-                        f"   💡 这是数据采集时的问题，不同传感器的数据长度不一致。\n"
-                        f"   🔧 解决方案：\n"
-                        f"      1. 移动此文件到 error/ 文件夹：\n"
-                        f"         mkdir -p '{h5_file_path.parent}/error'\n"
-                        f"         mv '{h5_file_path}' '{h5_file_path.parent}/error/'\n"
-                        f"      2. 或者重新采集这个episode的数据\n"
-                        f"      3. 或者修改数据采集脚本确保所有传感器同步"
+                        + "\n".join(frame_count_issues)
                     )
+                    
+                    # 尝试自动移动到 error/ 目录
+                    try:
+                        import shutil
+                        error_dir = h5_file_path.parent / "error"
+                        error_dir.mkdir(exist_ok=True)
+                        
+                        dest_path = error_dir / h5_file_path.name
+                        if not dest_path.exists():
+                            shutil.move(str(h5_file_path), str(dest_path))
+                            
+                            if self.logger:
+                                self.logger.warning(
+                                    f"📦 自动移动问题文件到 error/:\n"
+                                    f"   {h5_file_path.name} -> {error_dir}/\n"
+                                    f"   原因: 帧数不一致\n"
+                                    + error_msg
+                                )
+                            
+                            # 返回 -1 表示此 episode 应该被跳过
+                            return -1
+                        else:
+                            if self.logger:
+                                self.logger.warning(
+                                    f"⚠️  问题文件已存在于 error/ 目录，跳过:\n"
+                                    f"   {dest_path}\n"
+                                    + error_msg
+                                )
+                            return -1
+                    
+                    except Exception as move_error:
+                        # 移动失败，抛出原始错误
+                        if self.logger:
+                            self.logger.error(
+                                f"❌ 自动移动文件失败: {move_error}\n"
+                                + error_msg
+                                + f"\n   \n"
+                                f"   💡 请手动移动文件:\n"
+                                f"      mkdir -p '{h5_file_path.parent}/error'\n"
+                                f"      mv '{h5_file_path}' '{h5_file_path.parent}/error/'\n"
+                            )
+                        
+                        raise ValueError(
+                            error_msg
+                            + f"\n   \n"
+                            f"   💡 自动移动失败: {move_error}\n"
+                            f"   🔧 请手动移动文件:\n"
+                            f"      mkdir -p '{h5_file_path.parent}/error'\n"
+                            f"      mv '{h5_file_path}' '{h5_file_path.parent}/error/'\n"
+                        )
                 
                 return reference_frame_count
         except OSError as e:

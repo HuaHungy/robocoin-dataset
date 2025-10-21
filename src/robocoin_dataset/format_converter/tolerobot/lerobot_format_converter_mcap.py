@@ -108,6 +108,10 @@ class LerobotFormatConverterRealmanRmcAidalMcap(LerobotFormatConverter):
         # 添加episode数据缓存
         self._episode_data_cache = {}
         
+        # Test 模式标志（用于限制帧数）
+        self._is_test_mode = False
+        self._test_mode_frames = 10  # test 模式下处理的帧数
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -178,6 +182,11 @@ int32 lift_pos
         except Exception:
             # 如果已注册则忽略
             pass
+
+    def convert(self, is_test: bool = False):  # noqa: ANN201
+        """重写 convert 方法以设置 test 模式标志"""
+        self._is_test_mode = is_test
+        yield from super().convert(is_test=is_test)
 
     def _get_dataset_task_paths(self) -> dict[Path, str]:
         """重写基类方法：扫描dataset_path下包含.mcap文件的子目录作为task"""
@@ -345,10 +354,10 @@ int32 lift_pos
                 f"📋 可用的MCAP文件：\n" +
                 "\n".join(f"   [{i}] {f.name}" for i, f in enumerate(mcap_files[:10])) +
                 (f"\n   ... 还有 {len(mcap_files) - 10} 个文件" if len(mcap_files) > 10 else "") +
-                f"\n💡 请检查：\n"
-                f"   1. Episode索引是否从0开始计数\n"
-                f"   2. 是否所有episode都已录制完成\n"
-                f"   3. 配置文件中的episode数量是否正确"
+                "\n💡 请检查：\n"
+                "   1. Episode索引是否从0开始计数\n"
+                "   2. 是否所有episode都已录制完成\n"
+                "   3. 配置文件中的episode数量是否正确"
             )
         return mcap_files[ep_idx]
 
@@ -381,7 +390,16 @@ int32 lift_pos
         
         return sample_images
 
-    def _parse_mcap_episode(self, mcap_file: Path) -> dict[str, Any]:
+    def _parse_mcap_episode(self, mcap_file: Path, max_frames: int | None = None) -> dict[str, Any]:
+        """解析 MCAP episode 数据
+        
+        Args:
+            mcap_file: MCAP 文件路径
+            max_frames: 最多解析的帧数。None表示解析全部帧（默认）
+        
+        Returns:
+            包含 images/states/actions/frames 的dict
+        """
         # 读取所有topic消息
         image_topics = {img['args']['mcap_topic']: img['cam_name']
                         for img in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]}
@@ -394,7 +412,7 @@ int32 lift_pos
             topic = sub['args']['mcap_topic']
             topic_msgs.setdefault(topic, [])
 
-        self.logger.info(f"Parsing MCAP file: {mcap_file.name}")
+        self.logger.info(f"Parsing MCAP file: {mcap_file.name} (max_frames={max_frames or 'all'})")
         with open(mcap_file, "rb") as f:
             reader = make_reader(f)
             for schema, channel, message in reader.iter_messages():
@@ -407,14 +425,18 @@ int32 lift_pos
         # 主对齐topic（如右臂关节）
         main_joint_topic = state_subs[0]['args']['mcap_topic']
         main_joint_msgs = topic_msgs[main_joint_topic]
-        frames = len(main_joint_msgs)
-        main_times = [t for t, _ in main_joint_msgs]
+        total_frames = len(main_joint_msgs)
+        
+        # 限制解析帧数（test模式用）
+        frames = min(max_frames, total_frames) if max_frames else total_frames
+        main_times = [t for t, _ in main_joint_msgs[:frames]]
 
-        self.logger.info(f"Starting to decode {frames} frames with {len(image_topics)} cameras")
+        decode_mode = f"(TEST MODE: {frames}/{total_frames} frames)" if max_frames else f"({frames} frames total)"
+        self.logger.info(f"Starting to decode {frames} frames with {len(image_topics)} cameras {decode_mode}")
         
         # 解析图片（对齐主topic时间戳）
         images = {cam: [] for cam in image_topics.values()}
-        decode_progress_step = max(1, frames // 10)  # 每10%记录一次
+        decode_progress_step = max(1, frames // 10) if frames >= 10 else 1  # 每10%记录一次
         
         for i, t in enumerate(main_times):
             if i % decode_progress_step == 0:
@@ -527,21 +549,95 @@ int32 lift_pos
             self._episode_data_cache[cache_key] = self._parse_mcap_episode(mcap_file)
         return self._episode_data_cache[cache_key]
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> Any:  # noqa: ANN401
+    def _get_episode_data_minimal(self, task_path: Path, ep_idx: int, max_frames: int = 10) -> dict:
+        """Test 模式专用：只解析前 N 帧数据，用于快速验证
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode索引
+            max_frames: 最多解析的帧数（默认10帧）
+            
+        Returns:
+            包含 images/states/actions 的dict，但只有前 max_frames 帧
+        """
+        mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
+        return self._parse_mcap_episode(mcap_file, max_frames=max_frames)
+    
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
+        if is_test:
+            # Test 模式：只解析前N帧（需要考虑 timeline_offset）
+            from robocoin_dataset.format_converter.tolerobot.constant import (
+                ACTION_KEY,
+                FEATURES_KEY,
+                TIMELINE_OFFSET_KEY,
+            )
+            
+            timeline_offset = self.converter_config[FEATURES_KEY][ACTION_KEY].get(TIMELINE_OFFSET_KEY, 0)
+            # 需要额外解析 timeline_offset 帧，因为action会访问未来的帧
+            max_frames = 10 + timeline_offset
+            episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
+            return episode_data["images"]
         episode_data = self._get_episode_data(task_path, ep_idx)
         return episode_data["images"]
 
-    def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> Any:  # noqa: ANN401
+    def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
+        if is_test:
+            # Test 模式：只解析前N帧（需要考虑 timeline_offset）
+            from robocoin_dataset.format_converter.tolerobot.constant import (
+                ACTION_KEY,
+                FEATURES_KEY,
+                TIMELINE_OFFSET_KEY,
+            )
+            
+            timeline_offset = self.converter_config[FEATURES_KEY][ACTION_KEY].get(TIMELINE_OFFSET_KEY, 0)
+            max_frames = 10 + timeline_offset
+            episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
+            return episode_data["states"]
         episode_data = self._get_episode_data(task_path, ep_idx)
         return episode_data["states"]
 
-    def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> Any:  # noqa: ANN401
+    def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
+        if is_test:
+            # Test 模式：只解析前N帧（需要考虑 timeline_offset）
+            from robocoin_dataset.format_converter.tolerobot.constant import (
+                ACTION_KEY,
+                FEATURES_KEY,
+                TIMELINE_OFFSET_KEY,
+            )
+            
+            timeline_offset = self.converter_config[FEATURES_KEY][ACTION_KEY].get(TIMELINE_OFFSET_KEY, 0)
+            max_frames = 10 + timeline_offset
+            episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
+            return episode_data["actions"]
         episode_data = self._get_episode_data(task_path, ep_idx)
         return episode_data["actions"]
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        episode_data = self._get_episode_data(task_path, ep_idx)
-        return episode_data["frames"]
+        """快速获取帧数，避免解析整个 MCAP 文件
+        
+        只统计主对齐 topic 的消息数量，不解码任何图像
+        
+        在 test 模式下，返回受限的帧数
+        """
+        # Test 模式：返回较小的帧数
+        if self._is_test_mode:
+            return self._test_mode_frames
+        
+        # 正常模式：统计完整帧数
+        mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
+        
+        # 获取主对齐 topic（通常是关节状态）
+        state_subs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][SUB_STATE_KEY]
+        main_joint_topic = state_subs[0]['args']['mcap_topic']
+        
+        # 快速统计该 topic 的消息数量
+        frame_count = 0
+        with open(mcap_file, "rb") as f:
+            reader = make_reader(f)
+            for schema, channel, message in reader.iter_messages(topics=[main_joint_topic]):
+                frame_count += 1
+        
+        return frame_count
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         return len(list(task_path.glob("*.mcap")))

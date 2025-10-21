@@ -49,6 +49,20 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
             image_writer_threads=image_writer_threads,
         )
         self._json_data_cache = {}  # 缓存JSON数据
+        self._is_test_mode = False  # Test模式标志（限制加载帧数）
+
+    def convert(self, is_test: bool = False) -> None:
+        """重写父类方法以设置test模式标志
+        
+        Args:
+            is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        """
+        self._is_test_mode = is_test
+        if is_test and self.logger:
+            self.logger.info("🧪 JpgJson Converter running in TEST mode - will only load first 11 frames per camera")
+        
+        # 调用父类的转换逻辑
+        super().convert(is_test=is_test)
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -231,7 +245,15 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
             images = list(cam_folder.glob("*.jpg")) + list(cam_folder.glob("*.png"))
             camera_info[cam_folder.name] = len(images)
             if images:
-                return len(images)
+                frame_count = len(images)
+                
+                # 🧪 Test模式：限制帧数
+                if self._is_test_mode:
+                    frame_count = min(10, frame_count)
+                    if self.logger:
+                        self.logger.debug(f"🧪 Test mode: limiting episode {ep_idx} to {frame_count} frames")
+                
+                return frame_count
         
         # 如果没有找到任何图像，提供详细的诊断信息
         raise ValueError(
@@ -252,8 +274,25 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         episodes = [ep for ep in task_path.glob("episode*") if ep.is_dir()]
         return len(episodes)
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> dict[str, list[np.ndarray]]:
-        """准备episode的图像缓冲区"""
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:
+        """准备episode的图像缓冲区
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: Episode索引
+            is_test: 是否为测试模式。测试模式只加载前11帧（10帧数据+1帧用于action offset）
+            
+        Returns:
+            字典，键为相机名称，值为帧列表
+        """
+        # 🧪 确定要加载的最大帧数
+        max_frames = None
+        if is_test or self._is_test_mode:
+            # Test模式：只加载11帧（10帧数据 + 1帧用于timeline_offset）
+            max_frames = 11
+            if self.logger:
+                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames for episode {ep_idx}")
+        
         ep_dir = self._get_episode_dir(task_path, ep_idx)
         
         images = {}
@@ -284,6 +323,12 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
                 cam_folder_path = camera_base_dir / camera_folder
                 if cam_folder_path.exists():
                     image_files = sorted(cam_folder_path.glob("*.jpg")) + sorted(cam_folder_path.glob("*.png"))
+                    
+                    # 🧪 Test模式：限制加载的图像文件数量
+                    if max_frames is not None:
+                        image_files = image_files[:max_frames]
+                        if self.logger:
+                            self.logger.debug(f"🧪 Limited {cam_name} to {len(image_files)} images (max_frames={max_frames})")
                     
                     frames = []
                     for img_file in image_files:

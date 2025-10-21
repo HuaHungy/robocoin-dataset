@@ -53,6 +53,20 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             image_writer_threads=image_writer_threads,
         )
         self._video_readers = {}  # 缓存视频读取器
+        self._is_test_mode = False  # Test模式标志（限制加载帧数）
+
+    def convert(self, is_test: bool = False) -> None:
+        """重写父类方法以设置test模式标志
+        
+        Args:
+            is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        """
+        self._is_test_mode = is_test
+        if is_test and self.logger:
+            self.logger.info("🧪 H5Mp4 Converter running in TEST mode - will only load first 11 frames per video")
+        
+        # 调用父类的转换逻辑
+        super().convert(is_test=is_test)
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -204,6 +218,12 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         # 3. 取最小值（确保所有数据源都有对应的帧）
         min_frames = min(count for _, count in frame_counts)
         
+        # 🧪 Test模式：只返回10帧
+        if self._is_test_mode:
+            min_frames = min(10, min_frames)
+            if self.logger:
+                self.logger.debug(f"🧪 Test mode: limiting episode {ep_idx} to {min_frames} frames")
+        
         # 4. 记录帧数差异（用于调试）
         if self.logger and len(frame_counts) > 1:
             max_frames = max(count for _, count in frame_counts)
@@ -273,10 +293,27 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         """获取任务的episode数量"""
         return len(self._get_all_episode_dirs(task_path))
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> dict[str, list[np.ndarray]]:
-        """准备episode的图像缓冲区"""
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:
+        """准备episode的图像缓冲区
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: Episode索引
+            is_test: 是否为测试模式。测试模式只加载前11帧（10帧数据+1帧用于action offset）
+        
+        Returns:
+            字典，键为相机名称，值为帧列表
+        """
         episodes = self._get_all_episode_dirs(task_path)
         ep_dir = episodes[ep_idx]
+        
+        # 🧪 确定要加载的最大帧数
+        max_frames = None
+        if is_test or self._is_test_mode:
+            # Test模式：只加载11帧（10帧数据 + 1帧用于timeline_offset）
+            max_frames = 11
+            if self.logger:
+                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames for episode {ep_idx}")
         
         images = {}
         # 遍历配置中的所有相机
@@ -300,22 +337,31 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             mp4_file = mp4_files[0]  # 使用第一个匹配的文件
             
             # 使用 PyAV 读取视频（支持 AV1 等更多编码格式）
+            container = None
             try:
                 container = av.open(str(mp4_file))
                 frames = []
                 
-                for frame in container.decode(video=0):
+                for frame_idx, frame in enumerate(container.decode(video=0)):
+                    # 🧪 Test模式：限制加载帧数
+                    if max_frames is not None and frame_idx >= max_frames:
+                        if self.logger:
+                            self.logger.debug(f"🧪 Stopped loading at frame {frame_idx} (max_frames={max_frames})")
+                        break
+                    
                     # PyAV 直接转换为 RGB 格式的 numpy array
                     img = frame.to_ndarray(format='rgb24')
                     frames.append(img)
                 
-                container.close()
                 images[cam_name] = frames
                 
                 self.logger.info(f"Loaded {len(frames)} frames from {mp4_file.name} using PyAV")
                 
             except Exception as e:
                 raise OSError(f"Cannot open or decode video file {mp4_file}: {e}")
+            finally:
+                if container:
+                    container.close()
         
         return images
 
