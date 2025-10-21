@@ -107,7 +107,7 @@ python scripts/sim_replay/sim_replay.py \
     --log_dir ./logs/sim_replay
 
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path ./db/datasets.db \
+    --db_file_path /mnt/db/datasets.db \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
     --device_model galaxea_r1_lite \
     --log_dir ./logs/sim_replay

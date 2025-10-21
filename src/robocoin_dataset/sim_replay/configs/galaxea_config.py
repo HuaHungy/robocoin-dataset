@@ -11,6 +11,7 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
         / "mjcfs/galaxea_r1_lite/mmp_revB_invconfig_upright_a1x_with_sites.xml"
     )
 
+    # fixed
     left_eef_mjcf_site_name: str = "left_eef_site"
     right_eef_mjcf_site_name: str = "right_eef_site"
 
