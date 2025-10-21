@@ -19,12 +19,16 @@
 
 ```python
 from robocoin_dataset.format_converter.tolerobot.exceptions import (
-    ConfigError,          # 配置错误→立即停止
-    DataQualityError,     # 数据质量问题→跳过单帧
+    ConfigError,          # 配置错误→立即停止转换
+    DataQualityError,     # 数据质量问题→严格模式停止，非严格模式跳过episode
     CriticalDataError,    # 严重数据错误→跳过整个episode
     FrameCountMismatchError,  # 帧数不匹配
 )
 ```
+
+**⚠️ 重要：我们不支持跳过单帧，只支持跳过整个episode**
+
+原因：跳过单帧会破坏时序数据的连续性，导致observation-action对齐错误。
 
 **使用示例**:
 

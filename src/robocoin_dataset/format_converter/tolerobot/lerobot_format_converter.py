@@ -699,7 +699,10 @@ class LerobotFormatConverter(ABC):
         is_strict: bool,
         is_test: bool,
     ) -> tuple[int, int]:
-        """转换单个episode，支持帧级容错
+        """转换单个episode，支持episode级容错
+        
+        重要：为了保持时序数据的连续性，任何单帧错误都会导致整个episode被跳过。
+        这是因为跳过单帧会破坏observation-action的时间对齐关系。
         
         Args:
             dataset: LeRobot数据集对象
@@ -711,11 +714,11 @@ class LerobotFormatConverter(ABC):
             is_test: 是否为测试模式
         
         Returns:
-            (converted_frames, skipped_frames): 成功转换的帧数和跳过的帧数
+            (converted_frames, 0): 成功转换的帧数（跳过的帧数始终为0，因为要么全转要么全跳）
             
         Raises:
-            ConfigError: 严格模式下遇到数据错误
-            CriticalDataError: Episode有效帧数不足
+            ConfigError: 严格模式下遇到数据错误（表明配置可能有问题）
+            CriticalDataError: 非严格模式下遇到数据错误（跳过整个episode）
         """
         from .exceptions import ConfigError, DataQualityError, CriticalDataError
         
@@ -724,7 +727,6 @@ class LerobotFormatConverter(ABC):
         )
         
         converted_frames = 0
-        skipped_frames = 0
         
         for frame_data in self._gen_episode_frames(
             task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
@@ -747,7 +749,9 @@ class LerobotFormatConverter(ABC):
                 converted_frames += 1
                 
             except DataQualityError as e:
-                # 数据质量问题：在严格模式下升级为配置错误
+                # 数据质量问题：
+                # - 严格模式：升级为配置错误，停止整个转换
+                # - 非严格模式：升级为严重数据错误，跳过整个episode
                 if is_strict:
                     raise ConfigError(
                         f"严格模式下检测到数据质量问题（可能是配置错误）:\n"
@@ -757,12 +761,16 @@ class LerobotFormatConverter(ABC):
                         f"\n💡 在前{self.strict_episodes}个episode中发现此问题，"
                         f"可能是配置错误而非数据问题"
                     ) from e
-                
-                # 非严格模式：记录并跳过
-                skipped_frames += 1
-                self.logger.warning(
-                    f"⏭️ 跳过帧 {frame_idx} (episode {global_ep_idx}): {e}"
-                )
+                else:
+                    # 非严格模式：跳过整个episode以保持时序连续性
+                    raise CriticalDataError(
+                        f"Episode {global_ep_idx} 数据质量问题，跳过整个episode:\n"
+                        f"  任务: {task}\n"
+                        f"  Episode索引: {task_ep_idx}\n"
+                        f"  问题帧: {frame_idx}\n"
+                        f"  错误: {e}\n"
+                        f"\n⚠️  为保持时序连续性，不能跳过单帧，必须跳过整个episode"
+                    ) from e
                 
             except Exception as e:
                 # 未分类的异常：在严格模式下作为配置错误处理
@@ -774,34 +782,20 @@ class LerobotFormatConverter(ABC):
                         f"  Error type: {type(e).__name__}\n"
                         f"  Error: {e}"
                     ) from e
-                
-                # 记录错误并重新抛出
-                self.logger.error(
-                    f"Failed to process frame: task_path={task_path}, "
-                    f"episode={task_ep_idx}, frame={frame_idx}. Error: {e}"
-                )
-                raise
+                else:
+                    # 非严格模式：也升级为CriticalDataError
+                    raise CriticalDataError(
+                        f"Episode {global_ep_idx} 遇到错误，跳过整个episode:\n"
+                        f"  任务: {task}\n"
+                        f"  Episode索引: {task_ep_idx}\n"
+                        f"  问题帧: {frame_idx}\n"
+                        f"  错误类型: {type(e).__name__}\n"
+                        f"  错误: {e}"
+                    ) from e
         
-        # 检查episode是否有足够的有效数据
-        total_frames = converted_frames + skipped_frames
-        if total_frames == 0:
-            # Episode完全为空（可能因为_gen_episode_frames返回-1）
-            return 0, 0
-        
-        valid_ratio = converted_frames / total_frames if total_frames > 0 else 0
-        
-        if valid_ratio < self.min_valid_frame_ratio:
-            raise CriticalDataError(
-                f"Episode {global_ep_idx} 有效帧数不足:\n"
-                f"  转换成功: {converted_frames} 帧\n"
-                f"  跳过: {skipped_frames} 帧\n"
-                f"  总计: {total_frames} 帧\n"
-                f"  有效率: {valid_ratio:.1%}\n"
-                f"  最小要求: {self.min_valid_frame_ratio:.1%}\n"
-                f"  将跳过整个episode"
-            )
-        
-        return converted_frames, skipped_frames
+        # 如果成功遍历所有帧，返回转换的帧数
+        # 注意：skipped_frames始终为0，因为我们不支持跳过单帧
+        return converted_frames, 0
 
     def _get_conversion_report(self) -> dict:
         """生成转换报告"""
