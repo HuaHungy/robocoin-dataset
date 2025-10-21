@@ -64,8 +64,12 @@ def setup_test_logger(log_dir: Path = None) -> logging.Logger:
     return logger
 
 
-def load_converter_config(device_model: str) -> tuple[dict, str, str]:
+def load_converter_config(device_model: str, version: str = None) -> tuple[dict, str, str]:
     """加载转换器配置
+    
+    Args:
+        device_model: 设备型号
+        version: 版本号（如果不指定，使用第一个版本）
     
     Returns:
         (converter_config, module_path, class_name)
@@ -88,20 +92,38 @@ def load_converter_config(device_model: str) -> tuple[dict, str, str]:
             f"Available models: {list(factory_config.keys())}"
         )
     
-    model_config = factory_config[device_model]
+    model_versions = factory_config[device_model]
+    
+    # 如果没有指定版本，使用第一个
+    if version is None:
+        model_config = model_versions[0]
+    else:
+        # 查找指定版本
+        model_config = None
+        for v in model_versions:
+            if v['version'] == version:
+                model_config = v
+                break
+        
+        if model_config is None:
+            available_versions = [v['version'] for v in model_versions]
+            raise ValueError(
+                f"Version '{version}' not found for device '{device_model}'.\n"
+                f"Available versions: {available_versions}"
+            )
     
     # 加载具体的converter配置
     converter_config_path = (
         project_root / 
         "scripts/format_converters/tolerobot/configs" /
-        model_config['converter_config']
+        model_config['converter_config_path']
     )
     
     with open(converter_config_path, 'r', encoding='utf-8') as f:
         converter_config = yaml.safe_load(f)
     
-    module_path = model_config['converter_module_path']
-    class_name = model_config['converter_class_name']
+    module_path = model_config['module']
+    class_name = model_config['class']
     
     return converter_config, module_path, class_name
 
@@ -114,6 +136,7 @@ def run_conversion_test(
     failure_threshold: float = 0.8,
     min_valid_frame_ratio: float = 0.5,
     test_mode: bool = True,
+    version: str = None,
 ) -> dict:
     """运行转换测试
     
@@ -145,8 +168,10 @@ def run_conversion_test(
     
     # 加载配置
     try:
-        converter_config, module_path, class_name = load_converter_config(device_model)
+        converter_config, module_path, class_name = load_converter_config(device_model, version)
         logger.info(f"✓ 加载配置成功: {module_path}.{class_name}")
+        if version:
+            logger.info(f"  版本: {version}")
     except Exception as e:
         logger.error(f"✗ 加载配置失败: {e}")
         raise
@@ -338,6 +363,13 @@ def main():
     )
     
     parser.add_argument(
+        "--version",
+        type=str,
+        default=None,
+        help="设备配置版本（如果不指定，使用第一个版本）"
+    )
+    
+    parser.add_argument(
         "--test-mode",
         action="store_true",
         default=True,
@@ -397,6 +429,7 @@ def main():
             failure_threshold=args.failure_threshold,
             min_valid_frame_ratio=args.min_valid_frame_ratio,
             test_mode=args.test_mode,
+            version=args.version,
         )
         
         # 打印结果
