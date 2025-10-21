@@ -201,10 +201,10 @@ def run_conversion_test(
         # 检查转换器是否支持容错参数
         has_fault_tolerance = hasattr(converter, 'strict_episodes')
         if has_fault_tolerance:
-            logger.info(f"✓ 转换器支持容错机制")
+            logger.info(f"✓ 转换器支持Episode级容错机制")
             logger.info(f"  - 严格模式episodes: {converter.strict_episodes}")
             logger.info(f"  - 失败率阈值: {converter.failure_threshold:.1%}")
-            logger.info(f"  - 最小有效帧比例: {converter.min_valid_frame_ratio:.1%}")
+            logger.info(f"  - 容错策略: 跳过整个问题episode，保证数据连续性")
         else:
             logger.warning("⚠ 此转换器尚未支持容错机制")
             logger.warning("  本次测试将使用传统模式运行")
@@ -258,21 +258,31 @@ def print_test_results(report: dict, logger: logging.Logger):
     logger.info(f"跳过: {report['skipped_episodes']}")
     logger.info(f"成功率: {report['success_rate']:.1%}")
     logger.info(f"总帧数: {report['total_frames_converted']}")
-    logger.info(f"跳过帧数: {report['total_frames_skipped']}")
+    
+    # 注：Episode级容错下，不跳过单帧，只跳过整个episode
+    # 所以 total_frames_skipped 应该始终为0
+    if report['total_frames_skipped'] > 0:
+        logger.warning(
+            f"⚠️  检测到跳过的帧: {report['total_frames_skipped']} "
+            f"(这不应该发生在Episode级容错模式下)"
+        )
     
     if report['skip_details']:
         logger.info("")
-        logger.info("跳过详情 (最近50条):")
+        logger.info("跳过Episodes详情 (最近10条):")
         for detail in report['skip_details'][-10:]:  # 只显示最近10条
             ep = detail['episode']
             if detail.get('skipped_entire_episode'):
                 logger.info(
-                    f"  Episode {ep}: 完全跳过 - {detail.get('reason', 'Unknown')}"
+                    f"  Episode {ep} ({detail.get('task', 'Unknown')}): "
+                    f"完全跳过 - {detail.get('reason', 'Unknown')}"
                 )
             else:
-                logger.info(
-                    f"  Episode {ep}: 跳过 {detail.get('skipped_frames', 0)} 帧 "
-                    f"(转换 {detail.get('converted_frames', 0)} 帧)"
+                # 这不应该出现在Episode级容错模式下
+                logger.warning(
+                    f"  Episode {ep}: ⚠️  部分跳过 "
+                    f"(转换 {detail.get('converted_frames', 0)} 帧, "
+                    f"跳过 {detail.get('skipped_frames', 0)} 帧) - 这不符合预期"
                 )
     
     logger.info("="*70)
@@ -286,33 +296,40 @@ def print_test_results(report: dict, logger: logging.Logger):
     elif report['successful_episodes'] == 0:
         logger.error("✗ 所有episode都失败了 - 可能是配置错误")
     elif report['success_rate'] >= 0.95:
-        logger.info("✓ 优秀: 成功率 >= 95%")
+        logger.info("✓ 优秀: Episode成功率 >= 95%")
     elif report['success_rate'] >= 0.8:
-        logger.info("✓ 良好: 成功率 >= 80%")
+        logger.info("✓ 良好: Episode成功率 >= 80%")
     elif report['success_rate'] >= 0.5:
-        logger.warning("⚠️  一般: 成功率 >= 50%，建议检查数据质量")
+        logger.warning("⚠️  一般: Episode成功率 >= 50%，建议检查数据质量")
     else:
-        logger.warning("⚠️  较差: 成功率 < 50%，可能存在系统性问题")
+        logger.warning("⚠️  较差: Episode成功率 < 50%，可能存在系统性问题")
     
-    if report['total_frames_skipped'] > 0:
-        skip_ratio = report['total_frames_skipped'] / (
-            report['total_frames_converted'] + report['total_frames_skipped']
-        )
-        logger.info(f"帧跳过率: {skip_ratio:.2%}")
+    # Episode级容错：评估跳过的episode数量
+    if report['skipped_episodes'] > 0:
+        logger.info(f"")
+        logger.info(f"跳过了 {report['skipped_episodes']} 个episodes")
+        logger.info(f"  原因：这些episodes中存在数据质量问题")
+        logger.info(f"  说明：为保证时序连续性，有问题的episode被完整跳过")
         
-        if skip_ratio < 0.01:
-            logger.info("✓ 优秀: 跳过帧 < 1%")
-        elif skip_ratio < 0.05:
-            logger.info("✓ 良好: 跳过帧 < 5%")
+        if report['skipped_episodes'] / report['total_episodes_attempted'] < 0.05:
+            logger.info(f"  ✓ 跳过比例 < 5%，数据质量良好")
+        elif report['skipped_episodes'] / report['total_episodes_attempted'] < 0.2:
+            logger.info(f"  ⚠️  跳过比例 < 20%，可接受")
         else:
-            logger.warning(f"⚠️  较高: 跳过帧 >= 5%")
+            logger.warning(f"  ⚠️  跳过比例 >= 20%，建议检查数据集质量或配置")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="测试LeRobot转换器的容错机制",
+        description="测试LeRobot转换器的Episode级容错机制",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+容错机制说明:
+    本测试验证Episode级容错策略：
+    - 严格模式（前N个episode）：任何数据问题都视为配置错误，立即停止
+    - 非严格模式：跳过有问题的整个episode，保证时序连续性
+    - 注意：不支持跳过单帧，以避免observation-action时序对齐错误
+
 示例:
     # 测试智平方数据集（测试模式，只转换第一个episode）
     python test_fault_tolerance.py \\
@@ -333,8 +350,7 @@ def main():
         --dataset-path /path/to/dataset \\
         --device-model my_robot \\
         --strict-episodes 10 \\
-        --failure-threshold 0.7 \\
-        --min-valid-frame-ratio 0.4
+        --failure-threshold 0.7
         """
     )
     
@@ -370,7 +386,7 @@ def main():
         "--min-valid-frame-ratio",
         type=float,
         default=0.5,
-        help="Episode最小有效帧比例（默认: 0.5）"
+        help="[已废弃] Episode最小有效帧比例。Episode级容错下不再使用此参数"
     )
     
     parser.add_argument(
