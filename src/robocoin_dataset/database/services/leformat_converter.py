@@ -9,6 +9,7 @@ def upsert_leformat_convert(
     session: Session,
     ds_uuid: str,
     convert_status: TaskStatus,
+    convert_version_uuid: str = "",
     err_message: str | None = None,
     leformat_path: str | None = None,
     is_test: bool = False,
@@ -39,6 +40,7 @@ def upsert_leformat_convert(
                 dataset_uuid=ds_uuid,
                 convert_status=convert_status,
                 convert_path=leformat_path,
+                convert_version_uuid=convert_version_uuid,
                 err_message=err_message,
                 updated_at=datetime.now(),
             )
@@ -46,6 +48,7 @@ def upsert_leformat_convert(
             # 更新现有记录
             item.convert_status = convert_status
             item.updated_at = datetime.now()
+            convert_version_uuid = (convert_version_uuid,)
             if err_message is not None:
                 item.err_message = err_message
             if leformat_path is not None:

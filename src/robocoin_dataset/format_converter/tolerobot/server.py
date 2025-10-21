@@ -1,4 +1,5 @@
 import logging
+import uuid
 from pathlib import Path
 
 import yaml
@@ -226,7 +227,7 @@ class LeFormatConverterTaskServer(TaskServer):
             dataset_item = (
                 session.query(DatasetDB).filter(DatasetDB.dataset_uuid == item.dataset_uuid).first()
             )
-            
+
             # 检查 dataset_item 是否存在
             if dataset_item is None:
                 self.logger.error(
@@ -237,7 +238,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     f"   💡 This indicates database inconsistency - skipping this item"
                 )
                 continue  # 跳过这个无效的项，继续处理下一个
-            
+
             # 检查 yaml_file_path 是否存在
             if not dataset_item.yaml_file_path:
                 self.logger.error(
@@ -247,7 +248,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     f"   💡 yaml_file_path is NULL or empty - skipping this item"
                 )
                 continue
-            
+
             dataset_path = str(Path(dataset_item.yaml_file_path).parent)
             dataset_name = dataset_item.dataset_name
             leformat_path = str(
@@ -301,12 +302,14 @@ class LeFormatConverterTaskServer(TaskServer):
 
         convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
+        convert_version_uuid = uuid.uuid4()
         with self.db.with_session() as session:
             upsert_leformat_convert(
                 session=session,
                 ds_uuid=ds_uuid,
                 convert_status=convert_status,
                 leformat_path=leformat_path,
+                convert_version_uuid=convert_version_uuid,
                 err_message=task_status_msg,
                 is_test=self.is_test,
             )

@@ -79,7 +79,12 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
     ]
 
     # gripper names allow not 1v1 assignment
-    state_gripper_joint_mjcf_names: list[str] = []
+    state_gripper_joint_mjcf_names: list[str] = [
+        "left_gripper_finger_joint1",
+        "left_gripper_finger_joint2",
+        "right_gripper_finger_joint1",
+        "right_gripper_finger_joint2",
+    ]
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
     state_gripper_lerobot_names: list[str] = ["left_gripper_position", "right_gripper_position"]
@@ -106,4 +111,5 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
             / (self.gripper_position_max - self.gripper_position_min)
         )
         rfrj_joint_data = -rflj_joint_data
+        print(lflj_joint_data, lfrj_joint_data, rflj_joint_data, rfrj_joint_data)
         return [lflj_joint_data, lfrj_joint_data, rflj_joint_data, rfrj_joint_data]
