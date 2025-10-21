@@ -14,7 +14,7 @@ project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root / 'src'))
 
 from robocoin_dataset.database.models import DatasetDB, DmvAnnotationDB
-from robocoin_dataset.database.database import Database
+from robocoin_dataset.database.database import DatasetDatabase
 
 
 class DatabaseQueryTool:
@@ -22,11 +22,11 @@ class DatabaseQueryTool:
     
     def __init__(self, database_path: str, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(__name__)
-        self.db = Database(database_path)
+        self.db = DatasetDatabase(Path(database_path))
         self.session = None
     
     def __enter__(self):
-        self.session = self.db.session_factory()
+        self.session = self.db.session_local()
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
