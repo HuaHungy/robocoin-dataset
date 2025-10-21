@@ -60,6 +60,14 @@ features:
           range_from: 0
           range_to: 6
       
+      - names:
+        - left_arm_pose_x
+        - left_arm_pose_y
+        - left_arm_pose_z
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/left_arm/joint_pos
+
       # 左臂末端执行器 (1关节)
       - names:
         - left_arm_eef
@@ -152,6 +160,7 @@ features:
       - left_arm_action_3
       - left_arm_action_4
       - left_arm_action_5
+      - left_arm_action_6
       args:
         bson_file: episode_0.bson
         data_path: action/left_arm/joint_state
@@ -166,6 +175,7 @@ features:
       - right_arm_action_3
       - right_arm_action_4
       - right_arm_action_5
+      - right_arm_action_6
       args:
         bson_file: episode_0.bson
         data_path: action/right_arm/joint_state
