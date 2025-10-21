@@ -96,6 +96,8 @@ class LeFormatConverterTaskClient(TaskClient):
 
             self.logger.info(f"converter_log_dir: {converter_log_dir}")
             total_episodes = converter.get_episodes_num()
+            
+            converted_count = 0
             for task_content, task_ep_idx, ep_idx in tqdm(
                 converter.convert(is_test),
                 total=total_episodes,
@@ -104,6 +106,22 @@ class LeFormatConverterTaskClient(TaskClient):
             ):
                 self.logger.info(
                     f"Converted episode {task_ep_idx} of task {task_content}, total ep_idx is:{ep_idx}"
+                )
+                converted_count += 1
+            
+            # Log conversion statistics
+            skipped_count = total_episodes - converted_count
+            if skipped_count > 0:
+                self.logger.warning(
+                    f"📊 Conversion completed with some episodes skipped:\n"
+                    f"   Total episodes found: {total_episodes}\n"
+                    f"   Successfully converted: {converted_count}\n"
+                    f"   Skipped (data quality issues): {skipped_count}\n"
+                    f"   ✅ Check error/ directories for skipped files"
+                )
+            else:
+                self.logger.info(
+                    f"✅ Conversion completed successfully: {converted_count}/{total_episodes} episodes"
                 )
             
             # Save episode source mapping after conversion completes

@@ -152,13 +152,43 @@ class LerobotFormatConverter(ABC):
     def _get_task_episodes_num(self, task_path: Path) -> int:
         raise NotImplementedError
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> any:
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> any:
+        """Prepare images buffer for an episode.
+        
+        Args:
+            task_path: Path to the task directory
+            ep_idx: Episode index
+            is_test: Whether in test mode (子类可选实现优化)
+            
+        Returns:
+            Images buffer (format depends on subclass implementation)
+        """
         return None
 
-    def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> any:
+    def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> any:
+        """Prepare states buffer for an episode.
+        
+        Args:
+            task_path: Path to the task directory
+            ep_idx: Episode index
+            is_test: Whether in test mode (子类可选实现优化)
+            
+        Returns:
+            States buffer (format depends on subclass implementation)
+        """
         return None
 
-    def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> any:
+    def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> any:
+        """Prepare actions buffer for an episode.
+        
+        Args:
+            task_path: Path to the task directory
+            ep_idx: Episode index
+            is_test: Whether in test mode (子类可选实现优化)
+            
+        Returns:
+            Actions buffer (format depends on subclass implementation)
+        """
         return None
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
@@ -506,11 +536,31 @@ class LerobotFormatConverter(ABC):
             ),
         }
 
-    def _prepare_episode_buffers(self, task_path: Path, ep_idx: int) -> tuple[any, any, any]:
+    def _prepare_episode_buffers(self, task_path: Path, ep_idx: int, is_test: bool = False) -> tuple[any, any, any]:
+        """Prepare all buffers for an episode.
+        
+        智能调用子类方法：如果子类方法支持 is_test 参数则传入，否则只传基本参数。
+        这样保证了向后兼容性 - 旧的子类实现不需要修改。
+        """
+        import inspect
+        from collections.abc import Callable
+        
+        # 检查子类方法是否接受 is_test 参数
+        images_method = self._prepare_episode_images_buffer
+        states_method = self._prepare_episode_states_buffer
+        actions_method = self._prepare_episode_actions_buffer
+        
+        # 智能调用：检查方法签名
+        def smart_call(method: Callable, task_path: Path, ep_idx: int, is_test: bool) -> any:
+            sig = inspect.signature(method)
+            if 'is_test' in sig.parameters:
+                return method(task_path=task_path, ep_idx=ep_idx, is_test=is_test)
+            return method(task_path=task_path, ep_idx=ep_idx)
+        
         return (
-            self._prepare_episode_images_buffer(task_path=task_path, ep_idx=ep_idx),
-            self._prepare_episode_states_buffer(task_path=task_path, ep_idx=ep_idx),
-            self._prepare_episode_actions_buffer(task_path=task_path, ep_idx=ep_idx),
+            smart_call(images_method, task_path, ep_idx, is_test),
+            smart_call(states_method, task_path, ep_idx, is_test),
+            smart_call(actions_method, task_path, ep_idx, is_test),
         )
 
     def _get_lerobot_image_features(self) -> dict:
@@ -582,6 +632,16 @@ class LerobotFormatConverter(ABC):
     ) -> Iterable[dict]:
         total_frames = self._get_episode_frames_num(task_path=task_path, ep_idx=ep_idx)
         
+        # Check if episode should be skipped (indicated by total_frames == -1)
+        # This happens when data quality issues are detected and file is auto-moved to error/
+        if total_frames == -1:
+            if self.logger:
+                self.logger.info(
+                    f"⏭️  Skipping episode {ep_idx} at {task_path.name} "
+                    f"(auto-moved to error/ due to data quality issues)"
+                )
+            return  # Return empty iterator to skip this episode
+        
         # Get timeline_offset from action config to determine how many frames to generate
         timeline_offset = self.converter_config[FEATURES_KEY][ACTION_KEY].get(TIMELINE_OFFSET_KEY, 0)
         
@@ -622,8 +682,13 @@ class LerobotFormatConverter(ABC):
             for task_ep_idx in range(episodes_num):
                 try:
                     images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
-                        task_path, task_ep_idx
+                        task_path, task_ep_idx, is_test=is_test
                     )
+                    
+                    # Track if this episode should be skipped
+                    episode_skipped = False
+                    frame_count = 0
+                    
                     for frame_data in self._gen_episode_frames(
                         task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
                     ):
@@ -642,6 +707,7 @@ class LerobotFormatConverter(ABC):
                                     frame=lerobot_datas,
                                     task=task,
                                 )
+                            frame_count += 1
                         except Exception as e:  # noqa: PERF203
                             if self.logger:
                                 self.logger.error(
@@ -653,6 +719,17 @@ class LerobotFormatConverter(ABC):
                                 f"Failed to process frame {frame_data[FRAME_IDX_KEY]} "
                                 f"of episode {task_ep_idx} at task_path={task_path}"
                             ) from e
+                    
+                    # If no frames were processed, the episode was skipped
+                    if frame_count == 0:
+                        episode_skipped = True
+                        if self.logger:
+                            self.logger.info(
+                                f"⏭️  Episode {task_ep_idx} at {task_path.name} was skipped "
+                                f"(likely due to data quality issues)"
+                            )
+                        # Don't increment ep_idx for skipped episodes
+                        continue
 
                     if not is_test:
                         dataset.save_episode()

@@ -58,6 +58,20 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
         )
+        self._is_test_mode = False  # Test模式标志（限制加载帧数）
+
+    def convert(self, is_test: bool = False) -> None:
+        """重写父类方法以设置test模式标志
+        
+        Args:
+            is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        """
+        self._is_test_mode = is_test
+        if is_test and self.logger:
+            self.logger.info("🧪 LejuWaibu Converter running in TEST mode - will only load first 11 frames per video")
+        
+        # 调用父类的转换逻辑
+        super().convert(is_test=is_test)
 
     def _get_dataset_task_paths(self) -> dict[Path, str]:
         """Find all episode directories containing metadata.json and proprio_stats.hdf5.
@@ -314,12 +328,20 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             ep_idx: Episode index
             
         Returns:
-            Number of frames in the episode
+            Number of frames in the episode (limited to 10 in test mode)
         """
         h5_file = task_path / "proprio_stats" / "proprio_stats.hdf5"
         with h5py.File(h5_file, "r") as f:
             # Use timestamps array to get frame count
-            return len(f["timestamps"])
+            frame_count = len(f["timestamps"])
+        
+        # 🧪 Test模式：只返回10帧
+        if self._is_test_mode:
+            frame_count = min(10, frame_count)
+            if self.logger:
+                self.logger.debug(f"🧪 Test mode: limiting episode {ep_idx} to {frame_count} frames")
+        
+        return frame_count
 
     def _get_h5_file_path(self, task_path: Path, ep_idx: int) -> Path:
         """Get path to H5 file for an episode.
@@ -365,36 +387,57 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             )
         return video_path
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> Any:
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:
         """Prepare image buffer by loading all video frames.
         
         Args:
             task_path: Path to episode directory
             ep_idx: Episode index
+            is_test: 是否为测试模式。测试模式只加载前11帧（10帧数据+1帧用于action offset）
             
         Returns:
             dict mapping camera names to arrays of frames
         """
+        # 🧪 确定要加载的最大帧数
+        max_frames = None
+        if is_test or self._is_test_mode:
+            # Test模式：只加载11帧（10帧数据 + 1帧用于timeline_offset）
+            max_frames = 11
+            if self.logger:
+                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames for episode {ep_idx}")
+        
         images_buffer = {}
         
         for image_config in self.converter_config["features"]["observation"]["images"]:
             cam_name = image_config[CAM_NAME_KEY]
             video_path = self._get_video_file_path(task_path, ep_idx, cam_name)
             
-            # Load all frames from video
-            frames = []
-            cap = cv2.VideoCapture(str(video_path))
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                # Convert BGR to RGB
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(frame_rgb)
-            cap.release()
-            
-            images_buffer[cam_name] = np.array(frames)
-            self.logger.info(f"Loaded {len(frames)} frames from {cam_name}")
+            # Load frames from video (with optional limit in test mode)
+            cap = None
+            try:
+                frames = []
+                cap = cv2.VideoCapture(str(video_path))
+                frame_idx = 0
+                while True:
+                    # 🧪 Test模式：限制加载帧数
+                    if max_frames is not None and frame_idx >= max_frames:
+                        if self.logger:
+                            self.logger.debug(f"🧪 Stopped loading at frame {frame_idx} (max_frames={max_frames})")
+                        break
+                    
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    # Convert BGR to RGB
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frames.append(frame_rgb)
+                    frame_idx += 1
+                
+                images_buffer[cam_name] = np.array(frames)
+                self.logger.info(f"Loaded {len(frames)} frames from {cam_name}")
+            finally:
+                if cap:
+                    cap.release()
         
         return images_buffer
 
