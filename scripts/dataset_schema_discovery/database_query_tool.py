@@ -42,7 +42,7 @@ class DatabaseQueryTool:
         根据device_model查询数据集
         
         Args:
-            device_model: 设备型号
+            device_model: 设备型号（支持前缀匹配）
             limit: 最多返回多少条（None表示不限制）
             
         Returns:
@@ -51,9 +51,9 @@ class DatabaseQueryTool:
         if not self.session:
             raise RuntimeError("请使用 'with' 语句创建DatabaseQueryTool实例")
         
-        # 先查询device_model对应的所有dataset_uuid
+        # 先查询device_model对应的所有dataset_uuid（支持前缀匹配）
         annotations = self.session.query(DmvAnnotationDB).filter(
-            DmvAnnotationDB.device_model == device_model
+            DmvAnnotationDB.device_model.like(f"{device_model}%")
         ).all()
         
         dataset_uuids = [ann.dataset_uuid for ann in annotations]
@@ -81,13 +81,18 @@ class DatabaseQueryTool:
                 None
             )
             
+            # 数据集路径 = yaml_file_path的父目录
+            dataset_path = None
+            if dataset.yaml_file_path:
+                dataset_path = str(Path(dataset.yaml_file_path).parent)
+            
             result.append({
                 'dataset_uuid': dataset.dataset_uuid,
                 'dataset_name': dataset.dataset_name,
-                'dataset_path': dataset.dataset_path,
+                'dataset_path': dataset_path,
                 'device_model': annotation.device_model if annotation else None,
                 'device_model_version': annotation.device_model_version if annotation else None,
-                'created_at': dataset.created_at.isoformat() if dataset.created_at else None,
+                'created_at': getattr(dataset, 'created_at', None).isoformat() if hasattr(dataset, 'created_at') and dataset.created_at else None,
             })
         
         self.logger.info(f"找到 {len(result)} 个 {device_model} 数据集")
