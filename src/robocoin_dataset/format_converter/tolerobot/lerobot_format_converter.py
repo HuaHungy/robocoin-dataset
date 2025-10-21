@@ -58,7 +58,6 @@ class LerobotFormatConverter(ABC):
         image_writer_threads: int = 4,
         strict_episodes: int = 3,
         failure_threshold: float = 0.8,
-        min_valid_frame_ratio: float = 0.5,
     ) -> None:
         if not dataset_path:
             raise ValueError("Dataset path must be provided.")
@@ -89,7 +88,6 @@ class LerobotFormatConverter(ABC):
         # Fault tolerance configuration
         self.strict_episodes = strict_episodes  # 前N个episode使用严格模式
         self.failure_threshold = failure_threshold  # 失败率阈值，超过则认为是配置错误
-        self.min_valid_frame_ratio = min_valid_frame_ratio  # episode最小有效帧比例
         
         # Conversion statistics
         self._conversion_stats = {
@@ -1040,7 +1038,6 @@ class LerobotFormatConverterFactory:
         converter_log_dir: Path | None = None,
         strict_episodes: int = 3,
         failure_threshold: float = 0.8,
-        min_valid_frame_ratio: float = 0.5,
     ) -> LerobotFormatConverter:
         if not dataset_path.exists():
             raise FileNotFoundError(f"Dataset path {dataset_path} does not exist.")
@@ -1077,7 +1074,5 @@ class LerobotFormatConverterFactory:
             init_kwargs['strict_episodes'] = strict_episodes
         if 'failure_threshold' in sig.parameters:
             init_kwargs['failure_threshold'] = failure_threshold
-        if 'min_valid_frame_ratio' in sig.parameters:
-            init_kwargs['min_valid_frame_ratio'] = min_valid_frame_ratio
         
         return convertor_class(**init_kwargs)

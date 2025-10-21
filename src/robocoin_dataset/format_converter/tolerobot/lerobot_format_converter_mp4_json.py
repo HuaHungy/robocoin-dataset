@@ -37,7 +37,6 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         image_writer_threads: int = 4,
         strict_episodes: int = 3,
         failure_threshold: float = 0.8,
-        min_valid_frame_ratio: float = 0.5,
     ) -> None:
         super().__init__(
             dataset_path=dataset_path,
@@ -51,7 +50,6 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             image_writer_threads=image_writer_threads,
             strict_episodes=strict_episodes,
             failure_threshold=failure_threshold,
-            min_valid_frame_ratio=min_valid_frame_ratio,
         )
         self._json_data_cache = {}  # 缓存JSON数据
         self._is_test_mode = False  # Test模式标志（限制加载帧数）

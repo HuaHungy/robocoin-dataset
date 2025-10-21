@@ -134,7 +134,6 @@ def run_conversion_test(
     logger: logging.Logger,
     strict_episodes: int = 3,
     failure_threshold: float = 0.8,
-    min_valid_frame_ratio: float = 0.5,
     test_mode: bool = True,
     version: str = None,
 ) -> dict:
@@ -146,7 +145,6 @@ def run_conversion_test(
         logger: 日志记录器
         strict_episodes: 严格模式的episode数量
         failure_threshold: 失败率阈值
-        min_valid_frame_ratio: 最小有效帧比例
         test_mode: 是否为测试模式（只转换第一个episode）
     
     Returns:
@@ -162,7 +160,6 @@ def run_conversion_test(
     logger.info(f"设备型号: {device_model}")
     logger.info(f"严格模式episodes: {strict_episodes}")
     logger.info(f"失败率阈值: {failure_threshold:.1%}")
-    logger.info(f"最小有效帧比例: {min_valid_frame_ratio:.1%}")
     logger.info(f"测试模式: {test_mode}")
     logger.info("="*70)
     
@@ -194,7 +191,6 @@ def run_conversion_test(
             logger=logger,
             strict_episodes=strict_episodes,
             failure_threshold=failure_threshold,
-            min_valid_frame_ratio=min_valid_frame_ratio,
         )
         logger.info("✓ 创建转换器成功")
         
@@ -439,10 +435,6 @@ def main():
         print(f"错误: failure_threshold 必须在 (0, 1] 范围内")
         sys.exit(1)
     
-    if not (0 < args.min_valid_frame_ratio <= 1):
-        print(f"错误: min_valid_frame_ratio 必须在 (0, 1] 范围内")
-        sys.exit(1)
-    
     # 设置日志
     logger = setup_test_logger(args.log_dir)
     
@@ -454,7 +446,6 @@ def main():
             logger=logger,
             strict_episodes=args.strict_episodes,
             failure_threshold=args.failure_threshold,
-            min_valid_frame_ratio=args.min_valid_frame_ratio,
             test_mode=args.test_mode,
             version=args.version,
         )
