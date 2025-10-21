@@ -5,7 +5,7 @@
 """
 
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 import json
 import sys
