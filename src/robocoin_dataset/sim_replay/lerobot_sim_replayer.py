@@ -1,7 +1,16 @@
+
 import json
 import time
 from collections.abc import Iterator
 from pathlib import Path
+
+# 设置matplotlib后端，优先TkAgg，失败则Agg
+try:
+    import matplotlib
+    matplotlib.use('TkAgg')
+except Exception:
+    import matplotlib
+    matplotlib.use('Agg')
 
 import mujoco
 import mujoco.viewer
@@ -228,9 +237,11 @@ class LerobotSimReplayer:
     def _get_mjcf_joint_addr(self, name: str) -> int:
         return self.mjcf_model.jnt_qposadr[self.mjcf_model.joint(name).id]
 
+
     def replay_episode(
-        self, episode_index: int, is_state: bool = True, sleep_time_ms: int = 0
-    ) -> np.ndarray:
+        self, episode_index: int, is_state: bool = True, sleep_time_ms: int = 0,
+        enable_gripper_plot: bool = False, gripper_plot_callback=None
+    ) -> None:
         parquet_file_path = (
             self.repo_path
             / "state_action_data"
@@ -240,31 +251,29 @@ class LerobotSimReplayer:
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
         df = pd.read_parquet(str(parquet_file_path))
-        return self._replay_episode_parquet(df, is_state=is_state, sleep_time_ms=sleep_time_ms)
 
-    def _replay_episode_parquet(
-        self,
-        df: pd.DataFrame,
-        is_state: bool = True,
-        sleep_time_ms: int = 0,
-    ) -> tuple[np.ndarray, np.ndarray]:
         if is_state:
             mjcf_arm_joint_addrs = self.state_arm_joint_mjcf_addrs
             mjcf_gripper_joint_addrs = self.state_gripper_joint_mjcf_addrs
             lerbot_arm_joint_ids = self.state_arm_joint_lerobot_ids
             leroot_gripper_ids = self.state_gripper_lerobot_ids
+            data = df["observation.state"].to_list()
         else:
             mjcf_arm_joint_addrs = self.action_arm_joint_mjcf_addrs
             mjcf_gripper_joint_addrs = self.action_gripper_joint_mjcf_addrs
             lerbot_arm_joint_ids = self.action_arm_joint_lerobot_ids
             leroot_gripper_ids = self.action_gripper_lerobot_ids
-        episode_eef_fk_results = []
-        episode_gripper_results = []
-
-        if is_state:
-            data = df["observation.state"].to_list()
-        else:
             data = df["action"].to_list()
+
+        gripper_history = []
+        if enable_gripper_plot and gripper_plot_callback is not None:
+            import matplotlib.pyplot as plt
+            plt.ion()
+            fig, ax = plt.subplots(figsize=(10, 4))
+            lines = []
+            ax.set_xlabel("Step")
+            ax.set_ylabel("Gripper Value")
+            ax.set_title("Gripper Values (实时)")
 
         for i in range(len(data)):
             lerobot_arm_joint_values = data[i][lerbot_arm_joint_ids]
@@ -286,12 +295,20 @@ class LerobotSimReplayer:
                 )
                 eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
 
-            episode_eef_fk_results.append(eef_results)
-            episode_gripper_results.append(lerobot_gripper_values)
+            # 实时gripper曲线刷新
+            if enable_gripper_plot and gripper_plot_callback is not None and len(leroot_gripper_ids) > 0:
+                gripper_history.append(list(lerobot_gripper_values))
+                gripper_plot_callback(gripper_history, ax, lines)
+                plt.pause(0.01)
+
             self._sync_viewer()
             if sleep_time_ms > 0:
                 time.sleep(sleep_time_ms / 1000)
-        return np.array(episode_eef_fk_results), np.array(episode_gripper_results)
+
+        if enable_gripper_plot and gripper_plot_callback is not None:
+            plt.ioff()
+            plt.show()
+
 
     def start_viewer(self) -> None:
         if self.mjcf_viewer is None:

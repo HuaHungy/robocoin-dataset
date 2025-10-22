@@ -1,6 +1,10 @@
 import logging
 import uuid
 from pathlib import Path
+import traceback
+
+# For gripper value visualization
+import matplotlib.pyplot as plt
 
 from sqlalchemy import not_
 from sqlalchemy.orm import Session
@@ -49,71 +53,124 @@ class SimReplay:
                     f"No device model version annotation found for dataset {dataset_uuid}"
                 )
 
-        try:
-            device_model = item.device_model
-            device_model_version = item.device_model_version
-            replay_config = self._get_config(device_model, device_model_version)
 
-            convert_path = self._get_convert_path(dataset_uuid)
+        device_model = item.device_model
+        device_model_version = item.device_model_version
+        replay_config = self._get_config(device_model, device_model_version)
 
-            simulator = LerobotSimReplayer(replay_config, convert_path)
-            simulator.start_viewer()
-            print(f"开始回放数据集数据，数据集地址为: {convert_path}")
-            print("正在准备 replay...，请在mujoco中调整好观察视角")
-            input("请按回车键开始 state replay...")
+        convert_path = self._get_convert_path(dataset_uuid)
+
+        simulator = LerobotSimReplayer(replay_config, convert_path)
+        simulator.start_viewer()
+        print(f"开始回放数据集数据，数据集地址为: {convert_path}")
+        print("正在准备 replay...，请在mujoco中调整好观察视角")
+        input("请按回车键开始 state replay...")
+        # --- Gripper value collection for visualization ---
+        gripper_values_state = []
+
+        def gripper_plot_callback(gripper_history, ax, lines):
+            import numpy as np
+            arr = np.array(gripper_history)
+            if arr.ndim == 1:
+                arr = arr[:, None]
+            if not lines:
+                for i in range(arr.shape[1]):
+                    (line,) = ax.plot(arr[:, i], label=f"gripper_{i}")
+                    lines.append(line)
+                ax.legend()
+            else:
+                for i, line in enumerate(lines):
+                    line.set_ydata(arr[:, i])
+                    line.set_xdata(np.arange(arr.shape[0]))
+                ax.relim()
+                ax.autoscale_view()
+
+        while True:
+            simulator.replay_episode(0, is_state=True, sleep_time_ms=30, enable_gripper_plot=True, gripper_plot_callback=gripper_plot_callback)
+            print(
+                "Relay已完成，按c键回车表示确认replay state结果正确，按r键回车后系统会再次replay state，按e键或其他键回车后可输入错误信息"
+            )
+
+            choice = input("请输入 (r/e/c): ").strip().lower()
+
+            if choice == "c":
+                break
+
+            if choice == "r":
+                print("正在准备重新 replay state...")
+                continue
+
             while True:
                 simulator.replay_episode(10, is_state=True, sleep_time_ms=30)
                 print(
                     "Relay已完成，按c键回车表示确认replay state结果正确，按r键回车后系统会再次replay state，按e键或其他键回车后可输入错误信息"
                 )
+                error_message = input("请输入state replay错误信息: ").strip()
+                print(f"收到state replay错误信息: {error_message}")
+                choice = input("确认请按回车键，修改state replay错误信息请按其他键后回车")
+                if choice == "":
+                    simulator.close_viewer()
+                    raise RuntimeError(f"state replay发生错误: {error_message}")
+                continue
 
-                choice = input("请输入 (r/e/c): ").strip().lower()
+        # --- Plot gripper values for state ---
 
-                if choice == "c":
-                    break
+        input("请按回车键开始 action replay...")
+        gripper_values_action = []
 
-                if choice == "r":
-                    print("正在准备重新 replay state...")
-                    continue
+        while True:
+            simulator.replay_episode(0, is_state=False, sleep_time_ms=30, enable_gripper_plot=True, gripper_plot_callback=gripper_plot_callback)
+            print(
+                "Replay已完成，按c键回车表示确认replay action结果正确，按r键回车后系统会再次replay action，按e键回车后可输入错误信息"
+            )
 
-                while True:
-                    error_message = input("请输入state replay错误信息: ").strip()
-                    print(f"收到state replay错误信息: {error_message}")
-                    choice = input("确认请按回车键，修改state replay错误信息请按其他键后回车")
+            choice = input("请输入 (r/e/c): ").strip().lower()
+
+            if choice == "c":
+                break
+
+            if choice == "r":
+                print("正在准备重新 replay actoin...")
+                continue
+
+            while True:
+                if choice == "e":
+                    error_message = input("请输入action replay错误信息: ").strip()
+                    print(f"收到action replay错误信息: {error_message}")
+                    choice = input("确认请按回车键，修改action replay错误信息请按其他键后回车")
                     if choice == "":
                         simulator.close_viewer()
-                        raise RuntimeError(f"state replay发生错误: {error_message}")
+                        raise RuntimeError(f"action replay发生错误: {error_message}")
                     continue
+        simulator.close_viewer()
 
-            input("请按回车键开始 action replay...")
-            while True:
+        input("请按回车键开始 action replay...")
+        while True:
                 simulator.replay_episode(10, is_state=False, sleep_time_ms=30)
                 print(
                     "Replay已完成，按c键回车表示确认replay action结果正确，按r键回车后系统会再次replay action，按e键回车后可输入错误信息"
                 )
 
-                choice = input("请输入 (r/e/c): ").strip().lower()
 
-                if choice == "c":
-                    break
+    @staticmethod
+    def plot_gripper_values(gripper_values, title="Gripper Values"):
+        if not gripper_values or not any(gripper_values):
+            print("[可视化] 没有可用的 gripper 数据，不进行绘图。")
+            return
+        import numpy as np
+        gripper_values = np.array(gripper_values)
+        if gripper_values.ndim == 1:
+            gripper_values = gripper_values[:, None]
+        plt.figure(figsize=(10, 4))
+        for i in range(gripper_values.shape[1]):
+            plt.plot(gripper_values[:, i], label=f"gripper_{i}")
+        plt.xlabel("Step")
+        plt.ylabel("Gripper Value")
+        plt.title(title)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
 
-                if choice == "r":
-                    print("正在准备重新 replay actoin...")
-                    continue
-
-                while True:
-                    if choice == "e":
-                        error_message = input("请输入action replay错误信息: ").strip()
-                        print(f"收到action replay错误信息: {error_message}")
-                        choice = input("确认请按回车键，修改action replay错误信息请按其他键后回车")
-                        if choice == "":
-                            simulator.close_viewer()
-                            raise RuntimeError(f"action replay发生错误: {error_message}")
-                        continue
-            simulator.close_viewer()
-
-        except Exception as e:
-            raise e
 
     def _get_convert_path(self, dataset_uuid: str) -> str:
         with self.db.with_session() as session:
@@ -264,7 +321,7 @@ class SimReplay:
                 )
 
         except Exception as e:
-            print(e)
+            self.logger.error(traceback.format_exc())
             with self.db.with_session() as session:
                 self._upsert_leformat_dataset_simulation_replay_status(
                     session=session,
@@ -275,4 +332,5 @@ class SimReplay:
                     device_model=device_model,
                     device_model_version=device_model_version,
                     err_msg=str(e),
+                    err_msg=traceback.format_exc(),
                 )

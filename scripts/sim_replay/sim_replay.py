@@ -105,4 +105,11 @@ python scripts/sim_replay/sim_replay.py \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
     --device_model realman_rmc_aidal \
     --log_dir ./logs/sim_replay
+
+# ai2robotics
+python scripts/sim_replay/sim_replay.py \
+    --db_file_path /mnt/db/datasets.db \
+    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
+    --device_model zhipingfang \
+    --log_dir ./logs/sim_replay
 """
