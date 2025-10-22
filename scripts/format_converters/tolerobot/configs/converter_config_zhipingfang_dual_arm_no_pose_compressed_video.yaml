@@ -1,272 +1,136 @@
-# Zhipingfang Dual Arm (No Pose) with Compressed Video Configuration
-# Dataset: 智平方 30k数采-第一批 task_58 补采
-# Features:
-#   - Dual arm (left + right) with 7 joints each
-#   - NO arm pose (pose data is empty)
-#   - Compressed video format (video + video_index)
-#   - Gripper data (effector/position) - shape=(frames, 1) ✅ FIXED
-#   - 8 cameras: 4 RGB + 4 Depth (chest, head, left, right)
-#   - Chassis, neck, torso data available but not used in state
-
-fps: 30
-video:
-  enabled: true
+fps: 30  # 需根据实际collection_frequency调整
 
 features:
-  ### ==================== OBSERVATIONS ====================
   observation:
-    ### ========== IMAGES (8 cameras: 4 RGB + 4 Depth) ==========
     images:
-      ### RGB Cameras (4)
-      - names:
-          - observation.images.chest
-        lerobot_feature: observation.images.chest
-        cam_name: chest
+      # RGB cameras only (不包含depth，按用户要求)
+      # 使用压缩视频格式
+      - cam_name: cam_chest_rgb
         args:
-          h5_path: observations/camera/rgb/chest/video
-          video_index_key: observations/camera/rgb/chest/video_index
+          h5_path: "observations/camera/rgb/chest"
+          use_compressed_video: true
+      
+      - cam_name: cam_head_rgb
+        args:
+          h5_path: "observations/camera/rgb/head"
+          use_compressed_video: true
+      
+      - cam_name: cam_left_wrist_rgb
+        args:
+          h5_path: "observations/camera/rgb/left"
+          use_compressed_video: true
+      
+      - cam_name: cam_right_wrist_rgb
+        args:
+          h5_path: "observations/camera/rgb/right"
           use_compressed_video: true
 
-      - names:
-          - observation.images.head
-        lerobot_feature: observation.images.head
-        cam_name: head
-        args:
-          h5_path: observations/camera/rgb/head/video
-          video_index_key: observations/camera/rgb/head/video_index
-          use_compressed_video: true
-
-      - names:
-          - observation.images.left
-        lerobot_feature: observation.images.left
-        cam_name: left
-        args:
-          h5_path: observations/camera/rgb/left/video
-          video_index_key: observations/camera/rgb/left/video_index
-          use_compressed_video: true
-
-      - names:
-          - observation.images.right
-        lerobot_feature: observation.images.right
-        cam_name: right
-        args:
-          h5_path: observations/camera/rgb/right/video
-          video_index_key: observations/camera/rgb/right/video_index
-          use_compressed_video: true
-
-      ### Depth Cameras (4)
-      - names:
-          - observation.images.chest_depth
-        lerobot_feature: observation.images.chest_depth
-        cam_name: chest_depth
-        args:
-          h5_path: observations/camera/depth/chest/video
-          video_index_key: observations/camera/depth/chest/video_index
-          use_compressed_video: true
-
-      - names:
-          - observation.images.head_depth
-        lerobot_feature: observation.images.head_depth
-        cam_name: head_depth
-        args:
-          h5_path: observations/camera/depth/head/video
-          video_index_key: observations/camera/depth/head/video_index
-          use_compressed_video: true
-
-      - names:
-          - observation.images.left_depth
-        lerobot_feature: observation.images.left_depth
-        cam_name: left_depth
-        args:
-          h5_path: observations/camera/depth/left/video
-          video_index_key: observations/camera/depth/left/video_index
-          use_compressed_video: true
-
-      - names:
-          - observation.images.right_depth
-        lerobot_feature: observation.images.right_depth
-        cam_name: right_depth
-        args:
-          h5_path: observations/camera/depth/right/video
-          video_index_key: observations/camera/depth/right/video_index
-          use_compressed_video: true
-
-    ### ========== STATE (29D) ==========
     state:
-      lerobot_feature: observation.state
+      # Total dimensions: 16 (7+7+1+1) - 无末端姿态数据
       sub_state:
-        ### Left arm joints (7)
+        # 左臂关节 (7维)
         - names:
-            - left_arm_joint_0
-            - left_arm_joint_1
-            - left_arm_joint_2
-            - left_arm_joint_3
-            - left_arm_joint_4
-            - left_arm_joint_5
-            - left_arm_joint_6
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
+            - left_arm_joint_7_rad
           args:
-            h5_path: observations/arm/left/joints
+            h5_path: "observations/arm/left/joints"
             range_from: 0
             range_to: 7
-          convert_func: to_float32
-
-        ### Left arm wrench (6) - force/torque sensor
+          convert_func: degree2rad
+        
+        # 右臂关节 (7维)
         - names:
-            - left_arm_wrench_fx
-            - left_arm_wrench_fy
-            - left_arm_wrench_fz
-            - left_arm_wrench_tx
-            - left_arm_wrench_ty
-            - left_arm_wrench_tz
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_arm_joint_7_rad
           args:
-            h5_path: observations/arm/left/wrench
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
-
-        ### Left gripper position (1)
-        - names:
-            - left_effector_position
-          args:
-            h5_path: observations/effector/left/position
-            range_from: 0
-            range_to: 1
-          convert_func: to_float32
-
-        ### Right arm joints (7)
-        - names:
-            - right_arm_joint_0
-            - right_arm_joint_1
-            - right_arm_joint_2
-            - right_arm_joint_3
-            - right_arm_joint_4
-            - right_arm_joint_5
-            - right_arm_joint_6
-          args:
-            h5_path: observations/arm/right/joints
+            h5_path: "observations/arm/right/joints"
             range_from: 0
             range_to: 7
-          convert_func: to_float32
-
-        ### Right arm wrench (6)
+          convert_func: degree2rad
+        
+        # 左夹爪位置 (1维)
         - names:
-            - right_arm_wrench_fx
-            - right_arm_wrench_fy
-            - right_arm_wrench_fz
-            - right_arm_wrench_tx
-            - right_arm_wrench_ty
-            - right_arm_wrench_tz
+            - left_gripper_pos
           args:
-            h5_path: observations/arm/right/wrench
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
-
-        ### Right gripper position (1)
-        - names:
-            - right_effector_position
-          args:
-            h5_path: observations/effector/right/position
+            h5_path: "observations/effector/left/position"
             range_from: 0
             range_to: 1
-          convert_func: to_float32
-
-        ### Timestamp (1) - normalized to [0, 1]
+        
+        # 右夹爪位置 (1维)
         - names:
-            - timestamp_normalized
+            - right_gripper_pos
           args:
-            h5_path: observations/timestamp
+            h5_path: "observations/effector/right/position"
             range_from: 0
             range_to: 1
-          convert_func: to_float32
+        
+        # ⚠️ 以下字段已排除:
+        # - observations/arm/left/pose (Shape: (0,), empty)
+        # - observations/arm/right/pose (Shape: (0,), empty)
+        # - observations/arm/left/wrench (100% 全零)
+        # - observations/arm/right/wrench (100% 全零)
+        # - observations/chassis/pose (100% 全零)
+        # - observations/chassis/status (100% 全零)
+        # - observations/chassis/vel (100% 全零)
+        # - observations/neck/joints (100% 全零)
+        # - observations/torso/joints (100% 全零)
+        # - observations/torso/pose (100% 全零)
 
-  ### ==================== ACTIONS ====================
-  # Action: Copy from observation state (29D)
-  # Since no explicit action data, we use current state as action
   action:
-    lerobot_feature: action
+    timeline_offset: 1
+    # ⚠️ H5文件中的action group为空
+    # 使用observation数据作为action（典型的模仿学习设置）
     sub_action:
-      ### Left arm target (7 joints)
+      # 左臂关节动作 (7维)
       - names:
-          - left_arm_joint_0
-          - left_arm_joint_1
-          - left_arm_joint_2
-          - left_arm_joint_3
-          - left_arm_joint_4
-          - left_arm_joint_5
-          - left_arm_joint_6
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
+          - left_arm_joint_7_rad
         args:
-          h5_path: observations/arm/left/joints
+          h5_path: "observations/arm/left/joints"
           range_from: 0
           range_to: 7
-        convert_func: to_float32
-
-      ### Left arm wrench (6)
+      
+      # 右臂关节动作 (7维)
       - names:
-          - left_arm_wrench_fx
-          - left_arm_wrench_fy
-          - left_arm_wrench_fz
-          - left_arm_wrench_tx
-          - left_arm_wrench_ty
-          - left_arm_wrench_tz
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_arm_joint_7_rad
         args:
-          h5_path: observations/arm/left/wrench
-          range_from: 0
-          range_to: 6
-        convert_func: to_float32
-
-      ### Left gripper (1)
-      - names:
-          - left_effector_position
-        args:
-          h5_path: observations/effector/left/position
-          range_from: 0
-          range_to: 1
-        convert_func: to_float32
-
-      ### Right arm target (7 joints)
-      - names:
-          - right_arm_joint_0
-          - right_arm_joint_1
-          - right_arm_joint_2
-          - right_arm_joint_3
-          - right_arm_joint_4
-          - right_arm_joint_5
-          - right_arm_joint_6
-        args:
-          h5_path: observations/arm/right/joints
+          h5_path: "observations/arm/right/joints"
           range_from: 0
           range_to: 7
-        convert_func: to_float32
-
-      ### Right arm wrench (6)
+      
+      # 左夹爪动作 (1维)
       - names:
-          - right_arm_wrench_fx
-          - right_arm_wrench_fy
-          - right_arm_wrench_fz
-          - right_arm_wrench_tx
-          - right_arm_wrench_ty
-          - right_arm_wrench_tz
+          - left_gripper_pos
         args:
-          h5_path: observations/arm/right/wrench
-          range_from: 0
-          range_to: 6
-        convert_func: to_float32
-
-      ### Right gripper (1)
-      - names:
-          - right_effector_position
-        args:
-          h5_path: observations/effector/right/position
+          h5_path: "observations/effector/left/position"
           range_from: 0
           range_to: 1
-        convert_func: to_float32
-
-      ### Timestamp (1)
+      
+      # 右夹爪动作 (1维)
       - names:
-          - timestamp_normalized
+          - right_gripper_pos
         args:
-          h5_path: observations/timestamp
+          h5_path: "observations/effector/right/position"
           range_from: 0
           range_to: 1
-        convert_func: to_float32

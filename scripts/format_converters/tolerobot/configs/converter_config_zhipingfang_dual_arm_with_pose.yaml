@@ -23,7 +23,7 @@ features:
     state:
       # Total dimensions: 28 (7+6+7+6+1+1)
       sub_state:
-        # 左臂关节 (7维)
+        # 左臂关节 (7维) - 单位: degree
         - names:
             - left_arm_joint_1_rad
             - left_arm_joint_2_rad
@@ -36,6 +36,7 @@ features:
             h5_path: "observations/arm/left/joints"
             range_from: 0
             range_to: 7
+          convert_func: degree2rad  # 度数转弧度
         
         # 左臂末端执行器姿态 (6维: position xyz + euler xyz)
         - names:
@@ -50,7 +51,7 @@ features:
             range_from: 0
             range_to: 6
         
-        # 右臂关节 (7维)
+        # 右臂关节 (7维) - 单位: degree
         - names:
             - right_arm_joint_1_rad
             - right_arm_joint_2_rad
@@ -63,6 +64,7 @@ features:
             h5_path: "observations/arm/right/joints"
             range_from: 0
             range_to: 7
+          convert_func: degree2rad  # 度数转弧度
         
         # 右臂末端执行器姿态 (6维: position xyz + euler xyz)
         - names:
@@ -108,7 +110,7 @@ features:
     # ⚠️ H5文件中的action group为空
     # 使用observation数据作为action（典型的模仿学习设置）
     sub_action:
-      # 左臂关节动作 (7维)
+      # 左臂关节动作 (7维) - 单位: degree
       - names:
           - left_arm_joint_1_rad
           - left_arm_joint_2_rad
@@ -121,6 +123,7 @@ features:
           h5_path: "observations/arm/left/joints"
           range_from: 0
           range_to: 7
+        convert_func: degree2rad  # 度数转弧度
       
       # 左臂末端执行器姿态动作 (6维)
       - names:
@@ -135,7 +138,7 @@ features:
           range_from: 0
           range_to: 6
       
-      # 右臂关节动作 (7维)
+      # 右臂关节动作 (7维) - 单位: degree
       - names:
           - right_arm_joint_1_rad
           - right_arm_joint_2_rad
@@ -148,6 +151,7 @@ features:
           h5_path: "observations/arm/right/joints"
           range_from: 0
           range_to: 7
+        convert_func: degree2rad  # 度数转弧度
       
       # 右臂末端执行器姿态动作 (6维)
       - names:

@@ -30,6 +30,9 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
+from robocoin_dataset.format_converter.utils.h5_file_cache import (
+    H5FileCache,
+)
 
 
 @dataclass
@@ -168,6 +171,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
     ) -> None:
         self.h5_buffer: H5Buffer = H5Buffer()
         self._image_is_iobytes = True
+        # 🚀 H5文件句柄缓存，大幅提升读取性能
+        self._h5_file_cache: H5FileCache | None = None
 
         super().__init__(
             dataset_path=dataset_path,
@@ -180,6 +185,9 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
         )
+        
+        # 🚀 初始化H5文件缓存（在super().__init__之后，确保logger可用）
+        self._h5_file_cache = H5FileCache(max_cache_size=100, logger=self.logger)
 
     def _prevalidate_files(self) -> None:
         unexpected_files: list[Path] = []
@@ -289,7 +297,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             # 验证第一个H5文件作为样本（假设同一任务下的H5文件结构一致）
             sample_h5_file = h5_files[0]
             try:
-                with h5py.File(sample_h5_file, "r") as h5_file:
+                # 🚀 使用H5FileCache提升性能
+                with self._h5_file_cache.open(sample_h5_file) as h5_file:
                     missing_paths = []
                     invalid_paths = []
 
@@ -775,7 +784,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
 
         h5_file_path = self.task_episode_h5file_paths[task_path][ep_idx]
         try:
-            with h5py.File(h5_file_path, "r") as h5_file:
+            # 🚀 使用H5FileCache提升性能
+            with self._h5_file_cache.open(h5_file_path) as h5_file:
                 # 获取参考帧数
                 reference_frame_count = h5_file[h5_path].shape[0]
                 
@@ -991,7 +1001,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                     raise ValueError(error_msg) from e
 
         try:
-            with h5py.File(h5_file_path, "r") as h5_file:
+            # 🚀 使用H5FileCache提升性能
+            with self._h5_file_cache.open(h5_file_path) as h5_file:
                 h5_file.visititems(_get_dataset)
                 
                 # 对于配置了 use_compressed_video 的相机，额外加载 video 和 video_index
