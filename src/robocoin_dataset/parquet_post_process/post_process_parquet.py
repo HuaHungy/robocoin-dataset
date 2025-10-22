@@ -99,13 +99,13 @@ class PostProcessParquet:
         import shutil
 
         data_dir = convert_path / "data"
-        new_data_dir = convert_path / "ori_data"
+        new_data_dir = convert_path / "ppp_data"
         if new_data_dir.exists():
             shutil.rmtree(new_data_dir)
 
         shutil.copytree(data_dir, new_data_dir)
 
-        shutil.copyfile(convert_path / "meta/info.json", convert_path / "meta/ori_info.json")
+        shutil.copyfile(convert_path / "meta/info.json", convert_path / "meta/ppp_info.json")
 
     def _sync_parquet_post_processing_tasks(
         self, device_model: str | None = None, device_model_version: str | None = None

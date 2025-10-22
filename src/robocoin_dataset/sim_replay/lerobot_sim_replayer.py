@@ -247,7 +247,7 @@ class LerobotSimReplayer:
 
         episode_eef_fk_results = []
         parquet_file_path = (
-            self.repo_path / "data" / "chunk-000" / f"episode_{episode_index:06d}.parquet"
+            self.repo_path / "ppp_data" / "chunk-000" / f"episode_{episode_index:06d}.parquet"
         )
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")

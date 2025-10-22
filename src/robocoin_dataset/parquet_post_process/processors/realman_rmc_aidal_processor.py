@@ -52,7 +52,7 @@ class RealmanRmcAidalParquetPostProcessor(ParquetPostProcessor):
         new_right_gripper_data = self._smooth_gripper_open_data(right_gripper_data)
 
         new_action_data[:, self.left_gripper_open_action_data_idx] = new_left_gripper_data
-        new_action_data[:, self.left_gripper_open_action_data_idx] = new_right_gripper_data
+        new_action_data[:, self.right_gripper_open_action_data_idx] = new_right_gripper_data
 
         return new_action_data
 

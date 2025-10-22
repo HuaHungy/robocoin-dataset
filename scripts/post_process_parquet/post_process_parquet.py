@@ -108,7 +108,7 @@ python scripts/post_process_parquet/post_process_parquet.py \
 
 # realman_rmc_aidal
 python scripts/post_process_parquet/post_process_parquet.py \
-    --db_file_path ./db/datasets.db \
+    --db_file_path /mnt/db/datasets.db \
     --parquet_post_processing_factory_config_path ./scripts/post_process_parquet/configs/parquet_post_processing_factory_config.yaml \
     --device_model realman_rmc_aidal \
     --log_dir ./logs/parquet_post_processing

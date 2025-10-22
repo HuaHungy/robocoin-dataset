@@ -62,7 +62,7 @@ class SimReplay:
             print("正在准备 replay...，请在mujoco中调整好观察视角")
             input("请按回车键开始 state replay...")
             while True:
-                simulator.replay_episode(0, is_state=True, sleep_time_ms=30)
+                simulator.replay_episode(10, is_state=True, sleep_time_ms=30)
                 print(
                     "Relay已完成，按c键回车表示确认replay state结果正确，按r键回车后系统会再次replay state，按e键或其他键回车后可输入错误信息"
                 )
@@ -87,7 +87,7 @@ class SimReplay:
 
             input("请按回车键开始 action replay...")
             while True:
-                simulator.replay_episode(0, is_state=False, sleep_time_ms=30)
+                simulator.replay_episode(10, is_state=False, sleep_time_ms=30)
                 print(
                     "Replay已完成，按c键回车表示确认replay action结果正确，按r键回车后系统会再次replay action，按e键回车后可输入错误信息"
                 )
@@ -159,7 +159,7 @@ class SimReplay:
                 prestage_version_uuid=prestage_version_uuid,
                 device_model=device_model,
                 device_model_version=device_model_version,
-                version_uuid=item.version_uuid,
+                version_uuid=version_uuid,
                 err_msg=err_msg,
             )
             session.add(item)

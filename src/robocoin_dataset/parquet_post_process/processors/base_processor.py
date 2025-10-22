@@ -14,8 +14,8 @@ class ParquetPostProcessor:
         if not self.convert_path.exists():
             raise ValueError(f"{self.convert_path} does not exist")
 
-        self.ori_data_dir = self.convert_path / "ori_data"
-        self.new_data_dir = self.convert_path / "data"
+        self.ori_data_dir = self.convert_path / "data"
+        self.new_data_dir = self.convert_path / "ppp_data"
         if not self.ori_data_dir.exists():
             raise ValueError(f"{self.convert_path}/data_convert dir not exist")
 
