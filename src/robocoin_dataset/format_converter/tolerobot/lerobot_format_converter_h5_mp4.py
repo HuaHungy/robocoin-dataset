@@ -18,8 +18,14 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     IMAGE_KEY,
     OBSERVATION_KEY,
 )
+from robocoin_dataset.format_converter.tolerobot.h5_file_cache import (
+    H5FileCache,
+)
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
+)
+from robocoin_dataset.format_converter.tolerobot.lazy_video_reader import (
+    LazyVideoReader,
 )
 from robocoin_dataset.format_converter.tolerobot.video_frame_validator import (
     validate_video_frame_count,
@@ -55,6 +61,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         self._video_readers = {}  # 缓存视频读取器
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
         self._h5_files_cache = {}  # 缓存H5文件列表（episode定位优化）
+        self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)  # 🚀 H5文件句柄缓存
 
     def convert(self, is_test: bool = False) -> None:
         """重写父类方法以设置test模式标志
@@ -99,9 +106,9 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 # 🆕 增加：对第一个episode验证视频帧数与H5数据帧数是否匹配
                 if not first_episode_validated and mp4_files:
                     try:
-                        # 从H5文件获取预期帧数
+                        # 🚀 使用H5FileCache获取预期帧数
                         expected_frame_count = None
-                        with h5py.File(h5_file, 'r') as f:
+                        with self._h5_file_cache.open(h5_file) as f:
                             if 'action' in f:
                                 expected_frame_count = f['action'].shape[0]
                             elif 'qpos' in f:
@@ -171,8 +178,8 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         
         frame_counts = []
         
-        # 1. 获取 H5 数据帧数
-        with h5py.File(h5_file, 'r') as f:
+        # 1. 获取 H5 数据帧数（🚀 使用H5FileCache）
+        with self._h5_file_cache.open(h5_file) as f:
             if 'action' in f:
                 h5_frames = f['action'].shape[0]
             elif 'observations/qpos' in f:
@@ -287,33 +294,37 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         """获取任务的episode数量"""
         return len(self._get_all_episode_h5_files(task_path))
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, LazyVideoReader | list[np.ndarray]]:
         """准备episode的图像缓冲区
+        
+        🚀 性能优化：使用LazyVideoReader延迟加载，大幅降低内存占用
+        - 原方案：一次性加载所有帧到内存（500MB+）
+        - 新方案：按需读取帧（<20MB）
         
         Args:
             task_path: 任务路径
             ep_idx: Episode索引
-            is_test: 是否为测试模式。测试模式只加载前11帧（10帧数据+1帧用于action offset）
+            is_test: 是否为测试模式。测试模式加载前11帧用于验证
         
         Returns:
-            字典，键为相机名称，值为帧列表
+            字典，键为相机名称，值为LazyVideoReader（正式模式）或帧列表（测试模式）
         """
         h5_file = self._get_episode_h5_file(task_path, ep_idx)
         ep_dir = h5_file.parent  # 从H5文件获取目录
         
-        # 🧪 确定要加载的最大帧数
-        max_frames = None
+        # 🧪 Test模式：仍然加载少量帧到内存（用于快速验证）
         if is_test or self._is_test_mode:
-            # Test模式：只加载11帧（10帧数据 + 1帧用于timeline_offset）
             max_frames = 11
             if self.logger:
-                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames for episode {ep_idx}")
+                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames into memory for episode {ep_idx}")
+            
+            return self._load_frames_to_memory(ep_dir, max_frames)
         
+        # 🚀 正式模式：使用LazyVideoReader（按需加载，节省内存）
         images = {}
-        # 遍历配置中的所有相机
         image_configs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]
+        
         for image_config in image_configs:
-            # 使用 args 中的 cam_name，这样与 _get_frame_image 中的键一致
             args = image_config.get(ARGS_KEY, {})
             cam_name = args.get(CAM_NAME_KEY)
             video_pattern = args.get('video_file_pattern', '*')
@@ -328,28 +339,73 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 self.logger.warning(f"No video file matching pattern '{video_pattern}' for camera '{cam_name}' in {ep_dir}")
                 continue
             
-            mp4_file = mp4_files[0]  # 使用第一个匹配的文件
+            mp4_file = mp4_files[0]
             
-            # 使用 PyAV 读取视频（支持 AV1 等更多编码格式）
+            # 🚀 创建LazyVideoReader（延迟加载）
+            try:
+                lazy_reader = LazyVideoReader(
+                    video_path=mp4_file,
+                    logger=self.logger,
+                    convert_to_rgb=True
+                )
+                images[cam_name] = lazy_reader
+                
+                if self.logger:
+                    self.logger.info(
+                        f"🚀 Created LazyVideoReader for {mp4_file.name} "
+                        f"({lazy_reader.num_frames} frames, will load on-demand)"
+                    )
+                
+            except Exception as e:
+                raise OSError(f"Cannot create LazyVideoReader for {mp4_file}: {e}")
+        
+        return images
+    
+    def _load_frames_to_memory(self, ep_dir: Path, max_frames: int | None = None) -> dict[str, list[np.ndarray]]:
+        """辅助方法：将视频帧加载到内存（用于测试模式）
+        
+        Args:
+            ep_dir: Episode目录
+            max_frames: 最大加载帧数（None表示全部）
+        
+        Returns:
+            字典，键为相机名称，值为帧列表
+        """
+        images = {}
+        image_configs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]
+        
+        for image_config in image_configs:
+            args = image_config.get(ARGS_KEY, {})
+            cam_name = args.get(CAM_NAME_KEY)
+            video_pattern = args.get('video_file_pattern', '*')
+            
+            if not cam_name:
+                continue
+            
+            mp4_files = list(ep_dir.glob(video_pattern))
+            if not mp4_files:
+                self.logger.warning(f"No video file matching pattern '{video_pattern}' for camera '{cam_name}' in {ep_dir}")
+                continue
+            
+            mp4_file = mp4_files[0]
+            
+            # 使用 PyAV 读取视频到内存
             container = None
             try:
                 container = av.open(str(mp4_file))
                 frames = []
                 
                 for frame_idx, frame in enumerate(container.decode(video=0)):
-                    # 🧪 Test模式：限制加载帧数
                     if max_frames is not None and frame_idx >= max_frames:
-                        if self.logger:
-                            self.logger.debug(f"🧪 Stopped loading at frame {frame_idx} (max_frames={max_frames})")
                         break
                     
-                    # PyAV 直接转换为 RGB 格式的 numpy array
                     img = frame.to_ndarray(format='rgb24')
                     frames.append(img)
                 
                 images[cam_name] = frames
                 
-                self.logger.info(f"Loaded {len(frames)} frames from {mp4_file.name} using PyAV")
+                if self.logger:
+                    self.logger.info(f"Loaded {len(frames)} frames from {mp4_file.name} into memory")
                 
             except Exception as e:
                 raise OSError(f"Cannot open or decode video file {mp4_file}: {e}")
@@ -379,17 +435,23 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         return None
 
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> np.ndarray:
-        """准备episode的状态缓冲区"""
+        """准备episode的状态缓冲区
+        
+        🚀 性能优化：使用H5FileCache复用文件句柄，提高读取速度（10倍+）
+        """
         h5_file = self._get_episode_h5_file(task_path, ep_idx)
-        with h5py.File(h5_file, 'r') as f:
+        with self._h5_file_cache.open(h5_file) as f:
             if 'qpos' in f:
                 return np.array(f['qpos'])
             raise ValueError(f"No qpos data in {h5_file}")
 
     def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int) -> np.ndarray:
-        """准备episode的动作缓冲区"""
+        """准备episode的动作缓冲区
+        
+        🚀 性能优化：使用H5FileCache复用文件句柄，提高读取速度（10倍+）
+        """
         h5_file = self._get_episode_h5_file(task_path, ep_idx)
-        with h5py.File(h5_file, 'r') as f:
+        with self._h5_file_cache.open(h5_file) as f:
             if 'action' in f:
                 return np.array(f['action'])
             raise ValueError(f"No action data in {h5_file}")

@@ -170,11 +170,16 @@ class ConfigComparator:
         schema_obs: Dict[str, Any],
         config_state: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """对比state配置"""
+        """对比state配置
+        
+        功能增强（2025-10-22）:
+        - 检查config定义的字段是否存在于数据中
+        - 🆕 检查数据中有哪些字段未在config中配置（发现遗漏字段）
+        """
         result = {
             'details': [],
-            'missing_configs': [],
-            'missing_fields': [],
+            'missing_configs': [],  # config中有但数据中没有的字段
+            'missing_fields': [],   # 🆕 数据中有但config中没配置的字段
             'dimension_mismatches': []
         }
         
@@ -274,6 +279,48 @@ class ConfigComparator:
                             })
             
             result['details'].append(detail)
+        
+        # 🆕 检查数据中有哪些字段未在config中配置（发现遗漏字段）
+        configured_paths = set()
+        for sub_state in sub_states:
+            args = sub_state.get('args', {})
+            h5_path = args.get('h5_path', '')
+            bson_path = args.get('bson_file', '') + '/' + args.get('data_path', '')
+            
+            if h5_path:
+                configured_paths.add(h5_path)
+            if bson_path:
+                configured_paths.add(bson_path)
+        
+        # 遍历schema中的所有字段
+        unconfigured_fields = []
+        for category in ['qpos', 'qvel', 'state', 'eef_pos', 'eef_quat', 'other']:
+            if category in schema_obs:
+                for field_name, field_info in schema_obs[category].items():
+                    field_path = field_info.get('h5_path', '') or field_info.get('bson_path', '')
+                    
+                    # 检查这个路径是否被配置了
+                    is_configured = False
+                    for conf_path in configured_paths:
+                        if conf_path in field_path or field_path in conf_path:
+                            is_configured = True
+                            break
+                    
+                    if not is_configured and field_path:
+                        unconfigured_fields.append({
+                            'category': category,
+                            'field_name': field_name,
+                            'path': field_path,
+                            'shape': field_info.get('shape'),
+                            'dtype': field_info.get('dtype'),
+                            'data_quality': field_info.get('data_quality', 'ok')
+                        })
+        
+        if unconfigured_fields:
+            result['unconfigured_fields'] = unconfigured_fields
+            self.logger.warning(
+                f"⚠️ 发现{len(unconfigured_fields)}个数据字段未在config中配置！"
+            )
         
         return result
     
@@ -386,6 +433,44 @@ class ConfigComparator:
             
             result['details'].append(detail)
         
+        # 🆕 检查数据中有哪些action字段未在config中配置
+        configured_paths = set()
+        for sub_action in sub_actions:
+            args = sub_action.get('args', {})
+            h5_path = args.get('h5_path', '')
+            bson_path = args.get('bson_file', '') + '/' + args.get('data_path', '')
+            
+            if h5_path:
+                configured_paths.add(h5_path)
+            if bson_path:
+                configured_paths.add(bson_path)
+        
+        # 遍历schema中的所有action字段
+        unconfigured_actions = []
+        if isinstance(schema_actions, dict):
+            for action_name, action_info in schema_actions.items():
+                action_path = action_info.get('h5_path', '') or action_info.get('bson_path', '')
+                
+                is_configured = False
+                for conf_path in configured_paths:
+                    if conf_path in action_path or action_path in conf_path:
+                        is_configured = True
+                        break
+                
+                if not is_configured and action_path:
+                    unconfigured_actions.append({
+                        'action_name': action_name,
+                        'path': action_path,
+                        'shape': action_info.get('shape'),
+                        'dtype': action_info.get('dtype')
+                    })
+        
+        if unconfigured_actions:
+            result['unconfigured_actions'] = unconfigured_actions
+            self.logger.warning(
+                f"⚠️ 发现{len(unconfigured_actions)}个action字段未在config中配置！"
+            )
+        
         return result
     
     def generate_readable_report(self, comparison_report: Dict[str, Any]) -> str:
@@ -443,6 +528,34 @@ class ConfigComparator:
                 if detail.get('issues'):
                     for issue in detail['issues']:
                         lines.append(f"      - {issue}")
+        
+        # 🆕 遗漏的字段（数据中有但config中没配置）
+        unconfigured_fields = comparison_report.get('observations', {}).get('unconfigured_fields', [])
+        unconfigured_actions = comparison_report.get('actions', {}).get('unconfigured_actions', [])
+        
+        if unconfigured_fields or unconfigured_actions:
+            lines.append("\n" + "=" * 70)
+            lines.append("⚠️  遗漏的字段（数据中有但config中未配置）")
+            lines.append("=" * 70)
+            
+            if unconfigured_fields:
+                lines.append("\n[Observations - 未配置的字段]")
+                lines.append(f"发现 {len(unconfigured_fields)} 个未配置的observation字段:")
+                for field in unconfigured_fields:
+                    quality_icon = "⚠️" if field.get('data_quality') == 'suspicious' else "ℹ️"
+                    lines.append(f"  {quality_icon} {field['category']}/{field['field_name']}")
+                    lines.append(f"      路径: {field['path']}")
+                    lines.append(f"      Shape: {field.get('shape')}, Dtype: {field.get('dtype')}")
+                    if field.get('data_quality') == 'suspicious':
+                        lines.append(f"      ⚠️  数据质量可疑")
+            
+            if unconfigured_actions:
+                lines.append("\n[Actions - 未配置的字段]")
+                lines.append(f"发现 {len(unconfigured_actions)} 个未配置的action字段:")
+                for action in unconfigured_actions:
+                    lines.append(f"  ℹ️  {action['action_name']}")
+                    lines.append(f"      路径: {action['path']}")
+                    lines.append(f"      Shape: {action.get('shape')}, Dtype: {action.get('dtype')}")
         
         lines.append("\n" + "=" * 70)
         

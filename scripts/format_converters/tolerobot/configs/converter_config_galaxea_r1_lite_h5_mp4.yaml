@@ -9,6 +9,10 @@
 #   - 没有 eepose 数据（只有 qpos）
 #   - State: 14D (qpos only)
 #   - Action: 14D (qpos only)
+#
+# ✅ 单位转换（2025-10-22确认并修正）:
+#   - Gripper ([6], [13]): 值范围2-95度，使用degree2rad转换为弧度
+#   - 详见: docs/GALAXEA_GRIPPER_COMPARISON.md
 
 fps: 30
 video:
@@ -20,48 +24,72 @@ features:
     ### ========== IMAGES (3 cameras) ==========
     images:
       ### High camera
-      - cam_name: cam_high
+      - cam_name: cam_high_rgb
         args:
-          cam_name: cam_high
+          cam_name: cam_high_rgb
           video_file_pattern: "*cam_high.mp4"
 
       ### Left wrist camera
-      - cam_name: cam_left_wrist
+      - cam_name: cam_left_wrist_rgb
         args:
-          cam_name: cam_left_wrist
+          cam_name: cam_left_wrist_rgb
           video_file_pattern: "*cam_left_wrist.mp4"
 
       ### Right wrist camera
-      - cam_name: cam_right_wrist
+      - cam_name: cam_right_wrist_rgb
         args:
-          cam_name: cam_right_wrist
+          cam_name: cam_right_wrist_rgb
           video_file_pattern: "*cam_right_wrist.mp4"
 
     ### ========== STATE (14D: qpos only) ==========
     state:
       lerobot_feature: observation.state
       sub_state:
-        ### Joint positions (14D) - 左臂7个 + 右臂7个
+        ### Left arm - 6 joints (rad)
         - names: 
-            - left_arm_qpos_0
-            - left_arm_qpos_1
-            - left_arm_qpos_2
-            - left_arm_qpos_3
-            - left_arm_qpos_4
-            - left_arm_qpos_5
-            - left_arm_qpos_6
-            - right_arm_qpos_0
-            - right_arm_qpos_1
-            - right_arm_qpos_2
-            - right_arm_qpos_3
-            - right_arm_qpos_4
-            - right_arm_qpos_5
-            - right_arm_qpos_6
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
           args:
             h5_path: qpos
             range_from: 0
-            range_to: 14
+            range_to: 6
           convert_func: to_float32
+        
+        ### Left gripper (degree -> rad conversion)
+        - names:
+            - left_gripper_open_rad
+          args:
+            h5_path: qpos
+            range_from: 6
+            range_to: 7
+          convert_func: degree2rad
+        
+        ### Right arm - 6 joints (rad)
+        - names:
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+          args:
+            h5_path: qpos
+            range_from: 7
+            range_to: 13
+          convert_func: to_float32
+        
+        ### Right gripper (degree -> rad conversion)
+        - names:
+            - right_gripper_open_rad
+          args:
+            h5_path: qpos
+            range_from: 13
+            range_to: 14
+          convert_func: degree2rad
 
   ### ==================== ACTIONS ====================
   action:
@@ -69,24 +97,48 @@ features:
     timeline_offset: 1
     
     sub_action:
-      ### Joint positions (14D) - 左臂7个 + 右臂7个
+      ### Left arm - 6 joints (rad)
       - names: 
-          - left_arm_qpos_0
-          - left_arm_qpos_1
-          - left_arm_qpos_2
-          - left_arm_qpos_3
-          - left_arm_qpos_4
-          - left_arm_qpos_5
-          - left_arm_qpos_6
-          - right_arm_qpos_0
-          - right_arm_qpos_1
-          - right_arm_qpos_2
-          - right_arm_qpos_3
-          - right_arm_qpos_4
-          - right_arm_qpos_5
-          - right_arm_qpos_6
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
         args:
           h5_path: action
           range_from: 0
-          range_to: 14
+          range_to: 6
         convert_func: to_float32
+      
+      ### Left gripper (degree -> rad conversion)
+      - names:
+          - left_gripper_open_rad
+        args:
+          h5_path: action
+          range_from: 6
+          range_to: 7
+        convert_func: degree2rad
+      
+      ### Right arm - 6 joints (rad)
+      - names:
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+        args:
+          h5_path: action
+          range_from: 7
+          range_to: 13
+        convert_func: to_float32
+      
+      ### Right gripper (degree -> rad conversion)
+      - names:
+          - right_gripper_open_rad
+        args:
+          h5_path: action
+          range_from: 13
+          range_to: 14
+        convert_func: degree2rad

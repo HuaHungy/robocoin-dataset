@@ -23,6 +23,66 @@ class Mmk2Buffer:
     ep_idx: int = None
 
 
+class BsonFileCache:
+    """BSON文件缓存器 - 避免重复解析同一文件
+    
+    性能优化：类似H5FileCache，复用已解析的BSON数据
+    - 避免重复读取文件
+    - 避免重复解析BSON
+    - 显著提升速度（特别是在多次访问同一episode时）
+    """
+    
+    def __init__(self, max_cache_size: int = 10):
+        """初始化BSON缓存
+        
+        Args:
+            max_cache_size: 最大缓存文件数（默认10个episode）
+        """
+        self._cache = {}  # {file_path: parsed_data}
+        self._max_size = max_cache_size
+        self._access_order = []  # LRU tracking
+    
+    def get(self, bson_file: Path) -> dict:
+        """获取BSON文件的解析数据（带缓存）
+        
+        Args:
+            bson_file: BSON文件路径
+            
+        Returns:
+            解析后的BSON数据字典
+        """
+        cache_key = str(bson_file)
+        
+        # 缓存命中
+        if cache_key in self._cache:
+            # 更新访问顺序（LRU）
+            self._access_order.remove(cache_key)
+            self._access_order.append(cache_key)
+            return self._cache[cache_key]
+        
+        # 缓存未命中 - 读取并解析
+        with open(bson_file, "rb") as f:
+            content = f.read()
+        
+        parsed_data, _ = parse_bson_document(content, 0)
+        
+        # 添加到缓存
+        self._cache[cache_key] = parsed_data
+        self._access_order.append(cache_key)
+        
+        # 检查缓存大小，移除最旧的
+        if len(self._cache) > self._max_size:
+            oldest_key = self._access_order.pop(0)
+            del self._cache[oldest_key]
+        
+        return parsed_data
+    
+    def clear(self):
+        """清空缓存"""
+        self._cache.clear()
+        self._access_order.clear()
+
+
 def parse_bson_document(data: bytes, offset: int = 0) -> tuple[dict, int]:
     """解析单个BSON文档"""
     if offset + 4 > len(data):
@@ -126,6 +186,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         image_writer_threads: int = 4,
     ) -> None:
         self.mmk2_buffer: Mmk2Buffer = Mmk2Buffer()
+        
+        # 🚀 性能优化：初始化BSON文件缓存
+        self._bson_cache = BsonFileCache(max_cache_size=10)
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -772,7 +836,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """获取episode的帧数 - 使用主BSON文件的帧数"""
+        """获取episode的帧数 - 使用主BSON文件的帧数
+        
+        🚀 性能优化：使用BsonFileCache缓存解析结果
+        """
         episode_dir = self._get_episode_directory(task_path, ep_idx)
         main_bson_file = episode_dir / "episode_0.bson"
 
@@ -800,10 +867,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             )
 
         try:
-            with open(main_bson_file, "rb") as f:
-                content = f.read()
-
-            doc, _ = parse_bson_document(content, 0)
+            # 🚀 使用缓存获取BSON数据
+            doc = self._bson_cache.get(main_bson_file)
+            
             if doc and "data" in doc:
                 # 获取任一数据路径的长度作为帧数
                 for value in doc["data"].values():
@@ -892,26 +958,25 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
     # @override
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> any:
-        """准备状态数据缓冲区"""
+        """准备状态数据缓冲区
+        
+        🚀 性能优化：使用BsonFileCache避免重复解析
+        """
         episode_dir = self._get_episode_directory(task_path, ep_idx)
 
-        # 读取主BSON文件
+        # 读取主BSON文件 - 使用缓存
         main_bson_file = episode_dir / "episode_0.bson"
         main_data = {}
         if main_bson_file.exists():
-            with open(main_bson_file, "rb") as f:
-                content = f.read()
-            doc, _ = parse_bson_document(content, 0)
+            doc = self._bson_cache.get(main_bson_file)
             if doc and "data" in doc:
                 main_data = doc["data"]
 
-        # 读取手部BSON文件
+        # 读取手部BSON文件 - 使用缓存
         hand_bson_file = episode_dir / "xhand_control_data.bson"
         hand_data = []
         if hand_bson_file.exists():
-            with open(hand_bson_file, "rb") as f:
-                content = f.read()
-            doc, _ = parse_bson_document(content, 0)
+            doc = self._bson_cache.get(hand_bson_file)
             if doc and "frames" in doc:
                 hand_data = doc["frames"]
 

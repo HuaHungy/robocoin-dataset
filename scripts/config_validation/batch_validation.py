@@ -137,8 +137,9 @@ class BatchValidator:
                 }
                 overall_report['summary']['failed_validations'] += 1
         
-        # 保存总体报告
-        report_path = self.output_dir / "validation_report.json"
+        # 保存总体报告（添加时间戳）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = self.output_dir / f"validation_report_{timestamp}.json"
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(overall_report, f, indent=2, ensure_ascii=False, default=str)
         
@@ -316,9 +317,11 @@ class BatchValidator:
             comparison = self.config_comparator.compare(first_schema, config)
             report['config_comparison'] = comparison
             
-            # 生成可读报告并保存
+            # 生成可读报告并保存（🆕 添加device_model和version信息）
             readable_comparison = self.config_comparator.generate_readable_report(comparison)
-            comparison_file = self.output_dir / f"{dataset['dataset_name']}_comparison.txt"
+            device_model = dataset.get('device_model', 'unknown')
+            device_version = dataset.get('device_model_version', 'default')
+            comparison_file = self.output_dir / f"{device_model}_{device_version}_{dataset['dataset_name']}_comparison.txt"
             with open(comparison_file, 'w', encoding='utf-8') as f:
                 f.write(readable_comparison)
             
@@ -333,9 +336,11 @@ class BatchValidator:
             field_name_report = self.field_name_checker.check_config_field_names(config)
             report['field_name_check'] = field_name_report
             
-            # 生成可读报告并保存
+            # 生成可读报告并保存（🆕 添加device_model和version信息）
             readable_field_check = self.field_name_checker.generate_readable_report(field_name_report)
-            field_check_file = self.output_dir / f"{dataset['dataset_name']}_field_names.txt"
+            device_model = dataset.get('device_model', 'unknown')
+            device_version = dataset.get('device_model_version', 'default')
+            field_check_file = self.output_dir / f"{device_model}_{device_version}_{dataset['dataset_name']}_field_names.txt"
             with open(field_check_file, 'w', encoding='utf-8') as f:
                 f.write(readable_field_check)
             

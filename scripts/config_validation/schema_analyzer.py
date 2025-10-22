@@ -47,6 +47,8 @@ class SchemaAnalyzer:
             return self._analyze_mcap(episode_path)
         elif "bson" in format_type:
             return self._analyze_bson(episode_path)
+        elif "rosbag" in format_type:
+            return self._analyze_rosbag(episode_path)
         else:
             raise ValueError(f"不支持的格式: {format_type}")
     
@@ -400,6 +402,237 @@ class SchemaAnalyzer:
             schema['errors'].append(str(e))
         
         return schema
+    
+    def _analyze_rosbag(self, bag_path: Path) -> Dict[str, Any]:
+        """分析ROS Bag文件的schema
+        
+        Args:
+            bag_path: ROS bag文件路径
+            
+        Returns:
+            Schema信息字典
+        """
+        schema = {
+            'format': 'rosbag',
+            'file_path': str(bag_path),
+            'observations': {'state': {}, 'images': {}, 'other': {}},
+            'actions': {},
+            'topics': {},
+            'errors': []
+        }
+        
+        try:
+            from rosbags.highlevel import AnyReader
+            
+            self.logger.info(f"分析ROS Bag文件: {bag_path}")
+            
+            # 读取bag文件并分析topics
+            with AnyReader([bag_path]) as reader:
+                # 获取所有topics的连接信息
+                connections = reader.connections
+                
+                # 分析每个topic
+                for connection in connections:
+                    topic_name = connection.topic
+                    msg_type = connection.msgtype
+                    
+                    # 初始化topic信息
+                    topic_info = {
+                        'topic': topic_name,
+                        'msg_type': msg_type,
+                        'msg_count': 0,
+                        'fields': {},
+                        'sample_values': []
+                    }
+                    
+                    schema['topics'][topic_name] = topic_info
+                
+                # 读取消息并采样分析
+                topic_message_counts = {}
+                topic_samples = {}  # 存储每个topic的采样消息
+                
+                for connection, timestamp, rawdata in reader.messages():
+                    topic_name = connection.topic
+                    
+                    # 计数
+                    if topic_name not in topic_message_counts:
+                        topic_message_counts[topic_name] = 0
+                    topic_message_counts[topic_name] += 1
+                    
+                    # 采样（每个topic最多采样3条消息）
+                    if topic_name not in topic_samples:
+                        topic_samples[topic_name] = []
+                    
+                    if len(topic_samples[topic_name]) < 3:
+                        # 反序列化消息
+                        msg = reader.deserialize(rawdata, connection.msgtype)
+                        topic_samples[topic_name].append(msg)
+                
+                # 更新消息计数
+                for topic_name, count in topic_message_counts.items():
+                    if topic_name in schema['topics']:
+                        schema['topics'][topic_name]['msg_count'] = count
+                
+                # 分析采样的消息
+                for topic_name, messages in topic_samples.items():
+                    if topic_name not in schema['topics']:
+                        continue
+                    
+                    topic_info = schema['topics'][topic_name]
+                    
+                    # 分析消息结构
+                    if messages:
+                        first_msg = messages[0]
+                        fields_info = self._analyze_ros_message_structure(first_msg)
+                        topic_info['fields'] = fields_info
+                        
+                        # 分类到observations/actions
+                        self._categorize_ros_topic(topic_name, topic_info, schema)
+            
+            self.logger.info(f"ROS Bag分析完成: 共{len(schema['topics'])}个topics")
+            
+        except ImportError as e:
+            error_msg = "rosbags库未安装。请运行: uv pip install rosbags"
+            self.logger.error(error_msg)
+            schema['errors'].append(error_msg)
+        except Exception as e:
+            self.logger.error(f"分析ROS Bag文件失败: {e}")
+            schema['errors'].append(str(e))
+        
+        return schema
+    
+    def _analyze_ros_message_structure(self, msg: Any, depth: int = 0, max_depth: int = 3) -> Dict[str, Any]:
+        """递归分析ROS消息结构
+        
+        Args:
+            msg: ROS消息对象
+            depth: 当前递归深度
+            max_depth: 最大递归深度
+            
+        Returns:
+            消息字段信息
+        """
+        if depth >= max_depth:
+            return {'_truncated': True}
+        
+        fields = {}
+        
+        # 检查消息是否有__slots__属性（ROS消息的特征）
+        if hasattr(msg, '__slots__'):
+            for field_name in msg.__slots__:
+                try:
+                    value = getattr(msg, field_name, None)
+                    
+                    if value is None:
+                        fields[field_name] = {'type': 'None', 'value': None}
+                    elif isinstance(value, (int, float)):
+                        fields[field_name] = {
+                            'type': type(value).__name__,
+                            'value': value
+                        }
+                    elif isinstance(value, str):
+                        fields[field_name] = {
+                            'type': 'str',
+                            'length': len(value)
+                        }
+                    elif isinstance(value, (list, tuple)):
+                        if value and len(value) > 0:
+                            # 分析数组/列表
+                            item_type = type(value[0]).__name__
+                            fields[field_name] = {
+                                'type': 'array',
+                                'length': len(value),
+                                'item_type': item_type,
+                                'shape': (len(value),)
+                            }
+                            
+                            # 如果是数值数组，计算统计信息
+                            if isinstance(value[0], (int, float)):
+                                import numpy as np
+                                arr = np.array(value)
+                                fields[field_name].update({
+                                    'min': float(arr.min()),
+                                    'max': float(arr.max()),
+                                    'mean': float(arr.mean()),
+                                    'std': float(arr.std()),
+                                    'is_all_zero': bool(np.all(arr == 0)),
+                                    'non_zero_count': int(np.count_nonzero(arr))
+                                })
+                        else:
+                            fields[field_name] = {
+                                'type': 'array',
+                                'length': 0
+                            }
+                    elif hasattr(value, '__slots__'):
+                        # 嵌套的ROS消息
+                        fields[field_name] = {
+                            'type': 'nested_message',
+                            'fields': self._analyze_ros_message_structure(value, depth + 1, max_depth)
+                        }
+                    else:
+                        fields[field_name] = {
+                            'type': type(value).__name__
+                        }
+                
+                except Exception as e:
+                    fields[field_name] = {'error': str(e)}
+        
+        return fields
+    
+    def _categorize_ros_topic(self, topic_name: str, topic_info: Dict[str, Any], schema: Dict[str, Any]):
+        """将ROS topic分类到observations/actions
+        
+        Args:
+            topic_name: Topic名称
+            topic_info: Topic信息
+            schema: Schema字典
+        """
+        # 根据topic名称判断类别
+        topic_lower = topic_name.lower()
+        
+        # 图像topic
+        if any(keyword in topic_lower for keyword in ['image', 'camera', 'rgb', 'depth']):
+            camera_name = topic_name.split('/')[-1] if '/' in topic_name else topic_name
+            schema['observations']['images'][camera_name] = {
+                'topic': topic_name,
+                'msg_type': topic_info.get('msg_type'),
+                'msg_count': topic_info.get('msg_count', 0)
+            }
+        
+        # 状态/观测topic
+        elif any(keyword in topic_lower for keyword in ['state', 'joint', 'feedback', 'pose', 'position']):
+            # 提取字段信息
+            fields = topic_info.get('fields', {})
+            
+            # 检查是否有位置/速度/力矩等字段
+            for field_name, field_info in fields.items():
+                if isinstance(field_info, dict):
+                    full_path = f"{topic_name}/{field_name}"
+                    
+                    # 保存到state
+                    schema['observations']['state'][full_path] = {
+                        'topic': topic_name,
+                        'field': field_name,
+                        **field_info
+                    }
+        
+        # 动作topic
+        elif 'action' in topic_lower or 'command' in topic_lower or 'cmd' in topic_lower:
+            fields = topic_info.get('fields', {})
+            
+            for field_name, field_info in fields.items():
+                if isinstance(field_info, dict):
+                    full_path = f"{topic_name}/{field_name}"
+                    
+                    schema['actions'][full_path] = {
+                        'topic': topic_name,
+                        'field': field_name,
+                        **field_info
+                    }
+        
+        # 其他topic
+        else:
+            schema['observations']['other'][topic_name] = topic_info
     
     def generate_schema_report(self, schemas: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
