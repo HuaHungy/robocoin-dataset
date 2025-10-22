@@ -99,18 +99,17 @@ if __name__ == "__main__":
 
 
 """usage:
-# agilex_cobot_decoupled_magic
-python scripts/post_process_parquet/post_process_parquet.py \
-    --db_file_path ./db/datasets.db \
-    --parquet_post_processing_factory_config_path ./scripts/post_process_parquet/configs/parquet_post_processing_factory_config.yaml \
-    --device_model agilex_cobot_decoupled_magic \
-    --log_dir ./logs/sim_replay
-
 # realman_rmc_aidal
 python scripts/post_process_parquet/post_process_parquet.py \
     --db_file_path /mnt/db/datasets.db \
     --parquet_post_processing_factory_config_path ./scripts/post_process_parquet/configs/parquet_post_processing_factory_config.yaml \
     --device_model realman_rmc_aidal \
+    --device_model_version default_version \
     --log_dir ./logs/parquet_post_processing
 
+python scripts/post_process_parquet/post_process_parquet.py \
+    --db_file_path /mnt/db/datasets.db \
+    --parquet_post_processing_factory_config_path ./scripts/post_process_parquet/configs/parquet_post_processing_factory_config.yaml \
+    --device_model realman_rmc_aidal \
+    --log_dir ./logs/parquet_post_processing
 """
