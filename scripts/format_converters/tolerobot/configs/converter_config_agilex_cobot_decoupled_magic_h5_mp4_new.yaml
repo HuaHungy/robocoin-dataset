@@ -24,7 +24,7 @@ features:
             - left_arm_joint_4_rad
             - left_arm_joint_5_rad
             - left_arm_joint_6_rad
-            - left_gripper_open
+            - left_gripper_open_rad
           args:
             range_from: 0
             range_to: 7
@@ -35,7 +35,7 @@ features:
             - right_arm_joint_4_rad
             - right_arm_joint_5_rad
             - right_arm_joint_6_rad
-            - right_gripper_open
+            - right_gripper_open_rad
           args:
             range_from: 7
             range_to: 14
@@ -50,7 +50,7 @@ features:
           - left_arm_joint_4_rad
           - left_arm_joint_5_rad
           - left_arm_joint_6_rad
-          - left_gripper_open
+          - left_gripper_open_rad
         args:
           range_from: 0
           range_to: 7
@@ -61,7 +61,7 @@ features:
           - right_arm_joint_4_rad
           - right_arm_joint_5_rad
           - right_arm_joint_6_rad
-          - right_gripper_open
+          - right_gripper_open_rad
         args:
           range_from: 7
           range_to: 14

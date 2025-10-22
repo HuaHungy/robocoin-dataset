@@ -54,6 +54,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         )
         self._video_readers = {}  # 缓存视频读取器
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
+        self._h5_files_cache = {}  # 缓存H5文件列表（episode定位优化）
 
     def convert(self, is_test: bool = False) -> None:
         """重写父类方法以设置test模式标志
@@ -71,25 +72,23 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
         for task_path in self.path_task_dict.keys():
-            # 使用新的递归查找方法
+            # 使用优化的H5文件查找方法
             try:
-                episodes = self._get_all_episode_dirs(task_path)
+                h5_files = self._get_all_episode_h5_files(task_path)
             except FileNotFoundError as e:
                 raise FileNotFoundError(
                     f"❌ H5+MP4 format validation failed\n"
                     f"📁 Task path: {task_path}\n"
                     f"⚠️ {str(e)}\n"
-                    f"💡 Hint: Episode directories should contain .hdf5 or .h5 files.\n"
+                    f"💡 Hint: Task path should contain .hdf5 or .h5 files.\n"
                     f"         The converter supports nested directory structures."
                 ) from e
             
             # 🆕 增加：只验证第一个episode的帧数（作为抽样检查）
             first_episode_validated = False
             
-            for ep_dir in episodes:
-                h5_files = list(ep_dir.glob("*.hdf5")) + list(ep_dir.glob("*.h5"))
-                if not h5_files:
-                    raise FileNotFoundError(f"No HDF5 file found in {ep_dir}")
+            for h5_file in h5_files:
+                ep_dir = h5_file.parent  # 从H5文件获取所在目录
                 
                 # 检查是否有对应的MP4文件
                 mp4_files = list(ep_dir.glob("*.mp4"))
@@ -99,7 +98,6 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 
                 # 🆕 增加：对第一个episode验证视频帧数与H5数据帧数是否匹配
                 if not first_episode_validated and mp4_files:
-                    h5_file = h5_files[0]
                     try:
                         # 从H5文件获取预期帧数
                         expected_frame_count = None
@@ -146,17 +144,11 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                             self.logger.warning(f"⚠️ H5文件帧数读取失败: {e}")
 
     def _get_episode_h5_file(self, task_path: Path, ep_idx: int) -> Path:
-        """获取episode的HDF5文件路径"""
-        episodes = self._get_all_episode_dirs(task_path)
-        if ep_idx >= len(episodes):
-            raise IndexError(f"Episode index {ep_idx} out of range (0-{len(episodes)-1})")
-        
-        ep_dir = episodes[ep_idx]
-        h5_files = list(ep_dir.glob("*.hdf5")) + list(ep_dir.glob("*.h5"))
-        if not h5_files:
-            raise FileNotFoundError(f"No HDF5 file in {ep_dir}")
-        
-        return h5_files[0]
+        """获取episode的HDF5文件路径（优化：直接从缓存列表获取）"""
+        h5_files = self._get_all_episode_h5_files(task_path)
+        if ep_idx >= len(h5_files):
+            raise IndexError(f"Episode index {ep_idx} out of range (0-{len(h5_files)-1})")
+        return h5_files[ep_idx]
 
     def _get_video_reader(self, video_path: Path) -> cv2.VideoCapture:
         """获取或创建视频读取器（带缓存）"""
@@ -174,12 +166,8 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         策略：取所有数据源（H5数据 + 所有视频）的最小帧数
         这样可以避免视频帧数不足导致的索引越界错误
         """
-        episodes = self._get_all_episode_dirs(task_path)
-        if ep_idx >= len(episodes):
-            raise IndexError(f"Episode index {ep_idx} out of range (0-{len(episodes)-1})")
-        
-        ep_dir = episodes[ep_idx]
         h5_file = self._get_episode_h5_file(task_path, ep_idx)
+        ep_dir = h5_file.parent  # 从H5文件获取目录
         
         frame_counts = []
         
@@ -243,55 +231,61 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         
         return min_frames
 
-    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
-        """获取所有episode目录（支持嵌套结构）
+    def _get_all_episode_h5_files(self, task_path: Path) -> list[Path]:
+        """获取所有episode的H5文件路径（优化：直接定位文件而不是目录）
         
-        该方法支持多种结构：
-        1. 扁平结构：task_path/episode_0/*.hdf5
-        2. 2层嵌套：task_path/color/episode_0/*.hdf5
-        3. 3层嵌套：task_path/color/batch/episode_0/*.hdf5
-        4. 4层嵌套：task_path/task_variant/color/batch/episode_0/*.hdf5
+        性能优化策略：
+        1. 缓存结果（避免重复扫描）
+        2. 先尝试扁平结构（最快）
+        3. 再尝试1层嵌套
+        4. 最后才使用递归（最慢）
         
-        判断标准：包含.hdf5或.h5文件的目录即为episode目录
+        支持的结构：
+        - 扁平：task_path/*.hdf5
+        - 1层嵌套：task_path/episode_dir/*.hdf5
+        - 深层嵌套：task_path/**/episode_dir/*.hdf5
+        
+        Returns:
+            排序后的H5文件路径列表
         """
-        def find_episode_dirs(path: Path, max_depth: int = 5, current_depth: int = 0) -> list[Path]:
-            """递归查找episode目录（最多支持5层嵌套）"""
-            if current_depth > max_depth:
-                return []
-            
-            episode_dirs = []
-            
-            # 检查当前目录是否是episode目录（包含HDF5文件）
-            h5_files = list(path.glob("*.hdf5")) + list(path.glob("*.h5"))
-            if h5_files:
-                episode_dirs.append(path)
-                return episode_dirs  # 找到episode目录后不再向下搜索
-            
-            # 否则继续向下搜索子目录
-            try:
-                for sub_dir in path.iterdir():
-                    # 跳过隐藏目录和特殊目录（以 . 或 @ 开头）
-                    if sub_dir.is_dir() and not sub_dir.name.startswith('.') and not sub_dir.name.startswith('@'):
-                        episode_dirs.extend(find_episode_dirs(sub_dir, max_depth, current_depth + 1))
-            except PermissionError:
-                if self.logger:
-                    self.logger.warning(f"Permission denied when accessing {path}")
-            
-            return episode_dirs
+        # 缓存检查
+        cache_key = str(task_path)
+        if cache_key in self._h5_files_cache:
+            return self._h5_files_cache[cache_key]
         
-        episodes = find_episode_dirs(task_path)
+        h5_files = []
         
-        if not episodes:
+        # 策略1: 扁平结构（最快，直接在task_path下）
+        h5_files = list(task_path.glob("*.hdf5")) + list(task_path.glob("*.h5"))
+        
+        if not h5_files:
+            # 策略2: 1层嵌套（常见情况）
+            for subdir in task_path.iterdir():
+                if subdir.is_dir() and not subdir.name.startswith('.') and not subdir.name.startswith('@'):
+                    h5_files.extend(subdir.glob("*.hdf5"))
+                    h5_files.extend(subdir.glob("*.h5"))
+        
+        if not h5_files:
+            # 策略3: 递归查找（最慢，但最灵活）
+            h5_files = list(task_path.glob("**/*.hdf5")) + list(task_path.glob("**/*.h5"))
+            # 过滤隐藏目录
+            h5_files = [f for f in h5_files if not any(part.startswith('.') or part.startswith('@') for part in f.parts)]
+        
+        if not h5_files:
             raise FileNotFoundError(
-                f"No episode directories found in {task_path}. "
-                f"An episode directory should contain at least one .hdf5 or .h5 file."
+                f"No .h5 or .hdf5 files found in {task_path}. "
+                f"Please check if the dataset path is correct."
             )
         
-        return sorted(episodes)
+        # 排序并缓存
+        h5_files = sorted(h5_files)
+        self._h5_files_cache[cache_key] = h5_files
+        
+        return h5_files
     
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
-        return len(self._get_all_episode_dirs(task_path))
+        return len(self._get_all_episode_h5_files(task_path))
 
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:
         """准备episode的图像缓冲区
@@ -304,8 +298,8 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         Returns:
             字典，键为相机名称，值为帧列表
         """
-        episodes = self._get_all_episode_dirs(task_path)
-        ep_dir = episodes[ep_idx]
+        h5_file = self._get_episode_h5_file(task_path, ep_idx)
+        ep_dir = h5_file.parent  # 从H5文件获取目录
         
         # 🧪 确定要加载的最大帧数
         max_frames = None
