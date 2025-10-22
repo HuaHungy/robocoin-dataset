@@ -19,6 +19,10 @@ from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import
 from robocoin_dataset.format_converter.tolerobot.video_frame_validator import (
     validate_video_frame_count,
 )
+from robocoin_dataset.format_converter.tolerobot.lazy_video_reader import (
+    LazyVideoReader,
+    LazyVideoReaderPool,
+)
 
 
 class LerobotFormatConverterMp4Json(LerobotFormatConverter):
@@ -503,25 +507,23 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             f"nested structure (task_path/*/*/data.json)"
         )
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:
-        """准备episode的图像缓冲区
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, LazyVideoReader]:
+        """准备episode的图像缓冲区（使用延迟加载）
+        
+        🚀 性能优化：使用LazyVideoReader替代加载所有帧到内存
+        - 优化前：100帧 × 3相机 × 1MB = 300MB内存/episode
+        - 优化后：仅缓存当前帧，约3MB内存/episode
+        - 内存优化：100x
         
         Args:
             task_path: 任务路径
             ep_idx: Episode索引
-            is_test: 是否为测试模式。测试模式只加载前11帧（10帧数据+1帧用于action offset）
+            is_test: 是否为测试模式（LazyVideoReader下此参数无影响，按需加载）
             
         Returns:
-            字典，键为相机名称，值为帧列表
+            字典，键为相机名称，值为LazyVideoReader对象
+            LazyVideoReader支持索引访问，可直接替代list[np.ndarray]
         """
-        # 🧪 确定要加载的最大帧数
-        max_frames = None
-        if is_test or self._is_test_mode:
-            # Test模式：只加载11帧（10帧数据 + 1帧用于timeline_offset）
-            max_frames = 11
-            if self.logger:
-                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames for episode {ep_idx}")
-        
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             raise IndexError(
@@ -557,47 +559,42 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     )
                 continue
             
-            cap = None
             try:
-                cap = cv2.VideoCapture(str(mp4_file))
-                if not cap.isOpened():
-                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): Cannot open video")
+                # 🚀 使用LazyVideoReader替代加载所有帧
+                reader = LazyVideoReader(mp4_file, logger=self.logger)
+                
+                # 验证视频可以打开且有帧
+                if len(reader) == 0:
+                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): 0 frames")
+                    reader.close()
                     continue
                 
-                frames = []
-                frame_idx = 0
-                while True:
-                    # 🧪 Test模式：限制加载帧数
-                    if max_frames is not None and frame_idx >= max_frames:
-                        if self.logger:
-                            self.logger.debug(f"🧪 Stopped loading {cam_name} at frame {frame_idx} (max_frames={max_frames})")
-                        break
-                    
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    # OpenCV读取的是BGR，转换为RGB
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    frames.append(frame_rgb)
-                    frame_idx += 1
+                images[cam_name] = reader
                 
-                if not frames:
-                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): 0 frames read")
-                else:
-                    images[cam_name] = frames
-                    if self.logger:
-                        self.logger.debug(
-                            f"✓ Loaded {len(frames)} frames from {cam_name} ({mp4_file.name})"
-                        )
+                if self.logger:
+                    self.logger.debug(
+                        f"✓ LazyVideoReader ready for {cam_name}: "
+                        f"{len(reader)} frames ({mp4_file.name})"
+                    )
+                    
+            except FileNotFoundError as e:
+                failed_cameras.append(f"{cam_name} ({mp4_file.name}): File not found")
+                if self.logger:
+                    self.logger.error(f"❌ Video file not found: {mp4_file.name}")
+                    
+            except RuntimeError as e:
+                failed_cameras.append(f"{cam_name} ({mp4_file.name}): {e!s}")
+                if self.logger:
+                    self.logger.error(
+                        f"❌ Failed to open video {mp4_file.name}: {e}"
+                    )
+                    
             except Exception as e:
                 failed_cameras.append(f"{cam_name} ({mp4_file.name}): {e!s}")
                 if self.logger:
                     self.logger.error(
-                        f"❌ Failed to load video {mp4_file.name}: {e}"
+                        f"❌ Unexpected error loading video {mp4_file.name}: {e}"
                     )
-            finally:
-                if cap:
-                    cap.release()
         
         if not images:
             raise RuntimeError(
@@ -611,7 +608,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             )
         
         # 检查所有相机的帧数是否一致
-        frame_counts = {cam: len(frames) for cam, frames in images.items()}
+        frame_counts = {cam: len(reader) for cam, reader in images.items()}
         if len(set(frame_counts.values())) > 1:
             if self.logger:
                 self.logger.warning(
