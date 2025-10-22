@@ -20,6 +20,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
+from robocoin_dataset.format_converter.utils.json_file_cache import JsonFileCache
 
 
 class LerobotFormatConverterJpgJson(LerobotFormatConverter):
@@ -48,11 +49,15 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
         )
-        self._json_data_cache = {}  # 缓存JSON数据
+        # 🚀 性能优化：JSON文件缓存（LRU缓存，避免重复解析）
+        self._json_file_cache = JsonFileCache(max_cache_size=1000, logger=self.logger)
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
+        
+        if self.logger:
+            self.logger.info("🚀 JSON File Cache initialized (max_cache_size=1000)")
 
     def convert(self, is_test: bool = False) -> None:
-        """重写父类方法以设置test模式标志
+        """重写父类方法以设置test模式标志并输出缓存统计
         
         Args:
             is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
@@ -63,6 +68,10 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         
         # 调用父类的转换逻辑
         super().convert(is_test=is_test)
+        
+        # 🚀 输出JSON缓存统计信息
+        if self.logger:
+            self._json_file_cache.log_stats()
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -350,58 +359,50 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         return images
 
     def _load_joint_state_data(self, ep_dir: Path, joint_type: str) -> list[dict]:
-        """加载关节状态数据"""
+        """加载关节状态数据（带缓存）"""
         joint_dir = ep_dir / "arm" / "jointState" / joint_type
         if not joint_dir.exists():
             return []
         
         json_files = sorted(joint_dir.glob("*.json"))
-        data = []
-        for json_file in json_files:
-            with open(json_file) as f:
-                data.append(json.load(f))
+        # 🚀 使用缓存批量加载
+        data = self._json_file_cache.load_batch(json_files)
         
         return data
 
     def _load_gripper_data(self, ep_dir: Path, gripper_side: str) -> list[dict]:
-        """加载夹爪数据"""
+        """加载夹爪数据（带缓存）"""
         gripper_dir = ep_dir / "gripper" / "encoder" / gripper_side
         if not gripper_dir.exists():
             return []
         
         json_files = sorted(gripper_dir.glob("*.json"))
-        data = []
-        for json_file in json_files:
-            with open(json_file) as f:
-                data.append(json.load(f))
+        # 🚀 使用缓存批量加载
+        data = self._json_file_cache.load_batch(json_files)
         
         return data
 
     def _load_imu_data(self, ep_dir: Path, imu_side: str) -> list[dict]:
-        """加载IMU数据"""
+        """加载IMU数据（带缓存）"""
         imu_dir = ep_dir / "imu" / "9axis" / imu_side
         if not imu_dir.exists():
             return []
         
         json_files = sorted(imu_dir.glob("*.json"))
-        data = []
-        for json_file in json_files:
-            with open(json_file) as f:
-                data.append(json.load(f))
+        # 🚀 使用缓存批量加载
+        data = self._json_file_cache.load_batch(json_files)
         
         return data
 
     def _load_localization_data(self, ep_dir: Path, localization_side: str) -> list[dict]:
-        """加载定位/位姿数据"""
+        """加载定位/位姿数据（带缓存）"""
         localization_dir = ep_dir / "localization" / "pose" / localization_side
         if not localization_dir.exists():
             return []
         
         json_files = sorted(localization_dir.glob("*.json"))
-        data = []
-        for json_file in json_files:
-            with open(json_file) as f:
-                data.append(json.load(f))
+        # 🚀 使用缓存批量加载
+        data = self._json_file_cache.load_batch(json_files)
         
         return data
 

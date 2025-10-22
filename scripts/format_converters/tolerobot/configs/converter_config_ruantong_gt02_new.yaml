@@ -1,7 +1,7 @@
 ### 软通天擎 GT02 数据集配置 - 新格式
 ### H5 结构：
-### - /state/robot/positions (346, 18) - 18个关节
-### - /state/gripper/positions (346, 2) - 2个夹爪
+### - /state/robot/positions (616, 18) - 18个关节（移除 1,2,4 因为是常量/NaN）
+### - /state/gripper/positions (616, 2) - 2个夹爪
 ### - /action/* 全是 nan，使用 timeline_offset
 
 fps: 30
@@ -14,63 +14,77 @@ features:
           h5_path: camera/{frame_idx}/head_color.jpg
           file_type: jpg
 
-      - cam_name: head_depth
-        args:
-          h5_path: camera/{frame_idx}/head_depth.png
-          file_type: png
+      # - cam_name: head_depth  # LeRobot不支持depth，已注释
+      #   args:
+      #     h5_path: camera/{frame_idx}/head_depth.png
+      #     file_type: png
 
       - cam_name: hand_left_color
         args:
           h5_path: camera/{frame_idx}/hand_left_color.jpg
           file_type: jpg
 
-      - cam_name: hand_left_depth
-        args:
-          h5_path: camera/{frame_idx}/hand_left_depth.png
-          file_type: png
+      # - cam_name: hand_left_depth  # LeRobot不支持depth，已注释
+      #   args:
+      #     h5_path: camera/{frame_idx}/hand_left_depth.png
+      #     file_type: png
 
       - cam_name: hand_right_color
         args:
           h5_path: camera/{frame_idx}/hand_right_color.jpg
           file_type: jpg
 
-      - cam_name: hand_right_depth
-        args:
-          h5_path: camera/{frame_idx}/hand_right_depth.png
-          file_type: png
+      # - cam_name: hand_right_depth  # LeRobot不支持depth，已注释
+      #   args:
+      #     h5_path: camera/{frame_idx}/hand_right_depth.png
+      #     file_type: png
 
     state:
       sub_state:
-        # 机器人关节 18维 - /state/robot/positions
+        # 机器人关节 - 保留有效的15维（移除joint 1,2,4）
+        # robot_joint_3_rad (index 2)
         - names: 
-            - robot_joint_0
-            - robot_joint_1
-            - robot_joint_2
-            - robot_joint_3
-            - robot_joint_4
-            - robot_joint_5
-            - robot_joint_6
-            - robot_joint_7
-            - robot_joint_8
-            - robot_joint_9
-            - robot_joint_10
-            - robot_joint_11
-            - robot_joint_12
-            - robot_joint_13
-            - robot_joint_14
-            - robot_joint_15
-            - robot_joint_16
-            - robot_joint_17
+            - robot_joint_3_rad
           args:
             h5_path: /state/robot/positions
-            range_from: 0
+            range_from: 2
+            range_to: 3
+          convert_func: to_float32
+        
+        # robot_joint_5-10_rad (index 4-9)
+        - names: 
+            - robot_joint_5_rad
+            - robot_joint_6_rad
+            - robot_joint_7_rad
+            - robot_joint_8_rad
+            - robot_joint_9_rad
+            - robot_joint_10_rad
+          args:
+            h5_path: /state/robot/positions
+            range_from: 4
+            range_to: 10
+          convert_func: to_float32
+        
+        # robot_joint_11-18_rad (index 10-17)
+        - names: 
+            - robot_joint_11_rad
+            - robot_joint_12_rad
+            - robot_joint_13_rad
+            - robot_joint_14_rad
+            - robot_joint_15_rad
+            - robot_joint_16_rad
+            - robot_joint_17_rad
+            - robot_joint_18_rad
+          args:
+            h5_path: /state/robot/positions
+            range_from: 10
             range_to: 18
           convert_func: to_float32
         
-        # 夹爪位置 2维 - /state/gripper/positions
+        # 夹爪位置 2维 - /state/gripper/positions (单位: 度)
         - names:
-            - gripper_left_position
-            - gripper_right_position
+            - gripper_left_open_deg
+            - gripper_right_open_deg
           args:
             h5_path: /state/gripper/positions
             range_from: 0
@@ -82,36 +96,49 @@ features:
     timeline_offset: 1
     
     sub_action:
-      # 机器人关节 18维
+      # robot_joint_3_rad
       - names: 
-          - robot_joint_0
-          - robot_joint_1
-          - robot_joint_2
-          - robot_joint_3
-          - robot_joint_4
-          - robot_joint_5
-          - robot_joint_6
-          - robot_joint_7
-          - robot_joint_8
-          - robot_joint_9
-          - robot_joint_10
-          - robot_joint_11
-          - robot_joint_12
-          - robot_joint_13
-          - robot_joint_14
-          - robot_joint_15
-          - robot_joint_16
-          - robot_joint_17
+          - robot_joint_3_rad
         args:
           h5_path: /state/robot/positions
-          range_from: 0
+          range_from: 2
+          range_to: 3
+        convert_func: to_float32
+      
+      # robot_joint_5-10_rad
+      - names: 
+          - robot_joint_5_rad
+          - robot_joint_6_rad
+          - robot_joint_7_rad
+          - robot_joint_8_rad
+          - robot_joint_9_rad
+          - robot_joint_10_rad
+        args:
+          h5_path: /state/robot/positions
+          range_from: 4
+          range_to: 10
+        convert_func: to_float32
+      
+      # robot_joint_11-18_rad
+      - names: 
+          - robot_joint_11_rad
+          - robot_joint_12_rad
+          - robot_joint_13_rad
+          - robot_joint_14_rad
+          - robot_joint_15_rad
+          - robot_joint_16_rad
+          - robot_joint_17_rad
+          - robot_joint_18_rad
+        args:
+          h5_path: /state/robot/positions
+          range_from: 10
           range_to: 18
         convert_func: to_float32
       
       # 夹爪位置 2维
       - names:
-          - gripper_left_position
-          - gripper_right_position
+          - gripper_left_open_deg
+          - gripper_right_open_deg
         args:
           h5_path: /state/gripper/positions
           range_from: 0

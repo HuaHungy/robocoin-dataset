@@ -15,6 +15,7 @@ from PIL import Image
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
+from robocoin_dataset.format_converter.utils.h5_file_cache import H5FileCache
 
 
 class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
@@ -49,15 +50,9 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
         )
-        self._h5_file_cache = {}  # 缓存打开的 H5 文件
+        # 使用专业的 H5FileCache，支持 LRU 缓存和性能统计
+        self._h5_file_cache = H5FileCache(max_cache_size=50, logger=self.logger)
         self._meta_info_cache = {}  # 缓存元数据
-
-    def __del__(self) -> None:
-        """关闭所有缓存的 H5 文件"""
-        for h5_file in self._h5_file_cache.values():
-            if h5_file is not None:
-                h5_file.close()
-        self._h5_file_cache.clear()
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性
@@ -199,15 +194,12 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         return episodes[ep_idx]
 
     def _get_h5_file(self, task_path: Path, ep_idx: int) -> h5py.File:
-        """获取 H5 文件（带缓存）"""
+        """获取 H5 文件（使用专业缓存）"""
         ep_dir = self._get_episode_dir(task_path, ep_idx)
         h5_path = ep_dir / "aligned_joints.h5"
         
-        cache_key = str(h5_path)
-        if cache_key not in self._h5_file_cache:
-            self._h5_file_cache[cache_key] = h5py.File(h5_path, 'r')
-        
-        return self._h5_file_cache[cache_key]
+        # 使用 H5FileCache 自动管理缓存
+        return self._h5_file_cache.open(h5_path)
 
     def _get_meta_info(self, task_path: Path, ep_idx: int) -> dict:
         """获取元数据（带缓存）"""
@@ -541,3 +533,13 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
                 f"   💡 Frame index exceeds action dataset first dimension"
             )
         return dataset[frame_idx, from_idx:to_idx]
+
+    def convert(self, is_test: bool = False) -> None:
+        """执行转换并记录缓存统计"""
+        # 调用父类的 convert 方法
+        result = super().convert(is_test=is_test)
+        
+        # 记录 H5 缓存统计
+        self._h5_file_cache.log_stats()
+        
+        return result

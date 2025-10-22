@@ -16,8 +16,10 @@ features:
           h5_path: images/cam_right_wrist
 
     state:
+      # 总维度: 12 (master joints) + 2 (master grippers) + 12 (puppet joints) + 2 (puppet grippers) 
+      #         + 7 (puppet_eef_pose) + 2 (puppet_gripper_effort) + 12 (puppet_velocity) = 49
       sub_state:
-        # master左臂
+        # master左臂关节 (6维，不含gripper)
         - names:
             - master_left_arm_joint_1_rad
             - master_left_arm_joint_2_rad
@@ -25,12 +27,20 @@ features:
             - master_left_arm_joint_4_rad
             - master_left_arm_joint_5_rad
             - master_left_arm_joint_6_rad
-            - master_left_arm_joint_7_rad
           args:
             h5_path: master/joint
             range_from: 0
+            range_to: 6
+            
+        # master左臂gripper (1维，从joint第7维独立出来)
+        - names:
+            - master_left_gripper_open_rad  # 范围: [-0.0003, 0.074] rad ≈ 4.24°
+          args:
+            h5_path: master/joint
+            range_from: 6
             range_to: 7
-        # master右臂
+            
+        # master右臂关节 (6维，不含gripper)
         - names:
             - master_right_arm_joint_1_rad
             - master_right_arm_joint_2_rad
@@ -38,12 +48,20 @@ features:
             - master_right_arm_joint_4_rad
             - master_right_arm_joint_5_rad
             - master_right_arm_joint_6_rad
-            - master_right_arm_joint_7_rad
           args:
             h5_path: master/joint
             range_from: 7
+            range_to: 13
+            
+        # master右臂gripper (1维，从joint第14维独立出来)
+        - names:
+            - master_right_gripper_open_rad  # 范围: [0, 0.072] rad ≈ 4.13°
+          args:
+            h5_path: master/joint
+            range_from: 13
             range_to: 14
-        # puppet左臂
+            
+        # puppet左臂关节 (6维，不含gripper)
         - names:
             - puppet_left_arm_joint_1_rad
             - puppet_left_arm_joint_2_rad
@@ -51,12 +69,20 @@ features:
             - puppet_left_arm_joint_4_rad
             - puppet_left_arm_joint_5_rad
             - puppet_left_arm_joint_6_rad
-            - puppet_left_arm_joint_7_rad
           args:
             h5_path: puppet/joint
             range_from: 0
+            range_to: 6
+            
+        # puppet左臂gripper (1维，从joint第7维独立出来)
+        - names:
+            - puppet_left_gripper_open_rad  # 范围: [-0.0003, 0.069] rad ≈ 3.95°
+          args:
+            h5_path: puppet/joint
+            range_from: 6
             range_to: 7
-        # puppet右臂
+            
+        # puppet右臂关节 (6维，不含gripper)
         - names:
             - puppet_right_arm_joint_1_rad
             - puppet_right_arm_joint_2_rad
@@ -64,14 +90,20 @@ features:
             - puppet_right_arm_joint_4_rad
             - puppet_right_arm_joint_5_rad
             - puppet_right_arm_joint_6_rad
-            - puppet_right_arm_joint_7_rad
           args:
             h5_path: puppet/joint
             range_from: 7
+            range_to: 13
+            
+        # puppet右臂gripper (1维，从joint第14维独立出来)
+        - names:
+            - puppet_right_gripper_open_rad  # 范围: [0, 0.068] rad ≈ 3.90°
+          args:
+            h5_path: puppet/joint
+            range_from: 13
             range_to: 14
-        # 其他字段同理（如 eef_pose、effort、velocity），按 0:7/7:14 分割
 
-        # puppet左臂末端姿态
+        # puppet左臂末端位姿 (7维，包含位置和姿态)
         - names:
             - puppet_left_eef_pose_1
             - puppet_left_eef_pose_2
@@ -84,7 +116,8 @@ features:
             h5_path: puppet/eef_pose
             range_from: 0
             range_to: 7
-        # puppet右臂末端姿态
+            
+        # puppet右臂末端位姿 (7维，虽然是常量但保留)
         - names:
             - puppet_right_eef_pose_1
             - puppet_right_eef_pose_2
@@ -98,73 +131,60 @@ features:
             range_from: 7
             range_to: 14
 
-        # puppet左臂力
+        # puppet左臂gripper力矩 (1维)
         - names:
-            - puppet_left_effort_1
-            - puppet_left_effort_2
-            - puppet_left_effort_3
-            - puppet_left_effort_4
-            - puppet_left_effort_5
-            - puppet_left_effort_6
-            - puppet_left_effort_7
+            - puppet_left_gripper_eff_nm  # 范围: [-1.31, 0.31] N·m
           args:
             h5_path: puppet/effort
-            range_from: 0
+            range_from: 6
             range_to: 7
-        # puppet右臂力
+            
+        # puppet右臂gripper力矩 (1维)
         - names:
-            - puppet_right_effort_1
-            - puppet_right_effort_2
-            - puppet_right_effort_3
-            - puppet_right_effort_4
-            - puppet_right_effort_5
-            - puppet_right_effort_6
-            - puppet_right_effort_7
+            - puppet_right_gripper_eff_nm  # 范围: [-1.83, 0.35] N·m
           args:
             h5_path: puppet/effort
-            range_from: 7
+            range_from: 13
             range_to: 14
 
-        # puppet左臂速度
+        # puppet左臂速度 (前6个关节，gripper速度为零已排除)
         - names:
-            - puppet_left_velocity_1
-            - puppet_left_velocity_2
-            - puppet_left_velocity_3
-            - puppet_left_velocity_4
-            - puppet_left_velocity_5
-            - puppet_left_velocity_6
-            - puppet_left_velocity_7
+            - puppet_left_arm_joint_1_vel_rad_s
+            - puppet_left_arm_joint_2_vel_rad_s
+            - puppet_left_arm_joint_3_vel_rad_s
+            - puppet_left_arm_joint_4_vel_rad_s
+            - puppet_left_arm_joint_5_vel_rad_s
+            - puppet_left_arm_joint_6_vel_rad_s
           args:
             h5_path: puppet/velocity
             range_from: 0
-            range_to: 7
-        # puppet右臂速度
+            range_to: 6
+            
+        # puppet右臂速度 (前6个关节，gripper速度为零已排除)
         - names:
-            - puppet_right_velocity_1
-            - puppet_right_velocity_2
-            - puppet_right_velocity_3
-            - puppet_right_velocity_4
-            - puppet_right_velocity_5
-            - puppet_right_velocity_6
-            - puppet_right_velocity_7
+            - puppet_right_arm_joint_1_vel_rad_s
+            - puppet_right_arm_joint_2_vel_rad_s
+            - puppet_right_arm_joint_3_vel_rad_s
+            - puppet_right_arm_joint_4_vel_rad_s
+            - puppet_right_arm_joint_5_vel_rad_s
+            - puppet_right_arm_joint_6_vel_rad_s
           args:
             h5_path: puppet/velocity
             range_from: 7
-            range_to: 14
+            range_to: 13
 
-        # 底盘速度
-        - names:
-            - base_velocity_x
-            - base_velocity_y
-          args:
-            h5_path: base/velocity
-            range_from: 0
-            range_to: 2
+        # 注意：以下字段已移除（全零或无意义）
+        # - base/velocity (全零)
+        # - compress_len/ (无意义数据)
+        # - depths/ (全零)
+        # - puppet/eef_pose [7-13] (右臂末端全常量)
+        # - puppet/effort [0-5, 7-12] (前6关节effort全零)
+        # - puppet/velocity [6, 13] (gripper速度全零)
 
   action:
     timeline_offset: 1
     sub_action:
-      # master左臂动作
+      # master左臂关节动作 (6维，不含gripper)
       - names:
           - master_left_arm_joint_1_rad
           - master_left_arm_joint_2_rad
@@ -172,12 +192,20 @@ features:
           - master_left_arm_joint_4_rad
           - master_left_arm_joint_5_rad
           - master_left_arm_joint_6_rad
-          - master_left_arm_joint_7_rad
         args:
           h5_path: master/joint
           range_from: 0
+          range_to: 6
+          
+      # master左臂gripper动作 (1维)
+      - names:
+          - master_left_gripper_open_rad
+        args:
+          h5_path: master/joint
+          range_from: 6
           range_to: 7
-      # master右臂动作
+          
+      # master右臂关节动作 (6维，不含gripper)
       - names:
           - master_right_arm_joint_1_rad
           - master_right_arm_joint_2_rad
@@ -185,13 +213,20 @@ features:
           - master_right_arm_joint_4_rad
           - master_right_arm_joint_5_rad
           - master_right_arm_joint_6_rad
-          - master_right_arm_joint_7_rad
         args:
           h5_path: master/joint
           range_from: 7
+          range_to: 13
+          
+      # master右臂gripper动作 (1维)
+      - names:
+          - master_right_gripper_open_rad
+        args:
+          h5_path: master/joint
+          range_from: 13
           range_to: 14
           
-      # puppet左臂
+      # puppet左臂关节 (6维，不含gripper)
       - names:
           - puppet_left_arm_joint_1_rad
           - puppet_left_arm_joint_2_rad
@@ -199,12 +234,20 @@ features:
           - puppet_left_arm_joint_4_rad
           - puppet_left_arm_joint_5_rad
           - puppet_left_arm_joint_6_rad
-          - puppet_left_arm_joint_7_rad
         args:
           h5_path: puppet/joint
           range_from: 0
+          range_to: 6
+          
+      # puppet左臂gripper (1维)
+      - names:
+          - puppet_left_gripper_open_rad
+        args:
+          h5_path: puppet/joint
+          range_from: 6
           range_to: 7
-      # puppet右臂
+          
+      # puppet右臂关节 (6维，不含gripper)
       - names:
           - puppet_right_arm_joint_1_rad
           - puppet_right_arm_joint_2_rad
@@ -212,14 +255,20 @@ features:
           - puppet_right_arm_joint_4_rad
           - puppet_right_arm_joint_5_rad
           - puppet_right_arm_joint_6_rad
-          - puppet_right_arm_joint_7_rad
         args:
           h5_path: puppet/joint
           range_from: 7
+          range_to: 13
+          
+      # puppet右臂gripper (1维)
+      - names:
+          - puppet_right_gripper_open_rad
+        args:
+          h5_path: puppet/joint
+          range_from: 13
           range_to: 14
-      # 其他字段同理（如 eef_pose、effort、velocity），按 0:7/7:14 分割
 
-      # puppet左臂末端姿态
+      # puppet左臂末端位姿 (7维)
       - names:
           - puppet_left_eef_pose_1
           - puppet_left_eef_pose_2
@@ -232,7 +281,8 @@ features:
           h5_path: puppet/eef_pose
           range_from: 0
           range_to: 7
-      # puppet右臂末端姿态
+          
+      # puppet右臂末端位姿 (7维)
       - names:
           - puppet_right_eef_pose_1
           - puppet_right_eef_pose_2
@@ -246,65 +296,44 @@ features:
           range_from: 7
           range_to: 14
 
-      # puppet左臂力
+      # puppet左臂gripper力矩 (1维)
       - names:
-          - puppet_left_effort_1
-          - puppet_left_effort_2
-          - puppet_left_effort_3
-          - puppet_left_effort_4
-          - puppet_left_effort_5
-          - puppet_left_effort_6
-          - puppet_left_effort_7
+          - puppet_left_gripper_eff_nm
         args:
           h5_path: puppet/effort
-          range_from: 0
+          range_from: 6
           range_to: 7
-      # puppet右臂力
+          
+      # puppet右臂gripper力矩 (1维)
       - names:
-          - puppet_right_effort_1
-          - puppet_right_effort_2
-          - puppet_right_effort_3
-          - puppet_right_effort_4
-          - puppet_right_effort_5
-          - puppet_right_effort_6
-          - puppet_right_effort_7
+          - puppet_right_gripper_eff_nm
         args:
           h5_path: puppet/effort
-          range_from: 7
+          range_from: 13
           range_to: 14
 
-      # puppet左臂速度
+      # puppet左臂速度 (前6个关节)
       - names:
-          - puppet_left_velocity_1
-          - puppet_left_velocity_2
-          - puppet_left_velocity_3
-          - puppet_left_velocity_4
-          - puppet_left_velocity_5
-          - puppet_left_velocity_6
-          - puppet_left_velocity_7
+          - puppet_left_arm_joint_1_vel_rad_s
+          - puppet_left_arm_joint_2_vel_rad_s
+          - puppet_left_arm_joint_3_vel_rad_s
+          - puppet_left_arm_joint_4_vel_rad_s
+          - puppet_left_arm_joint_5_vel_rad_s
+          - puppet_left_arm_joint_6_vel_rad_s
         args:
           h5_path: puppet/velocity
           range_from: 0
-          range_to: 7
-      # puppet右臂速度
+          range_to: 6
+          
+      # puppet右臂速度 (前6个关节)
       - names:
-          - puppet_right_velocity_1
-          - puppet_right_velocity_2
-          - puppet_right_velocity_3
-          - puppet_right_velocity_4
-          - puppet_right_velocity_5
-          - puppet_right_velocity_6
-          - puppet_right_velocity_7
+          - puppet_right_arm_joint_1_vel_rad_s
+          - puppet_right_arm_joint_2_vel_rad_s
+          - puppet_right_arm_joint_3_vel_rad_s
+          - puppet_right_arm_joint_4_vel_rad_s
+          - puppet_right_arm_joint_5_vel_rad_s
+          - puppet_right_arm_joint_6_vel_rad_s
         args:
           h5_path: puppet/velocity
           range_from: 7
-          range_to: 14
-
-      # 底盘速度
-      - names:
-          - base_velocity_x
-          - base_velocity_y
-        args:
-          h5_path: base/velocity
-          range_from: 0
-          range_to: 2
+          range_to: 13

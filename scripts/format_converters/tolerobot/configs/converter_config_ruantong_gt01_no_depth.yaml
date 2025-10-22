@@ -51,13 +51,13 @@ features:
       # - ...
       sub_state:
       - names: 
-        - left_arm_joint_1
-        - left_arm_joint_2
-        - left_arm_joint_3
-        - left_arm_joint_4
-        - left_arm_joint_5
-        - left_arm_joint_6
-        - left_arm_joint_7
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        - left_arm_joint_7_rad
 
         args:
           ### keys and values by manual
@@ -69,13 +69,13 @@ features:
         convert_func: to_float32
       
       - names: 
-        - right_arm_joint_1
-        - right_arm_joint_2
-        - right_arm_joint_3
-        - right_arm_joint_4
-        - right_arm_joint_5
-        - right_arm_joint_6
-        - right_arm_joint_7
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        - right_arm_joint_7_rad
 
         args:
           ### keys and values by manual
@@ -88,9 +88,9 @@ features:
 
       ### values by manual
       - names: 
-        - left_end_pos_x
-        - left_end_pos_y
-        - left_end_pos_z
+        - left_end_pos_x_m
+        - left_end_pos_y_m
+        - left_end_pos_z_m
         args:
           ### keys and values by manual
           h5_path: /state/end/position
@@ -120,9 +120,9 @@ features:
 
       ### values by manual
       - names: 
-        - right_end_pos_x
-        - right_end_pos_y
-        - right_end_pos_z
+        - right_end_pos_x_m
+        - right_end_pos_y_m
+        - right_end_pos_z_m
 
         args:
           ### keys and values by manual
@@ -151,8 +151,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - waist_yaw
-        - waist_pitch
+        - waist_yaw_rad
+        - waist_pitch_rad
 
         args:
           ### keys and values by manual
@@ -164,8 +164,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - head_yaw
-        - head_pitch
+        - head_yaw_rad
+        - head_pitch_rad
 
         args:
           ### keys and values by manual
@@ -177,8 +177,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - left_effector_pos
-        - right_effector_pos
+        - left_effector_open_deg
+        - right_effector_open_deg
 
         args:
           ### keys and values by manual
@@ -190,9 +190,9 @@ features:
         convert_func: to_float32
 
       - names: 
-        - robot_pos_x
-        - robot_pos_y
-        - robot_pos_z
+        - robot_pos_x_m
+        - robot_pos_y_m
+        - robot_pos_z_m
 
         args:
           ### keys and values by manual
@@ -237,13 +237,13 @@ features:
     sub_action:
 
       - names: 
-        - left_arm_joint_1
-        - left_arm_joint_2
-        - left_arm_joint_3
-        - left_arm_joint_4
-        - left_arm_joint_5
-        - left_arm_joint_6
-        - left_arm_joint_7
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        - left_arm_joint_7_rad
 
         args:
           ### keys and values by manual
@@ -255,13 +255,13 @@ features:
         convert_func: to_float32
       
       - names: 
-        - right_arm_joint_1
-        - right_arm_joint_2
-        - right_arm_joint_3
-        - right_arm_joint_4
-        - right_arm_joint_5
-        - right_arm_joint_6
-        - right_arm_joint_7
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        - right_arm_joint_7_rad
 
         args:
           ### keys and values by manual
@@ -274,9 +274,9 @@ features:
 
       ### values by manual
       - names: 
-        - left_end_pos_x
-        - left_end_pos_y
-        - left_end_pos_z
+        - left_end_pos_x_m
+        - left_end_pos_y_m
+        - left_end_pos_z_m
         args:
           ### keys and values by manual
           h5_path: /action/end/position
@@ -306,9 +306,9 @@ features:
 
       ### values by manual
       - names: 
-        - right_end_pos_x
-        - right_end_pos_y
-        - right_end_pos_z
+        - right_end_pos_x_m
+        - right_end_pos_y_m
+        - right_end_pos_z_m
 
         args:
           ### keys and values by manual
@@ -337,8 +337,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - waist_yaw
-        - waist_pitch
+        - waist_yaw_rad
+        - waist_pitch_rad
 
         args:
           ### keys and values by manual
@@ -350,8 +350,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - head_yaw
-        - head_pitch
+        - head_yaw_rad
+        - head_pitch_rad
 
         args:
           ### keys and values by manual
@@ -363,8 +363,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - left_effector_pos
-        - right_effector_pos
+        - left_effector_open_deg
+        - right_effector_open_deg
 
         args:
           ### keys and values by manual

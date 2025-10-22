@@ -98,6 +98,9 @@ class LerobotFormatConverter(ABC):
             'skipped_frames': 0,
             'skip_details': [],
         }
+        
+        # Episode source file mapping: {global_ep_idx: {task, task_ep_idx, source_files}}
+        self.episode_source_mapping: dict[int, dict] = {}
 
         try:
             self._validate_convertor_config()
@@ -126,6 +129,27 @@ class LerobotFormatConverter(ABC):
     @abstractmethod
     def _prevalidate_files(self) -> None:
         raise NotImplementedError
+
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 episode 的源文件信息（供子类重写）
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode 索引
+        
+        Returns:
+            dict: 包含源文件详细信息的字典
+                建议包含以下字段（视具体数据格式而定）：
+                - h5_file: H5文件相对路径
+                - video_file: 视频文件相对路径
+                - json_file: JSON文件相对路径
+                - episode_directory: Episode目录相对路径
+                等等
+        
+        Note:
+            默认实现返回空字典，子类可根据需要重写此方法
+        """
+        return {}
 
     @abstractmethod
     def _get_frame_image(
@@ -904,6 +928,18 @@ class LerobotFormatConverter(ABC):
                     if not is_test:
                         dataset.save_episode()
                     
+                    # 收集源文件映射信息
+                    source_files = self._get_episode_source_files(task_path, task_ep_idx)
+                    self.episode_source_mapping[global_ep_idx] = {
+                        "task": task,
+                        "task_path": str(task_path),
+                        "task_ep_idx": task_ep_idx,
+                        "global_ep_idx": global_ep_idx,
+                        "source_files": source_files,
+                        "converted_frames": converted_frames,
+                        "skipped_frames": skipped_frames,
+                    }
+                    
                     # 检查失败率（在严格阶段结束时）
                     if global_ep_idx == self.strict_episodes - 1:
                         self._check_failure_rate_threshold(task_stats)
@@ -1016,6 +1052,58 @@ class LerobotFormatConverter(ABC):
             self.logger.info(f"\n完全跳过的episodes: {skipped_count}")
         
         self.logger.info("="*70)
+
+    def save_episode_source_mapping(self, mapping_filename: str = "episode_source_mapping.json") -> None:
+        """保存 episode 源文件映射到 JSON 文件
+        
+        Args:
+            mapping_filename: 映射文件名，默认为 "episode_source_mapping.json"
+        
+        Note:
+            映射文件保存在 output_path 目录下，与 meta/info.json 同级
+        """
+        import json
+        from datetime import datetime
+        
+        if not self.episode_source_mapping:
+            self.logger.warning("没有 episode 映射信息可保存")
+            return
+        
+        # 构建映射文件数据
+        mapping_data = {
+            "dataset_info": {
+                "source_dataset_path": str(self.dataset_path),
+                "output_dataset_path": str(self.output_path),
+                "repo_id": self.repo_id,
+                "device_model": self.device_model or "unknown",
+                "conversion_date": datetime.now().isoformat(),
+                "total_episodes": len(self.episode_source_mapping),
+                "fps": self.fps,
+            },
+            "episodes": []
+        }
+        
+        # 按 global_ep_idx 排序并添加到列表
+        for global_idx in sorted(self.episode_source_mapping.keys()):
+            episode_info = self.episode_source_mapping[global_idx]
+            mapping_data["episodes"].append({
+                "global_episode_index": episode_info["global_ep_idx"],
+                "task": episode_info["task"],
+                "task_path": episode_info["task_path"],
+                "task_episode_index": episode_info["task_ep_idx"],
+                "converted_frames": episode_info["converted_frames"],
+                "skipped_frames": episode_info["skipped_frames"],
+                "source_files": episode_info["source_files"],
+            })
+        
+        # 保存到文件
+        mapping_file_path = self.output_path / mapping_filename
+        with open(mapping_file_path, 'w', encoding='utf-8') as f:
+            json.dump(mapping_data, f, indent=2, ensure_ascii=False)
+        
+        self.logger.info(f"✅ Episode 源文件映射已保存: {mapping_file_path}")
+        self.logger.info(f"   - 总 episodes: {len(self.episode_source_mapping)}")
+        self.logger.info(f"   - 映射文件: {mapping_filename}")
 
     def get_episodes_num(self) -> int:
         return sum(self._get_task_episodes_num(task) for task in self.path_task_dict.keys())
