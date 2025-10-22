@@ -107,46 +107,46 @@ features:
 
         # Left臂末端执行器位置 (3维)
         - names:
-          - puppet_left_eef_pos_x_m
-          - puppet_left_eef_pos_y_m
-          - puppet_left_eef_pos_z_m
-        args:
-          h5_path: puppet/eef_pose
-          range_from: 0
-          range_to: 3
+            - puppet_left_eef_pos_x_m
+            - puppet_left_eef_pos_y_m
+            - puppet_left_eef_pos_z_m
+          args:
+            h5_path: puppet/eef_pose
+            range_from: 0
+            range_to: 3
 
         # Left臂末端执行器姿态 (四元数→欧拉角)
         - names:
-          - puppet_left_eef_rot_euler_x_rad
-          - puppet_left_eef_rot_euler_y_rad
-          - puppet_left_eef_rot_euler_z_rad
-        args:
-          h5_path: puppet/eef_pose
-          range_from: 3
-          range_to: 7
-        convert_func: quat_xyzw_2_euler_xyz
+            - puppet_left_eef_rot_euler_x_rad
+            - puppet_left_eef_rot_euler_y_rad
+            - puppet_left_eef_rot_euler_z_rad
+          args:
+            h5_path: puppet/eef_pose
+            range_from: 3
+            range_to: 7
+          convert_func: quat_xyzw_2_euler_xyz
         # puppet右臂末端位姿 (7维，虽然是常量但保留)
 
         # Right臂末端执行器位置 (3维)
         - names:
-          - puppet_right_eef_pos_x_m
-          - puppet_right_eef_pos_y_m
-          - puppet_right_eef_pos_z_m
-        args:
-          h5_path: puppet/eef_pose
-          range_from: 7
-          range_to: 10
+            - puppet_right_eef_pos_x_m
+            - puppet_right_eef_pos_y_m
+            - puppet_right_eef_pos_z_m
+          args:
+            h5_path: puppet/eef_pose
+            range_from: 7
+            range_to: 10
 
         # Right臂末端执行器姿态 (四元数→欧拉角)
         - names:
-          - puppet_right_eef_rot_euler_x_rad
-          - puppet_right_eef_rot_euler_y_rad
-          - puppet_right_eef_rot_euler_z_rad
-        args:
-          h5_path: puppet/eef_pose
-          range_from: 10
-          range_to: 14
-        convert_func: quat_xyzw_2_euler_xyz
+            - puppet_right_eef_rot_euler_x_rad
+            - puppet_right_eef_rot_euler_y_rad
+            - puppet_right_eef_rot_euler_z_rad
+          args:
+            h5_path: puppet/eef_pose
+            range_from: 10
+            range_to: 14
+          convert_func: quat_xyzw_2_euler_xyz
         # puppet左臂gripper力矩 (1维)
         - names:
             - puppet_left_gripper_eff_nm  # 范围: [-1.31, 0.31] N·m
@@ -288,46 +288,46 @@ features:
 
       # Left臂末端执行器位置 (3维)
       - names:
-        - puppet_left_eef_pos_x_m
-        - puppet_left_eef_pos_y_m
-        - puppet_left_eef_pos_z_m
-      args:
-        h5_path: puppet/eef_pose
-        range_from: 0
-        range_to: 3
+          - puppet_left_eef_pos_x_m
+          - puppet_left_eef_pos_y_m
+          - puppet_left_eef_pos_z_m
+        args:
+          h5_path: puppet/eef_pose
+          range_from: 0
+          range_to: 3
 
       # Left臂末端执行器姿态 (四元数→欧拉角)
       - names:
-        - puppet_left_eef_rot_euler_x_rad
-        - puppet_left_eef_rot_euler_y_rad
-        - puppet_left_eef_rot_euler_z_rad
-      args:
-        h5_path: puppet/eef_pose
-        range_from: 3
-        range_to: 7
-      convert_func: quat_xyzw_2_euler_xyz
+          - puppet_left_eef_rot_euler_x_rad
+          - puppet_left_eef_rot_euler_y_rad
+          - puppet_left_eef_rot_euler_z_rad
+        args:
+          h5_path: puppet/eef_pose
+          range_from: 3
+          range_to: 7
+        convert_func: quat_xyzw_2_euler_xyz
       # puppet右臂末端位姿 (7维)
 
       # Right臂末端执行器位置 (3维)
       - names:
-        - puppet_right_eef_pos_x_m
-        - puppet_right_eef_pos_y_m
-        - puppet_right_eef_pos_z_m
-      args:
-        h5_path: puppet/eef_pose
-        range_from: 7
-        range_to: 10
+          - puppet_right_eef_pos_x_m
+          - puppet_right_eef_pos_y_m
+          - puppet_right_eef_pos_z_m
+        args:
+          h5_path: puppet/eef_pose
+          range_from: 7
+          range_to: 10
 
       # Right臂末端执行器姿态 (四元数→欧拉角)
       - names:
-        - puppet_right_eef_rot_euler_x_rad
-        - puppet_right_eef_rot_euler_y_rad
-        - puppet_right_eef_rot_euler_z_rad
-      args:
-        h5_path: puppet/eef_pose
-        range_from: 10
-        range_to: 14
-      convert_func: quat_xyzw_2_euler_xyz
+          - puppet_right_eef_rot_euler_x_rad
+          - puppet_right_eef_rot_euler_y_rad
+          - puppet_right_eef_rot_euler_z_rad
+        args:
+          h5_path: puppet/eef_pose
+          range_from: 10
+          range_to: 14
+        convert_func: quat_xyzw_2_euler_xyz
       # puppet左臂gripper力矩 (1维)
       - names:
           - puppet_left_gripper_eff_nm
