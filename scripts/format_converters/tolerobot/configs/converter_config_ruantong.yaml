@@ -195,6 +195,7 @@ features:
         - left_end_quat_w
 
         args:
+convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /state/end/orientation
           range_from: 0
@@ -228,6 +229,7 @@ features:
         - right_end_quat_z
         - right_end_quat_w
         args:
+convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /state/end/orientation
           range_from: 0
@@ -268,6 +270,7 @@ features:
         - right_effector_open_deg
 
         args:
+convert_func: degree2rad
           ### keys and values by manual
           h5_path: /state/effector/position
           range_from: 0
@@ -297,6 +300,7 @@ features:
         - robot_quat_w
 
         args:
+convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /state/robot/orientation
           range_from: 0
@@ -381,6 +385,7 @@ features:
         - left_end_quat_w
 
         args:
+convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /action/end/orientation
           range_from: 0
@@ -414,6 +419,7 @@ features:
         - right_end_quat_z
         - right_end_quat_w
         args:
+convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /action/end/orientation
           range_from: 0
@@ -454,6 +460,7 @@ features:
         - right_effector_open_deg
 
         args:
+convert_func: degree2rad
           ### keys and values by manual
           h5_path: /action/effector/position
           range_from: 0

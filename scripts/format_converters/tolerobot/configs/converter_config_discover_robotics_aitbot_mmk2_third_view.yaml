@@ -103,6 +103,7 @@ features:
           field: r
           range_from: 0
           range_to: 4
+        convert_func: quat_xyzw_2_euler_xyz
       
       # 右臂关节位置 (6关节)  
       - names:
@@ -173,6 +174,7 @@ features:
           field: r
           range_from: 0
           range_to: 4
+        convert_func: quat_xyzw_2_euler_xyz
       
       # 左臂末端执行器 (1关节)
       - names:
