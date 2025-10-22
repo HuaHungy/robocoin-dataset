@@ -86,6 +86,83 @@ def find_nearest_msg(msgs, target_time):  # noqa: ANN001, ANN201
         return msgs[pos - 1][1]
     return msgs[pos][1]
 
+
+def parse_cdr_joint_state(data: bytes) -> dict | None:
+    """手动解析CDR格式的JointState消息（绕过rosbags bug）
+    
+    Args:
+        data: CDR格式的消息字节
+        
+    Returns:
+        包含 position/velocity/effort 的dict，解析失败返回None
+    """
+    import struct
+    
+    try:
+        offset = 0
+        
+        # Skip CDR header (4 bytes)
+        offset += 4
+        
+        # Parse Header
+        # timestamp (8 bytes sec + 4 bytes nanosec)
+        offset += 4  # sec
+        offset += 4  # nanosec
+        
+        # frame_id string length + data
+        frame_id_len = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        offset += frame_id_len
+        # Align to 4 bytes
+        while offset % 4 != 0:
+            offset += 1
+        
+        # Parse name array (skip it)
+        name_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        for _ in range(name_count):
+            name_len = struct.unpack_from('<I', data, offset)[0]
+            offset += 4
+            offset += name_len
+            # Align to 4 bytes
+            while offset % 4 != 0:
+                offset += 1
+        
+        # Parse position array
+        pos_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        positions = []
+        for _ in range(pos_count):
+            pos = struct.unpack_from('<d', data, offset)[0]  # double (8 bytes)
+            positions.append(pos)
+            offset += 8
+        
+        # Parse velocity array
+        vel_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        velocities = []
+        for _ in range(vel_count):
+            vel = struct.unpack_from('<d', data, offset)[0]
+            velocities.append(vel)
+            offset += 8
+        
+        # Parse effort array
+        eff_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        efforts = []
+        for _ in range(eff_count):
+            eff = struct.unpack_from('<d', data, offset)[0]
+            efforts.append(eff)
+            offset += 8
+        
+        return {
+            'position': positions,
+            'velocity': velocities,
+            'effort': efforts
+        }
+    except Exception:
+        return None
+
 class LerobotFormatConverterRealmanRmcAidalMcap(LerobotFormatConverter):
     def __init__(
         self,
@@ -469,10 +546,18 @@ int32 lift_pos
                 
                 data = find_nearest_msg(topic_msgs[topic], t)
                 if data is not None:
-                    # JointState类型
+                    # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
-                        js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
-                        sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                        js_dict = parse_cdr_joint_state(data)
+                        if js_dict and js_dict['position']:
+                            sub_data = np.array(js_dict['position'][from_idx:to_idx], dtype=np.float32)
+                        else:
+                            # 如果手动解析失败，尝试rosbags
+                            try:
+                                js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
+                                sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                            except Exception:
+                                sub_data = np.array([np.nan] * (to_idx - from_idx), dtype=np.float32)
                     elif 'udp_arm_position' in topic:
                         pose = self.typestore.deserialize_cdr(data, 'rm_ros_interfaces/msg/Jointposeorientation')
                         pos = np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z], dtype=np.float32)
@@ -489,6 +574,14 @@ int32 lift_pos
                             # 旋转数据 (四元数)
                             # 将四元数作为原始数据提取，让基类应用convert_func
                             sub_data = quat[from_idx-3:to_idx-3]
+                    elif 'udp_six_force' in topic:
+                        # 六维力传感器
+                        six_force = self.typestore.deserialize_cdr(data, 'rm_ros_interfaces/msg/Sixforce')
+                        force_data = np.array([
+                            six_force.force_fx, six_force.force_fy, six_force.force_fz,
+                            six_force.force_mx, six_force.force_my, six_force.force_mz
+                        ], dtype=np.float32)
+                        sub_data = force_data[from_idx:to_idx]
                     else:
                         sub_data = np.array([np.nan] * (to_idx - from_idx), dtype=np.float32)
                     
@@ -511,9 +604,18 @@ int32 lift_pos
                 
                 data = find_nearest_msg(topic_msgs[topic], t)
                 if data is not None:
+                    # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
-                        js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
-                        sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                        js_dict = parse_cdr_joint_state(data)
+                        if js_dict and js_dict['position']:
+                            sub_data = np.array(js_dict['position'][from_idx:to_idx], dtype=np.float32)
+                        else:
+                            # 如果手动解析失败，尝试rosbags
+                            try:
+                                js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
+                                sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                            except Exception:
+                                sub_data = np.array([np.nan] * (to_idx - from_idx), dtype=np.float32)
                     elif 'udp_arm_position' in topic:
                         pose = self.typestore.deserialize_cdr(data, 'rm_ros_interfaces/msg/Jointposeorientation')
                         pos = np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z], dtype=np.float32)

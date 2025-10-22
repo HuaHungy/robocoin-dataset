@@ -355,18 +355,24 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         """
         return task_path / "proprio_stats" / "proprio_stats.hdf5"
 
-    def _get_video_file_path(self, task_path: Path, ep_idx: int, cam_name: str) -> Path:
+    def _get_video_file_path(self, task_path: Path, ep_idx: int, cam_name: str, video_file_pattern: str = None) -> Path:
         """Get path to video file for a camera.
         
         Args:
             task_path: Path to episode directory
             ep_idx: Episode index
             cam_name: Camera name
+            video_file_pattern: Optional video file pattern (e.g., "camera/video/head_cam_h.mp4")
             
         Returns:
             Path to video file
         """
-        video_path = task_path / "camera" / "video" / f"{cam_name}.mp4"
+        # Use video_file_pattern if provided, otherwise fallback to cam_name.mp4
+        if video_file_pattern:
+            video_path = task_path / video_file_pattern
+        else:
+            video_path = task_path / "camera" / "video" / f"{cam_name}.mp4"
+        
         if not video_path.exists():
             video_dir = task_path / "camera" / "video"
             available_videos = []
@@ -381,7 +387,7 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                 f"   📂 Episode path: {task_path}\n"
                 f"   📋 Available videos: {available_videos if available_videos else 'None'}\n"
                 f"   💡 Check if:\n"
-                f"      1. Camera name matches video file name\n"
+                f"      1. Camera name or video_file_pattern matches actual file\n"
                 f"      2. Video file exists in camera/video/\n"
                 f"      3. Video recording was successful"
             )
@@ -410,7 +416,9 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         
         for image_config in self.converter_config["features"]["observation"]["images"]:
             cam_name = image_config[CAM_NAME_KEY]
-            video_path = self._get_video_file_path(task_path, ep_idx, cam_name)
+            args = image_config.get(ARGS_KEY, {})
+            video_file_pattern = args.get('video_file_pattern')
+            video_path = self._get_video_file_path(task_path, ep_idx, cam_name, video_file_pattern)
             
             # Load frames from video (with optional limit in test mode)
             cap = None
@@ -587,7 +595,8 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             return images_buffer[cam_name][frame_idx]
         
         # Fallback: load from video
-        video_path = self._get_video_file_path(task_path, ep_idx, cam_name)
+        video_file_pattern = args_dict.get('video_file_pattern')
+        video_path = self._get_video_file_path(task_path, ep_idx, cam_name, video_file_pattern)
         cap = cv2.VideoCapture(str(video_path))
         
         if not cap.isOpened():
@@ -638,6 +647,7 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             ep_idx: Episode index
             frame_idx: Frame index
             args_dict: Arguments dict with h5_path and range info
+                      可选参数 array_index: 用于3D数组的中间维度索引
             sub_states_buffer: Pre-loaded states buffer
             
         Returns:
@@ -646,6 +656,7 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         h5_path = args_dict["h5_path"]
         range_from = args_dict["range_from"]
         range_to = args_dict["range_to"]
+        array_index = args_dict.get("array_index")  # 🆕 可选的数组索引（用于3D数组）
         
         if sub_states_buffer is not None and h5_path in sub_states_buffer:
             data = sub_states_buffer[h5_path][frame_idx]
@@ -653,6 +664,12 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             h5_file = self._get_h5_file_path(task_path, ep_idx)
             with h5py.File(h5_file, "r") as f:
                 data = f[h5_path][frame_idx]
+        
+        # 🆕 处理3D数组：data shape可能是 (2, N) 或 (N,)
+        if array_index is not None:
+            # 3D数组情况：例如 state/end/position shape=(frames, 2, 3)
+            # frame_idx后得到 (2, 3)，需要取 [array_index, :]
+            data = data[array_index]
         
         return np.array(data[range_from:range_to], dtype=np.float32)
 
