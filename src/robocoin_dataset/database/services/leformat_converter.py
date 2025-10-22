@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -9,14 +10,13 @@ def upsert_leformat_convert(
     session: Session,
     ds_uuid: str,
     convert_status: TaskStatus,
-    # convert_version_uuid: str = "",
     err_message: str | None = None,
     leformat_path: str | None = None,
     is_test: bool = False,
 ) -> None:
     """
     Upsert LeFormatConvertDB 或 LeFormatConvertTestDB 记录。
-    
+
     :param session: 已打开的 SQLAlchemy Session（由调用方管理生命周期）
     :param ds_uuid: 数据集 UUID
     :param convert_status: 转换状态
@@ -36,25 +36,26 @@ def upsert_leformat_convert(
             .first()
         )
 
+        version_uuid = str(uuid.uuid4())
         if item is None:
             # 创建新记录
             item = leformat_convert_db(
                 dataset_uuid=ds_uuid,
                 convert_status=convert_status,
                 convert_path=leformat_path,
-                # convert_version_uuid=convert_version_uuid,
                 err_message=err_message,
                 updated_at=datetime.now(),
+                version_uuid=version_uuid,
             )
         else:
             # 更新现有记录
             item.convert_status = convert_status
             item.updated_at = datetime.now()
-            # convert_version_uuid = (convert_version_uuid,)
             if err_message is not None:
                 item.err_message = err_message
             if leformat_path is not None:
                 item.convert_path = leformat_path
+            version_uuid = version_uuid
 
         session.add(item)
         session.commit()

@@ -1,7 +1,8 @@
 import logging
+import uuid
 from pathlib import Path
 
-from sqlalchemy import and_, not_
+from sqlalchemy import not_
 from sqlalchemy.orm import Session
 
 from robocoin_dataset.database.database import DatasetDatabase
@@ -9,6 +10,7 @@ from robocoin_dataset.database.models import (
     DmvAnnotationDB,
     LeFormatConvertDB,
     LeformatDatasetSimReplayStatusDB,
+    LeformatParquetPostProcessingStatusDB,
     TaskStatus,
 )
 from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import LerobotSimReplayConfig
@@ -130,6 +132,9 @@ class SimReplay:
         dataset_uuid: str,
         convert_path: str,
         status: TaskStatus,
+        prestage_version_uuid: str,
+        device_model: str,
+        device_model_version: str,
         err_msg: str = "",
     ) -> None:
         item = (
@@ -137,60 +142,63 @@ class SimReplay:
             .filter(LeformatDatasetSimReplayStatusDB.dataset_uuid == dataset_uuid)
             .first()
         )
+        version_uuid = str(uuid.uuid4())
         if item:
             item.convert_path = convert_path
             item.status = status
+            item.prestage_version_uuid = prestage_version_uuid
+            item.device_model = device_model
+            item.device_model_version = device_model_version
+            item.version_uuid = version_uuid
             item.err_msg = err_msg
         else:
             item = LeformatDatasetSimReplayStatusDB(
                 dataset_uuid=dataset_uuid,
                 convert_path=convert_path,
                 status=status,
+                prestage_version_uuid=prestage_version_uuid,
+                device_model=device_model,
+                device_model_version=device_model_version,
+                version_uuid=item.version_uuid,
                 err_msg=err_msg,
             )
             session.add(item)
         session.commit()
 
-    def _sync_sim_replay_tasks(self, device_model: str | None = None) -> None:
+    def _sync_sim_replay_tasks(
+        self, device_model: str | None = None, device_model_version: str | None = None
+    ) -> None:
         with self.db.with_session() as session:
+            query = (
+                session.query(LeformatParquetPostProcessingStatusDB)
+                .filter(LeformatParquetPostProcessingStatusDB.status == TaskStatus.COMPLETED)
+                .filter(
+                    not_(
+                        session.query(LeformatParquetPostProcessingStatusDB)
+                        .filter(
+                            LeformatParquetPostProcessingStatusDB.dataset_uuid
+                            == LeformatDatasetSimReplayStatusDB.dataset_uuid
+                        )
+                        .filter(
+                            LeformatParquetPostProcessingStatusDB.prestage_version_uuid
+                            == LeformatParquetPostProcessingStatusDB.version_uuid
+                        )
+                        .exists()
+                    )
+                )
+            )
             if device_model is not None:
-                items = (
-                    session.query(LeFormatConvertDB)
-                    .join(
-                        DmvAnnotationDB,
-                        LeFormatConvertDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
-                    )
-                    .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
-                    .filter(
-                        not_(
-                            session.query(LeformatDatasetSimReplayStatusDB)
-                            .filter(
-                                LeformatDatasetSimReplayStatusDB.dataset_uuid
-                                == LeFormatConvertDB.dataset_uuid
-                            )
-                            .exists()
-                        )
-                    )
-                    .filter(
-                        DmvAnnotationDB.device_model == device_model  # 新增：设备型号筛选
-                    )
-                ).all()
-            else:
-                items = (
-                    session.query(LeFormatConvertDB)
-                    .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
-                    .filter(
-                        not_(
-                            session.query(LeformatDatasetSimReplayStatusDB)
-                            .filter(
-                                LeformatDatasetSimReplayStatusDB.dataset_uuid
-                                == LeFormatConvertDB.dataset_uuid
-                            )
-                            .exists()
-                        )
-                    )
-                ).all()
-        items = list(items)
+                query = query.filter(
+                    LeformatParquetPostProcessingStatusDB.device_model == device_model
+                )
+
+            if device_model_version is not None:
+                query = query.filter(
+                    LeformatParquetPostProcessingStatusDB.device_model_version
+                    == device_model_version
+                )
+
+        items = query.all()
         for item in items:
             with self.db.with_session() as session:
                 self._upsert_leformat_dataset_simulation_replay_status(
@@ -198,33 +206,45 @@ class SimReplay:
                     dataset_uuid=item.dataset_uuid,
                     convert_path=item.convert_path,
                     status=TaskStatus.PENDING,
+                    prestage_version_uuid=item.version_uuid,
+                    device_model=item.device_model,
+                    device_model_version=item.device_model_version,
                 )
 
-    def _gen_one_sim_replay_task(self, device_model: str) -> str | None:
+    def _gen_one_sim_replay_task(
+        self, device_model: str, device_model_version: str | None = None
+    ) -> tuple[str, str, str, str]:
         with self.db.with_session() as session:
-            item = (
-                session.query(LeformatDatasetSimReplayStatusDB)
-                .join(
-                    DmvAnnotationDB,
-                    LeformatDatasetSimReplayStatusDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
-                )
-                .filter(
-                    and_(
-                        LeformatDatasetSimReplayStatusDB.status == TaskStatus.PENDING,
-                        DmvAnnotationDB.device_model == device_model,
-                    )
-                )
-                .first()
+            query = session.query(LeformatDatasetSimReplayStatusDB).filter(
+                LeformatDatasetSimReplayStatusDB.status == TaskStatus.PENDING,
             )
+            if device_model:
+                query = query.filter(LeformatDatasetSimReplayStatusDB.device_model == device_model)
+                if device_model_version:
+                    query = query.filter(
+                        LeformatDatasetSimReplayStatusDB.device_model_version
+                        == device_model_version
+                    )
+            item = query.first()
             if not item:
-                return None
+                return None, None, None, None
             item.status = TaskStatus.PROCESSING
             session.commit()
-            return item.dataset_uuid
+            return (
+                item.dataset_uuid,
+                item.prestage_version_uuid,
+                item.device_model,
+                item.device_model_version,
+            )
 
-    def sim_replay_datasets(self, device_model: str) -> None:
+    def sim_replay_datasets(self, device_model: str, device_model_version: str = "") -> None:
         self._sync_sim_replay_tasks(device_model)
-        dataset_uuid = self._gen_one_sim_replay_task(device_model=device_model)
+        dataset_uuid, prestage_version_uuid, device_model, device_model_version = (
+            self._gen_one_sim_replay_task(
+                device_model=device_model, device_model_version=device_model_version
+            )
+        )
+
         if dataset_uuid is None:
             return
         convert_path = self._get_convert_path(dataset_uuid)
@@ -235,6 +255,9 @@ class SimReplay:
                     session=session,
                     dataset_uuid=dataset_uuid,
                     convert_path=convert_path,
+                    prestage_version_uuid=prestage_version_uuid,
+                    device_model=device_model,
+                    device_model_version=device_model_version,
                     status=TaskStatus.COMPLETED,
                 )
 
@@ -246,5 +269,8 @@ class SimReplay:
                     dataset_uuid=dataset_uuid,
                     convert_path=convert_path,
                     status=TaskStatus.FAILED,
+                    prestage_version_uuid=prestage_version_uuid,
+                    device_model=device_model,
+                    device_model_version=device_model_version,
                     err_msg=str(e),
                 )

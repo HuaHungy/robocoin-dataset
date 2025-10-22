@@ -32,6 +32,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--device_model_version",
+        type=str,
+        default="",
+        help="Device model version to simulate",
+    )
+
+    parser.add_argument(
         "--log_dir",
         type=str,
         default="",
@@ -94,7 +101,7 @@ python scripts/sim_replay/sim_replay.py \
 
 # realman_rmc_aidal
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path /mnt/db/datasets.db \
+    --db_file_path ./db/datasets.db \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
     --device_model realman_rmc_aidal \
     --log_dir ./logs/sim_replay

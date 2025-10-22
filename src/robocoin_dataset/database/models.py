@@ -152,6 +152,8 @@ class LeFormatConvertDB(Base):
         nullable=True,  # 允许为空，初始无信息
     )
 
+    version_uuid = Column(String(255), nullable=False)
+
     # ✅ 唯一约束：一个 uuid 最多一个转换记录
     __table_args__ = (UniqueConstraint("dataset_uuid", name="uix_dataset_uuid_convert"),)
 
@@ -179,6 +181,8 @@ class LeFormatConvertTestDB(Base):
         Text,  # 使用 Text 类型支持较长内容
         nullable=True,  # 允许为空，初始无信息
     )
+
+    version_uuid = Column(String(255), nullable=True)
 
     # ✅ 唯一约束：一个 uuid 最多一个转换记录
     __table_args__ = (UniqueConstraint("dataset_uuid", name="uix_dataset_uuid_convert"),)
@@ -350,6 +354,10 @@ class LeformatDatasetSimReplayStatusDB(Base):
     convert_path = Column(String(255), index=True, nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_msg = Column(Text, index=True, nullable=True)
+    version_uuid = Column(String(255), nullable=True)
+    prestage_version_uuid = Column(String(255), nullable=True)
+    device_model = Column(String(255), index=True, nullable=True)
+    device_model_version = Column(String(255), index=True, nullable=True)
 
 
 class LeformatDatasetMotionAnnotationStatusDB(Base):
@@ -368,3 +376,16 @@ class LeformatDatasetFormatCheckStatusDB(Base):
     convert_path = Column(String(255), index=True, nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_msg = Column(Text, index=True, nullable=True)
+
+
+class LeformatParquetPostProcessingStatusDB(Base):
+    __tablename__ = "leformat_parquet_post_processing_status"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(Text, index=True, nullable=True)
+    prestage_version_uuid = Column(String(255), nullable=True, default="v0")
+    version_uuid = Column(String(255), nullable=True, default="v0")
+    device_model = Column(String(255), index=True, nullable=True)
+    device_model_version = Column(String(255), index=True, nullable=True)
