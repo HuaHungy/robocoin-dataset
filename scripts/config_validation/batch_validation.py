@@ -370,7 +370,25 @@ class BatchValidator:
         if factory_config_path.exists():
             factory_config = self.config_comparator.load_config(factory_config_path)
             
-            # 查找匹配的device_model_version
+            # 新格式: 直接查找 factory_config[device_model]
+            if device_model in factory_config:
+                versions = factory_config[device_model]
+                if versions and isinstance(versions, list) and len(versions) > 0:
+                    # 取第一个版本作为默认配置
+                    first_version = versions[0]
+                    config_file = first_version.get('converter_config_path')
+                    if config_file:
+                        config_path = self.config_dir / config_file
+                        if config_path.exists():
+                            config = self.config_comparator.load_config(config_path)
+                            config['_config_file'] = config_file
+                            config['_device_model_version'] = first_version.get('version', 'unknown')
+                            self.logger.info(f"    使用配置: {config_file} (version: {first_version.get('version')})")
+                            return config
+                        else:
+                            self.logger.warning(f"    配置文件不存在: {config_path}")
+            
+            # 旧格式兼容: 查找 device_model_versions 列表
             for entry in factory_config.get('device_model_versions', []):
                 if entry.get('device_model', '').startswith(device_model):
                     config_file = entry.get('converter_config_file')
