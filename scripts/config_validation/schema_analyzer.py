@@ -710,6 +710,200 @@ class SchemaAnalyzer:
         summary['all_fields'] = list(summary['all_fields'])
         
         return summary
+    
+    def analyze_with_converter(
+        self,
+        converter: Any,
+        num_episodes: int = 1
+    ) -> Dict[str, Any]:
+        """
+        使用converter实例分析数据schema
+        
+        这是新的统一接口，直接调用converter的方法来定位和加载数据，
+        避免重复实现episode定位和数据加载逻辑。
+        
+        Args:
+            converter: Converter实例（已初始化）
+            num_episodes: 分析的episode数量
+        
+        Returns:
+            Schema字典，包含observations/actions结构
+        """
+        self.logger.info(f"使用converter分析数据schema: {converter.__class__.__name__}")
+        
+        schema = {
+            'format': converter.__class__.__name__,
+            'observations': {'images': {}, 'state': {}},
+            'actions': {},
+            'episodes_analyzed': 0,
+            'errors': []
+        }
+        
+        try:
+            # 1. 定位episodes（调用converter的方法）
+            episodes = self._get_converter_episodes(converter)
+            
+            if not episodes:
+                raise ValueError("未找到任何episodes")
+            
+            self.logger.info(f"找到 {len(episodes)} 个episodes，将分析前 {num_episodes} 个")
+            
+            # 2. 分析指定数量的episodes
+            episodes_to_analyze = episodes[:num_episodes]
+            
+            for ep_idx, episode_info in enumerate(episodes_to_analyze):
+                try:
+                    self.logger.debug(f"分析episode {ep_idx}: {episode_info}")
+                    
+                    # 调用converter的数据加载方法
+                    # 注意：不同converter有不同的内部API，这里需要适配
+                    episode_schema = self._extract_episode_schema_from_converter(
+                        converter, episode_info, ep_idx
+                    )
+                    
+                    # 合并schema（第一个episode的结构作为基准）
+                    if schema['episodes_analyzed'] == 0:
+                        schema['observations'] = episode_schema.get('observations', {})
+                        schema['actions'] = episode_schema.get('actions', {})
+                    
+                    schema['episodes_analyzed'] += 1
+                    
+                except Exception as e:
+                    self.logger.error(f"分析episode {ep_idx} 失败: {e}")
+                    schema['errors'].append(f"Episode {ep_idx}: {str(e)}")
+            
+        except Exception as e:
+            self.logger.error(f"使用converter分析schema失败: {e}")
+            schema['errors'].append(str(e))
+        
+        return schema
+    
+    def _get_converter_episodes(self, converter: Any) -> List[Any]:
+        """
+        从converter获取episode列表
+        
+        不同converter有不同的方式获取episodes：
+        - H5 converter: task_episode_h5file_paths
+        - H5+JPG converter: _get_all_episode_dirs()
+        - 其他: 可能需要其他方法
+        """
+        episodes = []
+        
+        # 尝试不同的converter API
+        if hasattr(converter, 'task_episode_h5file_paths'):
+            # H5 converter
+            for task_path, h5_files in converter.task_episode_h5file_paths.items():
+                for h5_file in h5_files:
+                    episodes.append({
+                        'task_path': task_path,
+                        'episode_path': h5_file,
+                        'type': 'h5_file'
+                    })
+        
+        elif hasattr(converter, '_get_all_episode_dirs'):
+            # H5+JPG converter
+            for task_path in converter.path_task_dict.keys():
+                ep_dirs = converter._get_all_episode_dirs(task_path)
+                for ep_dir in ep_dirs:
+                    episodes.append({
+                        'task_path': task_path,
+                        'episode_path': ep_dir,
+                        'type': 'episode_dir'
+                    })
+        
+        elif hasattr(converter, 'path_task_dict'):
+            # 通用方法：使用path_task_dict
+            for task_path in converter.path_task_dict.keys():
+                # 尝试调用_get_task_episode_num
+                if hasattr(converter, '_get_task_episode_num'):
+                    num_episodes = converter._get_task_episode_num(task_path)
+                    for ep_idx in range(num_episodes):
+                        episodes.append({
+                            'task_path': task_path,
+                            'episode_idx': ep_idx,
+                            'type': 'indexed'
+                        })
+        
+        self.logger.info(f"从converter获取到 {len(episodes)} 个episodes")
+        return episodes
+    
+    def _extract_episode_schema_from_converter(
+        self,
+        converter: Any,
+        episode_info: Dict[str, Any],
+        ep_idx: int
+    ) -> Dict[str, Any]:
+        """
+        从converter提取单个episode的schema
+        
+        这里只提取结构信息（字段名、shape），不加载完整数据
+        """
+        schema = {
+            'observations': {'images': {}, 'state': {}},
+            'actions': {}
+        }
+        
+        # 根据converter类型，调用不同的方法
+        # 注意：这里我们只读取第一帧来获取schema信息
+        
+        task_path = episode_info.get('task_path')
+        episode_idx = episode_info.get('episode_idx', ep_idx)
+        
+        try:
+            # 尝试获取帧数
+            if hasattr(converter, '_get_episode_frames_num'):
+                frames_num = converter._get_episode_frames_num(task_path, episode_idx)
+                if frames_num <= 0:
+                    raise ValueError(f"Episode {episode_idx} 无有效帧")
+                
+                # 获取配置中的第一个sub_state的args作为示例
+                sample_state_args = {}
+                if hasattr(converter, 'config') and 'features' in converter.config:
+                    state_config = converter.config.get('features', {}).get('observation', {}).get('state', {})
+                    sub_states = state_config.get('sub_state', [])
+                    if sub_states and len(sub_states) > 0:
+                        sample_state_args = sub_states[0].get('args', {})
+                
+                # 只读取第一帧
+                if hasattr(converter, '_get_frame_sub_states') and sample_state_args:
+                    # 获取state数据（使用第一个sub_state的args）
+                    state_data = converter._get_frame_sub_states(task_path, episode_idx, 0, sample_state_args)
+                    if state_data is not None:
+                        schema['observations']['state'] = {
+                            'shape': np.array(state_data).shape if isinstance(state_data, (list, np.ndarray)) else None,
+                            'dtype': str(np.array(state_data).dtype) if isinstance(state_data, (list, np.ndarray)) else None
+                        }
+                
+                # 获取action数据
+                sample_action_args = {}
+                if hasattr(converter, 'config') and 'features' in converter.config:
+                    action_config = converter.config.get('features', {}).get('action', {})
+                    sub_actions = action_config.get('sub_action', [])
+                    if sub_actions and len(sub_actions) > 0:
+                        sample_action_args = sub_actions[0].get('args', {})
+                
+                if hasattr(converter, '_get_frame_sub_actions') and sample_action_args:
+                    action_data = converter._get_frame_sub_actions(task_path, episode_idx, 0, sample_action_args)
+                    if action_data is not None:
+                        schema['actions'] = {
+                            'shape': np.array(action_data).shape if isinstance(action_data, (list, np.ndarray)) else None,
+                            'dtype': str(np.array(action_data).dtype) if isinstance(action_data, (list, np.ndarray)) else None
+                        }
+                
+                # 获取images（暂时简化，只记录有图片）
+                if hasattr(converter, 'config') and 'features' in converter.config:
+                    images_config = converter.config.get('features', {}).get('observation', {}).get('images', [])
+                    for img_cfg in images_config:
+                        cam_name = img_cfg.get('cam_name', 'unknown')
+                        schema['observations']['images'][cam_name] = {
+                            'exists': True
+                        }
+            
+        except Exception as e:
+            self.logger.warning(f"提取episode schema失败: {e}")
+            raise
+        
+        return schema
 
 
 if __name__ == "__main__":

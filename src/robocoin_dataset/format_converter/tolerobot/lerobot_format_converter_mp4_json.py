@@ -23,6 +23,10 @@ from robocoin_dataset.format_converter.tolerobot.lazy_video_reader import (
     LazyVideoReader,
     LazyVideoReaderPool,
 )
+from robocoin_dataset.format_converter.utils.unified_episode_locator import (
+    UnifiedEpisodeLocator,
+    is_mp4_json_episode,
+)
 
 
 class LerobotFormatConverterMp4Json(LerobotFormatConverter):
@@ -42,6 +46,9 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         strict_episodes: int = 3,
         failure_threshold: float = 0.8,
     ) -> None:
+        # 🚀 在super().__init__之前初始化，因为父类会调用_get_all_episode_dirs
+        self._episode_locator = UnifiedEpisodeLocator(logger=logger)
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -473,39 +480,48 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         episodes = self._get_all_episode_dirs(task_path)
         return len(episodes)
     
-    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
-        """获取所有episode目录（支持嵌套结构）
+    def _is_episode(self, path: Path) -> bool:
+        """判断路径是否是一个episode
         
-        该方法支持两种结构：
-        1. 扁平结构：task_path/episode_0/data.json
-        2. 嵌套结构：task_path/xiyiji-1/20250501_record0/data.json
+        MP4+JSON格式的episode标志：目录中包含data.json文件
         """
-        # 首先检查是否是扁平结构
-        direct_episodes = [
-            ep_dir for ep_dir in task_path.glob("*") 
-            if ep_dir.is_dir() and (ep_dir / "data.json").exists()
-        ]
+        return is_mp4_json_episode(path)
+    
+    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
+        """获取所有episode目录（使用BFS搜索，支持任意层级结构）
         
-        if direct_episodes:
-            return sorted(direct_episodes)
+        🚀 改进：使用UnifiedEpisodeLocator进行BFS搜索
+        - 不再限制固定层级（扁平/嵌套2层）
+        - 支持任意深度的目录结构
+        - 支持task_path本身就是episode的情况
         
-        # 如果不是扁平结构，尝试嵌套结构
-        nested_episodes = [
-            ep_dir
-            for parent_dir in task_path.glob("*")
-            if parent_dir.is_dir()
-            for ep_dir in parent_dir.glob("*")
-            if ep_dir.is_dir() and (ep_dir / "data.json").exists()
-        ]
-        
-        if nested_episodes:
-            return sorted(nested_episodes)
-        
-        raise FileNotFoundError(
-            f"No episode directories with data.json found in {task_path}. "
-            f"Checked both flat structure (task_path/*/data.json) and "
-            f"nested structure (task_path/*/*/data.json)"
+        支持的结构：
+        1. task_path本身就是episode: task_path/data.json
+        2. 扁平结构: task_path/episode_0/data.json
+        3. 嵌套结构: task_path/subdir1/subdir2/episode_0/data.json
+        """
+        episodes = self._episode_locator.locate_episodes_bfs(
+            dataset_path=task_path,
+            is_episode_func=self._is_episode,
+            max_depth=10  # 最多搜索10层
         )
+        
+        if not episodes:
+            # 收集目录信息用于诊断
+            try:
+                all_items = [item.name for item in task_path.iterdir()][:20]
+            except Exception:
+                all_items = []
+            
+            raise FileNotFoundError(
+                f"❌ No episode directories with data.json found in '{task_path}'.\n"
+                f"   🔍 Searched up to 10 levels deep using BFS.\n"
+                f"   📋 Items in task_path (first 20): {all_items if all_items else '(empty or inaccessible)'}\n"
+                f"   💡 Episode detection criteria: directory containing 'data.json' file.\n"
+                f"   💡 Ensure your dataset contains at least one directory with data.json."
+            )
+        
+        return episodes
 
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, LazyVideoReader]:
         """准备episode的图像缓冲区（使用延迟加载）

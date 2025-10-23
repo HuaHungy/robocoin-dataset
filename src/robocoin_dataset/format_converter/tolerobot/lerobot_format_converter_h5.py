@@ -171,8 +171,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
     ) -> None:
         self.h5_buffer: H5Buffer = H5Buffer()
         self._image_is_iobytes = True
-        # 🚀 H5文件句柄缓存，大幅提升读取性能
-        self._h5_file_cache: H5FileCache | None = None
+        # 🚀 H5文件句柄缓存，大幅提升读取性能（需要在super().__init__之前初始化，因为_prevalidate_files会用到）
+        self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)
 
         super().__init__(
             dataset_path=dataset_path,
@@ -185,9 +185,6 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
         )
-        
-        # 🚀 初始化H5文件缓存（在super().__init__之后，确保logger可用）
-        self._h5_file_cache = H5FileCache(max_cache_size=100, logger=self.logger)
 
     def _prevalidate_files(self) -> None:
         unexpected_files: list[Path] = []
@@ -259,11 +256,24 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
 
         # 收集所有需要验证的路径
         required_paths = set()
+        compressed_video_image_paths = set()  # 跟踪使用compressed video的image paths
 
         # 从图像配置中收集路径
         for image_config in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]:
             if ARGS_KEY in image_config and "h5_path" in image_config[ARGS_KEY]:
-                required_paths.add(image_config[ARGS_KEY]["h5_path"])
+                h5_path = image_config[ARGS_KEY]["h5_path"]
+                use_compressed_video = image_config[ARGS_KEY].get("use_compressed_video", False)
+                
+                if use_compressed_video:
+                    # 对于compressed video，images是空的，不验证
+                    # 而是验证video和video_index
+                    compressed_video_image_paths.add(h5_path)
+                    video_path = h5_path.replace("/images", "/video")
+                    video_index_path = h5_path.replace("/images", "/video_index")
+                    required_paths.add(video_path)
+                    required_paths.add(video_index_path)
+                else:
+                    required_paths.add(h5_path)
 
         # 从状态配置中收集路径
         for state_config in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][

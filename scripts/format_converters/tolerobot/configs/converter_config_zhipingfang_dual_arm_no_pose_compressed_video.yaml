@@ -7,22 +7,22 @@ features:
       # 使用压缩视频格式
       - cam_name: cam_chest_rgb
         args:
-          h5_path: "observations/camera/rgb/chest"
+          h5_path: "observations/camera/rgb/chest/images"
           use_compressed_video: true
       
       - cam_name: cam_head_rgb
         args:
-          h5_path: "observations/camera/rgb/head"
+          h5_path: "observations/camera/rgb/head/images"
           use_compressed_video: true
       
       - cam_name: cam_left_wrist_rgb
         args:
-          h5_path: "observations/camera/rgb/left"
+          h5_path: "observations/camera/rgb/left/images"
           use_compressed_video: true
       
       - cam_name: cam_right_wrist_rgb
         args:
-          h5_path: "observations/camera/rgb/right"
+          h5_path: "observations/camera/rgb/right/images"
           use_compressed_video: true
 
     state:

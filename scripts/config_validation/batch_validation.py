@@ -25,6 +25,7 @@ from scripts.config_validation.episode_locator import EpisodeLocator
 from scripts.config_validation.schema_analyzer import SchemaAnalyzer
 from scripts.config_validation.config_comparator import ConfigComparator
 from scripts.config_validation.field_name_checker import FieldNameChecker
+from scripts.config_validation.converter_loader import load_converter_class, create_converter_instance
 from scripts.dataset_schema_discovery.database_query_tool import DatabaseQueryTool
 
 
@@ -240,7 +241,7 @@ class BatchValidator:
         config: Dict[str, Any],
         num_episodes: int
     ) -> Dict[str, Any]:
-        """验证单个数据集"""
+        """验证单个数据集（使用converter实例进行数据加载和分析）"""
         report = {
             'dataset_name': dataset['dataset_name'],
             'dataset_path': dataset['dataset_path'],
@@ -259,62 +260,59 @@ class BatchValidator:
             report['error'] = f"数据集路径不存在: {dataset_path}"
             return report
         
-        # 1. 定位episodes
+        # 1. 动态加载converter（新方法）
+        converter_module = config.get('_converter_module')
+        converter_class = config.get('_converter_class')
+        converter_config_file = config.get('_config_file')
+        
+        if not converter_module or not converter_class:
+            # 如果config中没有converter信息，回退到旧方法
+            self.logger.warning("配置中缺少converter信息，使用旧的episode_locator方法")
+            return self._validate_single_dataset_legacy(dataset, config, num_episodes)
+        
         try:
-            episodes = self.episode_locator.locate_episodes(
-                dataset_path=dataset_path,
-                num_samples=num_episodes
+            # 实例化converter
+            converter_config_path = self.config_dir / converter_config_file
+            converter = create_converter_instance(
+                module_path=converter_module,
+                class_name=converter_class,
+                dataset_path=str(dataset_path),
+                output_path="/tmp/batch_validation_temp",
+                repo_id="test/validation",
+                converter_config_path=str(converter_config_path),
+                fps=30
             )
+            self.logger.info(f"      ✓ 成功加载converter: {converter_class}")
         except Exception as e:
             report['status'] = 'error'
-            report['error'] = f"定位episodes失败: {e}"
+            report['error'] = f"加载converter失败: {e}"
+            self.logger.error(f"      ✗ 加载converter失败: {e}")
             return report
         
-        if not episodes:
-            report['status'] = 'error'
-            report['error'] = "未找到任何episodes"
-            return report
-        
-        self.logger.info(f"      采样 {len(episodes)} 个episodes: {[ep.episode_idx for ep in episodes]}")
-        report['num_episodes_analyzed'] = len(episodes)
-        
-        # 2. 分析schemas
-        schemas = []
-        for ep in episodes:
-            try:
-                schema = self.schema_analyzer.analyze_episode(
-                    episode_path=ep.episode_path,
-                    format_type=ep.format_type
-                )
-                schemas.append(schema)
-                report['episodes'].append({
-                    'episode_idx': ep.episode_idx,
-                    'episode_path': str(ep.episode_path),
-                    'format': ep.format_type,
-                    'schema_status': 'success' if not schema.get('errors') else 'error'
-                })
-            except Exception as e:
-                self.logger.error(f"      分析Episode {ep.episode_idx} 失败: {e}")
-                report['episodes'].append({
-                    'episode_idx': ep.episode_idx,
-                    'episode_path': str(ep.episode_path),
-                    'schema_status': 'error',
-                    'error': str(e)
-                })
-        
-        if not schemas:
-            report['status'] = 'error'
-            report['error'] = "所有episodes分析失败"
-            return report
-        
-        # 3. 生成schema摘要
-        report['schema_summary'] = self.schema_analyzer.generate_schema_report(schemas)
-        
-        # 4. 对比配置
+        # 2. 使用converter分析schema
         try:
-            # 使用第一个成功的schema进行对比
-            first_schema = schemas[0]
-            comparison = self.config_comparator.compare(first_schema, config)
+            schema = self.schema_analyzer.analyze_with_converter(
+                converter=converter,
+                num_episodes=num_episodes
+            )
+            
+            if not schema or schema.get('episodes_analyzed', 0) == 0:
+                report['status'] = 'error'
+                report['error'] = "未能分析任何episodes"
+                return report
+            
+            self.logger.info(f"      ✓ 分析了 {schema['episodes_analyzed']} 个episodes")
+            report['num_episodes_analyzed'] = schema['episodes_analyzed']
+            report['schema_summary'] = schema
+        except Exception as e:
+            report['status'] = 'error'
+            report['error'] = f"Schema分析失败: {e}"
+            self.logger.error(f"      ✗ Schema分析失败: {e}")
+            return report
+        
+        # 3. 对比配置
+        try:
+            comparison = self.config_comparator.compare(schema, config)
             report['config_comparison'] = comparison
             
             # 生成可读报告并保存（🆕 添加device_model和version信息）

@@ -21,6 +21,65 @@ class ConfigComparator:
     
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(__name__)
+        self._path_field_cache = {}  # 缓存已检测的路径字段名
+    
+    def _get_path_field_name(self, config: Dict[str, Any]) -> str:
+        """
+        自动检测配置使用的路径字段名
+        
+        不同格式使用不同的字段名：
+        - H5: h5_path
+        - MCAP: mcap_topic
+        - RosBag: topic_name
+        - MP4+JSON/JPG+JSON: json_path
+        - BSON: data_path
+        
+        Returns:
+            路径字段名，如果无法检测则返回'h5_path'（默认）
+        """
+        # 检查缓存
+        config_id = id(config)
+        if config_id in self._path_field_cache:
+            return self._path_field_cache[config_id]
+        
+        # 尝试从state配置中检测
+        try:
+            if 'features' not in config:
+                return 'h5_path'  # 默认
+            
+            obs_config = config.get('features', {}).get('observation', {})
+            state_config = obs_config.get('state', {})
+            sub_states = state_config.get('sub_state', [])
+            
+            if not sub_states:
+                return 'h5_path'  # 默认
+            
+            # 检查第一个sub_state的args
+            sample_args = sub_states[0].get('args', {})
+            
+            # 按优先级检测
+            if 'mcap_topic' in sample_args:
+                path_field = 'mcap_topic'
+            elif 'topic_name' in sample_args:
+                path_field = 'topic_name'
+            elif 'json_path' in sample_args:
+                path_field = 'json_path'
+            elif 'data_path' in sample_args:
+                path_field = 'data_path'
+            elif 'h5_path' in sample_args:
+                path_field = 'h5_path'
+            else:
+                path_field = 'h5_path'  # 默认
+            
+            # 缓存结果
+            self._path_field_cache[config_id] = path_field
+            self.logger.debug(f"检测到路径字段名: {path_field}")
+            
+            return path_field
+            
+        except Exception as e:
+            self.logger.warning(f"检测路径字段名失败: {e}，使用默认值 'h5_path'")
+            return 'h5_path'
     
     def load_config(self, config_path: Path) -> Dict[str, Any]:
         """加载converter配置文件"""

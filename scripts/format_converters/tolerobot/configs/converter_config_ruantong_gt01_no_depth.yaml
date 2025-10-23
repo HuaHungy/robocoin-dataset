@@ -15,25 +15,25 @@ features:
       ### 头部彩色相机
       - cam_name: head_color
         args:
-          h5_path: camera/{frame_idx}/head_color.jpg
+        args:
           file_type: jpg
 
       ### 头部中心鱼眼相机
       - cam_name: head_center_fisheye_color
         args:
-          h5_path: camera/{frame_idx}/head_center_fisheye_color.jpg
+        args:
           file_type: jpg
 
       ### 左后鱼眼相机
       - cam_name: back_left_fisheye_color
         args:
-          h5_path: camera/{frame_idx}/back_left_fisheye_color.jpg
+        args:
           file_type: jpg
 
       ### 右后鱼眼相机
       - cam_name: back_right_fisheye_color
         args:
-          h5_path: camera/{frame_idx}/back_right_fisheye_color.jpg
+        args:
           file_type: jpg
 
 
@@ -60,7 +60,7 @@ features:
         - left_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/joint/position
           range_from: 0
           range_to: 7
@@ -78,7 +78,7 @@ features:
         - right_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/joint/position
           range_from: 7
           range_to: 14
@@ -92,7 +92,7 @@ features:
         - left_end_pos_y_m
         - left_end_pos_z_m
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/end/position
           range_from: 0
           range_to: 3
@@ -108,13 +108,13 @@ features:
         - left_end_quat_w
 
         args:
-convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /state/end/orientation
           range_from: 0
           range_to: 4
           array_index: 0
         
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
@@ -126,7 +126,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - right_end_pos_z_m
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/end/position
           range_from: 0
           range_to: 3
@@ -142,13 +142,13 @@ convert_func: quat_xyzw_2_euler_xyz
         - right_end_quat_z
         - right_end_quat_w
         args:
-convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /state/end/orientation
           range_from: 0
           range_to: 4
           array_index: 1
 
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
@@ -157,7 +157,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - waist_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/waist/position
           range_from: 0
           range_to: 2
@@ -170,7 +170,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - head_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/head/position
           range_from: 0
           range_to: 2
@@ -183,12 +183,12 @@ convert_func: quat_xyzw_2_euler_xyz
         - right_effector_open_deg
 
         args:
-convert_func: degree2rad
           ### keys and values by manual
           h5_path: /state/effector/position
           range_from: 0
           range_to: 2
         
+        convert_func: degree2rad
         ### values by manual
         convert_func: to_float32
 
@@ -198,7 +198,7 @@ convert_func: degree2rad
         - robot_pos_z_m
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/robot/position
           range_from: 0
           range_to: 3
@@ -213,12 +213,12 @@ convert_func: degree2rad
         - robot_quat_w
 
         args:
-convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /state/robot/orientation
           range_from: 0
           range_to: 4
         
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
@@ -250,7 +250,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - left_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/joint/position
           range_from: 0
           range_to: 7
@@ -268,7 +268,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - right_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/joint/position
           range_from: 7
           range_to: 14
@@ -282,7 +282,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - left_end_pos_y_m
         - left_end_pos_z_m
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/end/position
           range_from: 0
           range_to: 3
@@ -298,13 +298,13 @@ convert_func: quat_xyzw_2_euler_xyz
         - left_end_quat_w
 
         args:
-convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /action/end/orientation
           range_from: 0
           range_to: 4
           array_index: 0
         
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
@@ -316,7 +316,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - right_end_pos_z_m
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/end/position
           range_from: 0
           range_to: 3
@@ -332,13 +332,13 @@ convert_func: quat_xyzw_2_euler_xyz
         - right_end_quat_z
         - right_end_quat_w
         args:
-convert_func: quat_xyzw_2_euler_xyz
           ### keys and values by manual
           h5_path: /action/end/orientation
           range_from: 0
           range_to: 4
           array_index: 1
 
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
@@ -347,7 +347,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - waist_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/waist/position
           range_from: 0
           range_to: 2
@@ -360,7 +360,7 @@ convert_func: quat_xyzw_2_euler_xyz
         - head_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/head/position
           range_from: 0
           range_to: 2
@@ -373,11 +373,11 @@ convert_func: quat_xyzw_2_euler_xyz
         - right_effector_open_deg
 
         args:
-convert_func: degree2rad
           ### keys and values by manual
           h5_path: /action/effector/position
           range_from: 0
           range_to: 2
         
+        convert_func: degree2rad
         ### values by manual
         convert_func: to_float32

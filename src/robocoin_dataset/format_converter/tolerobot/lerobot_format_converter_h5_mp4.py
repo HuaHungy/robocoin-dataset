@@ -18,7 +18,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     IMAGE_KEY,
     OBSERVATION_KEY,
 )
-from robocoin_dataset.format_converter.tolerobot.h5_file_cache import (
+from robocoin_dataset.format_converter.utils.h5_file_cache import (
     H5FileCache,
 )
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
@@ -47,6 +47,12 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
     ) -> None:
+        # 🔧 在super().__init__之前初始化这些属性，防止父类初始化失败时__del__报错
+        self._video_readers = {}  # 缓存视频读取器
+        self._is_test_mode = False  # Test模式标志（限制加载帧数）
+        self._h5_files_cache = {}  # 缓存H5文件列表（episode定位优化）
+        self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)  # 🚀 H5文件句柄缓存
+
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -58,10 +64,6 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
         )
-        self._video_readers = {}  # 缓存视频读取器
-        self._is_test_mode = False  # Test模式标志（限制加载帧数）
-        self._h5_files_cache = {}  # 缓存H5文件列表（episode定位优化）
-        self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)  # 🚀 H5文件句柄缓存
 
     def convert(self, is_test: bool = False) -> None:
         """重写父类方法以设置test模式标志
