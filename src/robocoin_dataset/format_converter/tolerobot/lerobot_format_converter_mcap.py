@@ -838,3 +838,20 @@ int32 lift_pos
         from_idx = args_dict["range_from"]
         to_idx = args_dict["range_to"]
         return sub_actions_buffer[frame_idx][from_idx:to_idx]
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 MCAP episode 的源文件信息"""
+        try:
+            mcap_files = self._get_all_mcap_files(task_path)
+            if ep_idx < len(mcap_files):
+                mcap_file = mcap_files[ep_idx]
+                return {
+                    "format": "MCAP",
+                    "mcap_file": str(mcap_file.relative_to(self.dataset_path)),
+                    "absolute_path": str(mcap_file.absolute()),
+                }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        return {}
+

@@ -832,3 +832,47 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         """获取指定帧的子动作"""
         # 使用与状态相同的逻辑
         return self._get_frame_sub_states(task_path, ep_idx, frame_idx, args_dict, sub_actions_buffer)
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 MP4+JSON episode 的源文件信息
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode 索引
+        
+        Returns:
+            dict: 包含源文件信息的字典，包括 episode_dir, json_file, video_files
+        """
+        try:
+            episode_dirs = self._get_all_episode_dirs(task_path)
+            if ep_idx < len(episode_dirs):
+                episode_dir = episode_dirs[ep_idx]
+                
+                # 收集JSON和视频文件
+                json_file = episode_dir / "metadata.json"
+                video_files = []
+                
+                for cam_config in self.image_configs:
+                    video_path_template = cam_config.get("args", {}).get("video_path", "")
+                    if video_path_template:
+                        video_path = video_path_template.format(ep_dir=episode_dir.name)
+                        full_video_path = episode_dir / video_path
+                        if full_video_path.exists():
+                            video_files.append({
+                                "camera": cam_config["cam_name"],
+                                "relative_path": str(full_video_path.relative_to(self.dataset_path)),
+                                "absolute_path": str(full_video_path.absolute()),
+                            })
+                
+                return {
+                    "format": "MP4+JSON",
+                    "episode_directory": str(episode_dir.relative_to(self.dataset_path)),
+                    "json_file": str(json_file.relative_to(self.dataset_path)) if json_file.exists() else None,
+                    "video_files": video_files,
+                    "absolute_path": str(episode_dir.absolute()),
+                }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        
+        return {}

@@ -2,7 +2,7 @@ fps: 30
 features:
   observation:
     images:
-      - cam_name: camera_front_head_rgb
+      - cam_name: cam_high_rgb
         args:
           cam_name: camera_front_head_rgb
           video_file_pattern: "*camera_front_head_rgb.mp4"

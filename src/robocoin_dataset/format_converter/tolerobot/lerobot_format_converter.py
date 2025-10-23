@@ -389,7 +389,7 @@ class LerobotFormatConverter(ABC):
                             task_paths_dict[file.parent] = task
                             has_task_file = True
                     except Exception as e:  # noqa: PERF203
-                        raise {f"Found task index error from {file}"} from e
+                        raise ValueError(f"Found task index error from {file}") from e
 
                 if not has_task_file:
                     sub_dirs = [item for item in Path(current_path).glob("*") if item.is_dir()]
@@ -855,7 +855,8 @@ class LerobotFormatConverter(ABC):
         else:
             dataset = None  # 测试模式不需要数据集对象
         
-        global_ep_idx = 0
+        global_ep_idx = 0  # LeRobot中的全局episode索引（只计算成功转换的）
+        original_ep_idx = 0  # 原始数据中的全局episode索引（包含所有episode，包括跳过的）
         task_stats = {}  # 每个task的统计信息
         
         for task_path, task in self.path_task_dict.items():
@@ -894,18 +895,35 @@ class LerobotFormatConverter(ABC):
                         self._conversion_stats['skipped_episodes'] += 1
                         task_stats[task]['skipped'] += 1
                         
+                        skip_reason = 'Empty episode or data quality issue'
                         self._conversion_stats['skip_details'].append({
-                            'episode': global_ep_idx,
+                            'episode': original_ep_idx,
                             'task': task,
                             'task_episode': task_ep_idx,
-                            'reason': 'Empty episode or data quality issue',
+                            'reason': skip_reason,
                             'skipped_entire_episode': True,
                         })
                         
+                        # 🆕 记录跳过的episode到mapping（使用original_ep_idx）
+                        source_files = self._get_episode_source_files(task_path, task_ep_idx)
+                        self.episode_source_mapping[original_ep_idx] = {
+                            "task": task,
+                            "task_path": str(task_path),
+                            "task_ep_idx": task_ep_idx,
+                            "original_ep_idx": original_ep_idx,
+                            "global_ep_idx": None,  # 未转换，无LeRobot索引
+                            "status": "skipped",
+                            "skip_reason": skip_reason,
+                            "source_files": source_files,
+                            "converted_frames": 0,
+                            "skipped_frames": 0,
+                        }
+                        
                         self.logger.info(
-                            f"⏭️ 跳过 episode {global_ep_idx} "
+                            f"⏭️ 跳过 episode {original_ep_idx} "
                             f"(task: {task}, task_ep: {task_ep_idx}): 空episode"
                         )
+                        original_ep_idx += 1  # 🆕 original_ep_idx继续递增
                         continue
                     
                     # 更新统计
@@ -928,13 +946,15 @@ class LerobotFormatConverter(ABC):
                     if not is_test:
                         dataset.save_episode()
                     
-                    # 收集源文件映射信息
+                    # 🔧 收集源文件映射信息（成功转换的episode）
                     source_files = self._get_episode_source_files(task_path, task_ep_idx)
-                    self.episode_source_mapping[global_ep_idx] = {
+                    self.episode_source_mapping[original_ep_idx] = {
                         "task": task,
                         "task_path": str(task_path),
                         "task_ep_idx": task_ep_idx,
-                        "global_ep_idx": global_ep_idx,
+                        "original_ep_idx": original_ep_idx,  # 🆕 原始索引
+                        "global_ep_idx": global_ep_idx,  # 🆕 LeRobot索引
+                        "status": "converted",  # 🆕 状态标记
                         "source_files": source_files,
                         "converted_frames": converted_frames,
                         "skipped_frames": skipped_frames,
@@ -945,25 +965,43 @@ class LerobotFormatConverter(ABC):
                         self._check_failure_rate_threshold(task_stats)
                     
                     yield (task, task_ep_idx, global_ep_idx)
-                    global_ep_idx += 1
+                    global_ep_idx += 1  # LeRobot索引递增
+                    original_ep_idx += 1  # 🆕 原始索引递增
                     
                 except CriticalDataError as e:
                     # 严重数据错误：跳过整个episode
                     self._conversion_stats['skipped_episodes'] += 1
                     task_stats[task]['skipped'] += 1
                     
+                    skip_reason = str(e)
                     self._conversion_stats['skip_details'].append({
-                        'episode': global_ep_idx,
+                        'episode': original_ep_idx,
                         'task': task,
                         'task_episode': task_ep_idx,
-                        'reason': str(e),
+                        'reason': skip_reason,
                         'skipped_entire_episode': True,
                     })
                     
+                    # 🆕 记录跳过的episode到mapping
+                    source_files = self._get_episode_source_files(task_path, task_ep_idx)
+                    self.episode_source_mapping[original_ep_idx] = {
+                        "task": task,
+                        "task_path": str(task_path),
+                        "task_ep_idx": task_ep_idx,
+                        "original_ep_idx": original_ep_idx,
+                        "global_ep_idx": None,  # 未转换，无LeRobot索引
+                        "status": "skipped",
+                        "skip_reason": skip_reason,
+                        "source_files": source_files,
+                        "converted_frames": 0,
+                        "skipped_frames": 0,
+                    }
+                    
                     self.logger.warning(
-                        f"⏭️ 跳过 episode {global_ep_idx} "
+                        f"⏭️ 跳过 episode {original_ep_idx} "
                         f"(task: {task}, task_ep: {task_ep_idx}): {e}"
                     )
+                    original_ep_idx += 1  # 🆕 original_ep_idx继续递增
                     continue
                     
                 except ConfigError:
@@ -1056,6 +1094,8 @@ class LerobotFormatConverter(ABC):
     def save_episode_source_mapping(self, mapping_filename: str = "episode_source_mapping.json") -> None:
         """保存 episode 源文件映射到 JSON 文件
         
+        🆕 新版本同时记录成功转换和跳过的episodes
+        
         Args:
             mapping_filename: 映射文件名，默认为 "episode_source_mapping.json"
         
@@ -1069,7 +1109,18 @@ class LerobotFormatConverter(ABC):
             self.logger.warning("没有 episode 映射信息可保存")
             return
         
-        # 构建映射文件数据
+        # 🆕 统计转换和跳过的episodes
+        converted_episodes = []
+        skipped_episodes = []
+        
+        for original_idx in sorted(self.episode_source_mapping.keys()):
+            episode_info = self.episode_source_mapping[original_idx]
+            if episode_info["status"] == "converted":
+                converted_episodes.append(episode_info)
+            elif episode_info["status"] == "skipped":
+                skipped_episodes.append(episode_info)
+        
+        # 🆕 构建增强的映射文件数据
         mapping_data = {
             "dataset_info": {
                 "source_dataset_path": str(self.dataset_path),
@@ -1077,22 +1128,38 @@ class LerobotFormatConverter(ABC):
                 "repo_id": self.repo_id,
                 "device_model": self.device_model or "unknown",
                 "conversion_date": datetime.now().isoformat(),
-                "total_episodes": len(self.episode_source_mapping),
                 "fps": self.fps,
+                # 🆕 详细统计
+                "total_original_episodes": len(self.episode_source_mapping),
+                "total_converted_episodes": len(converted_episodes),
+                "total_skipped_episodes": len(skipped_episodes),
+                "skipped_episode_indices": [ep["original_ep_idx"] for ep in skipped_episodes],
             },
-            "episodes": []
+            "converted_episodes": [],  # 🆕 成功转换的episodes
+            "skipped_episodes": [],    # 🆕 跳过的episodes
         }
         
-        # 按 global_ep_idx 排序并添加到列表
-        for global_idx in sorted(self.episode_source_mapping.keys()):
-            episode_info = self.episode_source_mapping[global_idx]
-            mapping_data["episodes"].append({
-                "global_episode_index": episode_info["global_ep_idx"],
+        # 🆕 添加成功转换的episodes（按LeRobot global_ep_idx排序）
+        for episode_info in sorted(converted_episodes, key=lambda x: x["global_ep_idx"]):
+            mapping_data["converted_episodes"].append({
+                "global_episode_index": episode_info["global_ep_idx"],  # LeRobot索引
+                "original_episode_index": episode_info["original_ep_idx"],  # 原始索引
                 "task": episode_info["task"],
                 "task_path": episode_info["task_path"],
                 "task_episode_index": episode_info["task_ep_idx"],
                 "converted_frames": episode_info["converted_frames"],
                 "skipped_frames": episode_info["skipped_frames"],
+                "source_files": episode_info["source_files"],
+            })
+        
+        # 🆕 添加跳过的episodes（按原始索引排序）
+        for episode_info in sorted(skipped_episodes, key=lambda x: x["original_ep_idx"]):
+            mapping_data["skipped_episodes"].append({
+                "original_episode_index": episode_info["original_ep_idx"],
+                "task": episode_info["task"],
+                "task_path": episode_info["task_path"],
+                "task_episode_index": episode_info["task_ep_idx"],
+                "skip_reason": episode_info.get("skip_reason", "Unknown"),
                 "source_files": episode_info["source_files"],
             })
         
@@ -1103,6 +1170,89 @@ class LerobotFormatConverter(ABC):
         
         self.logger.info(f"✅ Episode 源文件映射已保存: {mapping_file_path}")
         self.logger.info(f"   - 总 episodes: {len(self.episode_source_mapping)}")
+        self.logger.info(f"   - 成功转换: {len(converted_episodes)}")
+        self.logger.info(f"   - 跳过: {len(skipped_episodes)}")
+        self.logger.info(f"   - 映射文件: {mapping_filename}")
+    
+    def save_original_data_paths(self, mapping_filename: str = "original_data_paths.json") -> None:
+        """保存原始数据文件的绝对路径映射到 JSON 文件
+        
+        🆕 新增功能：记录所有源文件的绝对路径，用于数据溯源
+        
+        Args:
+            mapping_filename: 映射文件名，默认为 "original_data_paths.json"
+        
+        Note:
+            映射文件保存在 output_path 目录下，与 meta/info.json 同级
+            此文件与 episode_source_mapping.json 互补，专注于绝对路径信息
+        """
+        import json
+        from datetime import datetime
+        
+        if not self.episode_source_mapping:
+            self.logger.warning("没有 episode 映射信息可保存")
+            return
+        
+        # 🆕 构建绝对路径映射数据
+        paths_data = {
+            "dataset_info": {
+                "source_dataset_path": str(self.dataset_path.absolute()),
+                "output_dataset_path": str(self.output_path.absolute()),
+                "repo_id": self.repo_id,
+                "device_model": self.device_model or "unknown",
+                "extraction_date": datetime.now().isoformat(),
+            },
+            "episode_paths": []
+        }
+        
+        # 🆕 为每个episode提取绝对路径信息
+        for original_idx in sorted(self.episode_source_mapping.keys()):
+            episode_info = self.episode_source_mapping[original_idx]
+            source_files = episode_info.get("source_files", {})
+            
+            # 构建episode路径记录
+            episode_path_record = {
+                "original_episode_index": episode_info["original_ep_idx"],
+                "task": episode_info["task"],
+                "task_path": episode_info["task_path"],
+                "status": episode_info["status"],
+            }
+            
+            # 添加LeRobot索引（如果已转换）
+            if episode_info["status"] == "converted":
+                episode_path_record["global_episode_index"] = episode_info["global_ep_idx"]
+            
+            # 🆕 提取所有绝对路径
+            absolute_paths = {}
+            
+            # 处理各种数据格式的路径
+            if "absolute_path" in source_files:
+                absolute_paths["primary"] = source_files["absolute_path"]
+            
+            if "h5_absolute_path" in source_files:
+                absolute_paths["h5_file"] = source_files["h5_absolute_path"]
+            
+            if "video_files" in source_files:
+                absolute_paths["videos"] = [
+                    {"camera": v["camera"], "path": v["absolute_path"]}
+                    for v in source_files["video_files"]
+                ]
+            
+            # 添加格式信息
+            if "format" in source_files:
+                episode_path_record["data_format"] = source_files["format"]
+            
+            episode_path_record["absolute_paths"] = absolute_paths
+            
+            paths_data["episode_paths"].append(episode_path_record)
+        
+        # 保存到文件
+        paths_file_path = self.output_path / mapping_filename
+        with open(paths_file_path, 'w', encoding='utf-8') as f:
+            json.dump(paths_data, f, indent=2, ensure_ascii=False)
+        
+        self.logger.info(f"✅ 原始数据绝对路径映射已保存: {paths_file_path}")
+        self.logger.info(f"   - 总 episodes: {len(paths_data['episode_paths'])}")
         self.logger.info(f"   - 映射文件: {mapping_filename}")
 
     def get_episodes_num(self) -> int:

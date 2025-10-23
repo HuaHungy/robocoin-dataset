@@ -12,14 +12,14 @@ features:
         image_key: color_0
 
     ### values by manual
-    - cam_name: color_left_wrist
+    - cam_name: cam_left_wrist_rgb
       args:
 
         ### key and values by manual
         image_key: color_2
 
     ### values by manual
-    - cam_name: color_right_wrist
+    - cam_name: cam_right_wrist_rgb
       args:
 
         ### key and values by manual

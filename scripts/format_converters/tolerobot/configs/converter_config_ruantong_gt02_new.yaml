@@ -9,7 +9,7 @@ fps: 30
 features:
   observation:
     images:
-      - cam_name: head_color
+      - cam_name: cam_high_rgb
         args:
           h5_path: camera/{frame_idx}/head_color.jpg
           file_type: jpg
@@ -19,7 +19,7 @@ features:
       #     h5_path: camera/{frame_idx}/head_depth.png
       #     file_type: png
 
-      - cam_name: hand_left_color
+      - cam_name: cam_left_wrist_rgb
         args:
           h5_path: camera/{frame_idx}/hand_left_color.jpg
           file_type: jpg
@@ -29,7 +29,7 @@ features:
       #     h5_path: camera/{frame_idx}/hand_left_depth.png
       #     file_type: png
 
-      - cam_name: hand_right_color
+      - cam_name: cam_right_wrist_rgb
         args:
           h5_path: camera/{frame_idx}/hand_right_color.jpg
           file_type: jpg

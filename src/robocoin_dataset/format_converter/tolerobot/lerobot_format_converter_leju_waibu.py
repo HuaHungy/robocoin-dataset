@@ -719,3 +719,15 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                 data = f[h5_path][frame_idx]
         
         return np.array(data[range_from:range_to], dtype=np.float32)
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 Leju Waibu episode 的源文件信息"""
+        # task_path在Leju Waibu中直接是episode目录
+        return {
+            "format": "LEJU_WAIBU",
+            "episode_directory": str(task_path.relative_to(self.dataset_path)),
+            "absolute_path": str(task_path.absolute()),
+            "metadata_file": "metadata.json",
+            "h5_file": "proprio_stats/proprio_stats.hdf5",
+        }
+

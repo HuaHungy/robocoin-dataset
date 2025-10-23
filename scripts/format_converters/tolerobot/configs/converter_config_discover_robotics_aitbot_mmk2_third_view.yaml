@@ -6,17 +6,17 @@ features:
     images:
     
     # 头部相机 (camera_head)
-    - cam_name: cam_head
+    - cam_name: cam_high_rgb
       args:
         camera_dir: camera_head
     
     # 左手相机 (camera_left_wrist) 
-    - cam_name: cam_left_wrist
+    - cam_name: cam_left_wrist_rgb
       args:
         camera_dir: camera_left_wrist
         
     # 右手相机 (camera_right_wrist)
-    - cam_name: cam_right_wrist
+    - cam_name: cam_right_wrist_rgb
       args:
         camera_dir: camera_right_wrist
         

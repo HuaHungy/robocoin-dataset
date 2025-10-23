@@ -532,6 +532,48 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         to_idx = args_dict.get('range_to', sub_actions_buffer.shape[1])
         
         return sub_actions_buffer[frame_idx, from_idx:to_idx].astype(np.float32)
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 H5+MP4 episode 的源文件信息
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode 索引
+        
+        Returns:
+            dict: 包含源文件信息的字典，包括 h5_file, video_files 和 absolute_paths
+        """
+        try:
+            h5_files = self._get_all_episode_h5_files(task_path)
+            if ep_idx < len(h5_files):
+                h5_file = h5_files[ep_idx]
+                
+                # 收集视频文件
+                video_files = []
+                for cam_config in self.image_configs:
+                    video_path = cam_config.get("args", {}).get("video_path", "")
+                    if video_path:
+                        # 替换占位符
+                        video_path = video_path.format(ep_idx=ep_idx)
+                        full_video_path = task_path / video_path
+                        if full_video_path.exists():
+                            video_files.append({
+                                "camera": cam_config["cam_name"],
+                                "relative_path": str(full_video_path.relative_to(self.dataset_path)),
+                                "absolute_path": str(full_video_path.absolute()),
+                            })
+                
+                return {
+                    "format": "H5+MP4",
+                    "h5_file": str(h5_file.relative_to(self.dataset_path)),
+                    "h5_absolute_path": str(h5_file.absolute()),
+                    "video_files": video_files,
+                }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        
+        return {}
 
     def __del__(self) -> None:
         """清理视频读取器"""

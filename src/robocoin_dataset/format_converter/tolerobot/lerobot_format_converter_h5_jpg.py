@@ -39,6 +39,15 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
     ) -> None:
+        # 🆕 软通容错机制：定义必需相机（缺失则跳过整个episode）
+        # ⚠️ 必须在super().__init__之前定义，因为父类初始化会调用_get_frame_image
+        self.required_cameras = ['cam_high_rgb', 'cam_left_wrist_rgb', 'cam_right_wrist_rgb']
+        
+        # 🆕 图像缓存：用于可选相机缺失时复制上一帧
+        # 格式: {(task_path, ep_idx, cam_name): (frame_idx, numpy_array)}
+        # ⚠️ 必须在super().__init__之前定义
+        self._previous_frame_cache = {}
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -53,11 +62,98 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         # 使用专业的 H5FileCache，支持 LRU 缓存和性能统计
         self._h5_file_cache = H5FileCache(max_cache_size=50, logger=self.logger)
         self._meta_info_cache = {}  # 缓存元数据
+        
+        # 🆕 动态移除不可用的可选相机
+        self._remove_unavailable_optional_cameras()
+    
+    def _remove_unavailable_optional_cameras(self) -> None:
+        """🆕 软通容错：移除第0帧就不存在的可选相机
+        
+        策略：
+        - 检查第一个task的第一个episode的第0帧
+        - 如果可选相机在第0帧就不存在，从配置中移除
+        - 必需相机在预验证阶段检查
+        """
+        if not self.path_task_dict:
+            return
+        
+        # 获取第一个task
+        first_task_path = list(self.path_task_dict.keys())[0]
+        
+        try:
+            # 获取第一个episode
+            episodes = self._get_all_episode_dirs(first_task_path)
+            if not episodes:
+                return
+            
+            first_episode = episodes[0]
+            frame_0_dir = first_episode / "camera" / "0"
+            
+            if not frame_0_dir.exists():
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  无法检查可选相机：第0帧目录不存在 {frame_0_dir}"
+                    )
+                return
+            
+            # 检查每个相机
+            images_config = self.converter_config.get('features', {}).get('observation', {}).get('images', [])
+            available_cameras = []
+            removed_cameras = []
+            
+            for cam_config in images_config:
+                if not isinstance(cam_config, dict):
+                    continue
+                
+                cam_name = cam_config.get('cam_name', '')
+                if not cam_name:
+                    continue
+                
+                # 构造第0帧的图像路径
+                h5_path = cam_config.get('args', {}).get('h5_path', '')
+                if not h5_path:
+                    # 如果没有h5_path，尝试默认路径
+                    img_path = frame_0_dir / f"{cam_name}.jpg"
+                else:
+                    # 替换{frame_idx}占位符
+                    img_relative_path = h5_path.replace('{frame_idx}', '0')
+                    img_path = first_episode / img_relative_path
+                
+                # 检查图像是否存在
+                if img_path.exists():
+                    available_cameras.append(cam_config)
+                elif cam_name in self.required_cameras:
+                    # 必需相机缺失，保留配置，稍后在预验证阶段会报错
+                    available_cameras.append(cam_config)
+                else:
+                    # 可选相机缺失，移除
+                    removed_cameras.append(cam_name)
+                    if self.logger:
+                        self.logger.info(
+                            f"ℹ️  可选相机 '{cam_name}' 在第0帧不存在，已从配置中移除"
+                        )
+            
+            # 更新配置
+            if removed_cameras:
+                self.converter_config['features']['observation']['images'] = available_cameras
+                if self.logger:
+                    self.logger.info(
+                        f"📋 软通容错：移除了 {len(removed_cameras)} 个不可用的可选相机: "
+                        f"{', '.join(removed_cameras)}"
+                    )
+        
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  检查可选相机时出错: {e}，将在预验证阶段检查"
+                )
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性
         
         使用 _get_all_episode_dirs() 进行递归搜索，支持任意深度的嵌套结构（最多5层）
+        
+        🆕 软通容错：检查必需相机是否存在
         """
         for task_path in self.path_task_dict.keys():
             # 使用现有的递归搜索方法查找所有 episode 目录
@@ -89,6 +185,50 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
                         f"   📋 Available items: {available_items}\n"
                         f"   💡 Camera directory should contain frame subdirectories with images"
                     )
+                
+                # 🆕 软通容错：检查必需相机（在第0帧）
+                frame_0_dir = camera_dir / "0"
+                if frame_0_dir.exists():
+                    missing_required_cameras = []
+                    
+                    for required_cam in self.required_cameras:
+                        # 查找该相机的配置
+                        cam_config = None
+                        for img_config in self.converter_config.get('features', {}).get('observation', {}).get('images', []):
+                            if isinstance(img_config, dict) and img_config.get('cam_name') == required_cam:
+                                cam_config = img_config
+                                break
+                        
+                        if not cam_config:
+                            # 配置中没有这个相机，跳过检查
+                            continue
+                        
+                        # 构造图像路径
+                        h5_path = cam_config.get('args', {}).get('h5_path', '')
+                        if not h5_path:
+                            img_path = frame_0_dir / f"{required_cam}.jpg"
+                        else:
+                            img_relative_path = h5_path.replace('{frame_idx}', '0')
+                            img_path = ep_dir / img_relative_path
+                        
+                        # 检查图像是否存在
+                        if not img_path.exists():
+                            missing_required_cameras.append(required_cam)
+                    
+                    if missing_required_cameras:
+                        available_cameras = []
+                        if frame_0_dir.exists():
+                            available_cameras = [f.name for f in frame_0_dir.iterdir() if f.is_file() and f.suffix == '.jpg']
+                        
+                        raise FileNotFoundError(
+                            f"❌ 必需相机缺失，跳过整个episode\n"
+                            f"   📁 Episode directory: {ep_dir}\n"
+                            f"   📂 Frame 0 directory: {frame_0_dir}\n"
+                            f"   ❌ 缺失的必需相机: {', '.join(missing_required_cameras)}\n"
+                            f"   📋 第0帧可用图像: {available_cameras if available_cameras else '无'}\n"
+                            f"   💡 必需相机: {', '.join(self.required_cameras)}\n"
+                            f"      这些相机缺失将导致整个episode被跳过"
+                        )
                 
                 if not meta_file.exists():
                     if self.logger:
@@ -288,9 +428,11 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         camera_dir = ep_dir / "camera"
         
         source_info = {
+            "format": "H5+JPG",  # 🆕 添加格式标识
             "episode_directory": str(relative_ep_dir),
-            "episode_directory_absolute": str(ep_dir),
+            "absolute_path": str(ep_dir.absolute()),  # 🆕 添加主绝对路径
             "h5_file": str(h5_file.relative_to(self.dataset_path)) if h5_file.exists() else None,
+            "h5_absolute_path": str(h5_file.absolute()) if h5_file.exists() else None,  # 🆕 H5绝对路径
             "meta_file": str(meta_file.relative_to(self.dataset_path)) if meta_file.exists() else None,
             "camera_directory": str(camera_dir.relative_to(self.dataset_path)) if camera_dir.exists() else None,
         }
@@ -336,6 +478,10 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         """获取指定帧的图像
         
         注意：帧编号可能不连续，需要使用映射表
+        
+        🆕 软通容错：
+        - 可选相机缺失时，复制上一帧
+        - 必需相机缺失时，抛出错误
         """
         if images_buffer is None:
             images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx)
@@ -361,46 +507,93 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
             # 如果没有缓存，直接使用 frame_idx
             actual_frame_idx = frame_idx
         
-        # 从 args_dict 获取图像路径模板
+        # 从 args_dict 获取图像路径模板和相机名称
         h5_path = args_dict.get("h5_path", "")
+        cam_name = args_dict.get("cam_name", "unknown")
         
         # 替换 {frame_idx} 占位符为实际的帧索引
         image_path = h5_path.replace("{frame_idx}", str(actual_frame_idx))
         full_path = ep_dir / image_path
         
-        if not full_path.exists():
-            # 查找该帧目录下的实际文件
-            frame_dir = full_path.parent
-            available_files = []
-            if frame_dir.exists():
-                available_files = [f.name for f in frame_dir.iterdir() if f.is_file()]
+        # 🆕 尝试读取图像，实现容错逻辑
+        try:
+            if not full_path.exists():
+                raise FileNotFoundError(f"Image not found: {full_path}")
             
-            raise FileNotFoundError(
-                f"❌ Image file not found.\n"
-                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
-                f"   🎯 Logical frame_idx: {frame_idx}, Actual frame_idx: {actual_frame_idx}\n"
-                f"   🖼️  Expected file: {full_path}\n"
-                f"   📂 Frame directory: {frame_dir}\n"
-                f"   📋 Available files: {available_files if available_files else 'Directory not found'}\n"
-                f"   💡 Check if:\n"
-                f"      1. Image path template in config is correct: '{h5_path}'\n"
-                f"      2. Frame directory exists: camera/{actual_frame_idx}/\n"
-                f"      3. Camera image file exists with correct name"
-            )
+            # 读取图像
+            img = Image.open(full_path)
+            img_array = np.array(img)
+            
+            # 确保 RGB 格式
+            if len(img_array.shape) == 2:
+                # Grayscale image, add channel dimension
+                img_array = np.expand_dims(img_array, axis=-1)
+            elif img_array.shape[2] == 4:
+                # RGBA image, convert to RGB
+                img_array = img_array[:, :, :3]
+            
+            # 🆕 成功读取，更新缓存
+            cache_key_frame = (str(task_path), ep_idx, cam_name)
+            self._previous_frame_cache[cache_key_frame] = (frame_idx, img_array.copy())
+            
+            return img_array
         
-        # 读取图像
-        img = Image.open(full_path)
-        img_array = np.array(img)
-        
-        # 确保 RGB 格式
-        if len(img_array.shape) == 2:
-            # Grayscale image, add channel dimension
-            img_array = np.expand_dims(img_array, axis=-1)
-        elif img_array.shape[2] == 4:
-            # RGBA image, convert to RGB
-            img_array = img_array[:, :, :3]
-        
-        return img_array
+        except (FileNotFoundError, IOError) as e:
+            # 🆕 图像读取失败，判断是必需相机还是可选相机
+            is_required = cam_name in self.required_cameras
+            
+            if is_required:
+                # ❌ 必需相机缺失，抛出错误
+                frame_dir = full_path.parent
+                available_files = []
+                if frame_dir.exists():
+                    available_files = [f.name for f in frame_dir.iterdir() if f.is_file()]
+                
+                raise FileNotFoundError(
+                    f"❌ 必需相机图像缺失\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                    f"   🎯 Logical frame_idx: {frame_idx}, Actual frame_idx: {actual_frame_idx}\n"
+                    f"   📷 Camera: {cam_name} (必需相机)\n"
+                    f"   🖼️  Expected file: {full_path}\n"
+                    f"   📂 Frame directory: {frame_dir}\n"
+                    f"   📋 Available files: {available_files if available_files else 'Directory not found'}\n"
+                    f"   💡 必需相机: {', '.join(self.required_cameras)}\n"
+                    f"      必需相机缺失将导致整个episode被跳过"
+                ) from e
+            else:
+                # 🔶 可选相机缺失，尝试复制上一帧
+                cache_key_frame = (str(task_path), ep_idx, cam_name)
+                
+                if frame_idx > 0 and cache_key_frame in self._previous_frame_cache:
+                    # 📋 复制上一帧
+                    prev_frame_idx, prev_img_array = self._previous_frame_cache[cache_key_frame]
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  可选相机图像缺失，已复制上一帧\n"
+                            f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                            f"   🎯 Frame: {frame_idx} (actual: {actual_frame_idx})\n"
+                            f"   📷 Camera: {cam_name} (可选相机)\n"
+                            f"   📋 Copied from frame: {prev_frame_idx}"
+                        )
+                    return prev_img_array.copy()
+                else:
+                    # ❌ 第0帧或上一帧也不存在，抛出错误
+                    frame_dir = full_path.parent
+                    available_files = []
+                    if frame_dir.exists():
+                        available_files = [f.name for f in frame_dir.iterdir() if f.is_file()]
+                    
+                    raise FileNotFoundError(
+                        f"❌ 可选相机图像缺失且无法复制上一帧\n"
+                        f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                        f"   🎯 Logical frame_idx: {frame_idx}, Actual frame_idx: {actual_frame_idx}\n"
+                        f"   📷 Camera: {cam_name} (可选相机)\n"
+                        f"   🖼️  Expected file: {full_path}\n"
+                        f"   📂 Frame directory: {frame_dir}\n"
+                        f"   📋 Available files: {available_files if available_files else 'Directory not found'}\n"
+                        f"   💡 该相机在第0帧就不存在，应该已在初始化时被移除\n"
+                        f"      这可能是配置问题，请检查配置文件"
+                    ) from e
 
     def _get_frame_sub_states(
         self,
@@ -540,6 +733,8 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         result = super().convert(is_test=is_test)
         
         # 记录 H5 缓存统计
-        self._h5_file_cache.log_stats()
+        stats = self._h5_file_cache.get_stats()
+        if self.logger and stats:
+            self.logger.info(f"H5 File Cache Stats: {stats}")
         
         return result

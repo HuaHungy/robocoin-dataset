@@ -670,3 +670,19 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
                 args_dict['joint_type'] = args_dict['joint_type'].replace('puppet', 'master')
             
             return self._get_frame_sub_states(task_path, ep_idx, frame_idx, args_dict, sub_actions_buffer)
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 JPG+JSON episode 的源文件信息"""
+        try:
+            episode_dirs = self._get_all_episode_dirs(task_path)
+            if ep_idx < len(episode_dirs):
+                episode_dir = episode_dirs[ep_idx]
+                return {
+                    "format": "JPG+JSON",
+                    "episode_directory": str(episode_dir.relative_to(self.dataset_path)),
+                    "absolute_path": str(episode_dir.absolute()),
+                }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        return {}

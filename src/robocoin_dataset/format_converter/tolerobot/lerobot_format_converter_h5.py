@@ -1132,3 +1132,23 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             raise
 
         return self.h5_buffer.h5_data
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 H5 episode 的源文件信息
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode 索引
+        
+        Returns:
+            dict: 包含源文件信息的字典，包括 h5_file 和 absolute_path
+        """
+        h5_files = self.task_episode_h5file_paths.get(task_path, [])
+        if ep_idx < len(h5_files):
+            h5_file = h5_files[ep_idx]
+            return {
+                "format": "H5",
+                "h5_file": str(h5_file.relative_to(self.dataset_path)),
+                "absolute_path": str(h5_file.absolute()),
+            }
+        return {}

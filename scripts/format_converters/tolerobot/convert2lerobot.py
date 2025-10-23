@@ -114,6 +114,7 @@ def convert2lerobot(
     # Save episode source mapping after conversion completes
     if not is_test:
         converter.save_episode_source_mapping()
+        converter.save_original_data_paths()  # 🆕 保存原始数据绝对路径映射
 
 
 def main() -> None:

@@ -1054,3 +1054,18 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             
             raise ValueError(error_msg)
         return episode_dirs[ep_idx]
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 MMK2 episode 的源文件信息"""
+        try:
+            episode_dir = self._get_episode_directory(task_path, ep_idx)
+            return {
+                "format": "MMK2",
+                "episode_directory": str(episode_dir.relative_to(self.dataset_path)),
+                "absolute_path": str(episode_dir.absolute()),
+            }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        return {}
+
