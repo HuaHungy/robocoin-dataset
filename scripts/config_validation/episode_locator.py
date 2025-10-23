@@ -197,20 +197,24 @@ class EpisodeLocator:
         """定位纯H5格式的episodes"""
         episodes = []
         
-        # 查找所有episode_{idx}.hdf5或episode_{idx}.h5文件
+        # 查找所有 .hdf5 和 .h5 文件
         # 使用 rglob 递归搜索所有子目录
-        for pattern in ["episode_*.hdf5", "episode_*.h5"]:
-            for h5_file in dataset_path.rglob(pattern):
-                match = re.search(r'episode_(\d+)', h5_file.stem)
-                if match:
-                    idx = int(match.group(1))
-                    task_path = h5_file.parent
-                    episodes.append(EpisodeInfo(
-                        episode_idx=idx,
-                        episode_path=h5_file,
-                        format_type=self.FORMAT_H5,
-                        task_path=task_path
-                    ))
+        # 不再限制文件名必须是 episode_* 模式
+        h5_files = []
+        h5_files.extend(dataset_path.rglob("*.hdf5"))
+        h5_files.extend(dataset_path.rglob("*.h5"))
+        
+        # 按文件路径排序，确保顺序一致
+        h5_files = sorted(h5_files)
+        
+        for idx, h5_file in enumerate(h5_files):
+            task_path = h5_file.parent
+            episodes.append(EpisodeInfo(
+                episode_idx=idx,
+                episode_path=h5_file,
+                format_type=self.FORMAT_H5,
+                task_path=task_path
+            ))
         
         return episodes
     
