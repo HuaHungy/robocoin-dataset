@@ -197,7 +197,8 @@ class EpisodeLocator:
         """定位纯H5格式的episodes"""
         episodes = []
         
-        # 方案1: 优先查找标准的 episode_*.hdf5 或 episode_*.h5 文件
+        # 查找所有episode_{idx}.hdf5或episode_{idx}.h5文件
+        # 使用 rglob 递归搜索所有子目录
         for pattern in ["episode_*.hdf5", "episode_*.h5"]:
             for h5_file in dataset_path.rglob(pattern):
                 match = re.search(r'episode_(\d+)', h5_file.stem)
@@ -210,33 +211,6 @@ class EpisodeLocator:
                         format_type=self.FORMAT_H5,
                         task_path=task_path
                     ))
-        
-        # 方案2: 如果没找到标准命名，查找所有 *.h5 和 *.hdf5 文件
-        if not episodes:
-            all_h5_files = []
-            for pattern in ["*.hdf5", "*.h5"]:
-                all_h5_files.extend(dataset_path.rglob(pattern))
-            
-            # 按路径排序，确保稳定的顺序
-            all_h5_files.sort(key=lambda x: str(x))
-            
-            for h5_file in all_h5_files:
-                # 尝试从文件名中提取索引
-                # 支持: converted_0294.h5, compressed_converted_1490.h5, 1088.h5 等
-                match = re.search(r'(\d+)', h5_file.stem)
-                if match:
-                    idx = int(match.group(1))
-                else:
-                    # 如果没有数字，使用文件在列表中的位置作为索引
-                    idx = all_h5_files.index(h5_file)
-                
-                task_path = h5_file.parent
-                episodes.append(EpisodeInfo(
-                    episode_idx=idx,
-                    episode_path=h5_file,
-                    format_type=self.FORMAT_H5,
-                    task_path=task_path
-                ))
         
         return episodes
     
