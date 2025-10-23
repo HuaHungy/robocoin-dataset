@@ -137,7 +137,7 @@ class LerobotSimReplayer:
             for mjcf_joint_name in self.action_gripper_joint_mjcf_names
         ]
 
-        meta_file_path = self.repo_path / "state_action_meta/info.json"
+        meta_file_path = self.repo_path / "meta/state_action_info.json"
         if not meta_file_path.exists():
             raise Exception(f"Meta file not found: {meta_file_path}")
 

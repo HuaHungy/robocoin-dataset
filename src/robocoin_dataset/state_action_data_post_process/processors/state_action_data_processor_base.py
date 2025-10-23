@@ -45,8 +45,8 @@ class StateActionDataPostProcessorBase(DataPostProcessorBase):
             raise ValueError("value of action.names is not list[str]")
 
         return {
-            "observation.state": json_dict["features"]["observation.state"],
-            "action": json_dict["features"]["action"],
+            "observation.state": json_dict["features"]["observation.state"]["names"],
+            "action": json_dict["features"]["action"]["names"],
         }
 
     def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
