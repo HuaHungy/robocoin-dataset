@@ -11,17 +11,19 @@ from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DmvAnnotationDB,
     LeFormatConvertDB,
-    LeformatParquetPostProcessingStatusDB,
+    LeformatDateasetStateActionPostProcessingStatusDB,
     TaskStatus,
 )
-from robocoin_dataset.parquet_post_process.processors.base_processor import ParquetPostProcessor
+from robocoin_dataset.state_action_data_post_process.processors.state_action_data_processor_base import (
+    StateActionDataPostProcessorBase,
+)
 
 
-class PostProcessParquet:
+class StateActionDataPostProcess:
     def __init__(
         self,
         db_file_path: str | Path,
-        processor_classes: dict[tuple[str, str], ParquetPostProcessor],
+        processor_classes: dict[tuple[str, str], StateActionDataPostProcessorBase],
         logger: logging.Logger | None = None,
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
@@ -63,8 +65,8 @@ class PostProcessParquet:
         prestage_version_uuid: str = "",
     ) -> None:
         item = (
-            session.query(LeformatParquetPostProcessingStatusDB)
-            .filter(LeformatParquetPostProcessingStatusDB.dataset_uuid == dataset_uuid)
+            session.query(LeformatDateasetStateActionPostProcessingStatusDB)
+            .filter(LeformatDateasetStateActionPostProcessingStatusDB.dataset_uuid == dataset_uuid)
             .first()
         )
 
@@ -78,7 +80,7 @@ class PostProcessParquet:
             item.prestage_version_uuid = prestage_version_uuid
             item.version_uuid = version_uuid
         else:
-            item = LeformatParquetPostProcessingStatusDB(
+            item = LeformatDateasetStateActionPostProcessingStatusDB(
                 dataset_uuid=dataset_uuid,
                 convert_path=convert_path,
                 status=status,
@@ -120,13 +122,13 @@ class PostProcessParquet:
                 .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
                 .filter(
                     not_(
-                        session.query(LeformatParquetPostProcessingStatusDB)
+                        session.query(LeformatDateasetStateActionPostProcessingStatusDB)
                         .filter(
-                            LeformatParquetPostProcessingStatusDB.dataset_uuid
+                            LeformatDateasetStateActionPostProcessingStatusDB.dataset_uuid
                             == LeFormatConvertDB.dataset_uuid
                         )
                         .filter(
-                            LeformatParquetPostProcessingStatusDB.prestage_version_uuid
+                            LeformatDateasetStateActionPostProcessingStatusDB.prestage_version_uuid
                             == LeFormatConvertDB.version_uuid
                         )
                         .exists()
@@ -160,36 +162,6 @@ class PostProcessParquet:
                     session,
                     dataset_uuid=convert_item.dataset_uuid,
                     convert_path=convert_item.convert_path,
-                    status=TaskStatus.PROCESSING,
-                    prestage_version_uuid=convert_item.version_uuid,
-                    device_model=dmv_device_model,
-                    device_model_version=dmv_device_model_version,
-                )
-
-        for convert_item in tqdm(
-            convert_items,
-            desc="Sync parquet post processing tasks",
-            total=len(convert_items),
-            unit="dataset",
-        ):
-            with self.db.with_session() as session:
-                dmv_item = (
-                    session.query(DmvAnnotationDB)
-                    .filter(DmvAnnotationDB.dataset_uuid == convert_item.dataset_uuid)
-                    .first()
-                )
-                if dmv_item is None:
-                    dmv_device_model = None
-                    dmv_device_model = None
-                else:
-                    dmv_device_model = dmv_item.device_model
-                    dmv_device_model_version = dmv_item.device_model_version
-                convert_path = convert_item.convert_path
-                self._copy_data_and_info(convert_path)
-                self._upsert_parquet_post_process_status(
-                    session,
-                    dataset_uuid=convert_item.dataset_uuid,
-                    convert_path=convert_item.convert_path,
                     status=TaskStatus.PENDING,
                     prestage_version_uuid=convert_item.version_uuid,
                     device_model=dmv_device_model,
@@ -200,17 +172,17 @@ class PostProcessParquet:
         self, device_model: str | None = None, device_model_version: str | None = None
     ) -> tuple[str, str, str, str]:
         with self.db.with_session() as session:
-            query = session.query(LeformatParquetPostProcessingStatusDB).filter(
-                LeformatParquetPostProcessingStatusDB.status == TaskStatus.PENDING,
+            query = session.query(LeformatDateasetStateActionPostProcessingStatusDB).filter(
+                LeformatDateasetStateActionPostProcessingStatusDB.status == TaskStatus.PENDING,
             )
             if device_model is not None:
                 query = query.filter(
-                    LeformatParquetPostProcessingStatusDB.device_model == device_model
+                    LeformatDateasetStateActionPostProcessingStatusDB.device_model == device_model
                 )
 
             if device_model_version is not None:
                 query = query.filter(
-                    LeformatParquetPostProcessingStatusDB.device_model_version
+                    LeformatDateasetStateActionPostProcessingStatusDB.device_model_version
                     == device_model_version
                 )
             item = query.first()
@@ -233,7 +205,7 @@ class PostProcessParquet:
             raise RuntimeError(
                 f"No post processor found for device model {device_model} and device model version {device_model_version}"
             )
-        processor: ParquetPostProcessor = processor_class(convert_path=convert_path)
+        processor: StateActionDataPostProcessorBase = processor_class(convert_path=convert_path)
         processor.process()
 
     def _get_parquet_post_process_task_num(
@@ -242,16 +214,16 @@ class PostProcessParquet:
         device_model_version: str | None = None,
     ) -> int:
         with self.db.with_session() as session:
-            query = session.query(LeformatParquetPostProcessingStatusDB).filter(
-                LeformatParquetPostProcessingStatusDB.status == TaskStatus.PENDING,
+            query = session.query(LeformatDateasetStateActionPostProcessingStatusDB).filter(
+                LeformatDateasetStateActionPostProcessingStatusDB.status == TaskStatus.PENDING,
             )
             if device_model is not None:
                 query = query.filter(
-                    LeformatParquetPostProcessingStatusDB.device_model == device_model
+                    LeformatDateasetStateActionPostProcessingStatusDB.device_model == device_model
                 )
                 if device_model_version is not None:
                     query = query.filter(
-                        LeformatParquetPostProcessingStatusDB.device_model_version
+                        LeformatDateasetStateActionPostProcessingStatusDB.device_model_version
                         == device_model_version
                     )
             return query.count()
@@ -267,7 +239,7 @@ class PostProcessParquet:
         )
         if task_num == 0:
             return
-        for _ in tqdm(range(task_num), desc="post process parquet", unit="dataset"):
+        for _ in tqdm(range(task_num), desc="state and action post process", unit="dataset"):
             dataset_uuid, prestage_version_uuid, device_model, device_model_version = (
                 self._gen_one_parquet_post_process_task(
                     device_model=device_model, device_model_version=device_model_version
@@ -295,7 +267,7 @@ class PostProcessParquet:
 
             except Exception:
                 self.logger.error(
-                    f"Failed to post process parquet for dataset {dataset_uuid}, traceback: {traceback.format_exc()}"
+                    f"Failed to post process state and action data for dataset {dataset_uuid}, traceback: {traceback.format_exc()}"
                 )
                 with self.db.with_session() as session:
                     self._upsert_parquet_post_process_status(

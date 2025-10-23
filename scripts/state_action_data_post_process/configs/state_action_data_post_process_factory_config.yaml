@@ -1,15 +1,15 @@
 realman_rmc_aidal: 
 - version: default_version
-  parquet_post_processor_module: robocoin_dataset.parquet_post_process.processors.realman_rmc_aidal_processor
-  parquet_post_processor_class: RealmanRmcAidalParquetPostProcessor
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
+  post_processor_class: RealmanRmcAidalProcessor
 
 - version: mcap_version
-  parquet_post_processor_module: robocoin_dataset.parquet_post_process.processors.realman_rmc_aidal_processor
-  parquet_post_processor_class: RealmanRmcAidalParquetPostProcessor
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
+  post_processor_class: RealmanRmcAidalProcessor
 
 - version: mcap_simple_version
-  parquet_post_processor_module: robocoin_dataset.parquet_post_process.processors.realman_rmc_aidal_processor
-  parquet_post_processor_class: RealmanRmcAidalParquetPostProcessor
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
+  post_processor_class: RealmanRmcAidalProcessor
 
 # galaxea_r1_lite:
 # - version: default_version

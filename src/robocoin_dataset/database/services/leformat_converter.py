@@ -3,7 +3,12 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from robocoin_dataset.database.models import LeFormatConvertDB, LeFormatConvertTestDB, TaskStatus
+from robocoin_dataset.database.models import (
+    DmvAnnotationDB,
+    LeFormatConvertDB,
+    LeFormatConvertTestDB,
+    TaskStatus,
+)
 
 
 def upsert_leformat_convert(
@@ -29,7 +34,18 @@ def upsert_leformat_convert(
             leformat_convert_db = LeFormatConvertTestDB
         else:
             leformat_convert_db = LeFormatConvertDB
+
+        query = session.query(DmvAnnotationDB).filter(DmvAnnotationDB.dataset_uuid == ds_uuid)
+        item = query.first()
+        if item is None:
+            device_model = ""
+            device_model_version = ""
+        else:
+            device_model = item.device_model
+            device_model_version = item.device_model_version
+
         # 查询是否存在
+
         item = (
             session.query(leformat_convert_db)
             .filter(leformat_convert_db.dataset_uuid == ds_uuid)
@@ -46,6 +62,8 @@ def upsert_leformat_convert(
                 err_message=err_message,
                 updated_at=datetime.now(),
                 version_uuid=version_uuid,
+                device_model=device_model,
+                device_model_version=device_model_version,
             )
         else:
             # 更新现有记录
@@ -55,7 +73,9 @@ def upsert_leformat_convert(
                 item.err_message = err_message
             if leformat_path is not None:
                 item.convert_path = leformat_path
-            version_uuid = version_uuid
+            item.version_uuid = version_uuid
+            item.device_model = device_model
+            item.device_model_version = device_model_version
 
         session.add(item)
         session.commit()

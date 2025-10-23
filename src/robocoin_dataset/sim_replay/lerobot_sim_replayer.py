@@ -137,7 +137,7 @@ class LerobotSimReplayer:
             for mjcf_joint_name in self.action_gripper_joint_mjcf_names
         ]
 
-        meta_file_path = self.repo_path / "meta/info.json"
+        meta_file_path = self.repo_path / "state_action_meta/info.json"
         if not meta_file_path.exists():
             raise Exception(f"Meta file not found: {meta_file_path}")
 
@@ -228,12 +228,26 @@ class LerobotSimReplayer:
     def _get_mjcf_joint_addr(self, name: str) -> int:
         return self.mjcf_model.jnt_qposadr[self.mjcf_model.joint(name).id]
 
-    # def load_dataset(self) -> LeRobotDataset:
-    #     self.dataset = LeRobotDataset(repo_id="tmp/tmp", root=self.repo_path)
-
     def replay_episode(
         self, episode_index: int, is_state: bool = True, sleep_time_ms: int = 0
-    ) -> None:
+    ) -> np.ndarray:
+        parquet_file_path = (
+            self.repo_path
+            / "state_action_data"
+            / "chunk-000"
+            / f"episode_{episode_index:06d}.parquet"
+        )
+        if not parquet_file_path.exists():
+            raise Exception(f"Parquet file not found: {parquet_file_path}")
+        df = pd.read_parquet(str(parquet_file_path))
+        return self._replay_episode_parquet(df, is_state=is_state, sleep_time_ms=sleep_time_ms)
+
+    def _replay_episode_parquet(
+        self,
+        df: pd.DataFrame,
+        is_state: bool = True,
+        sleep_time_ms: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray]:
         if is_state:
             mjcf_arm_joint_addrs = self.state_arm_joint_mjcf_addrs
             mjcf_gripper_joint_addrs = self.state_gripper_joint_mjcf_addrs
@@ -244,15 +258,8 @@ class LerobotSimReplayer:
             mjcf_gripper_joint_addrs = self.action_gripper_joint_mjcf_addrs
             lerbot_arm_joint_ids = self.action_arm_joint_lerobot_ids
             leroot_gripper_ids = self.action_gripper_lerobot_ids
-
         episode_eef_fk_results = []
-        parquet_file_path = (
-            self.repo_path / "ppp_data" / "chunk-000" / f"episode_{episode_index:06d}.parquet"
-        )
-        if not parquet_file_path.exists():
-            raise Exception(f"Parquet file not found: {parquet_file_path}")
-
-        df = pd.read_parquet(str(parquet_file_path))
+        episode_gripper_results = []
 
         if is_state:
             data = df["observation.state"].to_list()
@@ -271,19 +278,20 @@ class LerobotSimReplayer:
 
             mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
             for site_id in self.mjcf_site_ids:
-                results = []
+                eef_results = []
                 site_pos = self.mjcf_data.site_xpos[site_id]
                 site_rot = self.mjcf_data.site_xmat[site_id]
                 site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
                     "xyz", degrees=False
                 )
-                results = np.concatenate([results, site_pos, site_rot_euler], axis=0)
+                eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
 
-            episode_eef_fk_results.append(results)
+            episode_eef_fk_results.append(eef_results)
+            episode_gripper_results.append(lerobot_gripper_values)
             self._sync_viewer()
             if sleep_time_ms > 0:
                 time.sleep(sleep_time_ms / 1000)
-        return episode_eef_fk_results
+        return np.array(episode_eef_fk_results), np.array(episode_gripper_results)
 
     def start_viewer(self) -> None:
         if self.mjcf_viewer is None:

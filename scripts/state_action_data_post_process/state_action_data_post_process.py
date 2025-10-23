@@ -5,8 +5,8 @@ from pathlib import Path
 
 import yaml
 
-from robocoin_dataset.parquet_post_process.post_process_parquet import (
-    PostProcessParquet,
+from robocoin_dataset.state_action_data_post_process.state_action_data_post_process import (
+    StateActionDataPostProcess,
 )
 from robocoin_dataset.utils.logger import setup_logger
 
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--parquet_post_processing_factory_config_path",
+        "--state_action_data_post_process_factory_config_path",
         type=str,
         default="",
         help="Path to the factory config file",
@@ -30,14 +30,14 @@ if __name__ == "__main__":
         "--device_model",
         type=str,
         default=None,
-        help="Device model to post process parquet",
+        help="Device model to post process state and action data",
     )
 
     parser.add_argument(
         "--device_model_version",
         type=str,
         default=None,
-        help="Device model version to post process parquet",
+        help="Device model version to post process state and action data",
     )
 
     parser.add_argument(
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
     parquet_post_process_factory_config_path = (
-        Path(args.parquet_post_processing_factory_config_path).expanduser().absolute()
+        Path(args.state_action_data_post_process_factory_config_path).expanduser().absolute()
     )
     device_model = args.device_model
     device_model_version = args.device_model_version
@@ -72,10 +72,10 @@ if __name__ == "__main__":
     for device_model_name, configs in processor_classes_config.items():
         for config in configs:
             device_version = config["version"]
-            class_module_path = config.get("parquet_post_processor_module", None)
+            class_module_path = config.get("post_processor_module", None)
             if class_module_path is None:
                 continue
-            class_name = config.get("parquet_post_processor_class", None)
+            class_name = config.get("post_processor_class", None)
             if class_name is None:
                 continue
             processor_class = importlib.import_module(class_module_path).__getattribute__(
@@ -89,7 +89,7 @@ if __name__ == "__main__":
         level=logging.ERROR,
     )
 
-    Processor = PostProcessParquet(
+    Processor = StateActionDataPostProcess(
         db_file_path=db_file_path,
         processor_classes=processor_classes_dict,
         logger=logger,
@@ -100,16 +100,17 @@ if __name__ == "__main__":
 
 """usage:
 # realman_rmc_aidal
-python scripts/post_process_parquet/post_process_parquet.py \
+python scripts/state_action_data_post_process/state_action_data_post_process.py \
     --db_file_path /mnt/db/datasets.db \
-    --parquet_post_processing_factory_config_path ./scripts/post_process_parquet/configs/parquet_post_processing_factory_config.yaml \
+    --state_action_data_post_process_factory_config_path ./scripts/state_action_data_post_process/configs/state_action_data_post_process_factory_config.yaml \
     --device_model realman_rmc_aidal \
     --device_model_version default_version \
-    --log_dir ./logs/parquet_post_processing
+    --log_dir ./logs/stat_action_data_post_process
 
-python scripts/post_process_parquet/post_process_parquet.py \
+
+python scripts/state_action_data_post_process/state_action_data_post_process.py \
     --db_file_path /mnt/db/datasets.db \
-    --parquet_post_processing_factory_config_path ./scripts/post_process_parquet/configs/parquet_post_processing_factory_config.yaml \
+    --parquet_post_processing_factory_config_path ./scripts/state_action_data_post_process/configs/state_action_data_post_process_factory_config.yaml \
     --device_model realman_rmc_aidal \
-    --log_dir ./logs/parquet_post_processing
+    --log_dir ./logs/stat_action_data_post_process
 """

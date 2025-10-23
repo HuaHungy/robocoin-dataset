@@ -1,9 +1,14 @@
+from pathlib import Path
+
 import numpy as np
 
-from .base_processor import ParquetPostProcessor
+from .state_action_data_processor_base import StateActionDataPostProcessorBase
 
 
-class RealmanRmcAidalParquetPostProcessor(ParquetPostProcessor):
+class RealmanRmcAidalProcessor(StateActionDataPostProcessorBase):
+    def __init__(self, convert_path: str | Path) -> None:
+        super().__init__(convert_path)
+
     def prepare_processing(self) -> None:
         self.left_gripper_open_state_data_idx = 21
         self.right_gripper_open_state_data_idx = 7
@@ -57,9 +62,16 @@ class RealmanRmcAidalParquetPostProcessor(ParquetPostProcessor):
         return new_action_data
 
     # 该方法返回处理后的state数据名称
+    def get_modified_feature_names(self):
+        return super().get_modified_feature_names()
+
     def get_modified_info_state_names(self) -> dict[str, str]:
         return {}
 
     # 该方法返回处理后的action数据名称
     def get_modified_info_action_names(self) -> dict[str, str]:
         return {}
+
+
+class UnitreePPPProcessor(StateActionDataPostProcessorBase):
+    pass

@@ -10,7 +10,7 @@ from robocoin_dataset.database.models import (
     DmvAnnotationDB,
     LeFormatConvertDB,
     LeformatDatasetSimReplayStatusDB,
-    LeformatParquetPostProcessingStatusDB,
+    LeformatDateasetStateActionPostProcessingStatusDB,
     TaskStatus,
 )
 from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import LerobotSimReplayConfig
@@ -170,18 +170,20 @@ class SimReplay:
     ) -> None:
         with self.db.with_session() as session:
             query = (
-                session.query(LeformatParquetPostProcessingStatusDB)
-                .filter(LeformatParquetPostProcessingStatusDB.status == TaskStatus.COMPLETED)
+                session.query(LeformatDateasetStateActionPostProcessingStatusDB)
+                .filter(
+                    LeformatDateasetStateActionPostProcessingStatusDB.status == TaskStatus.COMPLETED
+                )
                 .filter(
                     not_(
-                        session.query(LeformatParquetPostProcessingStatusDB)
+                        session.query(LeformatDateasetStateActionPostProcessingStatusDB)
                         .filter(
-                            LeformatParquetPostProcessingStatusDB.dataset_uuid
+                            LeformatDateasetStateActionPostProcessingStatusDB.dataset_uuid
                             == LeformatDatasetSimReplayStatusDB.dataset_uuid
                         )
                         .filter(
-                            LeformatParquetPostProcessingStatusDB.prestage_version_uuid
-                            == LeformatParquetPostProcessingStatusDB.version_uuid
+                            LeformatDateasetStateActionPostProcessingStatusDB.prestage_version_uuid
+                            == LeformatDateasetStateActionPostProcessingStatusDB.version_uuid
                         )
                         .exists()
                     )
@@ -189,12 +191,12 @@ class SimReplay:
             )
             if device_model is not None:
                 query = query.filter(
-                    LeformatParquetPostProcessingStatusDB.device_model == device_model
+                    LeformatDateasetStateActionPostProcessingStatusDB.device_model == device_model
                 )
 
             if device_model_version is not None:
                 query = query.filter(
-                    LeformatParquetPostProcessingStatusDB.device_model_version
+                    LeformatDateasetStateActionPostProcessingStatusDB.device_model_version
                     == device_model_version
                 )
 
