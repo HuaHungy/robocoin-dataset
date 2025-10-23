@@ -20,6 +20,9 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
+from robocoin_dataset.format_converter.utils.unified_episode_locator import (
+    UnifiedEpisodeLocator,
+)
 from robocoin_dataset.format_converter.utils.json_file_cache import JsonFileCache
 
 
@@ -38,6 +41,9 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
     ) -> None:
+        self._episode_locator = UnifiedEpisodeLocator(logger=logger)
+        self._is_test_mode = False  # Test模式标志（限制加载帧数）
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -51,7 +57,6 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         )
         # 🚀 性能优化：JSON文件缓存（LRU缓存，避免重复解析）
         self._json_file_cache = JsonFileCache(max_cache_size=1000, logger=self.logger)
-        self._is_test_mode = False  # Test模式标志（限制加载帧数）
         
         if self.logger:
             self.logger.info("🚀 JSON File Cache initialized (max_cache_size=1000)")
@@ -72,6 +77,66 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         # 🚀 输出JSON缓存统计信息
         if self.logger:
             self._json_file_cache.log_stats()
+    
+    def _is_episode(self, path: Path) -> bool:
+        """判断路径是否是JPG+JSON格式的episode
+        
+        判断标准：目录包含特定子目录结构（arm/, camera/等）
+        
+        特殊情况处理：
+        - 对于mult_sensor等数据集，task_path和episode_path是同一个目录
+        - 即使有local_task_info.yaml，只要包含arm/camera/，就是episode
+        """
+        if not path.is_dir():
+            return False
+        
+        # 检查必需的子目录
+        required_subdirs = ['arm', 'camera']  # 至少要有这两个
+        
+        try:
+            subdirs = {d.name for d in path.iterdir() if d.is_dir()}
+            # 必须同时包含arm和camera
+            has_required_structure = all(req_dir in subdirs for req_dir in required_subdirs)
+            
+            # 如果具有必需的结构，就是episode（不管是否有local_task_info.yaml）
+            # 这样可以处理 task_path == episode_path 的扁平结构
+            return has_required_structure
+        except Exception:
+            return False
+    
+    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
+        """获取所有episode目录（使用BFS搜索，对命名鲁棒）
+        
+        策略：
+        1. 使用UnifiedEpisodeLocator进行BFS搜索
+        2. 通过子目录结构判断（不限制命名）
+        3. 支持任意深度嵌套
+        """
+        episodes = self._episode_locator.locate_episodes_bfs(
+            dataset_path=task_path,
+            is_episode_func=self._is_episode,
+            max_depth=10,  # 允许较深的嵌套
+            skip_dirs=[]  # JPG+JSON格式不需要额外排除目录（通过子目录结构判断）
+        )
+        
+        if not episodes:
+            # 收集诊断信息
+            try:
+                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+            except Exception:
+                all_dirs = []
+            raise FileNotFoundError(
+                f"❌ No JPG+JSON episode directories found.\n"
+                f"   📂 Task path: {task_path}\n"
+                f"   📋 Directories found: {all_dirs if all_dirs else 'None'}\n"
+                f"   💡 Expected: directories containing 'arm/' and 'camera/' subdirectories\n"
+                f"   💡 Check if:\n"
+                f"      1. Episode directories have correct structure\n"
+                f"      2. arm/ and camera/ subdirectories exist\n"
+                f"      3. Path is correct"
+            )
+        
+        return episodes
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -107,22 +172,8 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
                 )
         
         for task_path in self.path_task_dict.keys():
-            episodes = list(task_path.glob("episode*"))
-            episodes = [ep for ep in episodes if ep.is_dir()]
-            
-            if not episodes:
-                # 列出task_path下的所有目录，帮助用户诊断
-                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
-                raise FileNotFoundError(
-                    f"❌ No episode directories found.\n"
-                    f"   📂 Task path: {task_path}\n"
-                    f"   📋 Directories found: {all_dirs if all_dirs else 'None'}\n"
-                    f"   💡 Expected directory pattern: episode0, episode1, ...\n"
-                    f"   💡 Check if:\n"
-                    f"      1. Dataset has been extracted correctly\n"
-                    f"      2. Episode directories are named correctly\n"
-                    f"      3. Task path points to correct location"
-                )
+            # 使用新的定位方法
+            episodes = self._get_all_episode_dirs(task_path)
             
             for ep_dir in episodes:
                 # 检查是否有嵌套的episode目录
@@ -189,7 +240,7 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
 
     def _get_episode_dir(self, task_path: Path, ep_idx: int) -> Path:
         """获取episode目录"""
-        episodes = sorted([ep for ep in task_path.glob("episode*") if ep.is_dir()])
+        episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             episode_names = [ep.name for ep in episodes[:10]]  # 只显示前10个
             raise IndexError(
@@ -280,7 +331,7 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
-        episodes = [ep for ep in task_path.glob("episode*") if ep.is_dir()]
+        episodes = self._get_all_episode_dirs(task_path)
         return len(episodes)
 
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:

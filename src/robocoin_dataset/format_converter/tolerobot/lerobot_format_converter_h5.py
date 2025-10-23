@@ -951,12 +951,50 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
 
     @cached_property
     def task_episode_h5file_paths(self) -> dict[Path, list[Path]]:
+        """获取每个task的H5 episode文件路径
+        
+        策略：
+        1. 使用rglob递归搜索（支持任意深度嵌套）
+        2. 排除特定子目录（record/, calibration/等）
+        3. 宁可多找也不能漏
+        """
         task_episode_paths = {}
+        
+        # 需要排除的目录（这些是原始数据/配置/日志目录，不是episode）
+        skip_dirs = {
+            'record', 'calibration', 'config', 'parameters', 
+            'logs', 'camera', 'meta_info', 'others', 'error',
+            '@eaDir', '__pycache__', '.git', '.idea', '.vscode'
+        }
+        
         for path in self.path_task_dict.keys():
-            if path.exists():
-                h5_files = natsorted(list(path.rglob("*.h5")))
-                h5_files.extend(natsorted(list(path.rglob("*.hdf5"))))
-                task_episode_paths[path] = h5_files
+            if not path.exists():
+                continue
+            
+            # 递归查找所有.h5和.hdf5文件
+            h5_files = []
+            h5_files.extend(path.rglob("*.h5"))
+            h5_files.extend(path.rglob("*.hdf5"))
+            
+            # 过滤：排除特定目录下的文件
+            filtered_files = []
+            for h5_file in h5_files:
+                # 检查文件路径中是否包含需要排除的目录
+                relative_path = h5_file.relative_to(path)
+                path_parts = set(relative_path.parts[:-1])  # 不包括文件名
+                
+                # 如果路径中包含任何需要排除的目录，则跳过
+                if path_parts & skip_dirs:
+                    continue
+                
+                # 排除隐藏文件和@开头的目录
+                if any(part.startswith('.') or part.startswith('@') for part in relative_path.parts):
+                    continue
+                
+                filtered_files.append(h5_file)
+            
+            task_episode_paths[path] = natsorted(filtered_files)
+        
         return task_episode_paths
 
     def _get_episode_h5_data(self, task_path: Path, ep_idx: int) -> any:

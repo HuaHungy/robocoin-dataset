@@ -784,45 +784,79 @@ class SchemaAnalyzer:
         
         不同converter有不同的方式获取episodes：
         - H5 converter: task_episode_h5file_paths
-        - H5+JPG converter: _get_all_episode_dirs()
-        - 其他: 可能需要其他方法
+        - H5+JPG, JPG+JSON converter: _get_all_episode_dirs()
+        - H5+MP4 converter: _get_all_episode_h5_files()
+        - MCAP converter: _get_all_mcap_files()
+        - 其他: _get_task_episodes_num()
         """
         episodes = []
         
-        # 尝试不同的converter API
+        # 尝试不同的converter API（按优先级顺序）
+        
+        # 1. H5单文件格式: task_episode_h5file_paths
         if hasattr(converter, 'task_episode_h5file_paths'):
             # H5 converter
             for task_path, h5_files in converter.task_episode_h5file_paths.items():
-                for h5_file in h5_files:
+                for ep_idx, h5_file in enumerate(h5_files):
                     episodes.append({
                         'task_path': task_path,
                         'episode_path': h5_file,
+                        'episode_idx': ep_idx,
                         'type': 'h5_file'
                     })
         
+        # 2. JPG+JSON, H5+JPG格式: _get_all_episode_dirs()
         elif hasattr(converter, '_get_all_episode_dirs'):
-            # H5+JPG converter
             for task_path in converter.path_task_dict.keys():
                 ep_dirs = converter._get_all_episode_dirs(task_path)
-                for ep_dir in ep_dirs:
+                for ep_idx, ep_dir in enumerate(ep_dirs):
                     episodes.append({
                         'task_path': task_path,
                         'episode_path': ep_dir,
+                        'episode_idx': ep_idx,
                         'type': 'episode_dir'
                     })
         
-        elif hasattr(converter, 'path_task_dict'):
-            # 通用方法：使用path_task_dict
+        # 3. H5+MP4格式: _get_all_episode_h5_files()
+        elif hasattr(converter, '_get_all_episode_h5_files'):
             for task_path in converter.path_task_dict.keys():
-                # 尝试调用_get_task_episode_num
-                if hasattr(converter, '_get_task_episode_num'):
-                    num_episodes = converter._get_task_episode_num(task_path)
-                    for ep_idx in range(num_episodes):
-                        episodes.append({
-                            'task_path': task_path,
-                            'episode_idx': ep_idx,
-                            'type': 'indexed'
-                        })
+                h5_files = converter._get_all_episode_h5_files(task_path)
+                for ep_idx, h5_file in enumerate(h5_files):
+                    episodes.append({
+                        'task_path': task_path,
+                        'episode_path': h5_file,
+                        'episode_idx': ep_idx,
+                        'type': 'h5_mp4'
+                    })
+        
+        # 4. MCAP格式: _get_all_mcap_files()
+        elif hasattr(converter, '_get_all_mcap_files'):
+            for task_path in converter.path_task_dict.keys():
+                mcap_files = converter._get_all_mcap_files(task_path)
+                for ep_idx, mcap_file in enumerate(mcap_files):
+                    episodes.append({
+                        'task_path': task_path,
+                        'episode_path': mcap_file,
+                        'episode_idx': ep_idx,
+                        'type': 'mcap'
+                    })
+        
+        # 5. 通用方法：使用_get_task_episodes_num
+        elif hasattr(converter, 'path_task_dict') and hasattr(converter, '_get_task_episodes_num'):
+            for task_path in converter.path_task_dict.keys():
+                num_episodes = converter._get_task_episodes_num(task_path)
+                for ep_idx in range(num_episodes):
+                    episodes.append({
+                        'task_path': task_path,
+                        'episode_idx': ep_idx,
+                        'type': 'indexed'
+                    })
+        
+        else:
+            self.logger.warning(
+                f"⚠️ Converter {type(converter).__name__} 没有已知的episode定位方法。"
+                f"可用属性: {[attr for attr in dir(converter) if not attr.startswith('_')][:10]}"
+            )
         
         self.logger.info(f"从converter获取到 {len(episodes)} 个episodes")
         return episodes

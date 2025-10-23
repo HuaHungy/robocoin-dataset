@@ -198,8 +198,8 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         ep_dir = self._get_episode_dir(task_path, ep_idx)
         h5_path = ep_dir / "aligned_joints.h5"
         
-        # 使用 H5FileCache 自动管理缓存
-        return self._h5_file_cache.open(h5_path)
+        # 使用 H5FileCache.get() 直接返回h5py.File对象（不是上下文管理器）
+        return self._h5_file_cache.get(h5_path)
 
     def _get_meta_info(self, task_path: Path, ep_idx: int) -> dict:
         """获取元数据（带缓存）"""

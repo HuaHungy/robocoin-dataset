@@ -135,18 +135,32 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                 )
                 continue
             
-            # Scan for episode directories in this subtask
+            # 🆕 支持两种结构：
+            # 1. 扁平结构：subtask_dir本身就是episode
+            # 2. 嵌套结构：subtask_dir/episode_*/...
             episode_count = 0
-            for episode_dir in subtask_dir.iterdir():
-                if episode_dir.is_dir():
-                    metadata_file = episode_dir / "metadata.json"
-                    h5_file = episode_dir / "proprio_stats" / "proprio_stats.hdf5"
-                    
-                    if metadata_file.exists() and h5_file.exists():
-                        task_paths_dict[episode_dir] = task
-                        episode_count += 1
             
-            self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}'")
+            # 先检查subtask_dir本身是否是episode（扁平结构）
+            metadata_file = subtask_dir / "metadata.json"
+            h5_file = subtask_dir / "proprio_stats" / "proprio_stats.hdf5"
+            
+            if metadata_file.exists() and h5_file.exists():
+                # 扁平结构：subtask_dir本身就是episode
+                task_paths_dict[subtask_dir] = task
+                episode_count = 1
+                self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episode (flat structure) for task '{task}'")
+            else:
+                # 嵌套结构：在subtask_dir下查找子episode目录
+                for episode_dir in subtask_dir.iterdir():
+                    if episode_dir.is_dir():
+                        metadata_file = episode_dir / "metadata.json"
+                        h5_file = episode_dir / "proprio_stats" / "proprio_stats.hdf5"
+                        
+                        if metadata_file.exists() and h5_file.exists():
+                            task_paths_dict[episode_dir] = task
+                            episode_count += 1
+                
+                self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}'")
         
         if not task_paths_dict:
             # List all subtask directories to help diagnose

@@ -416,12 +416,44 @@ int32 lift_pos
                     "💡 请检查MCAP文件是否损坏"
                 )
 
-    def _get_episode_mcap_file(self, task_path: Path, ep_idx: int) -> Path:
-        # 先在任务路径下查找mcap文件
-        mcap_files = sorted(list(task_path.glob("*.mcap")))
-        # 如果没找到，在子目录中递归查找
+    def _get_all_mcap_files(self, task_path: Path) -> list[Path]:
+        """获取task下所有MCAP文件（统一的方法）
+        
+        策略：
+        1. 先查找task_path同级的.mcap文件
+        2. 如果没有，递归查找子目录
+        3. 排除特定目录
+        """
+        skip_dirs = {
+            'record', 'calibration', 'config', 'parameters', 
+            'logs', 'error', '@eaDir', '__pycache__', '.git'
+        }
+        
+        # 先尝试扁平结构
+        mcap_files = list(task_path.glob("*.mcap"))
+        
         if not mcap_files:
-            mcap_files = sorted(list(task_path.rglob("*.mcap")))
+            # 递归查找
+            all_mcap_files = list(task_path.rglob("*.mcap"))
+            
+            # 过滤排除目录
+            mcap_files = []
+            for mcap_file in all_mcap_files:
+                relative_path = mcap_file.relative_to(task_path)
+                path_parts = set(relative_path.parts[:-1])
+                
+                if path_parts & skip_dirs:
+                    continue
+                if any(part.startswith('.') or part.startswith('@') for part in relative_path.parts):
+                    continue
+                
+                mcap_files.append(mcap_file)
+        
+        return sorted(mcap_files)
+
+    def _get_episode_mcap_file(self, task_path: Path, ep_idx: int) -> Path:
+        # 使用统一的方法获取所有mcap文件
+        mcap_files = self._get_all_mcap_files(task_path)
         if ep_idx >= len(mcap_files):
             raise IndexError(
                 f"❌ Episode索引超出范围\n"
@@ -742,7 +774,8 @@ int32 lift_pos
         return frame_count
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
-        return len(list(task_path.glob("*.mcap")))
+        # 与_get_episode_mcap_file保持一致，使用统一的方法
+        return len(self._get_all_mcap_files(task_path))
     
     def _gen_image_configs(self) -> None:
         """重写图像配置生成，使用快速样本获取避免解析整个MCAP文件"""

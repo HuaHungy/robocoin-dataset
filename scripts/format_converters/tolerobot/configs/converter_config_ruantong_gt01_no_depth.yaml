@@ -12,27 +12,28 @@ fps: 30
 features:
   observation:
     images:
-      ### 头部彩色相机
-      - cam_name: head_color
-        args:
-        args:
-          file_type: jpg
-
       ### 头部中心鱼眼相机
       - cam_name: head_center_fisheye_color
-        args:
         args:
           file_type: jpg
 
       ### 左后鱼眼相机
       - cam_name: back_left_fisheye_color
         args:
-        args:
           file_type: jpg
 
       ### 右后鱼眼相机
       - cam_name: back_right_fisheye_color
         args:
+          file_type: jpg
+
+      ### 左手彩色相机
+      - cam_name: hand_left_color
+        args:
+          file_type: jpg
+
+      ### 右手彩色相机
+      - cam_name: hand_right_color
         args:
           file_type: jpg
 

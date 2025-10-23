@@ -79,6 +79,12 @@ class LazyVideoReader:
             'cache_hits': 0
         }
     
+    @property
+    def num_frames(self) -> int:
+        """返回视频总帧数"""
+        self._ensure_opened()
+        return self._total_frames
+    
     def _ensure_opened(self):
         """确保视频文件已打开"""
         if self._cap is None:
