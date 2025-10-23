@@ -186,7 +186,7 @@ class LeFormatConvertTestDB(Base):
         nullable=True,  # 允许为空，初始无信息
     )
 
-    version_uuid = Column(String(255), nullable=True)
+    version_uuid = Column(String(255), nullable=True, default="v0")
 
     device_model = Column(String(255), nullable=True)
 
