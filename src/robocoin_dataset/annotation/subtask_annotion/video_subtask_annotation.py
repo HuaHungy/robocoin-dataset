@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import uuid
 from collections import defaultdict
 from pathlib import Path
 
@@ -39,6 +40,7 @@ from robocoin_dataset.database.models import (
     TaskStatus,
     UrlVideoStAnnotationDB,
 )
+from robocoin_dataset.utils.parquet_paths import get_parquet_paths
 
 FRAME_SAMPLE_NUM = 10
 MAX_SUBTASK_NUM = 5
@@ -306,352 +308,34 @@ class VideoSubtaskAnnotation:
 
         return matched_id
 
-    def _match_video(
-        self,
-        video_path: str | Path,
-        using_file_hash: bool = True,
-        using_image_hashes: bool = True,
-    ) -> int | None:
-        video_path = Path(video_path).expanduser().absolute()
-        if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}.")
-
-        if video_path.is_dir():
-            raise ValueError(f"{video_path} is a directory.")
-
-        if using_file_hash:
-            try:
-                sha256_hex = compute_sha256(video_path)
-
-                if sha256_hex in self.video_filehash_lib:
-                    return self.video_filehash_lib[sha256_hex]
-            except Exception as e:
-                self.logger.warning(f"Failed to compute sha256 for {video_path}: {e}")
-
-        if using_image_hashes:
-            frame_num = self._get_frame_num(video_path=video_path)
-            frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
-
-            image_hashes = extract_frame_phashes_ffmpeg(
-                video_path=video_path, frame_indices=frame_indices
-            )
-
-            return self._match_video_image_hashes(
-                frame_num,
-                image_phashes=image_hashes,
-                video_image_phashes_lib=self.video_imagehashes_lib,
-            )
-        return None
-
-    def _match_video_with_hash(
-        self, file_hash: str, frame_num: int, image_hashes: list[imagehash.ImageHash]
-    ) -> int | None:
-        if file_hash in self.video_filehash_lib:
-            return self.video_filehash_lib[file_hash]
-        return self._match_video_image_hashes(
-            frame_num,
-            image_phashes=image_hashes,
-            video_image_phashes_lib=self.video_imagehashes_lib,
-        )
-
-    def sync_dataset_annotation_corresponding_task(self) -> None:
-        with self.db.with_session() as session:
-            query = (
-                session.query(LeFormatConvertDB.dataset_uuid, LeFormatConvertDB.convert_path)
-                .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
-                .filter(
-                    ~session.query(DatasetAnnotationCorrespondingDB)
-                    .filter(
-                        DatasetAnnotationCorrespondingDB.dataset_uuid
-                        == LeFormatConvertDB.dataset_uuid
-                    )
-                    .exists()
-                )
-            )
-            tasks = query.all()
-            for task in tasks:
-                self._upsert_dataset_annotation_corresponding_status(
-                    session, task.dataset_uuid, TaskStatus.PENDING
-                )
-
-            self.logger.info(f"Sync {len(tasks)} subtask annotation corresponding tasks to process")
-
-    def _gen_one_dataset_subtask_annotation_corresponding_task(
-        self, convert_path: str | None = None
-    ) -> tuple[str, str | Path]:
-        with self.db.with_session() as session:
-            if convert_path is None:
-                query = session.query(DatasetAnnotationCorrespondingDB).filter(
-                    DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.PENDING
-                )
-            else:
-                query = session.query(DatasetAnnotationCorrespondingDB).filter(
-                    DatasetAnnotationCorrespondingDB.corresponding_status == TaskStatus.PENDING,
-                    DatasetAnnotationCorrespondingDB.convert_path == convert_path,
-                )
-            item = query.first()
-            if not item:
-                self.logger.warning(f"No subtask annotation task found for dataset {convert_path}")
-                return None, None
-            convert_path = item.dataset_uuid
-            self._upsert_dataset_annotation_corresponding_status(
-                session, convert_path, TaskStatus.PROCESSING
-            )
-            query = session.query(LeFormatConvertDB).filter(
-                LeFormatConvertDB.dataset_uuid == convert_path
-            )
-            item = query.first()
-
-            return convert_path, item.convert_path
-
-    def _get_annotationid_from_downloadid(self, download_id: int) -> int | None:
-        with self.db.with_session() as session:
-            return (
-                session.query(SubtaskAnnotationJsonDB.id)
-                .join(SubtaskAnnotationVideoDownloadDB.annotation)  # 通过关系 join
-                .filter(SubtaskAnnotationVideoDownloadDB.id == download_id)
-                .scalar()  # 返回单个值
-            )
-
-    def _get_epidx_annoidx_corresponding(self, session: Session, ds_uuid: str, ep_idx: int) -> int:
-        return (
-            session.query(EpisodeSubtaskAnnotationCorrespondingDB.annotation_json_id)
-            .filter(
-                EpisodeSubtaskAnnotationCorrespondingDB.dataset_uuid == ds_uuid,
-                EpisodeSubtaskAnnotationCorrespondingDB.episode_idx == ep_idx,
-            )
-            .first()
-        )
-
-    def _upsert_epidx_annoidx_corresponding(
-        self, session: Session, ds_uuid: str, ep_idx: int, annotation_idx: int
-    ) -> None:
-        record = (
-            session.query(EpisodeSubtaskAnnotationCorrespondingDB)
-            .filter(
-                EpisodeSubtaskAnnotationCorrespondingDB.dataset_uuid == ds_uuid,
-                EpisodeSubtaskAnnotationCorrespondingDB.episode_idx == ep_idx,
-            )
-            .first()
-        )
-
-        if record:
-            record.annotation_json_id = annotation_idx
-        else:
-            record = EpisodeSubtaskAnnotationCorrespondingDB(
-                dataset_uuid=ds_uuid, episode_idx=ep_idx, annotation_json_id=annotation_idx
-            )
-        session.add(record)
-
-        session.commit()
-
-    def _upsert_dataset_annotation_corresponding_status(
-        self,
-        session: Session,
-        ds_uuid: str,
-        status: TaskStatus = TaskStatus.PENDING,
-        error_epindices: list[int] = [],
-    ) -> None:
-        if error_epindices:
-            status = TaskStatus.FAILED
-            err_msg = f"Unmatched episode indices: {error_epindices}"
-        else:
-            err_msg = ""
-
-        item = (
-            session.query(DatasetAnnotationCorrespondingDB)
-            .filter(DatasetAnnotationCorrespondingDB.dataset_uuid == ds_uuid)
-            .first()
-        )
-
-        if item:
-            item.corresponding_status = status
-            item.error_msg = err_msg
-        else:
-            query = session.query(LeFormatConvertDB.convert_path).filter(
-                LeFormatConvertDB.dataset_uuid == ds_uuid
-            )
-            item = DatasetAnnotationCorrespondingDB(
-                convert_path=query.first().convert_path,
-                dataset_uuid=ds_uuid,
-                corresponding_status=status,
-                error_msg=err_msg,
-            )
-
-        session.add(item)
-        session.commit()
-
-    # def _correspond_dataset_subtask_annotation(
-    #     self,
-    #     ds_uuid: str,
-    #     ds_path: str | Path,
-    #     using_file_hash: bool = True,
-    #     using_image_hash: bool = True,
-    # ) -> None:
-    #     ds_path: Path = Path(ds_path).expanduser().absolute()
-    #     if not ds_path.exists():
-    #         raise ValueError(f"{ds_path} not exists")
-    #     if ds_path.is_file():
-    #         raise ValueError(f"{ds_path} is a file")
-
-    #     video_dir = ds_path / "videos"
-    #     if not video_dir.exists():
-    #         raise ValueError(f"{video_dir} not exists")
-
-    #     chunks = [dir for dir in list(video_dir.iterdir()) if dir.is_dir()]
-
-    #     chunk_subdirs = [dir for dir in list(chunks[0].iterdir()) if dir.is_dir()]
-
-    #     camera_videos = {
-    #         dir.name: sorted(list(dir.glob("*.mp4"))) for dir in chunk_subdirs if dir.is_dir()
-    #     }
-
-    #     temp_camera_name = next(iter(camera_videos))
-
-    #     camera_labels = {camera_name: False for camera_name in camera_videos.keys()}
-
-    #     annotation_id_dict = {}
-    #     success_ep_set = set()
-    #     failed_ep_set = set()
-    #     pbar = tqdm(
-    #         range(len(camera_videos[temp_camera_name])), desc="对齐Episode标注文件", unit="episode"
-    #     )
-    #     for ep_idx in pbar:
-    #         with self.db.with_session() as session:
-    #             if self._get_epidx_annoidx_corresponding(
-    #                 session=session, ds_uuid=ds_uuid, ep_idx=ep_idx
-    #             ):
-    #                 continue
-    #         video_download_id = None
-    #         for camera_name in camera_videos.keys():
-    #             if not camera_labels[camera_name]:
-    #                 continue
-    #             video_download_id = self._match_video(
-    #                 camera_videos[camera_name][ep_idx],
-    #                 using_file_hash=using_file_hash,
-    #                 using_image_hashes=using_image_hash,
-    #             )
-    #             if video_download_id:
-    #                 # Found matched video
-    #                 break
-    #             camera_labels[camera_name] = False
-
-    #         if not video_download_id:
-    #             for camera_name in camera_videos.keys():
-    #                 video_download_id = self._match_video(
-    #                     camera_videos[camera_name][ep_idx],
-    #                     using_file_hash=using_file_hash,
-    #                     using_image_hashes=using_image_hash,
-    #                 )
-    #                 if video_download_id:
-    #                     # Found matched video
-    #                     camera_labels[camera_name] = True
-    #                     break
-
-    #         if video_download_id:
-    #             annotation_id = self._get_annotationid_from_downloadid(video_download_id)
-    #             annotation_id_dict[ep_idx] = annotation_id
-    #             with self.db.with_session() as session:
-    #                 self._upsert_epidx_annoidx_corresponding(
-    #                     session=session,
-    #                     ds_uuid=ds_uuid,
-    #                     ep_idx=ep_idx,
-    #                     annotation_idx=annotation_id,
-    #                 )
-    #             success_ep_set.add(ep_idx)
-    #         if not video_download_id:
-    #             failed_ep_set.add(ep_idx)
-    #             pbar.set_postfix(
-    #                 {
-    #                     "失败数": len(failed_ep_set),
-    #                 }
-    #             )
-
-    #     error_epindices = [
-    #         ep_idx
-    #         for ep_idx in range(len(camera_videos[temp_camera_name]))
-    #         if ep_idx not in success_ep_set
-    #     ]
-    #     if error_epindices:
-    #         status = TaskStatus.FAILED
-    #     else:
-    #         status = TaskStatus.COMPLETED
-    #     with self.db.with_session() as session:
-    #         self._upsert_dataset_annotation_corresponding_status(
-    #             session=session,
-    #             ds_uuid=ds_uuid,
-    #             status=status,
-    #             error_epindices=error_epindices,
-    #         )
-
-    # def correspond_dataset_subtask_annotations(
-    #     self,
-    #     ds_convert_paths: list[str] | None = None,
-    #     using_file_hash: bool = True,
-    #     using_image_hash: bool = True,
-    # ) -> None:
-    #     self.logger.info("Loading video file hashes lib ...")
-    #     self.prepare_video_filehash_lib()
-    #     self.logger.info("Loading video image hashes lib ...")
-    #     self.prepare_video_imagehashes_lib()
-    #     if ds_convert_paths is None:
-    #         while True:
-    #             task = self._gen_one_dataset_subtask_annotation_corresponding_task()
-    #             if not task:
-    #                 self.logger.info("All task completed, no task to process")
-    #                 break
-
-    #             uuid = task[0]
-    #             convert_path = task[1]
-
-    #             self.logger.info(f"Corresponding subtask annotation for dataset: {convert_path}")
-    #             if convert_path is None:
-    #                 raise ValueError("Please specify the convert path")
-    #             self._correspond_dataset_subtask_annotation(
-    #                 ds_uuid=uuid,
-    #                 ds_path=convert_path,
-    #                 using_file_hash=using_file_hash,
-    #                 using_image_hash=using_image_hash,
-    #             )
-
-    #         return
-
-    #     for convert_path in ds_convert_paths:
-    #         uuid, convert_path = self._gen_one_dataset_subtask_annotation_corresponding_task(
-    #             convert_path=convert_path
-    #         )
-    #         if uuid is None:
-    #             self.logger.warning("Failed to generate corresponding task for dataset: {ds_uuid}")
-    #             continue
-    #         self._correspond_dataset_subtask_annotation(
-    #             ds_uuid=uuid,
-    #             ds_path=convert_path,
-    #             using_file_hash=using_file_hash,
-    #             using_image_hash=using_image_hash,
-    #         )
-
     def sync_leformat_episode_video_hash_status(self) -> None:
         with self.db.with_session() as session:
             query = (
-                session.query(LeFormatConvertDB.dataset_uuid, LeFormatConvertDB.convert_path)
+                session.query(LeFormatConvertDB)
                 .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
                 .filter(
-                    ~session.query(LeFormatConvertDB)
-                    .filter(
-                        LeformatEpisodeVideoHashStatusDB.dataset_uuid
-                        == LeFormatConvertDB.dataset_uuid
+                    not_(
+                        session.query(LeFormatConvertDB)
+                        .filter(
+                            LeformatEpisodeVideoHashStatusDB.dataset_uuid
+                            == LeFormatConvertDB.dataset_uuid
+                        )
+                        .filter(
+                            LeformatEpisodeVideoHashStatusDB.prestage_version_uuid
+                            == LeFormatConvertDB.version_uuid
+                        )
+                        .exists()
                     )
-                    .exists()
                 )
             )
-
-            tasks = list(query.all())
-            for ds_uuid, convert_path in tasks:
+            items = query.all()
+            for item in items:
                 self._upsert_leformat_episode_video_hash_status(
                     session=session,
-                    ds_uuid=ds_uuid,
-                    convert_path=convert_path,
+                    ds_uuid=item.dataset_uuid,
+                    convert_path=item.convert_path,
                     status=TaskStatus.PENDING,
+                    prestage_version_uuid=item.version_uuid,
                 )
 
     def _upsert_leformat_episode_video_hash(
@@ -692,7 +376,9 @@ class VideoSubtaskAnnotation:
         ds_uuid: str,
         convert_path: str,
         status: TaskStatus,
+        prestage_version_uuid: str,
     ) -> None:
+        version_uuid = str(uuid.uuid4())
         item = (
             session.query(LeformatEpisodeVideoHashStatusDB)
             .filter(LeformatEpisodeVideoHashStatusDB.dataset_uuid == ds_uuid)
@@ -700,16 +386,20 @@ class VideoSubtaskAnnotation:
         ).first()
         if item:
             item.status = status
+            item.prestage_version_uuid = prestage_version_uuid
+            item.version_uuid = version_uuid
         else:
             item = LeformatEpisodeVideoHashStatusDB(
                 dataset_uuid=ds_uuid,
                 convert_path=convert_path,
                 status=status,
+                prestage_version_uuid=prestage_version_uuid,
+                version_uuid=version_uuid,
             )
             session.add(item)
         session.commit()
 
-    def _gen_one_leformat_episode_video_hash_task(self) -> tuple[str, str]:
+    def _gen_one_leformat_episode_video_hash_task(self) -> tuple[str, str, str]:
         """
         生成一个处理视频文件的任务。
 
@@ -724,14 +414,15 @@ class VideoSubtaskAnnotation:
                 .first()
             )
             if item is None:
-                return None
+                return None, None, None
             self._upsert_leformat_episode_video_hash_status(
                 session=session,
                 ds_uuid=item.dataset_uuid,
                 convert_path=item.convert_path,
                 status=TaskStatus.PROCESSING,
+                prestage_version_uuid=item.prestage_version_uuid,
             )
-            return item.dataset_uuid, item.convert_path
+            return item.dataset_uuid, item.convert_path, item.prestage_version_uuid
 
     def generate_leformat_episode_video_hashes_threas_pool(self, num_workers: int = 8) -> None:
         """
@@ -785,14 +476,17 @@ class VideoSubtaskAnnotation:
                 )
 
         num_datasets = len(list(datasets_tasks))
+        if num_datasets == 0:
+            return
         ds_pbar = tqdm(
             total=num_datasets, desc="🔐 计算数据集视频指纹哈希", unit="dataset", dynamic_ncols=True
         )
         while True:
-            item = self._gen_one_leformat_episode_video_hash_task()
-            if item is None:
+            ds_uuid, convert_path, prestage_version_uuid = (
+                self._gen_one_leformat_episode_video_hash_task()
+            )
+            if ds_uuid is None:
                 break
-            ds_uuid, convert_path = item
             tasks = []
 
             pattern = re.compile(r"^episode_\d{6}\.mp4$")
@@ -804,6 +498,7 @@ class VideoSubtaskAnnotation:
                     tasks.append((ds_uuid, ep_idx, video_path))
                 except Exception:  # noqa: PERF203
                     continue
+
             ep_pbar = tqdm(
                 total=len(tasks),
                 desc=f"🔐 启动数据集{convert_path}视频文件处理线程",
@@ -822,6 +517,7 @@ class VideoSubtaskAnnotation:
                     ds_uuid=ds_uuid,
                     convert_path=convert_path,
                     status=TaskStatus.COMPLETED,
+                    prestage_version_uuid=prestage_version_uuid,
                 )
             ds_pbar.update(1)
 
@@ -898,7 +594,7 @@ class VideoSubtaskAnnotation:
             )
             return dl_path
 
-    def upsert_url_video_st_annotation_if_not_exists(
+    def upsert_url_video_st_annotation_if_not_exists_without_commit(
         self,
         session: Session,
         video_url: str,
@@ -916,7 +612,7 @@ class VideoSubtaskAnnotation:
             )
             session.add(new_record)
             session.flush()  # 触发数据库约束检查
-            session.commit()
+            # session.commit()
             return new_record, True  # 插入成功
 
         except IntegrityError:
@@ -977,21 +673,22 @@ class VideoSubtaskAnnotation:
                                                     f"{file} 中没有找到视频链接，请检查"
                                                 )
                                             break
-                                for range_annotation in episode["videoLabels"]:
-                                    # 数据库中的帧索引从0开始, 并且使用左闭右开的区间表达
-                                    # 原始标注文件使用了从1开始的帧索引，并且使用左闭右闭的区间表达，因此start帧序号需要减1
-                                    st_frame_idx = range_annotation["ranges"][0]["start"] - 1
-                                    end_frame_idx = range_annotation["ranges"][0]["end"]
-                                    timeline_label = range_annotation["timelinelabels"][0]
+                                with self.db.with_session() as session:
+                                    for range_annotation in episode["videoLabels"]:
+                                        # 数据库中的帧索引从0开始, 并且使用左闭右开的区间表达
+                                        # 原始标注文件使用了从1开始的帧索引，并且使用左闭右闭的区间表达，因此start帧序号需要减1
+                                        st_frame_idx = range_annotation["ranges"][0]["start"] - 1
+                                        end_frame_idx = range_annotation["ranges"][0]["end"]
+                                        timeline_label = range_annotation["timelinelabels"][0]
 
-                                    with self.db.with_session() as session:
-                                        self.upsert_url_video_st_annotation_if_not_exists(
+                                        self.upsert_url_video_st_annotation_if_not_exists_without_commit(
                                             session=session,
                                             video_url=video_url,
                                             start_frame_idx=st_frame_idx,
                                             end_frame_idx=end_frame_idx,
                                             annotation=timeline_label,
                                         )
+                                    session.commit()
                                 self._gen_url_video_download_path(video_url=video_url)
 
                     if success:
@@ -1120,12 +817,12 @@ class VideoSubtaskAnnotation:
                         success = False
                         self.logger.info(f"video decoding failed: {download_path}")
 
-                self._submit_video_download_result(
-                    video_url=video_url,
-                    download_path=download_path,
-                    success=success,
-                    frame_num=frame_num,
-                )
+                    self._submit_video_download_result(
+                        video_url=video_url,
+                        download_path=download_path,
+                        success=success,
+                        frame_num=frame_num,
+                    )
 
                 # ✅ 更新进度条（线程安全）
                 with pbar_lock:
@@ -1429,6 +1126,7 @@ class VideoSubtaskAnnotation:
         dataset_uuid: str,
         convert_path: str,
         status: TaskStatus,
+        prestage_version_uuid: str,
         unmatched_episode_indices: str | None = None,
     ) -> None:
         item = (
@@ -1436,6 +1134,7 @@ class VideoSubtaskAnnotation:
             .filter(LeformatEpisodeUrlVideoMatchStatusDB.dataset_uuid == dataset_uuid)
             .first()
         )
+        version_uuid = str(uuid.uuid4())
         if item:
             item.convert_path = convert_path
             if unmatched_episode_indices:
@@ -1443,6 +1142,8 @@ class VideoSubtaskAnnotation:
                 item.status = TaskStatus.FAILED
             else:
                 item.status = status
+            item.prestage_version_uuid = prestage_version_uuid
+            item.version_uuid = version_uuid
 
         else:
             if unmatched_episode_indices:
@@ -1451,45 +1152,52 @@ class VideoSubtaskAnnotation:
                     convert_path=convert_path,
                     status=TaskStatus.FAILED,
                     unmatched_episode_indices=f"{unmatched_episode_indices}",
+                    prestage_version_uuid=prestage_version_uuid,
+                    version_uuid=version_uuid,
                 )
             else:
                 item = LeformatEpisodeUrlVideoMatchStatusDB(
-                    dataset_uuid=dataset_uuid, convert_path=convert_path, status=status
+                    dataset_uuid=dataset_uuid,
+                    convert_path=convert_path,
+                    status=status,
+                    prestage_version_uuid=prestage_version_uuid,
+                    version_uuid=version_uuid,
                 )
             session.add(item)
         session.commit()
 
     def _sync_leformat_episode_url_video_match_tasks(self) -> None:
         with self.db.with_session() as session:
-            items = list(
-                session.query(LeFormatConvertDB)
-                .join(
-                    LeformatEpisodeVideoHashStatusDB,
-                    LeFormatConvertDB.dataset_uuid == LeformatEpisodeVideoHashStatusDB.dataset_uuid,
-                )
-                .filter(LeFormatConvertDB.convert_status == TaskStatus.COMPLETED)
+            query = (
+                session.query(LeformatEpisodeVideoHashStatusDB)
                 .filter(LeformatEpisodeVideoHashStatusDB.status == TaskStatus.COMPLETED)
                 .filter(
-                    # 不存在于 LeformatEpisodeUrlVideoMatchStatusDB 中
-                    ~session.query(LeformatEpisodeUrlVideoMatchStatusDB)
-                    .filter(
-                        LeformatEpisodeUrlVideoMatchStatusDB.dataset_uuid
-                        == LeFormatConvertDB.dataset_uuid
+                    not_(
+                        session.query(LeformatEpisodeUrlVideoMatchStatusDB)
+                        .filter(
+                            LeformatEpisodeUrlVideoMatchStatusDB.dataset_uuid
+                            == LeformatEpisodeVideoHashStatusDB.dataset_uuid
+                        )
+                        .filter(
+                            LeformatEpisodeUrlVideoMatchStatusDB.prestage_version_uuid
+                            == LeformatEpisodeVideoHashStatusDB.version_uuid
+                        )
+                        .exists()
                     )
-                    .exists()
                 )
-                .all()
             )
+            items = query.all()
             for item in items:
                 self._upsert_leformat_episode_url_video_match_status(
                     session,
                     dataset_uuid=item.dataset_uuid,
                     convert_path=item.convert_path,
                     status=TaskStatus.PENDING,
+                    prestage_version_uuid=item.version_uuid,
                 )
             self.logger.info(f"同步 {len(items)} 个 leformat_episode_url_video_match 任务...")
 
-    def _gen_one_leformat_episode_url_video_match_task(self) -> str:
+    def _gen_one_leformat_episode_url_video_match_task(self) -> tuple[str, str]:
         with self.db.with_session() as session:
             item = (
                 session.query(LeformatEpisodeUrlVideoMatchStatusDB).filter(
@@ -1503,9 +1211,10 @@ class VideoSubtaskAnnotation:
                     dataset_uuid=item.dataset_uuid,
                     convert_path=item.convert_path,
                     status=TaskStatus.PROCESSING,
+                    prestage_version_uuid=item.prestage_version_uuid,
                 )
-                return item.dataset_uuid
-            return None
+                return item.dataset_uuid, item.prestage_version_uuid
+            return None, None
 
     def prepare_video_filehash_lib(self) -> dict[str, str]:
         with self.db.with_session() as session:
@@ -1614,7 +1323,7 @@ class VideoSubtaskAnnotation:
 
         unmatched_ep_idxs = []
 
-        for ep_idx in episode_file_hashes.keys():
+        for ep_idx in tqdm(episode_file_hashes.keys(), desc="match episodes", unit="episode"):
             file_hashes = episode_file_hashes[ep_idx]
             ep_image_hashes = episode_image_hashes[ep_idx]
             frame_num = episode_frame_nums[ep_idx]
@@ -1628,6 +1337,7 @@ class VideoSubtaskAnnotation:
                         )
                     matched = True
                     break
+
             if not matched:
                 for video_image_hashes in ep_image_hashes:
                     image_hash_matched = self._match_video_image_hashes(
@@ -1646,21 +1356,32 @@ class VideoSubtaskAnnotation:
                     unmatched_ep_idxs.append(ep_idx)
         compressed_unmatched_ep_idxs_str = list_to_range_string(unmatched_ep_idxs)
 
-        if unmatched_ep_idxs:
-            self._upsert_leformat_episode_url_video_match_status(
-                session,
-                dataset_uuid=dataset_uuid,
-                convert_path=self._get_convert_path(dataset_uuid),
-                status=TaskStatus.FAILED,
-                unmatched_episode_indices=compressed_unmatched_ep_idxs_str,
+        convert_path = self._get_convert_path(dataset_uuid)
+        with self.db.with_session() as session:
+            item = (
+                session.query(LeformatEpisodeUrlVideoMatchStatusDB)
+                .filter(LeformatEpisodeUrlVideoMatchStatusDB.dataset_uuid == dataset_uuid)
+                .first()
             )
-        else:
-            self._upsert_leformat_episode_url_video_match_status(
-                session,
-                dataset_uuid=dataset_uuid,
-                convert_path=self._get_convert_path(dataset_uuid),
-                status=TaskStatus.COMPLETED,
-            )
+            if unmatched_ep_idxs:
+                if not item:
+                    raise ValueError("No LeformatEpisodeUrlVideoMatchStatusDB item found")
+                self._upsert_leformat_episode_url_video_match_status(
+                    session,
+                    dataset_uuid=dataset_uuid,
+                    convert_path=convert_path,
+                    status=TaskStatus.FAILED,
+                    unmatched_episode_indices=compressed_unmatched_ep_idxs_str,
+                    prestage_version_uuid=item.prestage_version_uuid,
+                )
+            else:
+                self._upsert_leformat_episode_url_video_match_status(
+                    session,
+                    dataset_uuid=dataset_uuid,
+                    convert_path=convert_path,
+                    status=TaskStatus.COMPLETED,
+                    prestage_version_uuid=item.prestage_version_uuid,
+                )
 
     def match_leformat_episode_with_url_video(self) -> None:
         self._sync_leformat_episode_url_video_match_tasks()
@@ -1672,12 +1393,14 @@ class VideoSubtaskAnnotation:
                 .filter(LeformatEpisodeUrlVideoMatchStatusDB.status == TaskStatus.PENDING)
                 .count()
             )
+        if task_num == 0:
+            return
         pbar = tqdm(total=task_num, desc="Match leformat episode with url video", unit="task")
 
         try:
             processed_count = 0
             while True:
-                dataset_uuid = self._gen_one_leformat_episode_url_video_match_task()
+                dataset_uuid, _ = self._gen_one_leformat_episode_url_video_match_task()
                 if dataset_uuid is None:
                     break
 
@@ -1698,10 +1421,12 @@ class VideoSubtaskAnnotation:
         self,
         session: Session,
         dataset_uuid: str,
+        prestage_version_uuid: str,
         convert_path: str | None = None,
         status: TaskStatus | None = None,
         err_msg: str | None = None,
     ) -> None:
+        version_uuid = str(uuid.uuid4())
         item = (
             session.query(LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB)
             .filter(
@@ -1719,12 +1444,16 @@ class VideoSubtaskAnnotation:
                 item.status = status
             if err_msg is not None:
                 item.err_msg = err_msg
+            item.prestage_version_uuid = prestage_version_uuid
+            item.version_uuid = version_uuid
         else:
             # 插入新记录
             record = LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB(
                 dataset_uuid=dataset_uuid,
                 convert_path=convert_path,
                 status=status or TaskStatus.PENDING,
+                prestage_version_uuid=prestage_version_uuid,
+                version_uuid=version_uuid,
             )
             session.add(record)
 
@@ -1742,6 +1471,10 @@ class VideoSubtaskAnnotation:
                             LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB.dataset_uuid
                             == LeformatEpisodeUrlVideoMatchStatusDB.dataset_uuid
                         )
+                        .filter(
+                            LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB.prestage_version_uuid
+                            == LeformatEpisodeUrlVideoMatchStatusDB.version_uuid
+                        )
                         .exists()
                     )
                 )
@@ -1755,15 +1488,16 @@ class VideoSubtaskAnnotation:
                     dataset_uuid=item.dataset_uuid,
                     convert_path=item.convert_path,
                     status=TaskStatus.PENDING,
+                    prestage_version_uuid=item.version_uuid,
                 )
 
         self.logger.info(
-            f"sync {len(list(items))} leformat_dataset_episode_original_subtask_range_annotation_task_baai: {len(list(items))}"
+            f"sync {len(list(items))} leformat_dataset_episode_original_subtask_range_annotation_task_baai"
         )
 
     def _gen_one_leformat_dataset_episode_original_subtask_range_annotation_task_baai(
         self,
-    ) -> str | None:
+    ) -> tuple[str, str]:
         with self.db.with_session() as session:
             item: LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB = (
                 session.query(LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB)
@@ -1775,15 +1509,16 @@ class VideoSubtaskAnnotation:
             )
 
             if item is None:
-                return None
+                return None, None
 
             self._upsert_leformat_dataset_episode_original_subtask_range_annotation_status(
                 session,
                 dataset_uuid=item.dataset_uuid,
                 convert_path=item.convert_path,
                 status=TaskStatus.PROCESSING,
+                prestage_version_uuid=item.prestage_version_uuid,
             )
-            return item.dataset_uuid
+            return item.dataset_uuid, item.prestage_version_uuid
 
     def _upsert_leformat_dataset_episode_original_subtask_range_annotation_no_commit(
         self,
@@ -1821,7 +1556,7 @@ class VideoSubtaskAnnotation:
             item.annotation = annotation
 
     def _genearte_leformat_dataset_episode_original_subtask_range_annotation_baai(
-        self, dataset_uuid: str
+        self, dataset_uuid: str, prestage_version_uuid: str
     ) -> None:
         with self.db.with_session() as session:
             ep_items = (
@@ -1837,6 +1572,7 @@ class VideoSubtaskAnnotation:
                     dataset_uuid=dataset_uuid,
                     status=TaskStatus.FAILED,
                     err_msg="No episode url video match for this dataset",
+                    prestage_version_uuid=prestage_version_uuid,
                 )
                 return
 
@@ -1879,6 +1615,7 @@ class VideoSubtaskAnnotation:
                 session,
                 dataset_uuid=dataset_uuid,
                 status=TaskStatus.COMPLETED,
+                prestage_version_uuid=prestage_version_uuid,
             )
 
     def generate_leformat_datasets_original_range_subtask_annotation_baai(self) -> None:
@@ -1893,16 +1630,21 @@ class VideoSubtaskAnnotation:
                 .count()
             )
 
+        if task_num == 0:
+            return
+
         pbar = tqdm(total=task_num, desc="Match leformat episode with url video", unit="task")
 
         try:
             processed_count = 0
             while True:
-                dataset_uuid = self._gen_one_leformat_dataset_episode_original_subtask_range_annotation_task_baai()
+                dataset_uuid, prestage_version_uuid = (
+                    self._gen_one_leformat_dataset_episode_original_subtask_range_annotation_task_baai()
+                )
                 if dataset_uuid is None:
                     break
                 self._genearte_leformat_dataset_episode_original_subtask_range_annotation_baai(
-                    dataset_uuid
+                    dataset_uuid, prestage_version_uuid
                 )
                 pbar.update(1)
                 processed_count += 1
@@ -1917,10 +1659,12 @@ class VideoSubtaskAnnotation:
         self,
         session: Session,
         dataset_uuid: str,
+        prestage_version_uuid: str,
         convert_path: str | None = None,
         status: TaskStatus | None = None,
         err_msg: str | None = None,
     ) -> None:
+        version_uuid = str(uuid.uuid4())
         item = (
             session.query(LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB)
             .filter(
@@ -1938,6 +1682,8 @@ class VideoSubtaskAnnotation:
                 item.status = status
             if err_msg is not None:
                 item.err_msg = err_msg
+            item.version_uuid = version_uuid
+            item.prestage_version_uuid = prestage_version_uuid
         else:
             # 插入新记录
             record = LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB(
@@ -1945,6 +1691,8 @@ class VideoSubtaskAnnotation:
                 convert_path=convert_path,
                 status=status or TaskStatus.PENDING,
                 err_msg=err_msg,
+                version_uuid=version_uuid,
+                prestage_version_uuid=prestage_version_uuid,
             )
             session.add(record)
 
@@ -1965,6 +1713,10 @@ class VideoSubtaskAnnotation:
                             LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB.dataset_uuid
                             == LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB.dataset_uuid
                         )
+                        .filter(
+                            LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB.prestage_version_uuid
+                            == LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB.version_uuid
+                        )
                         .exists()
                     )
                 )
@@ -1978,15 +1730,16 @@ class VideoSubtaskAnnotation:
                     dataset_uuid=item.dataset_uuid,
                     convert_path=item.convert_path,
                     status=TaskStatus.PENDING,
+                    prestage_version_uuid=item.version_uuid,
                 )
 
         self.logger.info(
-            f"sync {len(list(items))} leformat_dataset_episode_optimized_subtask_range_annotation_task_baai: {len(list(items))}"
+            f"sync {len(list(items))} leformat_dataset_episode_optimized_subtask_range_annotation_task_baai"
         )
 
     def _gen_one_leformat_dataset_episode_optimized_subtask_range_annotation_task_baai(
         self,
-    ) -> str | None:
+    ) -> tuple[str, str]:
         with self.db.with_session() as session:
             item: LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB = (
                 session.query(LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB)
@@ -1998,15 +1751,16 @@ class VideoSubtaskAnnotation:
             )
 
             if item is None:
-                return None
+                return None, None
 
             self._upsert_leformat_dataset_episode_optimized_subtask_range_annotation_status(
                 session,
                 dataset_uuid=item.dataset_uuid,
                 convert_path=item.convert_path,
                 status=TaskStatus.PROCESSING,
+                prestage_version_uuid=item.prestage_version_uuid,
             )
-            return item.dataset_uuid
+            return item.dataset_uuid, item.prestage_version_uuid
 
     def _upsert_leformat_dataset_episode_optimized_subtask_range_annotation_no_commit(
         self,
@@ -2045,7 +1799,7 @@ class VideoSubtaskAnnotation:
             item.annotation = annotation
 
     def _genearte_leformat_dataset_episode_optimized_subtask_range_annotation_baai(
-        self, dataset_uuid: str, dp_api_key: str
+        self, dataset_uuid: str, dp_api_key: str, prestage_version_uuid: str
     ) -> None:
         with self.db.with_session() as session:
             range_items = list(
@@ -2061,11 +1815,24 @@ class VideoSubtaskAnnotation:
                 self.logger.error(
                     f"No episode original subtask range annotation for {dataset_uuid}"
                 )
+                item = (
+                    session.query(LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB)
+                    .filter(
+                        LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB.dataset_uuid
+                        == dataset_uuid
+                    )
+                    .first()
+                )
+                if not item:
+                    raise ValueError(
+                        f"No episode original subtask range annotation for {dataset_uuid}"
+                    )
                 self._upsert_leformat_dataset_episode_optimized_subtask_range_annotation_status(
                     session,
                     dataset_uuid=dataset_uuid,
                     status=TaskStatus.FAILED,
                     err_msg="No episode original subtask range annotation found for this dataset",
+                    prestage_version_uuid=prestage_version_uuid,
                 )
                 return
 
@@ -2078,12 +1845,27 @@ class VideoSubtaskAnnotation:
             )
         except Exception as e:
             self.logger.error(f"Failed to optimize annotation for {dataset_uuid}: {e}")
-            self._upsert_leformat_dataset_episode_optimized_subtask_range_annotation_status(
-                session,
-                dataset_uuid=dataset_uuid,
-                status=TaskStatus.FAILED,
-                err_msg=str(e),
-            )
+            with self.db.with_session() as session:
+                item = (
+                    session.query(LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB)
+                    .filter(
+                        LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB.dataset_uuid
+                        == dataset_uuid
+                    )
+                    .first()
+                )
+                if not item:
+                    raise ValueError(
+                        f"No episode original subtask range annotation for {dataset_uuid}"
+                    )
+                prestage_version_uuid = prestage_version_uuid
+                self._upsert_leformat_dataset_episode_optimized_subtask_range_annotation_status(
+                    session,
+                    dataset_uuid=dataset_uuid,
+                    status=TaskStatus.FAILED,
+                    err_msg=str(e),
+                    prestage_version_uuid=prestage_version_uuid,
+                )
             return
 
         with self.db.with_session() as session:
@@ -2100,18 +1882,23 @@ class VideoSubtaskAnnotation:
                     end_frame_idx=end_frame_idx,
                     annotation=annotation,
                 )
+            item = (
+                session.query(LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB)
+                .filter(
+                    LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB.dataset_uuid
+                    == dataset_uuid
+                )
+                .first()
+            )
+            if not item:
+                raise ValueError(f"No episode original subtask range annotation for {dataset_uuid}")
             self._upsert_leformat_dataset_episode_optimized_subtask_range_annotation_status(
                 session,
                 dataset_uuid=dataset_uuid,
                 status=TaskStatus.COMPLETED,
+                prestage_version_uuid=prestage_version_uuid,
             )
             session.commit()
-
-            self._upsert_leformat_dataset_episode_optimized_subtask_range_annotation_status(
-                session,
-                dataset_uuid=dataset_uuid,
-                status=TaskStatus.COMPLETED,
-            )
 
     def generate_leformat_datasets_optimized_range_subtask_annotation_baai(
         self, dp_api_key: str
@@ -2127,6 +1914,9 @@ class VideoSubtaskAnnotation:
                 .count()
             )
 
+        if task_num == 0:
+            return
+
         pbar = tqdm(
             total=task_num,
             desc="Generate Episode Optimized Range Subtask Annotations for Datasets",
@@ -2136,11 +1926,13 @@ class VideoSubtaskAnnotation:
         try:
             processed_count = 0
             while True:
-                dataset_uuid = self._gen_one_leformat_dataset_episode_optimized_subtask_range_annotation_task_baai()
+                dataset_uuid, prestage_version_uuid = (
+                    self._gen_one_leformat_dataset_episode_optimized_subtask_range_annotation_task_baai()
+                )
                 if dataset_uuid is None:
                     break
                 self._genearte_leformat_dataset_episode_optimized_subtask_range_annotation_baai(
-                    dataset_uuid, dp_api_key=dp_api_key
+                    dataset_uuid, dp_api_key=dp_api_key, prestage_version_uuid=prestage_version_uuid
                 )
                 pbar.update(1)
                 processed_count += 1
@@ -2155,10 +1947,12 @@ class VideoSubtaskAnnotation:
         self,
         session: Session,
         dataset_uuid: str,
+        prestage_version_uuid: str,
         convert_path: str | None = None,
         status: TaskStatus | None = None,
         err_msg: str | None = None,
     ) -> None:
+        version_uuid = str(uuid.uuid4())
         item = (
             session.query(LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB)
             .filter(
@@ -2176,6 +1970,8 @@ class VideoSubtaskAnnotation:
                 item.status = status
             if err_msg is not None:
                 item.err_msg = err_msg
+            item.prestage_version_uuid = prestage_version_uuid
+            item.version_uuid = version_uuid
         else:
             # 插入新记录
             record = LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB(
@@ -2183,7 +1979,10 @@ class VideoSubtaskAnnotation:
                 convert_path=convert_path,
                 status=status or TaskStatus.PENDING,
                 err_msg=err_msg,
+                prestage_version_uuid=prestage_version_uuid,
+                version_uuid=version_uuid,
             )
+
             session.add(record)
 
         session.commit()
@@ -2203,6 +2002,10 @@ class VideoSubtaskAnnotation:
                             LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB.dataset_uuid
                             == LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB.dataset_uuid
                         )
+                        .filter(
+                            LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB.prestage_version_uuid
+                            == LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB.version_uuid
+                        )
                         .exists()
                     )
                 )
@@ -2216,15 +2019,16 @@ class VideoSubtaskAnnotation:
                     dataset_uuid=item.dataset_uuid,
                     convert_path=item.convert_path,
                     status=TaskStatus.PENDING,
+                    prestage_version_uuid=item.version_uuid,
                 )
 
         self.logger.info(
-            f"sync {len(list(items))} leformat_dataset_episode_subtask_range_annotation_embedding_task_baai: {len(list(items))}"
+            f"Sync {len(list(items))} leformat_dataset_episode_subtask_range_annotation_embedding_task_baai"
         )
 
     def _gen_one_leformat_dataset_episode_optimized_subtask_range_annotation_embedding_task(
         self,
-    ) -> str | None:
+    ) -> tuple[str, str]:
         with self.db.with_session() as session:
             item: LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB = (
                 session.query(LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB)
@@ -2236,15 +2040,16 @@ class VideoSubtaskAnnotation:
             )
 
             if item is None:
-                return None
+                return None, None
 
             self._upsert_leformat_dataset_episode_subtask_range_annotation_embedding_status(
                 session,
                 dataset_uuid=item.dataset_uuid,
                 convert_path=item.convert_path,
                 status=TaskStatus.PROCESSING,
+                prestage_version_uuid=item.prestage_version_uuid,
             )
-            return item.dataset_uuid
+            return item.dataset_uuid, item.prestage_version_uuid
 
     def _embed_leformat_dataset_episode_optimized_subtask_range_annotation_baai(
         self, dataset_uuid: str
@@ -2262,24 +2067,61 @@ class VideoSubtaskAnnotation:
                 self.logger.error(
                     f"No episode optimized subtask range annotation for {dataset_uuid}"
                 )
+                item = (
+                    session.query(LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB)
+                    .filter(
+                        LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB.dataset_uuid
+                        == dataset_uuid
+                    )
+                    .first()
+                )
+                if not item:
+                    self.logger.error(
+                        f"No episode optimized subtask range annotation for {dataset_uuid}"
+                    )
                 self._upsert_leformat_dataset_episode_subtask_range_annotation_embedding_status(
                     session,
                     dataset_uuid=dataset_uuid,
                     status=TaskStatus.FAILED,
                     err_msg="No episode optimzed subtask range annotation found for this dataset",
+                    prestage_version_uuid=item.prestage_version_uuid,
                 )
                 return
 
         # 获取 leformat_path
-        leformat_path = Path(self._get_convert_path(dataset_uuid)).expanduser().absolute()
-        if not leformat_path.exists():
-            self.logger.error(f"{leformat_path} does not exist")
-            self._upsert_leformat_dataset_episode_subtask_range_annotation_embedding_status(
-                session,
-                dataset_uuid=dataset_uuid,
-                status=TaskStatus.FAILED,
-                err_msg=f"{leformat_path} does not exist",
+        with self.db.with_session() as session:
+            item = (
+                session.query(LeFormatConvertDB)
+                .filter(LeFormatConvertDB.dataset_uuid == dataset_uuid)
+                .first()
             )
+            if not item:
+                self.logger.error(f"No convert path for {dataset_uuid}")
+                return
+            leformat_path = Path(item.convert_path).expanduser().absolute()
+            item = (
+                session.query(LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB)
+                .filter(
+                    LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB.dataset_uuid
+                    == dataset_uuid
+                )
+                .first()
+            )
+            if not item:
+                self.logger.error(
+                    f"No episode optimized subtask range annotation for {dataset_uuid}"
+                )
+                return
+            prestage_version_uuid = item.prestage_version_uuid
+            if not leformat_path.exists():
+                self.logger.error(f"{leformat_path} does not exist")
+                self._upsert_leformat_dataset_episode_subtask_range_annotation_embedding_status(
+                    session,
+                    dataset_uuid=dataset_uuid,
+                    status=TaskStatus.FAILED,
+                    err_msg=f"{leformat_path} does not exist",
+                    prestage_version_uuid=prestage_version_uuid,
+                )
 
         # 获取 subtasks.jsonl文件路径
         subtask_annotations_path = leformat_path / "annotations"
@@ -2308,7 +2150,6 @@ class VideoSubtaskAnnotation:
 
         self.logger.info(f"subtasks.jsonl written to {jsonl_file_path}")
 
-        parquet_files_dir = leformat_path / "data"
         episodes_jsonl_file_path = leformat_path / "meta/episodes.jsonl"
         if not episodes_jsonl_file_path.exists():
             self.logger.error(f"{episodes_jsonl_file_path} does not exist")
@@ -2323,18 +2164,13 @@ class VideoSubtaskAnnotation:
             episodes_jsonl = [json.loads(line) for line in f]
 
         episodes_frame_nums = [item["length"] for item in episodes_jsonl]
-        parquet_files = list(parquet_files_dir.rglob("*.parquet"))
-
-        for parquet_file_path in tqdm(parquet_files, desc="Embed subtask annotations", unit="file"):
-            filename = parquet_file_path.name  # 获取文件名
-
-            match = re.search(r"episode_(\d+)", filename)
-            if match:
-                ep_idx = int(match.group(1))
-            else:
-                self.logger.error(f"Cannot find episode index in {filename}")
-                continue
-
+        _, new_parquet_files = get_parquet_paths(
+            root_dir=leformat_path, new_parquet_type="subtask_annotation"
+        )
+        for ep_idx in tqdm(
+            range(len(new_parquet_files)), desc="Embed subtask annotations", unit="episode"
+        ):
+            parquet_file_path = new_parquet_files[ep_idx]
             episode_subtask_annotations = [
                 item for item in range_items if item.episode_idx == ep_idx
             ]
@@ -2370,29 +2206,41 @@ class VideoSubtaskAnnotation:
 
             import pandas as pd
 
-            df = pd.read_parquet(parquet_file_path)
-            # 先确保列存在且为 object 类型
-            df["subtask_indices"] = pd.Series(
-                [None] * len(df), dtype="object"
-            )  # 显式初始化为 object
-            for i in range(len(episode_st_anno_indices_list)):
-                frame_anno_indices = episode_st_anno_indices_list[i]
-                if len(frame_anno_indices) > MAX_SUBTASK_NUM:
-                    frame_anno_indices = frame_anno_indices[:MAX_SUBTASK_NUM]
-                elif len(frame_anno_indices) < MAX_SUBTASK_NUM:
-                    frame_anno_indices.extend(
-                        [optimized_subtask_annotations_dict["null"]]
-                        * (MAX_SUBTASK_NUM - len(frame_anno_indices))
-                    )
-                df.at[i, "subtask_indices"] = frame_anno_indices
+            data = [
+                (
+                    lst[:MAX_SUBTASK_NUM]
+                    + [optimized_subtask_annotations_dict["null"]]
+                    * max(0, MAX_SUBTASK_NUM - len(lst))
+                )
+                for lst in episode_st_anno_indices_list
+            ]
 
+            df = pd.DataFrame({"subtask_indices": data})
+            parquet_file_path.parent.mkdir(exist_ok=True, parents=True)
             df.to_parquet(parquet_file_path)
+            # df = pd.read_parquet(parquet_file_path)
+            # # 先确保列存在且为 object 类型
+            # df["subtask_indices"] = pd.Series(
+            #     [None] * len(df), dtype="object"
+            # )  # 显式初始化为 object
+            # for i in range(len(episode_st_anno_indices_list)):
+            #     frame_anno_indices = episode_st_anno_indices_list[i]
+            #     if len(frame_anno_indices) > MAX_SUBTASK_NUM:
+            #         frame_anno_indices = frame_anno_indices[:MAX_SUBTASK_NUM]
+            #     elif len(frame_anno_indices) < MAX_SUBTASK_NUM:
+            #         frame_anno_indices.extend(
+            #             [optimized_subtask_annotations_dict["null"]]
+            #             * (MAX_SUBTASK_NUM - len(frame_anno_indices))
+            #         )
+            #     df.at[i, "subtask_indices"] = frame_anno_indices
 
-        self._upsert_leformat_dataset_episode_subtask_range_annotation_embedding_status(
-            session,
-            dataset_uuid=dataset_uuid,
-            status=TaskStatus.COMPLETED,
-        )
+        with self.db.with_session() as session:
+            self._upsert_leformat_dataset_episode_subtask_range_annotation_embedding_status(
+                session,
+                dataset_uuid=dataset_uuid,
+                status=TaskStatus.COMPLETED,
+                prestage_version_uuid=prestage_version_uuid,
+            )
 
     def embed_leformat_dataset_episode_optimized_subtask_range_annotation_baai(
         self,
@@ -2407,6 +2255,8 @@ class VideoSubtaskAnnotation:
                 )
                 .count()
             )
+        if task_num == 0:
+            return
 
         pbar = tqdm(
             total=task_num,
@@ -2417,7 +2267,9 @@ class VideoSubtaskAnnotation:
         try:
             processed_count = 0
             while True:
-                dataset_uuid = self._gen_one_leformat_dataset_episode_optimized_subtask_range_annotation_embedding_task()
+                dataset_uuid, _ = (
+                    self._gen_one_leformat_dataset_episode_optimized_subtask_range_annotation_embedding_task()
+                )
                 if dataset_uuid is None:
                     break
                 self._embed_leformat_dataset_episode_optimized_subtask_range_annotation_baai(

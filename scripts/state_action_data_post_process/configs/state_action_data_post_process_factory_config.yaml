@@ -11,11 +11,10 @@ realman_rmc_aidal:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
   post_processor_class: RealmanRmcAidalProcessor
 
-# galaxea_r1_lite:
-# - version: default_version
-#   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
-#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
-#   mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
+galaxea_r1_lite:
+- version: default_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
+  post_processor_class: GalaxeaR1LiteProcessor
 
 
 # - version: h5_version
