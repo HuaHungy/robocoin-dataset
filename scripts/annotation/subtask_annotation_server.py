@@ -90,7 +90,7 @@ python scripts/annotation/subtask_annotation_server.py \
 
 # test
 python scripts/annotation/subtask_annotation_server.py \
-    --db-file=db/datasets.db \
+    --db-file=/mnt/db/datasets.db \
     --host=0.0.0.0 \
     --port=8755 \
     --timeout=1.0 \

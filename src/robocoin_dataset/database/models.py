@@ -231,6 +231,8 @@ class LeformatEpisodeVideoHashStatusDB(Base):
     dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
     convert_path = Column(String(255), index=True, nullable=False)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    prestage_version_uuid = Column(String(255), index=True, nullable=True)
+    version_uuid = Column(String(255), index=True, nullable=True)
 
 
 class UrlVideoStAnnotationDB(Base):
@@ -285,6 +287,8 @@ class LeformatEpisodeUrlVideoMatchStatusDB(Base):
     convert_path = Column(String(255), index=True, nullable=False)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True, index=True)
     unmatched_episode_indices = Column(Text, index=True, nullable=True)
+    version_uuid = Column(String(255), nullable=True, default="v0")
+    prestage_version_uuid = Column(String(255), nullable=True, default="v0")
 
 
 class LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationDB(Base):
@@ -314,6 +318,8 @@ class LeformatDatasetEpisodeOriginalSubtaskRangeAnnotationStatusDB(Base):
     convert_path = Column(String(255), index=True, nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_msg = Column(Text, index=True, nullable=True)
+    version_uuid = Column(String(255), nullable=True, default="v0")
+    prestage_version_uuid = Column(String(255), nullable=True, default="v0")
 
 
 class LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationDB(Base):
@@ -343,6 +349,8 @@ class LeformatDatasetEpisodeOptimizedSubtaskRangeAnnotationStatusDB(Base):
     convert_path = Column(String(255), index=True, nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_msg = Column(Text, index=True, nullable=True)
+    version_uuid = Column(String(255), nullable=True, default="v0")
+    prestage_version_uuid = Column(String(255), nullable=True, default="v0")
 
 
 class LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB(Base):
@@ -352,6 +360,8 @@ class LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB(Base):
     convert_path = Column(String(255), index=True, nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     err_msg = Column(Text, index=True, nullable=True)
+    version_uuid = Column(String(255), nullable=True)
+    prestage_version_uuid = Column(String(255), nullable=True)
 
 
 class LeformatDatasetSimReplayStatusDB(Base):
