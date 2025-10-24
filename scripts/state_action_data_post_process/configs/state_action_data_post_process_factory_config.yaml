@@ -11,10 +11,27 @@ realman_rmc_aidal:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
   post_processor_class: RealmanRmcAidalProcessor
 
-galaxea_r1_lite:
+# galaxea_r1_lite:
+# - version: default_version
+#   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
+#   post_processor_class: GalaxeaR1LiteProcessor
+
+unitree_g1:
 - version: default_version
-  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
-  post_processor_class: GalaxeaR1LiteProcessor
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
+  post_processor_class: UnitreeG1Processor
+
+- version: threecam_dex3v1_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
+  post_processor_class: UnitreeG1Processor
+
+- version: twocam_hand_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
+  post_processor_class: UnitreeG1Processor
+
+- version: dex3v1_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
+  post_processor_class: UnitreeG1Processor
 
 
 # - version: h5_version
@@ -140,67 +157,68 @@ galaxea_r1_lite:
 #   converter_config_path: converter_config_leju_waibu.yaml
 
 
-agilex_cobot_decoupled_magic:
-- version: default_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# agilex_cobot_decoupled_magic:
+# - version: default_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-- version: realsense_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# - version: realsense_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-- version: depthhead_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# - version: depthhead_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-- version: headdown_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# - version: headdown_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-- version: masterpuppet_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# - version: masterpuppet_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-- version: h5_mp4
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# - version: h5_mp4
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-- version: h5_mp4_new
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# - version: h5_mp4_new
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-- version: mult_sensor
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+# - version: mult_sensor
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+#   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
-unitree_g1:
-- version: default_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: onecam_hand_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: dex3v1_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: twocam_hand_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: twocam_dex3v1_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: threecam_hand_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: threecam_dex3v1_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+# unitree_g1 sim_replay configs moved to sim_replay_factory_config.yaml
+# unitree_g1:
+# - version: default_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+#   mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+#
+# - version: onecam_hand_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+#   mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+#
+# - version: dex3v1_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+#   mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+#
+# - version: twocam_hand_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+#   mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+#
+# - version: twocam_dex3v1_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+#   mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+#
+# - version: threecam_hand_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+#   mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+#
+# - version: threecam_dex3v1_version
+#   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+#   mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
 # agilex_pika_sense:
 # - version: default_version
 #   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
