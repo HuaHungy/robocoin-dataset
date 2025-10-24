@@ -170,10 +170,16 @@ class DBValidatorFixed:
         db_path_str = db_task.get("annotatio_file_path")
         if db_path_str:
             db_path = Path(db_path_str)
+            
+            # 如果路径是文件（如 device_model_annotation.yaml），使用其父目录
             if db_path.exists():
-                dataset_path = db_path
+                if db_path.is_file():
+                    dataset_path = db_path.parent
+                    self.logger.debug(f"✅ 使用NAS路径（文件的父目录）: {dataset_path}")
+                else:
+                    dataset_path = db_path
+                    self.logger.debug(f"✅ 使用NAS路径（目录）: {dataset_path}")
                 path_source = "NAS"
-                self.logger.debug(f"✅ 使用NAS路径: {dataset_path}")
             else:
                 self.logger.debug(f"⚠️  NAS路径不存在: {db_path}")
         
