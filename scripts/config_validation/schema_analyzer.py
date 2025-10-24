@@ -886,7 +886,9 @@ class SchemaAnalyzer:
         try:
             # 尝试获取帧数
             if hasattr(converter, '_get_episode_frames_num'):
+                self.logger.debug(f"         → 获取episode帧数...")
                 frames_num = converter._get_episode_frames_num(task_path, episode_idx)
+                self.logger.debug(f"         → 帧数: {frames_num}")
                 if frames_num <= 0:
                     raise ValueError(f"Episode {episode_idx} 无有效帧")
                 

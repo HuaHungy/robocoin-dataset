@@ -24,6 +24,7 @@ import argparse
 import json
 import logging
 import random
+import signal
 import sqlite3
 import sys
 import yaml
@@ -440,7 +441,9 @@ class DBValidatorFixed:
             # 4. 提取schema
             analyzer = SchemaAnalyzer(logger=self.logger)
             
-            for task_path, ep_idx in sampled_episodes:
+            for idx, (task_path, ep_idx) in enumerate(sampled_episodes, 1):
+                self.logger.info(f"   📊 验证 episode {idx}/{len(sampled_episodes)}: task_path={task_path.name}, ep_idx={ep_idx}")
+                
                 episode_result = {
                     "task_path": str(task_path.relative_to(dataset_path)),
                     "episode_index": ep_idx,
@@ -450,15 +453,32 @@ class DBValidatorFixed:
                 }
                 
                 try:
-                    schema = analyzer._extract_episode_schema_from_converter(
-                        converter=converter,
-                        episode_info={"task_path": task_path, "episode_idx": ep_idx, "type": "indexed"},
-                        ep_idx=ep_idx
-                    )
+                    # 设置30秒超时
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("Episode validation timeout (30s)")
                     
-                    episode_result["schema"] = schema
-                    episode_result["validation_status"] = "success"
+                    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(30)  # 30秒超时
                     
+                    try:
+                        self.logger.info(f"      🔍 提取episode schema...")
+                        schema = analyzer._extract_episode_schema_from_converter(
+                            converter=converter,
+                            episode_info={"task_path": task_path, "episode_idx": ep_idx, "type": "indexed"},
+                            ep_idx=ep_idx
+                        )
+                        
+                        episode_result["schema"] = schema
+                        episode_result["validation_status"] = "success"
+                        self.logger.info(f"      ✅ Episode schema 提取成功")
+                    finally:
+                        signal.alarm(0)  # 取消超时
+                        signal.signal(signal.SIGALRM, old_handler)  # 恢复原handler
+                    
+                except TimeoutError as e:
+                    episode_result["validation_status"] = "failed"
+                    episode_result["errors"].append(f"Timeout: {e}")
+                    self.logger.warning(f"⏱️  Episode {ep_idx} validation timeout (30s)")
                 except Exception as e:
                     episode_result["validation_status"] = "failed"
                     episode_result["errors"].append(str(e))
