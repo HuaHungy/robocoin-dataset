@@ -6,6 +6,7 @@ LeRobot格式转换器 - H5+JPG格式
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 
 import h5py
@@ -47,6 +48,10 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         # 格式: {(task_path, ep_idx, cam_name): (frame_idx, numpy_array)}
         # ⚠️ 必须在super().__init__之前定义
         self._previous_frame_cache = {}
+        
+        # 🆕 无效episodes跟踪（数据结构问题导致无法转换）
+        # ⚠️ 必须在super().__init__之前定义
+        self._invalid_episodes: set = set()
         
         super().__init__(
             dataset_path=dataset_path,
@@ -169,22 +174,22 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
                 meta_file = ep_dir / "meta_info.json"
                 
                 if not h5_file.exists():
-                    raise FileNotFoundError(
-                        f"❌ H5 file not found.\n"
-                        f"   📁 Episode directory: {ep_dir}\n"
-                        f"   🗂️  Expected file: aligned_joints.h5\n"
-                        f"   💡 This file should contain state and action data"
-                    )
+                    self._invalid_episodes.add(ep_dir)
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  Episode {ep_dir.name}: H5 file not found (aligned_joints.h5), skipping"
+                        )
+                    continue
                 
                 if not camera_dir.exists():
-                    available_items = [item.name for item in ep_dir.iterdir()]
-                    raise FileNotFoundError(
-                        f"❌ Camera directory not found.\n"
-                        f"   📁 Episode directory: {ep_dir}\n"
-                        f"   📂 Expected directory: camera/\n"
-                        f"   📋 Available items: {available_items}\n"
-                        f"   💡 Camera directory should contain frame subdirectories with images"
-                    )
+                    self._invalid_episodes.add(ep_dir)
+                    if self.logger:
+                        available_items = [item.name for item in ep_dir.iterdir()]
+                        self.logger.warning(
+                            f"⚠️  Episode {ep_dir.name}: camera/ directory not found, skipping.\n"
+                            f"   Available items: {available_items[:5]}{'...' if len(available_items) > 5 else ''}"
+                        )
+                    continue
                 
                 # 🆕 软通容错：检查必需相机（在第0帧）
                 frame_0_dir = camera_dir / "0"
@@ -216,25 +221,41 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
                             missing_required_cameras.append(required_cam)
                     
                     if missing_required_cameras:
+                        self._invalid_episodes.add(ep_dir)
                         available_cameras = []
                         if frame_0_dir.exists():
                             available_cameras = [f.name for f in frame_0_dir.iterdir() if f.is_file() and f.suffix == '.jpg']
                         
-                        raise FileNotFoundError(
-                            f"❌ 必需相机缺失，跳过整个episode\n"
-                            f"   📁 Episode directory: {ep_dir}\n"
-                            f"   📂 Frame 0 directory: {frame_0_dir}\n"
-                            f"   ❌ 缺失的必需相机: {', '.join(missing_required_cameras)}\n"
-                            f"   📋 第0帧可用图像: {available_cameras if available_cameras else '无'}\n"
-                            f"   💡 必需相机: {', '.join(self.required_cameras)}\n"
-                            f"      这些相机缺失将导致整个episode被跳过"
-                        )
+                        if self.logger:
+                            self.logger.warning(
+                                f"⚠️  Episode {ep_dir.name}: Missing required cameras, skipping.\n"
+                                f"   Missing: {', '.join(missing_required_cameras)}\n"
+                                f"   Available: {', '.join(available_cameras[:5]) if available_cameras else 'None'}"
+                            )
+                        continue
                 
                 if not meta_file.exists():
                     if self.logger:
                         self.logger.warning(
                             f"⚠️  meta_info.json not found in {ep_dir.name} (optional file)"
                         )
+        
+        # 保存无效episodes列表到文件
+        if self._invalid_episodes:
+            invalid_episodes_file = self.output_path / "invalid_episodes.txt"
+            with open(invalid_episodes_file, 'w', encoding='utf-8') as f:
+                f.write(f"# Invalid episodes (data structure issues)\n")
+                f.write(f"# Total: {len(self._invalid_episodes)} episodes\n")
+                f.write(f"# Generated: {datetime.now().isoformat()}\n\n")
+                for ep_path in sorted(self._invalid_episodes):
+                    f.write(f"{ep_path}\n")
+            
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  Found {len(self._invalid_episodes)} invalid episodes with data issues.\n"
+                    f"   📄 Full list saved to: {invalid_episodes_file}\n"
+                    f"   💡 These episodes will be skipped during conversion."
+                )
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的 episode 数量"""
@@ -316,7 +337,18 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
                 f"      4. Directory names don't start with '.' or '@' (these are skipped)"
             )
         
-        return sorted(episodes)
+        # 过滤掉无效的episodes（在预验证阶段发现的问题episodes）
+        valid_episodes = [ep for ep in episodes if ep not in self._invalid_episodes]
+        
+        if valid_episodes != episodes:
+            num_invalid = len(episodes) - len(valid_episodes)
+            if self.logger:
+                self.logger.info(
+                    f"📊 Task {task_path.name}: Found {len(episodes)} episodes, "
+                    f"{num_invalid} skipped due to data issues"
+                )
+        
+        return sorted(valid_episodes)
 
     def _get_episode_dir(self, task_path: Path, ep_idx: int) -> Path:
         """获取指定的 episode 目录"""
