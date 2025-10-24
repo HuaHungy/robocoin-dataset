@@ -266,48 +266,75 @@ class LerobotSimReplayer:
             data = df["action"].to_list()
 
         gripper_history = []
+        fig, ax, lines = None, None, []
+        
+        # 同时启动 MuJoCo 界面和可视化图表
+        print("[界面] 正在启动 MuJoCo 界面和可视化图表...")
+        self.start_viewer()
+        
         if enable_gripper_plot and gripper_plot_callback is not None:
             import matplotlib.pyplot as plt
             plt.ion()
             fig, ax = plt.subplots(figsize=(10, 4))
-            lines = []
             ax.set_xlabel("Step")
             ax.set_ylabel("Gripper Value")
             ax.set_title("Gripper Values (实时)")
+            plt.show(block=False)
+            plt.draw()
+        
+        print("[界面] MuJoCo 界面和可视化图表已启动")
 
-        for i in range(len(data)):
-            lerobot_arm_joint_values = data[i][lerbot_arm_joint_ids]
-            lerobot_gripper_values = data[i][leroot_gripper_ids]
-            for mjcf_addr, lerobot_value in zip(mjcf_arm_joint_addrs, lerobot_arm_joint_values):
-                self.mjcf_data.qpos[mjcf_addr] = lerobot_value
+        try:
+            for i in range(len(data)):
+                lerobot_arm_joint_values = data[i][lerbot_arm_joint_ids]
+                lerobot_gripper_values = data[i][leroot_gripper_ids]
+                for mjcf_addr, lerobot_value in zip(mjcf_arm_joint_addrs, lerobot_arm_joint_values):
+                    self.mjcf_data.qpos[mjcf_addr] = lerobot_value
 
-            mjcf_gripper_joint_values = self.get_mjcf_gripper_joint_data(lerobot_gripper_values)
-            for mjcf_addr, mjcf_data in zip(mjcf_gripper_joint_addrs, mjcf_gripper_joint_values):
-                self.mjcf_data.qpos[mjcf_addr] = mjcf_data
+                mjcf_gripper_joint_values = self.get_mjcf_gripper_joint_data(lerobot_gripper_values)
+                for mjcf_addr, mjcf_data in zip(mjcf_gripper_joint_addrs, mjcf_gripper_joint_values):
+                    self.mjcf_data.qpos[mjcf_addr] = mjcf_data
 
-            mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
-            for site_id in self.mjcf_site_ids:
-                eef_results = []
-                site_pos = self.mjcf_data.site_xpos[site_id]
-                site_rot = self.mjcf_data.site_xmat[site_id]
-                site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
-                    "xyz", degrees=False
-                )
-                eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
+                mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
+                for site_id in self.mjcf_site_ids:
+                    eef_results = []
+                    site_pos = self.mjcf_data.site_xpos[site_id]
+                    site_rot = self.mjcf_data.site_xmat[site_id]
+                    site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
+                        "xyz", degrees=False
+                    )
+                    eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
 
-            # 实时gripper曲线刷新
-            if enable_gripper_plot and gripper_plot_callback is not None and len(leroot_gripper_ids) > 0:
-                gripper_history.append(list(lerobot_gripper_values))
-                gripper_plot_callback(gripper_history, ax, lines)
-                plt.pause(0.01)
+                # 实时gripper曲线刷新
+                if enable_gripper_plot and gripper_plot_callback is not None and len(leroot_gripper_ids) > 0:
+                    gripper_history.append(list(lerobot_gripper_values))
+                    gripper_plot_callback(gripper_history, ax, lines)
+                    plt.pause(0.01)
 
-            self._sync_viewer()
-            if sleep_time_ms > 0:
-                time.sleep(sleep_time_ms / 1000)
+                self._sync_viewer()
+                if sleep_time_ms > 0:
+                    time.sleep(sleep_time_ms / 1000)
 
-        if enable_gripper_plot and gripper_plot_callback is not None:
+        finally:
+            # 确保在任何情况下都能正确关闭界面
+            pass
+
+    def close_all_interfaces(self):
+        """同时关闭 MuJoCo 界面和可视化图表"""
+        print("[界面] 正在关闭 MuJoCo 界面和可视化图表...")
+        
+        # 关闭 matplotlib 图表
+        try:
+            import matplotlib.pyplot as plt
             plt.ioff()
-            plt.show()
+            plt.close('all')
+        except Exception as e:
+            print(f"[界面] 关闭可视化图表时出现错误: {e}")
+        
+        # 关闭 MuJoCo 界面
+        self.close_viewer()
+        
+        print("[界面] 所有界面已关闭")
 
 
     def start_viewer(self) -> None:

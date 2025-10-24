@@ -53,7 +53,6 @@ class SimReplay:
                     f"No device model version annotation found for dataset {dataset_uuid}"
                 )
 
-
         device_model = item.device_model
         device_model_version = item.device_model_version
         replay_config = self._get_config(device_model, device_model_version)
@@ -61,13 +60,7 @@ class SimReplay:
         convert_path = self._get_convert_path(dataset_uuid)
 
         simulator = LerobotSimReplayer(replay_config, convert_path)
-        simulator.start_viewer()
-        print(f"开始回放数据集数据，数据集地址为: {convert_path}")
-        print("正在准备 replay...，请在mujoco中调整好观察视角")
-        input("请按回车键开始 state replay...")
-        # --- Gripper value collection for visualization ---
-        gripper_values_state = []
-
+        
         def gripper_plot_callback(gripper_history, ax, lines):
             import numpy as np
             arr = np.array(gripper_history)
@@ -85,71 +78,67 @@ class SimReplay:
                 ax.relim()
                 ax.autoscale_view()
 
-        while True:
-            simulator.replay_episode(0, is_state=True, sleep_time_ms=30, enable_gripper_plot=True, gripper_plot_callback=gripper_plot_callback)
-            print(
-                "Relay已完成，按c键回车表示确认replay state结果正确，按r键回车后系统会再次replay state，按e键或其他键回车后可输入错误信息"
-            )
+        try:
+            # 启动界面
+            simulator.start_viewer()
+            print(f"[数据集回放] 开始回放数据集数据，数据集地址为: {convert_path}")
+            print("[数据集回放] 正在准备 replay...，请在mujoco中调整好观察视角")
+            input("[数据集回放] 请按回车键开始 state replay...")
 
-            choice = input("请输入 (r/e/c): ").strip().lower()
-
-            if choice == "c":
-                break
-
-            if choice == "r":
-                print("正在准备重新 replay state...")
-                continue
-
+            # State replay 循环
             while True:
-                simulator.replay_episode(10, is_state=True, sleep_time_ms=30)
-                print(
-                    "Relay已完成，按c键回车表示确认replay state结果正确，按r键回车后系统会再次replay state，按e键或其他键回车后可输入错误信息"
-                )
-                error_message = input("请输入state replay错误信息: ").strip()
-                print(f"收到state replay错误信息: {error_message}")
-                choice = input("确认请按回车键，修改state replay错误信息请按其他键后回车")
-                if choice == "":
-                    simulator.close_viewer()
-                    raise RuntimeError(f"state replay发生错误: {error_message}")
-                continue
+                print("[State Replay] 开始播放状态数据...")
+                simulator.replay_episode(0, is_state=True, sleep_time_ms=30, enable_gripper_plot=True, gripper_plot_callback=gripper_plot_callback)
+                print("[State Replay] 状态数据播放完成")
+                
+                choice = input("[State Replay] 按c键确认结果正确，按r键重新播放，按e键输入错误信息 (r/e/c): ").strip().lower()
 
-        # --- Plot gripper values for state ---
-
-        input("请按回车键开始 action replay...")
-        gripper_values_action = []
-
-        while True:
-            simulator.replay_episode(0, is_state=False, sleep_time_ms=30, enable_gripper_plot=True, gripper_plot_callback=gripper_plot_callback)
-            print(
-                "Replay已完成，按c键回车表示确认replay action结果正确，按r键回车后系统会再次replay action，按e键回车后可输入错误信息"
-            )
-
-            choice = input("请输入 (r/e/c): ").strip().lower()
-
-            if choice == "c":
-                break
-
-            if choice == "r":
-                print("正在准备重新 replay actoin...")
-                continue
-
-            while True:
-                if choice == "e":
-                    error_message = input("请输入action replay错误信息: ").strip()
-                    print(f"收到action replay错误信息: {error_message}")
-                    choice = input("确认请按回车键，修改action replay错误信息请按其他键后回车")
-                    if choice == "":
-                        simulator.close_viewer()
-                        raise RuntimeError(f"action replay发生错误: {error_message}")
+                if choice == "c":
+                    print("[State Replay] 用户确认状态结果正确，继续action replay")
+                    break
+                elif choice == "r":
+                    print("[State Replay] 正在准备重新播放状态数据...")
                     continue
-        simulator.close_viewer()
+                elif choice == "e":
+                    error_message = input("[State Replay] 请输入state replay错误信息: ").strip()
+                    print(f"[State Replay] 收到错误信息: {error_message}")
+                    confirm = input("[State Replay] 确认错误请按回车键，修改错误信息请按其他键后回车: ")
+                    if confirm == "":
+                        raise RuntimeError(f"state replay发生错误: {error_message}")
+                else:
+                    print("[State Replay] 无效输入，请输入 c、r 或 e")
 
-        input("请按回车键开始 action replay...")
-        while True:
-                simulator.replay_episode(10, is_state=False, sleep_time_ms=30)
-                print(
-                    "Replay已完成，按c键回车表示确认replay action结果正确，按r键回车后系统会再次replay action，按e键回车后可输入错误信息"
-                )
+            input("[Action Replay] 请按回车键开始 action replay...")
+
+            # Action replay 循环
+            while True:
+                print("[Action Replay] 开始播放动作数据...")
+                simulator.replay_episode(0, is_state=False, sleep_time_ms=30, enable_gripper_plot=True, gripper_plot_callback=gripper_plot_callback)
+                print("[Action Replay] 动作数据播放完成")
+                
+                choice = input("[Action Replay] 按c键确认结果正确，按r键重新播放，按e键输入错误信息 (r/e/c): ").strip().lower()
+
+                if choice == "c":
+                    print("[Action Replay] 用户确认动作结果正确，回放完成")
+                    break
+                elif choice == "r":
+                    print("[Action Replay] 正在准备重新播放动作数据...")
+                    continue
+                elif choice == "e":
+                    error_message = input("[Action Replay] 请输入action replay错误信息: ").strip()
+                    print(f"[Action Replay] 收到错误信息: {error_message}")
+                    confirm = input("[Action Replay] 确认错误请按回车键，修改错误信息请按其他键后回车: ")
+                    if confirm == "":
+                        raise RuntimeError(f"action replay发生错误: {error_message}")
+                else:
+                    print("[Action Replay] 无效输入，请输入 c、r 或 e")
+                    
+            print("[数据集回放] 所有回放完成")
+            
+        finally:
+            # 确保界面被关闭
+            simulator.close_viewer()
+            print("[数据集回放] 界面已关闭")
 
 
     @staticmethod
@@ -331,6 +320,5 @@ class SimReplay:
                     prestage_version_uuid=prestage_version_uuid,
                     device_model=device_model,
                     device_model_version=device_model_version,
-                    err_msg=str(e),
                     err_msg=traceback.format_exc(),
                 )
