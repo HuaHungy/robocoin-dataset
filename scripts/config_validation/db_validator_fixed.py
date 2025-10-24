@@ -72,6 +72,9 @@ class DBValidatorFixed:
         # 确保输出目录存在
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # 检查点文件路径
+        self.checkpoint_file = self.output_dir / ".validation_checkpoint.json"
+        
         # 验证文件存在
         if not self.db_path.exists():
             raise FileNotFoundError(f"Database not found: {self.db_path}")
@@ -293,12 +296,15 @@ class DBValidatorFixed:
             List[(task_path, episode_index)] - 抽样的episodes
         """
         self.logger.info(f"🎲 从任务 '{task_name}' 抽取episodes...")
+        self.logger.info(f"   📁 搜索路径: {dataset_path}")
         
         # 策略1: 查找所有task_paths (包含local_task_info.yaml或device_model_annotation.yaml的目录)
+        self.logger.info(f"   🔍 查找task info文件...")
         task_info_files = (
             list(dataset_path.rglob("local_task_info.yaml")) +
             list(dataset_path.rglob("device_model_annotation.yaml"))
         )
+        self.logger.info(f"   ✅ 找到 {len(task_info_files)} 个task info文件")
         
         task_paths = []
         
@@ -349,28 +355,28 @@ class DBValidatorFixed:
             self.logger.debug(f"❌ 路径不存在或不是目录: {task_path}")
             return 0
         
+        self.logger.info(f"      📂 扫描目录: {task_path.name}")
+        
         # 调试：显示目录内容
-        if self.logger.isEnabledFor(logging.DEBUG):
-            try:
-                contents = list(task_path.iterdir())[:10]  # 只显示前10项
-                self.logger.debug(f"📁 目录内容 ({task_path.name}): {[f.name for f in contents]}")
-            except Exception as e:
-                self.logger.debug(f"⚠️  无法列出目录内容: {e}")
+        try:
+            contents = list(task_path.iterdir())
+            self.logger.info(f"         包含 {len(contents)} 个项目")
+        except Exception as e:
+            self.logger.warning(f"⚠️  无法列出目录内容: {e}")
+            return 0
         
         # 策略1: 递归搜索H5文件（使用rglob）
+        self.logger.info(f"         🔍 搜索H5文件...")
         h5_files = list(task_path.rglob("*.h5")) + list(task_path.rglob("*.hdf5"))
         if h5_files:
-            self.logger.debug(f"✅ 找到 {len(h5_files)} 个H5文件（递归搜索）")
-            # 显示前几个文件路径
-            if self.logger.isEnabledFor(logging.DEBUG):
-                sample_files = [str(f.relative_to(task_path)) for f in h5_files[:3]]
-                self.logger.debug(f"   示例: {sample_files}")
+            self.logger.info(f"         ✅ 找到 {len(h5_files)} 个H5文件")
             return len(h5_files)
         
         # 策略2: 递归搜索MCAP文件
+        self.logger.info(f"         🔍 搜索MCAP文件...")
         mcap_files = list(task_path.rglob("*.mcap"))
         if mcap_files:
-            self.logger.debug(f"✅ 找到 {len(mcap_files)} 个MCAP文件（递归搜索）")
+            self.logger.info(f"         ✅ 找到 {len(mcap_files)} 个MCAP文件")
             if self.logger.isEnabledFor(logging.DEBUG):
                 sample_files = [str(f.relative_to(task_path)) for f in mcap_files[:3]]
                 self.logger.debug(f"   示例: {sample_files}")
@@ -387,9 +393,10 @@ class DBValidatorFixed:
             return len(episode_dirs)
         
         # 策略4: 递归搜索MP4文件
+        self.logger.info(f"         🔍 搜索MP4文件...")
         mp4_files = list(task_path.rglob("*.mp4"))
         if mp4_files:
-            self.logger.debug(f"✅ 找到 {len(mp4_files)} 个MP4文件（递归搜索）")
+            self.logger.info(f"         ✅ 找到 {len(mp4_files)} 个MP4文件")
             if self.logger.isEnabledFor(logging.DEBUG):
                 sample_files = [str(f.relative_to(task_path)) for f in mp4_files[:3]]
                 self.logger.debug(f"   示例: {sample_files}")
@@ -509,6 +516,53 @@ class DBValidatorFixed:
         
         return result
     
+    def _save_checkpoint(self, completed_tasks: List[str], validation_results: List[Dict[str, Any]]):
+        """保存检查点
+        
+        Args:
+            completed_tasks: 已完成的任务名列表
+            validation_results: 已完成的验证结果列表
+        """
+        checkpoint_data = {
+            "timestamp": datetime.now().isoformat(),
+            "completed_tasks": completed_tasks,
+            "validation_results": validation_results,
+            "total_completed": len(completed_tasks)
+        }
+        
+        with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
+            json.dump(checkpoint_data, f, indent=2, ensure_ascii=False)
+        
+        self.logger.debug(f"💾 检查点已保存: {len(completed_tasks)} 个任务已完成")
+    
+    def _load_checkpoint(self) -> Optional[Dict[str, Any]]:
+        """加载检查点
+        
+        Returns:
+            检查点数据，如果不存在则返回None
+        """
+        if not self.checkpoint_file.exists():
+            return None
+        
+        try:
+            with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+                checkpoint_data = json.load(f)
+            
+            self.logger.info(f"📂 发现未完成的验证检查点:")
+            self.logger.info(f"   • 时间: {checkpoint_data['timestamp']}")
+            self.logger.info(f"   • 已完成任务: {checkpoint_data['total_completed']}")
+            
+            return checkpoint_data
+        except Exception as e:
+            self.logger.warning(f"⚠️  加载检查点失败: {e}")
+            return None
+    
+    def _clear_checkpoint(self):
+        """清除检查点文件"""
+        if self.checkpoint_file.exists():
+            self.checkpoint_file.unlink()
+            self.logger.debug("🗑️  检查点已清除")
+    
     def run(self) -> Path:
         """运行完整的验证流程
         
@@ -531,19 +585,86 @@ class DBValidatorFixed:
             self.logger.warning("⚠️  没有本地可用的任务")
             return None
         
-        # 3. 验证每个任务
+        # 3. 检查是否有未完成的检查点
+        checkpoint = self._load_checkpoint()
         validation_results = []
+        completed_task_names = set()
+        start_index = 0
         
-        for i, task in enumerate(available_tasks, 1):
-            self.logger.info(f"\n{'='*70}")
-            self.logger.info(f"处理任务 {i}/{len(available_tasks)}")
+        if checkpoint:
+            # 询问用户是否从检查点恢复
+            print(f"\n{'='*70}")
+            print(f"⚠️  检测到未完成的验证任务!")
+            print(f"   • 上次中断时间: {checkpoint['timestamp']}")
+            print(f"   • 已完成任务: {checkpoint['total_completed']}/{len(available_tasks)}")
+            print(f"{'='*70}")
+            print("\n选项:")
+            print("  [1] 从上次中断处继续 (推荐)")
+            print("  [2] 重新开始验证")
+            print("  [3] 退出")
             
-            result = self.validate_task(task)
-            validation_results.append(result)
+            while True:
+                choice = input("\n请选择 (1/2/3): ").strip()
+                if choice == "1":
+                    # 从检查点恢复
+                    validation_results = checkpoint['validation_results']
+                    completed_task_names = set(checkpoint['completed_tasks'])
+                    start_index = len(completed_task_names)
+                    self.logger.info(f"✅ 从检查点恢复，跳过前 {start_index} 个已完成任务")
+                    break
+                elif choice == "2":
+                    # 重新开始
+                    self._clear_checkpoint()
+                    self.logger.info("🔄 清除检查点，重新开始验证")
+                    break
+                elif choice == "3":
+                    # 退出
+                    self.logger.info("👋 用户选择退出")
+                    sys.exit(0)
+                else:
+                    print("❌ 无效选择，请输入 1、2 或 3")
         
-        # 4. 生成报告
+        # 4. 验证每个任务
+        try:
+            for i, task in enumerate(available_tasks, 1):
+                task_name = task['task_name']
+                
+                # 如果任务已完成，跳过
+                if task_name in completed_task_names:
+                    self.logger.info(f"\n{'='*70}")
+                    self.logger.info(f"⏭️  跳过任务 {i}/{len(available_tasks)} (已完成): {task_name}")
+                    continue
+                
+                self.logger.info(f"\n{'='*70}")
+                self.logger.info(f"处理任务 {i}/{len(available_tasks)}")
+                
+                result = self.validate_task(task)
+                validation_results.append(result)
+                completed_task_names.add(task_name)
+                
+                # 每完成一个任务后保存检查点
+                self._save_checkpoint(list(completed_task_names), validation_results)
+        
+        except KeyboardInterrupt:
+            self.logger.warning("\n\n⚠️  用户中断验证！")
+            self.logger.info(f"📊 进度: {len(completed_task_names)}/{len(available_tasks)} 个任务已完成")
+            self.logger.info(f"💾 检查点已保存到: {self.checkpoint_file}")
+            self.logger.info(f"💡 重新运行脚本可从此处继续验证")
+            
+            # 生成中间报告
+            if validation_results:
+                self.logger.info("\n📝 生成中间报告...")
+                report_path = self.generate_report(validation_results, db_tasks, available_tasks, is_partial=True)
+                print(f"\n✅ 中间报告已保存: {report_path}")
+            
+            sys.exit(130)  # 128 + SIGINT(2)
+        
+        # 5. 生成报告
         self.logger.info(f"\n{'='*70}")
-        report_path = self.generate_report(validation_results, db_tasks, available_tasks)
+        report_path = self.generate_report(validation_results, db_tasks, available_tasks, is_partial=False)
+        
+        # 6. 清除检查点
+        self._clear_checkpoint()
         
         self.logger.info("\n✅ 数据库集成配置验证完成！")
         return report_path
@@ -552,9 +673,17 @@ class DBValidatorFixed:
         self,
         validation_results: List[Dict[str, Any]],
         db_tasks: List[Dict[str, Any]],
-        available_tasks: List[Dict[str, Any]]
+        available_tasks: List[Dict[str, Any]],
+        is_partial: bool = False
     ) -> Path:
-        """生成详细的JSON报告"""
+        """生成详细的JSON报告
+        
+        Args:
+            validation_results: 验证结果列表
+            db_tasks: 数据库任务列表
+            available_tasks: 可用任务列表
+            is_partial: 是否为中间报告（中断后生成的部分报告）
+        """
         # 统计路径来源
         nas_count = sum(1 for t in available_tasks if t.get("path_source") == "NAS")
         local_count = sum(1 for t in available_tasks if t.get("path_source") == "local")
@@ -569,6 +698,7 @@ class DBValidatorFixed:
                 "local_available_tasks": len(available_tasks),
                 "validated_tasks": len(validation_results),
                 "samples_per_task": self.num_samples_per_task,
+                "is_partial_report": is_partial,
                 "path_sources": {
                     "nas_paths": nas_count,
                     "local_paths": local_count,
@@ -585,7 +715,8 @@ class DBValidatorFixed:
         }
         
         # 保存报告
-        report_filename = f"db_validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        prefix = "partial_" if is_partial else ""
+        report_filename = f"{prefix}db_validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         report_path = self.output_dir / report_filename
         
         with open(report_path, 'w', encoding='utf-8') as f:
