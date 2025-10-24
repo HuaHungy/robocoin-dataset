@@ -280,6 +280,11 @@ class DBValidatorFixed:
     ) -> List[Tuple[Path, int]]:
         """从数据集中随机抽取episodes
         
+        策略：
+        - 查找所有可用的task_paths
+        - 从所有task_paths中总共随机抽取num_samples_per_task个episodes
+        - 这样保证无论有多少个子任务，总抽样数都是固定的
+        
         Args:
             dataset_path: 数据集路径（可能是数据集目录或单个任务目录）
             task_name: 任务名称
@@ -306,7 +311,8 @@ class DBValidatorFixed:
             self.logger.debug(f"⚠️  没有找到task info文件，尝试直接使用路径: {dataset_path}")
             task_paths = [dataset_path]
         
-        sampled_episodes = []
+        # 收集所有可用的(task_path, episode_index)组合
+        all_available_episodes = []
         
         for task_path in task_paths:
             # 尝试估算episode数量
@@ -316,15 +322,18 @@ class DBValidatorFixed:
                 self.logger.debug(f"⚠️  任务路径 '{task_path}' 中没有找到episodes")
                 continue
             
-            # 随机抽取最多num_samples_per_task个episodes
-            num_to_sample = min(self.num_samples_per_task, episodes)
-            sampled_indices = random.sample(range(episodes), num_to_sample)
-            
-            for ep_idx in sampled_indices:
-                sampled_episodes.append((task_path, ep_idx))
+            # 收集该task_path下的所有episode索引
+            for ep_idx in range(episodes):
+                all_available_episodes.append((task_path, ep_idx))
+        
+        # 从所有可用episodes中随机抽取num_samples_per_task个
+        sampled_episodes = []
+        if all_available_episodes:
+            num_to_sample = min(self.num_samples_per_task, len(all_available_episodes))
+            sampled_episodes = random.sample(all_available_episodes, num_to_sample)
         
         if sampled_episodes:
-            self.logger.info(f"✅ 抽取了 {len(sampled_episodes)} 个episodes")
+            self.logger.info(f"✅ 抽取了 {len(sampled_episodes)} 个episodes（从{len(task_paths)}个子任务中）")
         else:
             self.logger.warning(f"⚠️  任务 '{task_name}' 没有找到可用的episodes")
         
