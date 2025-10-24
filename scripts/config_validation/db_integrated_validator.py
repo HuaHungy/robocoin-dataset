@@ -13,12 +13,13 @@ import json
 import logging
 import random
 import sqlite3
-import sys
+import sys,os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple ,Iterator
 
 # 添加src目录到Python路径
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 _project_root = Path(__file__).parent.parent.parent
 _src_dir = _project_root / 'src'
 if str(_src_dir) not in sys.path:
@@ -74,24 +75,26 @@ class DBIntegratedValidator:
         conn = self.connect_db()
         cursor = conn.cursor()
         
-        try:
+        try:  
             # 查询device_model_annotation表
             query = """
                 SELECT 
-                    id,
-                    device_model,
-                    device_model_annotation,
-                    dataset_path,
-                    repo_id,
-                    converter_config_path,
-                    converter_module,
-                    converter_class
-                FROM device_model_annotation
-                WHERE dataset_path IS NOT NULL
-                    AND dataset_path != ''
-                    AND converter_config_path IS NOT NULL
-                    AND converter_config_path != ''
-                ORDER BY device_model, device_model_annotation
+                    dma.id,
+                    d.device_model,
+                    dma.device_model_version AS device_model_annotation,
+                    d.yaml_file_path AS dataset_path,
+                    d.dataset_uuid AS repo_id,
+                    dma.annotatio_file_path AS converter_config_path,
+                    dma.device_model AS converter_module,
+                    dma.device_model_version AS converter_class
+                FROM device_model_annotation AS dma
+                LEFT JOIN datasets AS d
+                       ON dma.dataset_uuid = d.dataset_uuid
+                WHERE dma.annotatio_file_path IS NOT NULL
+                    AND dma.annotatio_file_path != ''
+                    AND dma.device_model IS NOT NULL
+                    AND dma.device_model_version != ''
+                ORDER BY dma.device_model, dma.device_model_version
             """
             
             cursor.execute(query)
@@ -115,7 +118,20 @@ class DBIntegratedValidator:
             
         finally:
             conn.close()
-    
+            
+    def _rglob_prune(self, root: Path, pattern: str, max_depth: int = 2) -> Iterator[Path]:
+        if max_depth < 0:
+            return
+        for p in root.iterdir():
+            if p.is_dir():
+                found = list(p.glob(pattern))
+                if found:
+                    yield from found
+                    continue            
+                yield from self._rglob_prune(p, pattern, max_depth - 1)
+            elif p.match(pattern):
+                yield p
+            
     def sample_episodes(self, dataset_path: Path, task_name: str) -> List[Tuple[Path, int]]:
         """从数据集中随机抽取episodes
         
@@ -129,7 +145,8 @@ class DBIntegratedValidator:
         self.logger.info(f"🎲 从任务 '{task_name}' 抽取episodes...")
         
         # 查找所有task_paths (包含local_task_info.yaml的目录)
-        task_info_files = list(dataset_path.rglob("local_task_info.yaml"))
+        search_root = dataset_path.parent if dataset_path.is_file() else dataset_path
+        task_info_files = list(self._rglob_prune(search_root, "local_task_info.yaml"))
         
         if not task_info_files:
             self.logger.warning(f"⚠️ 任务 '{task_name}' 没有找到task_info文件")
@@ -225,11 +242,15 @@ class DBIntegratedValidator:
                 converter_config_path = _project_root / converter_config_path
             
             converter = create_converter_instance(
+                module_path=task["converter_module"] or "converters.mcap",
+                class_name=task["converter_class"] or "McapConverter",
+                repo_id=task["repo_id"],
                 config_file=converter_config_path,
                 dataset_path=Path(task["dataset_path"]),
-                output_path=self.output_dir / f"temp_{task_name}",
-                logger=self.logger
-            )
+                output_path=self.output_dir / 
+                f"temp_{task_name.replace(':', '_')}",
+                logger=self.logger,
+            )           
             
             # 2. 为每个抽样的episode运行Schema分析
             analyzer = SchemaAnalyzer(logger=self.logger)
