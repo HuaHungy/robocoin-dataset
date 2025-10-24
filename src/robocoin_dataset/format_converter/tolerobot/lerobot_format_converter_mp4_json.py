@@ -346,18 +346,22 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     )
                     
             except json.JSONDecodeError as e:
-                raise ValueError(
+                from .exceptions import CriticalDataError
+                raise CriticalDataError(
                     f"❌ Failed to parse JSON file.\n"
                     f"   📄 File: {json_file}\n"
                     f"   ❌ JSON error at line {e.lineno}, column {e.colno}: {e.msg}\n"
-                    f"   💡 Check if JSON file is corrupted or has syntax errors."
+                    f"   💡 Check if JSON file is corrupted or has syntax errors.\n"
+                    f"   ⚠️  Skipping this episode due to JSON parsing failure."
                 ) from e
             except Exception as e:
-                raise RuntimeError(
+                from .exceptions import CriticalDataError
+                raise CriticalDataError(
                     f"❌ Failed to load JSON file.\n"
                     f"   📄 File: {json_file}\n"
                     f"   ❌ Error: {e!s}\n"
-                    f"   💡 Check file permissions and disk space."
+                    f"   💡 Check file permissions and disk space.\n"
+                    f"   ⚠️  Skipping this episode due to JSON loading failure."
                 ) from e
         
         return self._json_data_cache[cache_key]
@@ -403,11 +407,13 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     json_frame_counts[key] = len(value)
         
         if not json_frame_counts:
-            raise ValueError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ Cannot determine frame count from JSON data.\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   📋 Available keys: {list(json_data.get('data', {}).keys())}\n"
-                f"   💡 No valid list data found in JSON file."
+                f"   💡 No valid list data found in JSON file.\n"
+                f"   ⚠️  Skipping this episode due to missing frame data."
             )
         
         min_json_frames = min(json_frame_counts.values())
@@ -444,11 +450,13 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                         )
         
         if not video_frame_counts:
-            raise ValueError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ No valid video frames found.\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, ep_dir={ep_dir}\n"
                 f"   📹 MP4 files: {[f.name for f in mp4_files]}\n"
-                f"   💡 Either no MP4 files found or all videos have 0 frames."
+                f"   💡 Either no MP4 files found or all videos have 0 frames.\n"
+                f"   ⚠️  Skipping this episode due to no valid video data."
             )
         
         min_video_frames = min(video_frame_counts.values())
@@ -497,13 +505,15 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         # 5. 检查帧数是否为0（这会导致后续的ValueError）
         if min_frames == 0:
-            raise ValueError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ Episode has 0 frames after applying minimum!\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   📊 Frame counts:\n"
                 f"      - JSON: {dict(list(json_frame_counts.items())[:5])}{'...' if len(json_frame_counts) > 5 else ''}\n"
                 f"      - Video: {video_frame_counts}\n"
-                f"   💡 This will cause 'You must add one or several frames' error."
+                f"   💡 This will cause 'You must add one or several frames' error.\n"
+                f"   ⚠️  Skipping this episode due to 0 frames."
             )
         
         return min_frames
@@ -650,14 +660,16 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     )
         
         if not images:
-            raise RuntimeError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ No valid camera images loaded.\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   📂 Episode directory: {ep_dir}\n"
                 f"   📹 MP4 files found: {[f.name for f in mp4_files]}\n"
                 f"   ❌ Failed cameras:\n" + 
                 "\n".join(f"      - {fc}" for fc in failed_cameras) + "\n"
-                f"   💡 Check if video files are corrupted or in unsupported format."
+                f"   💡 Check if video files are corrupted or in unsupported format.\n"
+                f"   ⚠️  Skipping this episode due to all cameras failing to load."
             )
         
         # 检查所有相机的帧数是否一致
@@ -694,7 +706,14 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         json_data = self._load_json_data(task_path, ep_idx)
         
         if 'data' not in json_data:
-            raise ValueError("No 'data' key in JSON file")
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
+                f"❌ No 'data' key in JSON file.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📋 Available keys: {list(json_data.keys())}\n"
+                f"   💡 JSON file should contain a 'data' key with episode data.\n"
+                f"   ⚠️  Skipping this episode due to missing 'data' key."
+            )
         
         return json_data['data']
 

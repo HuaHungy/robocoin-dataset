@@ -232,7 +232,7 @@ class LerobotFormatConverter(ABC):
         return None
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
-        if task_path not in self.task_episodes_num:
+        if task_path in self.task_episodes_num:
             return self.task_episodes_num[task_path]
         raise ValueError(f"Dataset task_path {task_path} not found")
 

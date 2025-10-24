@@ -54,6 +54,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         self._h5_files_cache = {}  # 缓存H5文件列表（episode定位优化）
         self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)  # 🚀 H5文件句柄缓存
         self._auto_reencode = auto_reencode  # 🎬 自动重编码标志
+        self._invalid_h5_files: set = set()  # 存储损坏的H5文件列表，用于在转换时跳过
 
         super().__init__(
             dataset_path=dataset_path,
@@ -85,8 +86,78 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
+        # 先检测所有损坏的H5文件
+        invalid_h5_files = []
+        
         for task_path in self.path_task_dict.keys():
             # 使用优化的H5文件查找方法
+            try:
+                # 临时禁用缓存，获取所有H5文件（包括可能损坏的）
+                cache_key = str(task_path)
+                saved_cache = self._h5_files_cache.pop(cache_key, None)
+                
+                h5_files_all = []
+                h5_files_all = list(task_path.glob("*.hdf5")) + list(task_path.glob("*.h5"))
+                if not h5_files_all:
+                    for subdir in task_path.iterdir():
+                        if subdir.is_dir() and not subdir.name.startswith('.') and not subdir.name.startswith('@'):
+                            h5_files_all.extend(subdir.glob("*.hdf5"))
+                            h5_files_all.extend(subdir.glob("*.h5"))
+                if not h5_files_all:
+                    h5_files_all = list(task_path.glob("**/*.hdf5")) + list(task_path.glob("**/*.h5"))
+                    h5_files_all = [f for f in h5_files_all if not any(part.startswith('.') or part.startswith('@') for part in f.parts)]
+                
+                # 验证每个H5文件
+                for h5_file in h5_files_all:
+                    try:
+                        with self._h5_file_cache.open(h5_file) as f:
+                            # 简单验证：尝试读取基本信息
+                            pass
+                    except Exception:  # noqa: PERF203
+                        invalid_h5_files.append(h5_file)
+                
+                # 恢复缓存
+                if saved_cache is not None:
+                    self._h5_files_cache[cache_key] = saved_cache
+                    
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    f"❌ H5+MP4 format validation failed\n"
+                    f"📁 Task path: {task_path}\n"
+                    f"⚠️ {str(e)}\n"
+                    f"💡 Hint: Task path should contain .hdf5 or .h5 files.\n"
+                    f"         The converter supports nested directory structures."
+                ) from e
+        
+        # 容错处理：记录损坏的文件
+        if invalid_h5_files:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  发现 {len(invalid_h5_files)} 个损坏的H5文件，将自动跳过这些文件\n"
+                    f"   📋 损坏文件列表（已保存）:"
+                )
+                for h5_file in invalid_h5_files[:10]:
+                    self.logger.warning(f"      - {h5_file}")
+                if len(invalid_h5_files) > 10:
+                    self.logger.warning(f"      ... 以及 {len(invalid_h5_files) - 10} 个其他文件")
+                
+                # 保存完整的损坏文件列表
+                try:
+                    output_path = Path(self.output_path)
+                    corrupted_list_file = output_path / "corrupted_episodes.txt"
+                    with open(corrupted_list_file, "w") as f:
+                        f.write(f"损坏的H5文件列表 (总计: {len(invalid_h5_files)})\n")
+                        f.write("=" * 80 + "\n\n")
+                        for h5_file in invalid_h5_files:
+                            f.write(f"{h5_file}\n")
+                    self.logger.warning(f"   📄 完整列表已保存到: {corrupted_list_file}")
+                except Exception as e:
+                    self.logger.warning(f"   ⚠️  无法保存损坏文件列表: {e}")
+            
+            self._invalid_h5_files = set(invalid_h5_files)
+        
+        # 继续原有的验证逻辑
+        for task_path in self.path_task_dict.keys():
             try:
                 h5_files = self._get_all_episode_h5_files(task_path)
             except FileNotFoundError as e:
@@ -290,6 +361,10 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 f"No .h5 or .hdf5 files found in {task_path}. "
                 f"Please check if the dataset path is correct."
             )
+        
+        # 过滤掉损坏的H5文件
+        if hasattr(self, '_invalid_h5_files'):
+            h5_files = [f for f in h5_files if f not in self._invalid_h5_files]
         
         # 排序并缓存
         h5_files = sorted(h5_files)

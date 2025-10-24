@@ -173,6 +173,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
         self._image_is_iobytes = True
         # 🚀 H5文件句柄缓存，大幅提升读取性能（需要在super().__init__之前初始化，因为_prevalidate_files会用到）
         self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)
+        # 存储损坏的H5文件列表，用于在转换时跳过
+        self._invalid_h5_files: set = set()
 
         super().__init__(
             dataset_path=dataset_path,
@@ -234,17 +236,33 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                 except Exception:  # noqa: PERF203
                     invalid_h5_files.append(file)
 
+        # 容错处理：跳过损坏的文件而不是抛出异常
         if invalid_h5_files:
-            err_msg = (
-                f"❌ Found invalid H5 files.\n"
-                f"   📊 Total invalid files: {len(invalid_h5_files)}\n"
-                f"   🗂️  Complete list of invalid H5 files:\n"
-            )
-            # 列出所有的 invalid H5 文件
-            for h5_file in invalid_h5_files:
-                err_msg += f"      - {h5_file}\n"
-            err_msg += "   💡 H5 files may be corrupted or have incompatible format"
-            raise Exception(err_msg)
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  发现 {len(invalid_h5_files)} 个损坏的H5文件，将自动跳过这些文件\n"
+                    f"   📋 损坏文件列表（已保存）:"
+                )
+                for h5_file in invalid_h5_files[:10]:  # 只显示前10个
+                    self.logger.warning(f"      - {h5_file}")
+                if len(invalid_h5_files) > 10:
+                    self.logger.warning(f"      ... 以及 {len(invalid_h5_files) - 10} 个其他文件")
+                
+                # 保存完整的损坏文件列表到日志目录
+                try:
+                    output_path = Path(self.output_path)
+                    corrupted_list_file = output_path / "corrupted_episodes.txt"
+                    with open(corrupted_list_file, "w") as f:
+                        f.write(f"损坏的H5文件列表 (总计: {len(invalid_h5_files)})\n")
+                        f.write("=" * 80 + "\n\n")
+                        for h5_file in invalid_h5_files:
+                            f.write(f"{h5_file}\n")
+                    self.logger.warning(f"   📄 完整列表已保存到: {corrupted_list_file}")
+                except Exception as e:
+                    self.logger.warning(f"   ⚠️  无法保存损坏文件列表: {e}")
+            
+            # 存储损坏文件列表，以便后续跳过
+            self._invalid_h5_files = set(invalid_h5_files)
 
         # 验证HDF5文件内部结构
         self._validate_h5_structure()
@@ -989,6 +1007,10 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                 
                 # 排除隐藏文件和@开头的目录
                 if any(part.startswith('.') or part.startswith('@') for part in relative_path.parts):
+                    continue
+                
+                # 跳过损坏的H5文件（在预验证阶段标记的）
+                if h5_file in self._invalid_h5_files:
                     continue
                 
                 filtered_files.append(h5_file)
