@@ -209,28 +209,38 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             unexpected_files.extend(find_unexpected_files(path))
 
         if unexpected_files:
-            err_msg = (
-                f"❌ Found unexpected files in dataset directory.\n"
+            # 改为警告而不是抛出异常，不应因文件命名问题导致整个验证失败
+            warning_msg = (
+                f"⚠️  Found unexpected files in dataset directory (non-blocking).\n"
                 f"   📂 Task paths checked: {len(self.path_task_dict)} directories\n"
                 f"   📋 Unexpected files ({len(unexpected_files)}):\n"
             )
             # 只显示前10个，避免输出过长
             for file_path in unexpected_files[:10]:
-                err_msg += f"      - {file_path}\n"
+                warning_msg += f"      - {file_path}\n"
             if len(unexpected_files) > 10:
-                err_msg += f"      ... and {len(unexpected_files) - 10} more files\n"
-            err_msg += "   💡 Remove unexpected files or update allowed file rules"
-            raise Exception(err_msg)
+                warning_msg += f"      ... and {len(unexpected_files) - 10} more files\n"
+            warning_msg += (
+                "   💡 These files will be ignored during conversion.\n"
+                "   💡 Check if files have incorrect naming (e.g., 'episode_139hdf5' should be 'episode_139.hdf5')"
+            )
+            if self.logger:
+                self.logger.warning(warning_msg)
 
         invalid_h5_files = []
         for path in self.task_episode_h5file_paths:
-            for file in path.rglob("*.h5"):
-                try:
-                    validate_h5file(file)
-                except Exception:  # noqa: PERF203
-                    invalid_h5_files.append(file)
-
-            for file in path.rglob("*.hdf5"):
+            # 收集所有H5文件（包括.h5, .hdf5和命名错误的如episode_139hdf5）
+            h5_files_to_validate = []
+            h5_files_to_validate.extend(path.rglob("*.h5"))
+            h5_files_to_validate.extend(path.rglob("*.hdf5"))
+            # 额外查找命名错误的文件
+            for file in path.rglob("*"):
+                if file.is_file() and (file.name.endswith("hdf5") or file.name.endswith("h5")):
+                    if file not in h5_files_to_validate:
+                        h5_files_to_validate.append(file)
+            
+            # 验证所有找到的H5文件
+            for file in h5_files_to_validate:
                 try:
                     validate_h5file(file)
                 except Exception:  # noqa: PERF203
@@ -989,10 +999,16 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             if not path.exists():
                 continue
             
-            # 递归查找所有.h5和.hdf5文件
+            # 递归查找所有.h5、.hdf5和以h5/hdf5结尾的文件（容错处理）
             h5_files = []
             h5_files.extend(path.rglob("*.h5"))
             h5_files.extend(path.rglob("*.hdf5"))
+            # 额外查找命名错误的文件（如 episode_139hdf5）
+            for file in path.rglob("*"):
+                if file.is_file() and (file.name.endswith("hdf5") or file.name.endswith("h5")):
+                    # 避免重复添加
+                    if file not in h5_files:
+                        h5_files.append(file)
             
             # 过滤：排除特定目录下的文件
             filtered_files = []
