@@ -23,6 +23,66 @@ class Mmk2Buffer:
     ep_idx: int = None
 
 
+class BsonFileCache:
+    """BSON文件缓存器 - 避免重复解析同一文件
+    
+    性能优化：类似H5FileCache，复用已解析的BSON数据
+    - 避免重复读取文件
+    - 避免重复解析BSON
+    - 显著提升速度（特别是在多次访问同一episode时）
+    """
+    
+    def __init__(self, max_cache_size: int = 10):
+        """初始化BSON缓存
+        
+        Args:
+            max_cache_size: 最大缓存文件数（默认10个episode）
+        """
+        self._cache = {}  # {file_path: parsed_data}
+        self._max_size = max_cache_size
+        self._access_order = []  # LRU tracking
+    
+    def get(self, bson_file: Path) -> dict:
+        """获取BSON文件的解析数据（带缓存）
+        
+        Args:
+            bson_file: BSON文件路径
+            
+        Returns:
+            解析后的BSON数据字典
+        """
+        cache_key = str(bson_file)
+        
+        # 缓存命中
+        if cache_key in self._cache:
+            # 更新访问顺序（LRU）
+            self._access_order.remove(cache_key)
+            self._access_order.append(cache_key)
+            return self._cache[cache_key]
+        
+        # 缓存未命中 - 读取并解析
+        with open(bson_file, "rb") as f:
+            content = f.read()
+        
+        parsed_data, _ = parse_bson_document(content, 0)
+        
+        # 添加到缓存
+        self._cache[cache_key] = parsed_data
+        self._access_order.append(cache_key)
+        
+        # 检查缓存大小，移除最旧的
+        if len(self._cache) > self._max_size:
+            oldest_key = self._access_order.pop(0)
+            del self._cache[oldest_key]
+        
+        return parsed_data
+    
+    def clear(self):
+        """清空缓存"""
+        self._cache.clear()
+        self._access_order.clear()
+
+
 def parse_bson_document(data: bytes, offset: int = 0) -> tuple[dict, int]:
     """解析单个BSON文档"""
     if offset + 4 > len(data):
@@ -126,6 +186,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         image_writer_threads: int = 4,
     ) -> None:
         self.mmk2_buffer: Mmk2Buffer = Mmk2Buffer()
+        
+        # 🚀 性能优化：初始化BSON文件缓存
+        self._bson_cache = BsonFileCache(max_cache_size=10)
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -189,9 +253,20 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                     "💡 MMK2格式要求任务路径必须是包含episode子目录的目录"
                 )
             
-            # 🆕 升级：将episode检查从warning升级为error
-            episode_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('episode_')]
-            if not episode_dirs:
+            # 🆕 升级：将episode检查从warning升级为error（支持扁平结构）
+            episode_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('episode')]
+            
+            # 🆕 扁平结构检查：task_path本身就是episode
+            is_flat_structure = False
+            if not episode_dirs and task_path.name.startswith('episode'):
+                # 检查是否有camera目录
+                camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('camera')]
+                if camera_dirs:
+                    is_flat_structure = True
+                    if self.logger:
+                        self.logger.info(f"✅ MMK2扁平结构验证通过: task_path本身就是episode ({task_path.name})")
+            
+            if not episode_dirs and not is_flat_structure:
                 # 显示目录内容帮助诊断
                 all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
                 all_files = [f.name for f in task_path.iterdir() if f.is_file()]
@@ -200,11 +275,12 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                     f"   📂 Task path: {task_path}\n"
                     f"   📋 Directories found: {all_dirs[:10] if all_dirs else 'None'}\n"
                     f"   📋 Files found: {all_files[:10] if all_files else 'None'}\n"
-                    f"   💡 Expected directory pattern: episode_0000, episode_0001, ...\n"
+                    f"   💡 Expected directory pattern: episode_0000, episode_0001, ... or flat structure\n"
                     f"   💡 Check if:\n"
                     f"      1. Dataset has been extracted correctly\n"
-                    f"      2. Episode directories are named with 'episode_' prefix\n"
-                    f"      3. Task path points to correct location"
+                    f"      2. Episode directories are named with 'episode' prefix\n"
+                    f"      3. Task path points to correct location\n"
+                    f"      4. Or task_path itself is an episode (flat structure)"
                 )
             
             # Enhanced validation: validate each episode's internal structure
@@ -603,6 +679,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         data_path = args_dict["data_path"]
         range_from = args_dict["range_from"]
         range_to = args_dict["range_to"]
+        
+        # 🔍 调试：记录正在读取的字段
+        expected_dims = range_to - range_from
 
         # 根据不同的BSON文件处理数据
         if bson_file == "episode_0.bson":
@@ -642,7 +721,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                             f"Available paths: {available_paths}"
                         )
                     # 返回指定范围大小的零数组
-                    return np.zeros(range_to - range_from, dtype=np.float32)
+                    result = np.zeros(range_to - range_from, dtype=np.float32)
+                    if self.logger and frame_idx == 0:  # 只在第一帧打印
+                        self.logger.info(f"🔍 [{bson_file}] {data_path}[{range_from}:{range_to}] → {result.shape[0]}维 (零值填充)")
+                    return result
                 
                 if self.logger:
                     self.logger.error(error_msg)
@@ -681,7 +763,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                         f"Requested range [{range_from}:{range_to}] exceeds data length {len(values)} "
                         f"for path '{data_path}', field '{field}' in frame {frame_idx}"
                     )
-            return np.array(values[range_from:range_to], dtype=np.float32)
+            result = np.array(values[range_from:range_to], dtype=np.float32)
+            if self.logger and frame_idx == 0:  # 只在第一帧打印
+                self.logger.info(f"🔍 [{bson_file}] {data_path}.{field}[{range_from}:{range_to}] → {result.shape[0]}维")
+            return result
 
         if bson_file == "xhand_control_data.bson":
             # 手部数据
@@ -744,7 +829,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                             f"Requested range [{range_from}:{range_to}] exceeds data length {len(data)} "
                             f"for path '{data_path}' in frame {frame_idx}, BSON file '{bson_file}'"
                         )
-                return np.array(data[range_from:range_to], dtype=np.float32)
+                result = np.array(data[range_from:range_to], dtype=np.float32)
+                if self.logger and frame_idx == 0:  # 只在第一帧打印
+                    self.logger.info(f"🔍 [{bson_file}] {data_path}[{range_from}:{range_to}] → {result.shape[0]}维")
+                return result
             
             raise ValueError(
                 f"Expected list data for path '{data_path}', got {type(data)} with value: {data} "
@@ -772,7 +860,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """获取episode的帧数 - 使用主BSON文件的帧数"""
+        """获取episode的帧数 - 使用主BSON文件的帧数
+        
+        🚀 性能优化：使用BsonFileCache缓存解析结果
+        """
         episode_dir = self._get_episode_directory(task_path, ep_idx)
         main_bson_file = episode_dir / "episode_0.bson"
 
@@ -800,10 +891,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             )
 
         try:
-            with open(main_bson_file, "rb") as f:
-                content = f.read()
-
-            doc, _ = parse_bson_document(content, 0)
+            # 🚀 使用缓存获取BSON数据
+            doc = self._bson_cache.get(main_bson_file)
+            
             if doc and "data" in doc:
                 # 获取任一数据路径的长度作为帧数
                 for value in doc["data"].values():
@@ -833,15 +923,31 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:
-        """获取任务的episode数量"""
+        """获取任务的episode数量
+        
+        支持两种结构：
+        1. 嵌套结构：task_path/episode_0, episode_1, ...
+        2. 扁平结构：task_path本身就是episode（当task_path名字以episode开头时）
+        """
         try:
             episode_dirs = [
                 d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")
             ]
             episode_count = len(episode_dirs)
             
+            # 🆕 检查扁平结构：如果没有找到子episode目录，检查task_path本身是否是episode
             if episode_count == 0:
-                # 提供详细的MMK2 Episode计数错误诊断信息
+                # 如果task_path本身以episode开头，且包含camera目录，说明是扁平结构
+                if task_path.name.startswith("episode"):
+                    # 检查是否有camera目录（MMK2格式的特征）
+                    camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
+                    if camera_dirs:
+                        # 扁平结构：task_path本身就是episode
+                        if self.logger:
+                            self.logger.info(f"✅ MMK2扁平结构: task_path本身就是episode ({task_path.name})")
+                        return 1
+                
+                # 如果不是扁平结构，提供警告
                 all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
                 
                 warning_msg = (
@@ -892,26 +998,25 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
     # @override
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> any:
-        """准备状态数据缓冲区"""
+        """准备状态数据缓冲区
+        
+        🚀 性能优化：使用BsonFileCache避免重复解析
+        """
         episode_dir = self._get_episode_directory(task_path, ep_idx)
 
-        # 读取主BSON文件
+        # 读取主BSON文件 - 使用缓存
         main_bson_file = episode_dir / "episode_0.bson"
         main_data = {}
         if main_bson_file.exists():
-            with open(main_bson_file, "rb") as f:
-                content = f.read()
-            doc, _ = parse_bson_document(content, 0)
+            doc = self._bson_cache.get(main_bson_file)
             if doc and "data" in doc:
                 main_data = doc["data"]
 
-        # 读取手部BSON文件
+        # 读取手部BSON文件 - 使用缓存
         hand_bson_file = episode_dir / "xhand_control_data.bson"
         hand_data = []
         if hand_bson_file.exists():
-            with open(hand_bson_file, "rb") as f:
-                content = f.read()
-            doc, _ = parse_bson_document(content, 0)
+            doc = self._bson_cache.get(hand_bson_file)
             if doc and "frames" in doc:
                 hand_data = doc["frames"]
 
@@ -923,10 +1028,24 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         return self._prepare_episode_states_buffer(task_path, ep_idx)
 
     def _get_episode_directory(self, task_path: Path, ep_idx: int) -> Path:
-        """获取episode目录"""
+        """获取episode目录
+        
+        支持两种结构：
+        1. 嵌套结构：task_path/episode_0, episode_1, ...
+        2. 扁平结构：task_path本身就是episode
+        """
         episode_dirs = sorted(
             [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")]
         )
+        
+        # 🆕 扁平结构处理
+        if len(episode_dirs) == 0 and task_path.name.startswith("episode"):
+            # 检查是否有camera目录
+            camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
+            if camera_dirs and ep_idx == 0:
+                # 扁平结构：task_path本身就是episode
+                return task_path
+        
         if ep_idx >= len(episode_dirs):
             # 提供详细的MMK2 Episode目录错误诊断信息
             all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
@@ -947,3 +1066,18 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             
             raise ValueError(error_msg)
         return episode_dirs[ep_idx]
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 MMK2 episode 的源文件信息"""
+        try:
+            episode_dir = self._get_episode_directory(task_path, ep_idx)
+            return {
+                "format": "MMK2",
+                "episode_directory": str(episode_dir.relative_to(self.dataset_path)),
+                "absolute_path": str(episode_dir.absolute()),
+            }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        return {}
+

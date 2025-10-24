@@ -86,6 +86,83 @@ def find_nearest_msg(msgs, target_time):  # noqa: ANN001, ANN201
         return msgs[pos - 1][1]
     return msgs[pos][1]
 
+
+def parse_cdr_joint_state(data: bytes) -> dict | None:
+    """手动解析CDR格式的JointState消息（绕过rosbags bug）
+    
+    Args:
+        data: CDR格式的消息字节
+        
+    Returns:
+        包含 position/velocity/effort 的dict，解析失败返回None
+    """
+    import struct
+    
+    try:
+        offset = 0
+        
+        # Skip CDR header (4 bytes)
+        offset += 4
+        
+        # Parse Header
+        # timestamp (8 bytes sec + 4 bytes nanosec)
+        offset += 4  # sec
+        offset += 4  # nanosec
+        
+        # frame_id string length + data
+        frame_id_len = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        offset += frame_id_len
+        # Align to 4 bytes
+        while offset % 4 != 0:
+            offset += 1
+        
+        # Parse name array (skip it)
+        name_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        for _ in range(name_count):
+            name_len = struct.unpack_from('<I', data, offset)[0]
+            offset += 4
+            offset += name_len
+            # Align to 4 bytes
+            while offset % 4 != 0:
+                offset += 1
+        
+        # Parse position array
+        pos_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        positions = []
+        for _ in range(pos_count):
+            pos = struct.unpack_from('<d', data, offset)[0]  # double (8 bytes)
+            positions.append(pos)
+            offset += 8
+        
+        # Parse velocity array
+        vel_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        velocities = []
+        for _ in range(vel_count):
+            vel = struct.unpack_from('<d', data, offset)[0]
+            velocities.append(vel)
+            offset += 8
+        
+        # Parse effort array
+        eff_count = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        efforts = []
+        for _ in range(eff_count):
+            eff = struct.unpack_from('<d', data, offset)[0]
+            efforts.append(eff)
+            offset += 8
+        
+        return {
+            'position': positions,
+            'velocity': velocities,
+            'effort': efforts
+        }
+    except Exception:
+        return None
+
 class LerobotFormatConverterRealmanRmcAidalMcap(LerobotFormatConverter):
     def __init__(
         self,
@@ -339,12 +416,44 @@ int32 lift_pos
                     "💡 请检查MCAP文件是否损坏"
                 )
 
-    def _get_episode_mcap_file(self, task_path: Path, ep_idx: int) -> Path:
-        # 先在任务路径下查找mcap文件
-        mcap_files = sorted(list(task_path.glob("*.mcap")))
-        # 如果没找到，在子目录中递归查找
+    def _get_all_mcap_files(self, task_path: Path) -> list[Path]:
+        """获取task下所有MCAP文件（统一的方法）
+        
+        策略：
+        1. 先查找task_path同级的.mcap文件
+        2. 如果没有，递归查找子目录
+        3. 排除特定目录
+        """
+        skip_dirs = {
+            'record', 'calibration', 'config', 'parameters', 
+            'logs', 'error', '@eaDir', '__pycache__', '.git'
+        }
+        
+        # 先尝试扁平结构
+        mcap_files = list(task_path.glob("*.mcap"))
+        
         if not mcap_files:
-            mcap_files = sorted(list(task_path.rglob("*.mcap")))
+            # 递归查找
+            all_mcap_files = list(task_path.rglob("*.mcap"))
+            
+            # 过滤排除目录
+            mcap_files = []
+            for mcap_file in all_mcap_files:
+                relative_path = mcap_file.relative_to(task_path)
+                path_parts = set(relative_path.parts[:-1])
+                
+                if path_parts & skip_dirs:
+                    continue
+                if any(part.startswith('.') or part.startswith('@') for part in relative_path.parts):
+                    continue
+                
+                mcap_files.append(mcap_file)
+        
+        return sorted(mcap_files)
+
+    def _get_episode_mcap_file(self, task_path: Path, ep_idx: int) -> Path:
+        # 使用统一的方法获取所有mcap文件
+        mcap_files = self._get_all_mcap_files(task_path)
         if ep_idx >= len(mcap_files):
             raise IndexError(
                 f"❌ Episode索引超出范围\n"
@@ -400,6 +509,22 @@ int32 lift_pos
         Returns:
             包含 images/states/actions/frames 的dict
         """
+        # 🆕 内存警告：检查文件大小
+        file_size_gb = mcap_file.stat().st_size / (1024**3)
+        if file_size_gb > 2.0 and max_frames is None:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  ⚠️  ⚠️  警告：正在解析大型MCAP文件！\n"
+                    f"📄 文件: {mcap_file.name}\n"
+                    f"📊 大小: {file_size_gb:.2f} GB\n"
+                    f"💾 预计内存占用: ~{file_size_gb * 2:.2f} GB (可能导致系统卡死)\n"
+                    f"💡 建议：\n"
+                    f"   1. 使用 --is-test 模式先测试（只处理10帧）\n"
+                    f"   2. 确保系统有足够内存（建议 >{file_size_gb * 3:.0f}GB）\n"
+                    f"   3. 考虑分割大文件\n"
+                    f"⏱️  继续执行，这可能需要很长时间..."
+                )
+        
         # 读取所有topic消息
         image_topics = {img['args']['mcap_topic']: img['cam_name']
                         for img in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]}
@@ -412,7 +537,8 @@ int32 lift_pos
             topic = sub['args']['mcap_topic']
             topic_msgs.setdefault(topic, [])
 
-        self.logger.info(f"Parsing MCAP file: {mcap_file.name} (max_frames={max_frames or 'all'})")
+        mode_str = f"(TEST MODE: max {max_frames} frames)" if max_frames else "(FULL MODE: all frames)"
+        self.logger.info(f"Parsing MCAP file: {mcap_file.name} {mode_str}")
         with open(mcap_file, "rb") as f:
             reader = make_reader(f)
             for schema, channel, message in reader.iter_messages():
@@ -469,10 +595,18 @@ int32 lift_pos
                 
                 data = find_nearest_msg(topic_msgs[topic], t)
                 if data is not None:
-                    # JointState类型
+                    # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
-                        js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
-                        sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                        js_dict = parse_cdr_joint_state(data)
+                        if js_dict and js_dict['position']:
+                            sub_data = np.array(js_dict['position'][from_idx:to_idx], dtype=np.float32)
+                        else:
+                            # 如果手动解析失败，尝试rosbags
+                            try:
+                                js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
+                                sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                            except Exception:
+                                sub_data = np.array([np.nan] * (to_idx - from_idx), dtype=np.float32)
                     elif 'udp_arm_position' in topic:
                         pose = self.typestore.deserialize_cdr(data, 'rm_ros_interfaces/msg/Jointposeorientation')
                         pos = np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z], dtype=np.float32)
@@ -489,6 +623,14 @@ int32 lift_pos
                             # 旋转数据 (四元数)
                             # 将四元数作为原始数据提取，让基类应用convert_func
                             sub_data = quat[from_idx-3:to_idx-3]
+                    elif 'udp_six_force' in topic:
+                        # 六维力传感器
+                        six_force = self.typestore.deserialize_cdr(data, 'rm_ros_interfaces/msg/Sixforce')
+                        force_data = np.array([
+                            six_force.force_fx, six_force.force_fy, six_force.force_fz,
+                            six_force.force_mx, six_force.force_my, six_force.force_mz
+                        ], dtype=np.float32)
+                        sub_data = force_data[from_idx:to_idx]
                     else:
                         sub_data = np.array([np.nan] * (to_idx - from_idx), dtype=np.float32)
                     
@@ -511,9 +653,18 @@ int32 lift_pos
                 
                 data = find_nearest_msg(topic_msgs[topic], t)
                 if data is not None:
+                    # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
-                        js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
-                        sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                        js_dict = parse_cdr_joint_state(data)
+                        if js_dict and js_dict['position']:
+                            sub_data = np.array(js_dict['position'][from_idx:to_idx], dtype=np.float32)
+                        else:
+                            # 如果手动解析失败，尝试rosbags
+                            try:
+                                js = self.typestore.deserialize_cdr(data, 'sensor_msgs/msg/JointState')
+                                sub_data = np.array(js.position[from_idx:to_idx], dtype=np.float32)
+                            except Exception:
+                                sub_data = np.array([np.nan] * (to_idx - from_idx), dtype=np.float32)
                     elif 'udp_arm_position' in topic:
                         pose = self.typestore.deserialize_cdr(data, 'rm_ros_interfaces/msg/Jointposeorientation')
                         pos = np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z], dtype=np.float32)
@@ -542,10 +693,30 @@ int32 lift_pos
         }
 
     def _get_episode_data(self, task_path: Path, ep_idx: int) -> dict:
-        """获取episode数据，使用缓存避免重复解析"""
+        """获取episode数据，使用缓存避免重复解析
+        
+        ⚠️ 对于大文件（>1GB）禁用缓存以避免内存溢出
+        """
         cache_key = (str(task_path), ep_idx)
+        mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
+        
+        # 检查文件大小
+        file_size_gb = mcap_file.stat().st_size / (1024**3)
+        use_cache = file_size_gb < 1.0  # 只对小于1GB的文件使用缓存
+        
+        if not use_cache:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  MCAP文件较大，禁用缓存避免内存溢出\n"
+                    f"📄 文件: {mcap_file.name}\n"
+                    f"📊 大小: {file_size_gb:.2f} GB\n"
+                    f"💡 提示: 大文件转换可能需要较长时间"
+                )
+            # 直接解析，不使用缓存
+            return self._parse_mcap_episode(mcap_file)
+        
+        # 小文件使用缓存
         if cache_key not in self._episode_data_cache:
-            mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
             self._episode_data_cache[cache_key] = self._parse_mcap_episode(mcap_file)
         return self._episode_data_cache[cache_key]
 
@@ -640,7 +811,8 @@ int32 lift_pos
         return frame_count
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
-        return len(list(task_path.glob("*.mcap")))
+        # 与_get_episode_mcap_file保持一致，使用统一的方法
+        return len(self._get_all_mcap_files(task_path))
     
     def _gen_image_configs(self) -> None:
         """重写图像配置生成，使用快速样本获取避免解析整个MCAP文件"""
@@ -703,3 +875,20 @@ int32 lift_pos
         from_idx = args_dict["range_from"]
         to_idx = args_dict["range_to"]
         return sub_actions_buffer[frame_idx][from_idx:to_idx]
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 MCAP episode 的源文件信息"""
+        try:
+            mcap_files = self._get_all_mcap_files(task_path)
+            if ep_idx < len(mcap_files):
+                mcap_file = mcap_files[ep_idx]
+                return {
+                    "format": "MCAP",
+                    "mcap_file": str(mcap_file.relative_to(self.dataset_path)),
+                    "absolute_path": str(mcap_file.absolute()),
+                }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        return {}
+

@@ -30,6 +30,9 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
+from robocoin_dataset.format_converter.utils.h5_file_cache import (
+    H5FileCache,
+)
 
 
 @dataclass
@@ -168,6 +171,10 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
     ) -> None:
         self.h5_buffer: H5Buffer = H5Buffer()
         self._image_is_iobytes = True
+        # 🚀 H5文件句柄缓存，大幅提升读取性能（需要在super().__init__之前初始化，因为_prevalidate_files会用到）
+        self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)
+        # 存储损坏的H5文件列表，用于在转换时跳过
+        self._invalid_h5_files: set = set()
 
         super().__init__(
             dataset_path=dataset_path,
@@ -202,44 +209,70 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             unexpected_files.extend(find_unexpected_files(path))
 
         if unexpected_files:
-            err_msg = (
-                f"❌ Found unexpected files in dataset directory.\n"
+            # 改为警告而不是抛出异常，不应因文件命名问题导致整个验证失败
+            warning_msg = (
+                f"⚠️  Found unexpected files in dataset directory (non-blocking).\n"
                 f"   📂 Task paths checked: {len(self.path_task_dict)} directories\n"
                 f"   📋 Unexpected files ({len(unexpected_files)}):\n"
             )
             # 只显示前10个，避免输出过长
             for file_path in unexpected_files[:10]:
-                err_msg += f"      - {file_path}\n"
+                warning_msg += f"      - {file_path}\n"
             if len(unexpected_files) > 10:
-                err_msg += f"      ... and {len(unexpected_files) - 10} more files\n"
-            err_msg += "   💡 Remove unexpected files or update allowed file rules"
-            raise Exception(err_msg)
+                warning_msg += f"      ... and {len(unexpected_files) - 10} more files\n"
+            warning_msg += (
+                "   💡 These files will be ignored during conversion.\n"
+                "   💡 Check if files have incorrect naming (e.g., 'episode_139hdf5' should be 'episode_139.hdf5')"
+            )
+            if self.logger:
+                self.logger.warning(warning_msg)
 
         invalid_h5_files = []
         for path in self.task_episode_h5file_paths:
-            for file in path.rglob("*.h5"):
+            # 收集所有H5文件（包括.h5, .hdf5和命名错误的如episode_139hdf5）
+            h5_files_to_validate = []
+            h5_files_to_validate.extend(path.rglob("*.h5"))
+            h5_files_to_validate.extend(path.rglob("*.hdf5"))
+            # 额外查找命名错误的文件
+            for file in path.rglob("*"):
+                if file.is_file() and (file.name.endswith("hdf5") or file.name.endswith("h5")):
+                    if file not in h5_files_to_validate:
+                        h5_files_to_validate.append(file)
+            
+            # 验证所有找到的H5文件
+            for file in h5_files_to_validate:
                 try:
                     validate_h5file(file)
                 except Exception:  # noqa: PERF203
                     invalid_h5_files.append(file)
 
-            for file in path.rglob("*.hdf5"):
-                try:
-                    validate_h5file(file)
-                except Exception:  # noqa: PERF203
-                    invalid_h5_files.append(file)
-
+        # 容错处理：跳过损坏的文件而不是抛出异常
         if invalid_h5_files:
-            err_msg = (
-                f"❌ Found invalid H5 files.\n"
-                f"   📊 Total invalid files: {len(invalid_h5_files)}\n"
-                f"   🗂️  Complete list of invalid H5 files:\n"
-            )
-            # 列出所有的 invalid H5 文件
-            for h5_file in invalid_h5_files:
-                err_msg += f"      - {h5_file}\n"
-            err_msg += "   💡 H5 files may be corrupted or have incompatible format"
-            raise Exception(err_msg)
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  发现 {len(invalid_h5_files)} 个损坏的H5文件，将自动跳过这些文件\n"
+                    f"   📋 损坏文件列表（已保存）:"
+                )
+                for h5_file in invalid_h5_files[:10]:  # 只显示前10个
+                    self.logger.warning(f"      - {h5_file}")
+                if len(invalid_h5_files) > 10:
+                    self.logger.warning(f"      ... 以及 {len(invalid_h5_files) - 10} 个其他文件")
+                
+                # 保存完整的损坏文件列表到日志目录
+                try:
+                    output_path = Path(self.output_path)
+                    corrupted_list_file = output_path / "corrupted_episodes.txt"
+                    with open(corrupted_list_file, "w") as f:
+                        f.write(f"损坏的H5文件列表 (总计: {len(invalid_h5_files)})\n")
+                        f.write("=" * 80 + "\n\n")
+                        for h5_file in invalid_h5_files:
+                            f.write(f"{h5_file}\n")
+                    self.logger.warning(f"   📄 完整列表已保存到: {corrupted_list_file}")
+                except Exception as e:
+                    self.logger.warning(f"   ⚠️  无法保存损坏文件列表: {e}")
+            
+            # 存储损坏文件列表，以便后续跳过
+            self._invalid_h5_files = set(invalid_h5_files)
 
         # 验证HDF5文件内部结构
         self._validate_h5_structure()
@@ -251,11 +284,24 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
 
         # 收集所有需要验证的路径
         required_paths = set()
+        compressed_video_image_paths = set()  # 跟踪使用compressed video的image paths
 
         # 从图像配置中收集路径
         for image_config in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]:
             if ARGS_KEY in image_config and "h5_path" in image_config[ARGS_KEY]:
-                required_paths.add(image_config[ARGS_KEY]["h5_path"])
+                h5_path = image_config[ARGS_KEY]["h5_path"]
+                use_compressed_video = image_config[ARGS_KEY].get("use_compressed_video", False)
+                
+                if use_compressed_video:
+                    # 对于compressed video，images是空的，不验证
+                    # 而是验证video和video_index
+                    compressed_video_image_paths.add(h5_path)
+                    video_path = h5_path.replace("/images", "/video")
+                    video_index_path = h5_path.replace("/images", "/video_index")
+                    required_paths.add(video_path)
+                    required_paths.add(video_index_path)
+                else:
+                    required_paths.add(h5_path)
 
         # 从状态配置中收集路径
         for state_config in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][
@@ -289,7 +335,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             # 验证第一个H5文件作为样本（假设同一任务下的H5文件结构一致）
             sample_h5_file = h5_files[0]
             try:
-                with h5py.File(sample_h5_file, "r") as h5_file:
+                # 🚀 使用H5FileCache提升性能
+                with self._h5_file_cache.open(sample_h5_file) as h5_file:
                     missing_paths = []
                     invalid_paths = []
 
@@ -775,7 +822,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
 
         h5_file_path = self.task_episode_h5file_paths[task_path][ep_idx]
         try:
-            with h5py.File(h5_file_path, "r") as h5_file:
+            # 🚀 使用H5FileCache提升性能
+            with self._h5_file_cache.open(h5_file_path) as h5_file:
                 # 获取参考帧数
                 reference_frame_count = h5_file[h5_path].shape[0]
                 
@@ -931,12 +979,60 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
 
     @cached_property
     def task_episode_h5file_paths(self) -> dict[Path, list[Path]]:
+        """获取每个task的H5 episode文件路径
+        
+        策略：
+        1. 使用rglob递归搜索（支持任意深度嵌套）
+        2. 排除特定子目录（record/, calibration/等）
+        3. 宁可多找也不能漏
+        """
         task_episode_paths = {}
+        
+        # 需要排除的目录（这些是原始数据/配置/日志目录，不是episode）
+        skip_dirs = {
+            'record', 'calibration', 'config', 'parameters', 
+            'logs', 'camera', 'meta_info', 'others', 'error',
+            '@eaDir', '__pycache__', '.git', '.idea', '.vscode'
+        }
+        
         for path in self.path_task_dict.keys():
-            if path.exists():
-                h5_files = natsorted(list(path.rglob("*.h5")))
-                h5_files.extend(natsorted(list(path.rglob("*.hdf5"))))
-                task_episode_paths[path] = h5_files
+            if not path.exists():
+                continue
+            
+            # 递归查找所有.h5、.hdf5和以h5/hdf5结尾的文件（容错处理）
+            h5_files = []
+            h5_files.extend(path.rglob("*.h5"))
+            h5_files.extend(path.rglob("*.hdf5"))
+            # 额外查找命名错误的文件（如 episode_139hdf5）
+            for file in path.rglob("*"):
+                if file.is_file() and (file.name.endswith("hdf5") or file.name.endswith("h5")):
+                    # 避免重复添加
+                    if file not in h5_files:
+                        h5_files.append(file)
+            
+            # 过滤：排除特定目录下的文件
+            filtered_files = []
+            for h5_file in h5_files:
+                # 检查文件路径中是否包含需要排除的目录
+                relative_path = h5_file.relative_to(path)
+                path_parts = set(relative_path.parts[:-1])  # 不包括文件名
+                
+                # 如果路径中包含任何需要排除的目录，则跳过
+                if path_parts & skip_dirs:
+                    continue
+                
+                # 排除隐藏文件和@开头的目录
+                if any(part.startswith('.') or part.startswith('@') for part in relative_path.parts):
+                    continue
+                
+                # 跳过损坏的H5文件（在预验证阶段标记的）
+                if h5_file in self._invalid_h5_files:
+                    continue
+                
+                filtered_files.append(h5_file)
+            
+            task_episode_paths[path] = natsorted(filtered_files)
+        
         return task_episode_paths
 
     def _get_episode_h5_data(self, task_path: Path, ep_idx: int) -> any:
@@ -991,7 +1087,8 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
                     raise ValueError(error_msg) from e
 
         try:
-            with h5py.File(h5_file_path, "r") as h5_file:
+            # 🚀 使用H5FileCache提升性能
+            with self._h5_file_cache.open(h5_file_path) as h5_file:
                 h5_file.visititems(_get_dataset)
                 
                 # 对于配置了 use_compressed_video 的相机，额外加载 video 和 video_index
@@ -1073,3 +1170,23 @@ class LerobotFormatConverterHdf5(LerobotFormatConverter):
             raise
 
         return self.h5_buffer.h5_data
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 H5 episode 的源文件信息
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode 索引
+        
+        Returns:
+            dict: 包含源文件信息的字典，包括 h5_file 和 absolute_path
+        """
+        h5_files = self.task_episode_h5file_paths.get(task_path, [])
+        if ep_idx < len(h5_files):
+            h5_file = h5_files[ep_idx]
+            return {
+                "format": "H5",
+                "h5_file": str(h5_file.relative_to(self.dataset_path)),
+                "absolute_path": str(h5_file.absolute()),
+            }
+        return {}

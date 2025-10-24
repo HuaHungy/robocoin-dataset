@@ -716,4 +716,12 @@ class LerobotFormatConverterLerobot(LerobotFormatConverter):
             return episode_info.get("task", f"episode_{ep_idx:06d}")
         
         return f"episode_{ep_idx:06d}"
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 LeRobot episode 的源文件信息"""
+        return {
+            "format": "LEROBOT",
+            "note": "Already in LeRobot format, no source conversion needed",
+            "dataset_path": str(self.dataset_path.absolute()),
+        }
 

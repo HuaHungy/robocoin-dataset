@@ -95,6 +95,13 @@ async def main() -> None:
         default=False,
         help="Enable test mode (default: disabled)",
     )
+    
+    argparser.add_argument(
+        "--auto-reencode",
+        action="store_true",
+        default=False,
+        help="Enable automatic video re-encoding for incompatible codecs (e.g., AV1). Requires ffmpeg. (default: disabled)",
+    )
 
     args = argparser.parse_args()
 
@@ -116,6 +123,7 @@ async def main() -> None:
         image_writer_processes=args.image_writer_processes,
         image_writer_threads=args.image_writer_threads,
         is_test=args.is_test,
+        auto_reencode=args.auto_reencode,
     )
 
     await server.start()  # 创建任务并调度执行

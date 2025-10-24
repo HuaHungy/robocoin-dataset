@@ -26,6 +26,7 @@ from robocoin_dataset.distribution_computation.constant import (
 )
 from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import (
+    AUTO_REENCODE,
     CONVERTER_CLASS_NAME,
     CONVERTER_CONFIG,
     CONVERTER_LOG_DIR,
@@ -58,6 +59,7 @@ class LeFormatConverterTaskServer(TaskServer):
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
         is_test: bool = False,
+        auto_reencode: bool = False,
     ) -> None:
         super().__init__(
             logger=logger,
@@ -78,6 +80,7 @@ class LeFormatConverterTaskServer(TaskServer):
         self.image_writer_threads = image_writer_threads
 
         self.is_test = is_test
+        self.auto_reencode = auto_reencode  # 🎬 自动重编码标志
 
         try:
             with open(converter_factory_config_path) as f:
@@ -291,6 +294,7 @@ class LeFormatConverterTaskServer(TaskServer):
                 REPO_ID: repo_id,
                 CONVERTER_LOG_NAME: leformat_name,
                 IS_TEST: self.is_test,
+                AUTO_REENCODE: self.auto_reencode,
             }
         return None
 

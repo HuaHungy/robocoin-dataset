@@ -1075,3 +1075,18 @@ class LerobotFormatConverterG1(LerobotFormatConverter):
                 error_context += "Suggestion: Try converting the file to UTF-8 encoding\n"
             
             raise ValueError(f"{error_context}Original error: {str(e)}") from e
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 G1 episode 的源文件信息"""
+        try:
+            episode_dir = self._get_episode_directory(task_path, ep_idx)
+            return {
+                "format": "G1",
+                "episode_directory": str(episode_dir.relative_to(self.dataset_path)),
+                "absolute_path": str(episode_dir.absolute()),
+            }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        return {}
+
