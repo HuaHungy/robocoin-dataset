@@ -72,6 +72,3 @@ class RealmanRmcAidalProcessor(StateActionDataPostProcessorBase):
     def get_modified_info_action_names(self) -> dict[str, str]:
         return {}
 
-
-class UnitreePPPProcessor(StateActionDataPostProcessorBase):
-    pass

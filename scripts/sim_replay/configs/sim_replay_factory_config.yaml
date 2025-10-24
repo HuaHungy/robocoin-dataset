@@ -23,6 +23,91 @@ galaxea_r1_lite:
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
   mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
 
+galbot:
+- version: default_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galbot_config
+  mujoco_sim_replay_config_class: GalbotLerobotSimReplayConfig
+
+zhipingfang:
+- version: default_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+
+- version: left_arm_with_pose
+  verison_description: zhipingfang single left arm with pose (left joints + pose + wrench + gripper, right arm empty)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+  
+
+- version: left_arm_no_pose
+  verison_description: zhipingfang single left arm without pose (left joints + wrench + gripper, right arm empty, pose empty)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: right_arm_with_pose
+  verison_description: zhipingfang single right arm with pose (right joints + pose + wrench + gripper, left arm empty)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: right_arm_no_pose
+  verison_description: zhipingfang single right arm without pose (right joints + wrench + gripper, left arm empty, pose empty)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: dual_arm_with_pose
+  verison_description: zhipingfang dual arm with pose (both arms with full joints + pose + wrench + grippers)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: dual_arm_no_pose
+  verison_description: zhipingfang dual arm without pose (both arms with joints + wrench + grippers, pose empty)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: left_arm_with_pose_no_left_cam
+  verison_description: zhipingfang single left arm with pose, but left camera missing (only head camera, left joints + pose + wrench + gripper)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: right_arm_with_pose_no_right_cam
+  verison_description: zhipingfang single right arm with pose, but right camera missing (only head camera, right joints + pose + wrench + gripper)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: dual_arm_with_pose_no_left_chest_cam
+  verison_description: zhipingfang dual arm with pose, but left and chest cameras missing (head + right cameras only, full pose data)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: dual_arm_no_pose_no_left_chest_cam
+  verison_description: zhipingfang dual arm without pose, and left and chest cameras missing (head + right cameras only, no pose data)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+# Compressed Video Format Versions (use_compressed_video: true)
+- version: left_arm_with_pose_compressed_video
+  verison_description: zhipingfang single left arm with pose (compressed video format - images stored as MP4)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: right_arm_with_pose_compressed_video
+  verison_description: zhipingfang single right arm with pose (compressed video format - images stored as MP4)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: dual_arm_with_pose_compressed_video
+  verison_description: zhipingfang dual arm with pose (compressed video format - images stored as MP4)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
+- version: dual_arm_no_pose_compressed_video
+  verison_description: zhipingfang dual arm without pose (compressed video format - images stored as MP4)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
+  mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
+
 unitree_g1:
 - version: default_version
   verison_description: two arms and two hands (6 joints each), one rgb cameras with high

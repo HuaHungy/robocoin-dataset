@@ -174,6 +174,34 @@ agilex_cobot_decoupled_magic:
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
   mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
 
+unitree_g1:
+- version: default_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: onecam_hand_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: dex3v1_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: twocam_hand_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: twocam_dex3v1_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: threecam_hand_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: threecam_dex3v1_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
 # agilex_pika_sense:
 # - version: default_version
 #   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
