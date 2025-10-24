@@ -45,9 +45,11 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         image_writer_threads: int = 4,
         strict_episodes: int = 3,
         failure_threshold: float = 0.8,
+        auto_reencode: bool = False,
     ) -> None:
         # 🚀 在super().__init__之前初始化，因为父类会调用_get_all_episode_dirs
         self._episode_locator = UnifiedEpisodeLocator(logger=logger)
+        self._auto_reencode = auto_reencode  # 🎬 自动重编码标志
         
         super().__init__(
             dataset_path=dataset_path,
@@ -66,18 +68,21 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
         self._video_caps = {}  # 延迟加载的VideoCapture对象缓存 {(task_path, ep_idx, cam_name): cv2.VideoCapture}
 
-    def convert(self, is_test: bool = False) -> None:
+    def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志
         
         Args:
             is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        
+        Yields:
+            (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
         """
         self._is_test_mode = is_test
         if is_test and self.logger:
             self.logger.info("🧪 Mp4Json Converter running in TEST mode - will only load first 11 frames per video")
         
-        # 调用父类的转换逻辑
-        super().convert(is_test=is_test)
+        # 调用父类的转换逻辑并 yield 结果
+        yield from super().convert(is_test=is_test)
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -255,7 +260,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                             f"   📊 JSON data frames: {expected_frame_count}"
                         )
                     
-                    # 验证每个MP4文件的帧数
+                    # 验证每个MP4文件的帧数（仅警告，不阻止转换）
                     for mp4_file in mp4_files:
                         try:
                             validate_video_frame_count(
@@ -266,14 +271,17 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                                 tolerance=0  # 要求完全匹配
                             )
                         except ValueError as e:  # noqa: PERF203
-                            # 帧数不匹配，抛出详细错误
-                            raise ValueError(
-                                f"❌ MP4+JSON帧数不匹配\n"
-                                f"📂 Episode: {ep_dir.name}\n"
-                                f"📄 Video: {mp4_file.name}\n"
-                                f"📄 JSON: {json_file.name}\n"
-                                f"{str(e)}"
-                            ) from e
+                            # 🆕 帧数不匹配，记录警告但不阻止转换（由运行时容错机制处理）
+                            if self.logger:
+                                self.logger.warning(
+                                    f"⚠️  MP4+JSON帧数不匹配（将在转换时跳过此episode）\n"
+                                    f"📂 Episode: {ep_dir.name}\n"
+                                    f"📄 Video: {mp4_file.name}\n"
+                                    f"📄 JSON: {json_file.name}\n"
+                                    f"📊 Video frames: {mp4_file}\n"
+                                    f"📊 JSON frames: {expected_frame_count}\n"
+                                    f"💡 此episode将在转换时被容错机制自动跳过"
+                                )
                         except RuntimeError as e:
                             # ffprobe执行失败
                             if self.logger:
@@ -360,13 +368,38 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         需要返回所有数据源（JSON数据和视频文件）中的最小帧数，
         以确保所有帧都有完整的数据（observation、state、action）
         """
-        # 1. 从JSON获取帧数（记录每个字段的详细信息）
+        from robocoin_dataset.format_converter.tolerobot.constant import (
+            ACTION_KEY,
+            FEATURES_KEY,
+            OBSERVATION_KEY,
+            STATE_KEY,
+        )
+        
+        # 获取配置中实际使用的 json_path 列表
+        used_json_paths = set()
+        
+        # 从 observation.state 获取
+        state_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(STATE_KEY, {})
+        for sub_state in state_configs.get('sub_state', []):
+            json_path = sub_state.get('args', {}).get('json_path', '')
+            if json_path:
+                used_json_paths.add(json_path)
+        
+        # 从 action 获取
+        action_configs = self.converter_config.get(FEATURES_KEY, {}).get(ACTION_KEY, {})
+        for sub_action in action_configs.get('sub_action', []):
+            json_path = sub_action.get('args', {}).get('json_path', '')
+            if json_path:
+                used_json_paths.add(json_path)
+        
+        # 1. 从JSON获取帧数（只计算配置中使用的字段）
         json_data = self._load_json_data(task_path, ep_idx)
         json_frame_counts = {}  # key -> frame_count
         
         if 'data' in json_data:
             for key, value in json_data['data'].items():
-                if isinstance(value, list) and len(value) > 0:
+                # 🆕 只计算配置中实际使用的字段
+                if key in used_json_paths and isinstance(value, list) and len(value) > 0:
                     json_frame_counts[key] = len(value)
         
         if not json_frame_counts:
@@ -577,7 +610,11 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             
             try:
                 # 🚀 使用LazyVideoReader替代加载所有帧
-                reader = LazyVideoReader(mp4_file, logger=self.logger)
+                reader = LazyVideoReader(
+                    mp4_file, 
+                    logger=self.logger,
+                    auto_reencode=self._auto_reencode  # 🎬 传递自动重编码参数
+                )
                 
                 # 验证视频可以打开且有帧
                 if len(reader) == 0:
@@ -844,15 +881,23 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             dict: 包含源文件信息的字典，包括 episode_dir, json_file, video_files
         """
         try:
+            from robocoin_dataset.format_converter.tolerobot.constant import (
+                FEATURES_KEY,
+                IMAGE_KEY,
+                OBSERVATION_KEY,
+            )
+            
             episode_dirs = self._get_all_episode_dirs(task_path)
             if ep_idx < len(episode_dirs):
                 episode_dir = episode_dirs[ep_idx]
                 
                 # 收集JSON和视频文件
-                json_file = episode_dir / "metadata.json"
+                json_file = episode_dir / "data.json"
                 video_files = []
                 
-                for cam_config in self.image_configs:
+                # 从 converter_config 中获取图像配置
+                image_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(IMAGE_KEY, [])
+                for cam_config in image_configs:
                     video_path_template = cam_config.get("args", {}).get("video_path", "")
                     if video_path_template:
                         video_path = video_path_template.format(ep_dir=episode_dir.name)

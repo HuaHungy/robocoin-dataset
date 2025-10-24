@@ -60,18 +60,21 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         )
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
 
-    def convert(self, is_test: bool = False) -> None:
+    def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志
         
         Args:
             is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        
+        Yields:
+            (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
         """
         self._is_test_mode = is_test
         if is_test and self.logger:
             self.logger.info("🧪 LejuWaibu Converter running in TEST mode - will only load first 11 frames per video")
         
-        # 调用父类的转换逻辑
-        super().convert(is_test=is_test)
+        # 调用父类的转换逻辑并 yield 结果
+        yield from super().convert(is_test=is_test)
 
     def _get_dataset_task_paths(self) -> dict[Path, str]:
         """Find all episode directories containing metadata.json and proprio_stats.hdf5.

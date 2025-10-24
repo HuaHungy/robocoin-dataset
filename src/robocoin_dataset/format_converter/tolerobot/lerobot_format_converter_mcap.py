@@ -509,6 +509,22 @@ int32 lift_pos
         Returns:
             包含 images/states/actions/frames 的dict
         """
+        # 🆕 内存警告：检查文件大小
+        file_size_gb = mcap_file.stat().st_size / (1024**3)
+        if file_size_gb > 2.0 and max_frames is None:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  ⚠️  ⚠️  警告：正在解析大型MCAP文件！\n"
+                    f"📄 文件: {mcap_file.name}\n"
+                    f"📊 大小: {file_size_gb:.2f} GB\n"
+                    f"💾 预计内存占用: ~{file_size_gb * 2:.2f} GB (可能导致系统卡死)\n"
+                    f"💡 建议：\n"
+                    f"   1. 使用 --is-test 模式先测试（只处理10帧）\n"
+                    f"   2. 确保系统有足够内存（建议 >{file_size_gb * 3:.0f}GB）\n"
+                    f"   3. 考虑分割大文件\n"
+                    f"⏱️  继续执行，这可能需要很长时间..."
+                )
+        
         # 读取所有topic消息
         image_topics = {img['args']['mcap_topic']: img['cam_name']
                         for img in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]}
@@ -521,7 +537,8 @@ int32 lift_pos
             topic = sub['args']['mcap_topic']
             topic_msgs.setdefault(topic, [])
 
-        self.logger.info(f"Parsing MCAP file: {mcap_file.name} (max_frames={max_frames or 'all'})")
+        mode_str = f"(TEST MODE: max {max_frames} frames)" if max_frames else "(FULL MODE: all frames)"
+        self.logger.info(f"Parsing MCAP file: {mcap_file.name} {mode_str}")
         with open(mcap_file, "rb") as f:
             reader = make_reader(f)
             for schema, channel, message in reader.iter_messages():
@@ -676,10 +693,30 @@ int32 lift_pos
         }
 
     def _get_episode_data(self, task_path: Path, ep_idx: int) -> dict:
-        """获取episode数据，使用缓存避免重复解析"""
+        """获取episode数据，使用缓存避免重复解析
+        
+        ⚠️ 对于大文件（>1GB）禁用缓存以避免内存溢出
+        """
         cache_key = (str(task_path), ep_idx)
+        mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
+        
+        # 检查文件大小
+        file_size_gb = mcap_file.stat().st_size / (1024**3)
+        use_cache = file_size_gb < 1.0  # 只对小于1GB的文件使用缓存
+        
+        if not use_cache:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  MCAP文件较大，禁用缓存避免内存溢出\n"
+                    f"📄 文件: {mcap_file.name}\n"
+                    f"📊 大小: {file_size_gb:.2f} GB\n"
+                    f"💡 提示: 大文件转换可能需要较长时间"
+                )
+            # 直接解析，不使用缓存
+            return self._parse_mcap_episode(mcap_file)
+        
+        # 小文件使用缓存
         if cache_key not in self._episode_data_cache:
-            mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
             self._episode_data_cache[cache_key] = self._parse_mcap_episode(mcap_file)
         return self._episode_data_cache[cache_key]
 

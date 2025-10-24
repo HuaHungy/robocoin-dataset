@@ -61,18 +61,21 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         if self.logger:
             self.logger.info("🚀 JSON File Cache initialized (max_cache_size=1000)")
 
-    def convert(self, is_test: bool = False) -> None:
+    def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志并输出缓存统计
         
         Args:
             is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        
+        Yields:
+            (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
         """
         self._is_test_mode = is_test
         if is_test and self.logger:
             self.logger.info("🧪 JpgJson Converter running in TEST mode - will only load first 11 frames per camera")
         
-        # 调用父类的转换逻辑
-        super().convert(is_test=is_test)
+        # 调用父类的转换逻辑并 yield 结果
+        yield from super().convert(is_test=is_test)
         
         # 🚀 输出JSON缓存统计信息
         if self.logger:

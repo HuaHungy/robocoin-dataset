@@ -31,6 +31,7 @@ def convert2lerobot(
     converter_log_dir: Path | None = None,
     device_model_version: str | None = None,
     is_test: bool = False,
+    auto_reencode: bool = False,
 ) -> LerobotFormatConverter:
     """
     Convert dataset to lerobot format.
@@ -97,6 +98,7 @@ def convert2lerobot(
         image_writer_threads=image_writer_threads,
         logger=logger,
         converter_log_dir=converter_log_dir,
+        auto_reencode=auto_reencode,
     )
 
     total_episodes = converter.get_episodes_num()
@@ -186,6 +188,13 @@ def main() -> None:
         default=False,
         help="Enable test mode (default: disabled)",
     )
+    
+    argparser.add_argument(
+        "--auto-reencode",
+        action="store_true",
+        default=False,
+        help="Enable automatic video re-encoding for incompatible codecs (e.g., AV1). Requires ffmpeg. (default: disabled)",
+    )
 
     args = argparser.parse_args()
     device_model_version = None
@@ -206,6 +215,7 @@ def main() -> None:
             converter_log_dir=args.log_dir,
             device_model_version=device_model_version,
             is_test=args.is_test,
+            auto_reencode=args.auto_reencode,
         )
     except Exception:
         traceback.print_exc()

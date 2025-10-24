@@ -727,14 +727,16 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
             )
         return dataset[frame_idx, from_idx:to_idx]
 
-    def convert(self, is_test: bool = False) -> None:
-        """执行转换并记录缓存统计"""
-        # 调用父类的 convert 方法
-        result = super().convert(is_test=is_test)
+    def convert(self, is_test: bool = False):
+        """执行转换并记录缓存统计
+        
+        Yields:
+            (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
+        """
+        # 调用父类的 convert 方法并 yield 结果
+        yield from super().convert(is_test=is_test)
         
         # 记录 H5 缓存统计
         stats = self._h5_file_cache.get_stats()
         if self.logger and stats:
             self.logger.info(f"H5 File Cache Stats: {stats}")
-        
-        return result

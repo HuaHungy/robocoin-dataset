@@ -401,18 +401,64 @@ class LerobotFormatConverter(ABC):
         return task_paths_dict
 
     def _get_one_frame_image(self, args_dict: dict) -> np.ndarray:
-        task_path = list(self.path_task_dict.keys())[0]
-        try:
-            return self._get_frame_image(
-                task_path=task_path, ep_idx=0, frame_idx=0, args_dict=args_dict
-            )
-        except Exception as e:
-            cam_name = args_dict.get(CAM_NAME_KEY, "unknown")
-            raise RuntimeError(
-                f"Failed to get sample image for camera '{cam_name}' "
-                f"from task_path={task_path}"
-                f"Original error: {type(e).__name__}: {e}"
-            ) from e
+        """尝试从多个task_path和episode获取样本图像，支持容错
+        
+        Args:
+            args_dict: 相机配置参数
+            
+        Returns:
+            样本图像
+            
+        Raises:
+            RuntimeError: 所有尝试都失败时
+            
+        Notes:
+            为了支持初始化阶段的容错，会尝试多个task_path和episode：
+            - 遍历所有task_path
+            - 每个task_path尝试前5个episode
+            - 找到第一个可用的样本图像即返回
+            这样即使第一个episode有问题（损坏、编解码器不兼容等），
+            也能成功初始化并转换其他正常的episode
+        """
+        cam_name = args_dict.get(CAM_NAME_KEY, "unknown")
+        
+        # 尝试多个task_path和episode
+        attempted = []
+        for task_path in self.path_task_dict.keys():
+            num_episodes = self.task_episodes_num.get(task_path, 0)
+            # 尝试前几个episode（最多5个）
+            for ep_idx in range(min(5, num_episodes)):
+                try:
+                    image = self._get_frame_image(
+                        task_path=task_path, ep_idx=ep_idx, frame_idx=0, args_dict=args_dict
+                    )
+                    if self.logger:
+                        self.logger.info(
+                            f"✅ Successfully got sample image for camera '{cam_name}' "
+                            f"from task_path={task_path.relative_to(self.dataset_path)}, episode={ep_idx}"
+                        )
+                    return image
+                except Exception as e:
+                    attempted.append((task_path, ep_idx, str(e)))
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  Failed to get sample image for camera '{cam_name}' from "
+                            f"task_path={task_path.relative_to(self.dataset_path)}, "
+                            f"episode={ep_idx}: {type(e).__name__}: {e}. Trying next..."
+                        )
+                    continue
+        
+        # 所有尝试都失败
+        attempted_summary = "\n".join([
+            f"  - task_path={tp.relative_to(self.dataset_path)}, episode={ep}: {err}"
+            for tp, ep, err in attempted[:10]  # 只显示前10个
+        ])
+        raise RuntimeError(
+            f"❌ Failed to get sample image for camera '{cam_name}' after trying "
+            f"{len(attempted)} task_path/episode combinations.\n"
+            f"This indicates a systematic problem with the data or configuration.\n"
+            f"Attempted:\n{attempted_summary}"
+        )
 
     def _get_one_frame_images(self, image_configs: list[dict]) -> dict[str, np.ndarray]:
         images = {}
@@ -514,7 +560,14 @@ class LerobotFormatConverter(ABC):
 
             sub_states_datas.append(sub_states_data)
 
-        return {lerobot_feature: np.concatenate(sub_states_datas)}
+        result = {lerobot_feature: np.concatenate(sub_states_datas).astype(np.float32)}
+        
+        # 🔍 调试：打印总维度
+        if self.logger and frame_idx == 0:
+            total_dims = result[lerobot_feature].shape[0]
+            self.logger.info(f"🔍 总计 observation.state: {total_dims}维 (合并了{len(sub_states_datas)}个sub_state)")
+        
+        return result
 
     def _get_frame_actions(
         self, task_path: Path, ep_idx: int, frame_idx: int, actions_buffer: any = None
@@ -544,7 +597,7 @@ class LerobotFormatConverter(ABC):
                         ).astype(np.float32)
             sub_actions_datas.append(sub_actions_data)
 
-        return {lerobot_feature: np.concatenate(sub_actions_datas)}
+        return {lerobot_feature: np.concatenate(sub_actions_datas).astype(np.float32)}
 
     def _get_lerobot_datas(
         self,
@@ -1276,6 +1329,7 @@ class LerobotFormatConverterFactory:
         converter_log_dir: Path | None = None,
         strict_episodes: int = 3,
         failure_threshold: float = 0.8,
+        auto_reencode: bool = False,
     ) -> LerobotFormatConverter:
         if not dataset_path.exists():
             raise FileNotFoundError(f"Dataset path {dataset_path} does not exist.")
@@ -1312,5 +1366,7 @@ class LerobotFormatConverterFactory:
             init_kwargs['strict_episodes'] = strict_episodes
         if 'failure_threshold' in sig.parameters:
             init_kwargs['failure_threshold'] = failure_threshold
+        if 'auto_reencode' in sig.parameters:
+            init_kwargs['auto_reencode'] = auto_reencode
         
         return convertor_class(**init_kwargs)

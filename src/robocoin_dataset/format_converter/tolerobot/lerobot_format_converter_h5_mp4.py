@@ -46,12 +46,14 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         video_backend: str = "pyav",
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
+        auto_reencode: bool = False,
     ) -> None:
         # 🔧 在super().__init__之前初始化这些属性，防止父类初始化失败时__del__报错
         self._video_readers = {}  # 缓存视频读取器
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
         self._h5_files_cache = {}  # 缓存H5文件列表（episode定位优化）
         self._h5_file_cache = H5FileCache(max_cache_size=100, logger=logger)  # 🚀 H5文件句柄缓存
+        self._auto_reencode = auto_reencode  # 🎬 自动重编码标志
 
         super().__init__(
             dataset_path=dataset_path,
@@ -65,18 +67,21 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             image_writer_threads=image_writer_threads,
         )
 
-    def convert(self, is_test: bool = False) -> None:
+    def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志
         
         Args:
             is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        
+        Yields:
+            (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
         """
         self._is_test_mode = is_test
         if is_test and self.logger:
             self.logger.info("🧪 H5Mp4 Converter running in TEST mode - will only load first 11 frames per video")
         
-        # 调用父类的转换逻辑
-        super().convert(is_test=is_test)
+        # 调用父类的转换逻辑并 yield 结果
+        yield from super().convert(is_test=is_test)
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -348,7 +353,8 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 lazy_reader = LazyVideoReader(
                     video_path=mp4_file,
                     logger=self.logger,
-                    convert_to_rgb=True
+                    convert_to_rgb=True,
+                    auto_reencode=self._auto_reencode  # 🎬 传递自动重编码参数
                 )
                 images[cam_name] = lazy_reader
                 
@@ -544,13 +550,21 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             dict: 包含源文件信息的字典，包括 h5_file, video_files 和 absolute_paths
         """
         try:
+            from robocoin_dataset.format_converter.tolerobot.constant import (
+                FEATURES_KEY,
+                IMAGE_KEY,
+                OBSERVATION_KEY,
+            )
+            
             h5_files = self._get_all_episode_h5_files(task_path)
             if ep_idx < len(h5_files):
                 h5_file = h5_files[ep_idx]
                 
                 # 收集视频文件
                 video_files = []
-                for cam_config in self.image_configs:
+                # 从 converter_config 中获取图像配置
+                image_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(IMAGE_KEY, [])
+                for cam_config in image_configs:
                     video_path = cam_config.get("args", {}).get("video_path", "")
                     if video_path:
                         # 替换占位符

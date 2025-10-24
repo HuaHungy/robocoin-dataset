@@ -5,6 +5,11 @@
 - 问题：当前实现会将整个episode的所有视频帧加载到内存（100帧 × 3相机 × 1MB = 300MB/episode）
 - 方案：延迟加载，按需读取单帧，内存占用降至 ~3MB
 - 性能：从300MB → 3MB，100x内存优化
+
+新增：自动视频重编码
+- 检测视频编码兼容性问题（如AV1编码）
+- 自动调用ffmpeg重编码为H.264
+- 使用临时文件，不影响原始数据
 """
 
 import cv2
@@ -37,7 +42,8 @@ class LazyVideoReader:
         self, 
         video_path: Union[Path, str],
         logger: Optional[logging.Logger] = None,
-        convert_to_rgb: bool = True
+        convert_to_rgb: bool = True,
+        auto_reencode: bool = False
     ):
         """
         初始化延迟视频读取器
@@ -46,14 +52,19 @@ class LazyVideoReader:
             video_path: 视频文件路径
             logger: 日志记录器（可选）
             convert_to_rgb: 是否自动将BGR转换为RGB（默认True）
+            auto_reencode: 是否自动重编码无法解码的视频（默认False）
         
         Raises:
             FileNotFoundError: 视频文件不存在
             RuntimeError: 无法打开视频文件
         """
         self.video_path = Path(video_path)
+        self.original_video_path = self.video_path  # 保存原始路径
         self.logger = logger or logging.getLogger(__name__)
         self.convert_to_rgb = convert_to_rgb
+        self.auto_reencode = auto_reencode
+        self._reencoded = False  # 标记是否已重编码
+        self._reencoder = None  # 延迟创建重编码器
         
         if not self.video_path.exists():
             raise FileNotFoundError(f"Video file not found: {self.video_path}")
@@ -85,13 +96,60 @@ class LazyVideoReader:
         self._ensure_opened()
         return self._total_frames
     
+    def _try_reencode(self) -> bool:
+        """
+        尝试重编码视频
+        
+        Returns:
+            是否成功重编码
+        """
+        try:
+            # 延迟导入
+            from robocoin_dataset.format_converter.utils.video_reencoder import VideoReencoder
+            
+            if self._reencoder is None:
+                self._reencoder = VideoReencoder(logger=self.logger)
+            
+            success, reencoded_path, error = self._reencoder.reencode_video(
+                self.original_video_path
+            )
+            
+            if success and reencoded_path:
+                self.logger.info(f"✅ Successfully re-encoded video, using: {reencoded_path.name}")
+                self.video_path = reencoded_path
+                self._reencoded = True
+                return True
+            else:
+                self.logger.error(f"❌ Re-encoding failed: {error}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Re-encoding exception: {type(e).__name__}: {e}")
+            return False
+    
     def _ensure_opened(self):
         """确保视频文件已打开"""
         if self._cap is None:
             self._cap = cv2.VideoCapture(str(self.video_path))
             
             if not self._cap.isOpened():
-                raise RuntimeError(f"Failed to open video: {self.video_path}")
+                # 尝试自动重编码
+                if self.auto_reencode and not self._reencoded:
+                    self.logger.warning(
+                        f"⚠️  Failed to open video: {self.video_path.name}. "
+                        f"Attempting automatic re-encoding..."
+                    )
+                    if self._try_reencode():
+                        # 重编码成功，重新尝试打开
+                        self._cap = cv2.VideoCapture(str(self.video_path))
+                        if not self._cap.isOpened():
+                            raise RuntimeError(
+                                f"Failed to open re-encoded video: {self.video_path}"
+                            )
+                    else:
+                        raise RuntimeError(f"Failed to open video: {self.original_video_path}")
+                else:
+                    raise RuntimeError(f"Failed to open video: {self.video_path}")
             
             # 读取元数据
             self._total_frames = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -99,8 +157,9 @@ class LazyVideoReader:
             self._width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             self._height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
+            status = "re-encoded" if self._reencoded else "original"
             self.logger.debug(
-                f"Opened video: {self.video_path.name}, "
+                f"Opened video ({status}): {self.video_path.name}, "
                 f"{self._total_frames} frames, "
                 f"{self._width}x{self._height} @ {self._fps}fps"
             )
@@ -149,9 +208,37 @@ class LazyVideoReader:
         ret, frame = self._cap.read()
         
         if not ret or frame is None:
-            raise RuntimeError(
-                f"Failed to read frame {frame_idx} from {self.video_path}"
-            )
+            # 尝试自动重编码
+            if self.auto_reencode and not self._reencoded:
+                self.logger.warning(
+                    f"⚠️  Failed to read frame {frame_idx}. "
+                    f"Attempting automatic re-encoding..."
+                )
+                # 关闭当前视频
+                if self._cap:
+                    self._cap.release()
+                    self._cap = None
+                
+                # 尝试重编码
+                if self._try_reencode():
+                    # 重新打开视频并重试读取
+                    self._ensure_opened()
+                    self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                    ret, frame = self._cap.read()
+                    
+                    if not ret or frame is None:
+                        raise RuntimeError(
+                            f"Failed to read frame {frame_idx} even after re-encoding"
+                        )
+                    self.logger.info(f"✅ Successfully read frame {frame_idx} from re-encoded video")
+                else:
+                    raise RuntimeError(
+                        f"Failed to read frame {frame_idx} from {self.original_video_path}"
+                    )
+            else:
+                raise RuntimeError(
+                    f"Failed to read frame {frame_idx} from {self.video_path}"
+                )
         
         # 转换BGR到RGB（如果需要）
         if self.convert_to_rgb:

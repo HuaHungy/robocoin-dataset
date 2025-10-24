@@ -88,3 +88,4 @@ DEVICE_MODEL_VERSION_KEY = "version"
 DEFAULT_DEVICE_MODEL_VERSION = "default_version"
 
 IS_TEST = "is_test"
+AUTO_REENCODE = "auto_reencode"

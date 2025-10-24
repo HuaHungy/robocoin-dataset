@@ -9,6 +9,7 @@ from robocoin_dataset.distribution_computation.constant import (
 )
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.format_converter.tolerobot.constant import (
+    AUTO_REENCODE,
     CONVERTER_CLASS_NAME,
     CONVERTER_CONFIG,
     CONVERTER_LOG_DIR,
@@ -73,6 +74,7 @@ class LeFormatConverterTaskClient(TaskClient):
             converter_log_dir = task_content.get(CONVERTER_LOG_DIR)
             converter_log_name = task_content.get(CONVERTER_LOG_NAME)
             is_test = task_content.get(IS_TEST, False)
+            auto_reencode = task_content.get(AUTO_REENCODE, False)
 
             logger = setup_logger(
                 converter_log_name,
@@ -92,6 +94,7 @@ class LeFormatConverterTaskClient(TaskClient):
                 image_writer_processes=image_writer_proecesses,
                 image_writer_threads=image_writer_threads,
                 logger=logger,
+                auto_reencode=auto_reencode,
             )
 
             self.logger.info(f"converter_log_dir: {converter_log_dir}")

@@ -27,11 +27,13 @@ features:
 
     state:
       # MMK2状态包含（P0 + P1字段）：
-      # 基础位置（P0）: 左臂6 + 右臂6 + 左末端1 + 右末端1 + 头2 + 脊柱1 + 双手24 = 42维
-      # P1字段: 左臂vel6 + 左臂eff6 + 左臂pose7 + 右臂vel6 + 右臂eff6 + 右臂pose7 + 头vel2 + 头eff2 = 42维
-      # 总计: 84维
-      # 🆕 2025-10-22: P0完成（字段命名规范化）
-      # 🆕 2025-10-22: P1完成（添加vel/eff/pose字段，覆盖率32%→95%）
+      # 左臂: pos6 + vel6 + eff6 + pose_t3 + euler3 = 24维
+      # 右臂: pos6 + vel6 + eff6 + pose_t3 + euler3 = 24维
+      # 头部: pos2 + vel2 + eff2 = 6维
+      # 脊柱: pos1 = 1维
+      # 双手: left12 + right12 = 24维
+      # 总计: 24 + 24 + 6 + 1 + 24 = 79维
+      # 🆕 2025-10-24: 使用欧拉角(3维)代替四元数(4维)，通过convert_func转换
       sub_state:
       
       # 左臂关节位置 (6关节)
@@ -91,12 +93,11 @@ features:
           range_from: 0
           range_to: 3
       
-      # 🆕 左臂末端执行器姿态四元数 (4维) - P1字段
+      # 🆕 左臂末端执行器姿态欧拉角 (3维，从4维四元数转换而来) - P1字段
       - names:
-        - left_eef_quat_x
-        - left_eef_quat_y
-        - left_eef_quat_z
-        - left_eef_quat_w
+        - left_eef_euler_x_rad
+        - left_eef_euler_y_rad
+        - left_eef_euler_z_rad
         args:
           bson_file: episode_0.bson
           data_path: observation/left_arm/pose
@@ -162,12 +163,11 @@ features:
           range_from: 0
           range_to: 3
       
-      # 🆕 右臂末端执行器姿态四元数 (4维) - P1字段
+      # 🆕 右臂末端执行器姿态欧拉角 (3维，从4维四元数转换而来) - P1字段
       - names:
-        - right_eef_quat_x
-        - right_eef_quat_y
-        - right_eef_quat_z
-        - right_eef_quat_w
+        - right_eef_euler_x_rad
+        - right_eef_euler_y_rad
+        - right_eef_euler_z_rad
         args:
           bson_file: episode_0.bson
           data_path: observation/right_arm/pose
@@ -175,26 +175,6 @@ features:
           range_from: 0
           range_to: 4
         convert_func: quat_xyzw_2_euler_xyz
-      
-      # 左臂末端执行器 (1关节)
-      - names:
-        - left_arm_eef_rad
-        args:
-          bson_file: episode_0.bson
-          data_path: observation/left_arm_eef/joint_state
-          field: pos
-          range_from: 0
-          range_to: 1
-          
-      # 右臂末端执行器 (1关节)
-      - names:
-        - right_arm_eef_rad
-        args:
-          bson_file: episode_0.bson
-          data_path: observation/right_arm_eef/joint_state
-          field: pos
-          range_from: 0
-          range_to: 1
       
       # 头部关节位置 (2关节)
       - names:
@@ -281,8 +261,9 @@ features:
           range_to: 12
 
   action:
-    # MMK2动作包含：左臂6关节 + 右臂6关节 + 左手末端1关节 + 右手末端1关节 + 头部2关节 + 脊柱1关节 + 双手24关节 = 42维
-    # ✅ 数据验证：Action的left/right_arm是6维（与observation相同）
+    # MMK2动作包含：
+    # 左臂6 + 右臂6 + 头部2 + 脊柱1 + 双手24 = 39维
+    # 🆕 2025-10-24: 修正维度，移除不存在的 left_arm_eef/right_arm_eef 字段
     sub_action:
     
     # 左臂动作 (6关节)
@@ -314,26 +295,6 @@ features:
         field: pos
         range_from: 0
         range_to: 6
-        
-    # 左臂末端执行器动作 (1关节)
-    - names:
-      - left_arm_eef_action_rad
-      args:
-        bson_file: episode_0.bson
-        data_path: action/left_arm_eef/joint_state
-        field: pos
-        range_from: 0
-        range_to: 1
-        
-    # 右臂末端执行器动作 (1关节)
-    - names:
-      - right_arm_eef_action_rad
-      args:
-        bson_file: episode_0.bson
-        data_path: action/right_arm_eef/joint_state
-        field: pos
-        range_from: 0
-        range_to: 1
         
     # 头部动作 (2关节)
     - names:

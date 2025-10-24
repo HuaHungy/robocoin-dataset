@@ -679,6 +679,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         data_path = args_dict["data_path"]
         range_from = args_dict["range_from"]
         range_to = args_dict["range_to"]
+        
+        # 🔍 调试：记录正在读取的字段
+        expected_dims = range_to - range_from
 
         # 根据不同的BSON文件处理数据
         if bson_file == "episode_0.bson":
@@ -718,7 +721,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                             f"Available paths: {available_paths}"
                         )
                     # 返回指定范围大小的零数组
-                    return np.zeros(range_to - range_from, dtype=np.float32)
+                    result = np.zeros(range_to - range_from, dtype=np.float32)
+                    if self.logger and frame_idx == 0:  # 只在第一帧打印
+                        self.logger.info(f"🔍 [{bson_file}] {data_path}[{range_from}:{range_to}] → {result.shape[0]}维 (零值填充)")
+                    return result
                 
                 if self.logger:
                     self.logger.error(error_msg)
@@ -757,7 +763,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                         f"Requested range [{range_from}:{range_to}] exceeds data length {len(values)} "
                         f"for path '{data_path}', field '{field}' in frame {frame_idx}"
                     )
-            return np.array(values[range_from:range_to], dtype=np.float32)
+            result = np.array(values[range_from:range_to], dtype=np.float32)
+            if self.logger and frame_idx == 0:  # 只在第一帧打印
+                self.logger.info(f"🔍 [{bson_file}] {data_path}.{field}[{range_from}:{range_to}] → {result.shape[0]}维")
+            return result
 
         if bson_file == "xhand_control_data.bson":
             # 手部数据
@@ -820,7 +829,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                             f"Requested range [{range_from}:{range_to}] exceeds data length {len(data)} "
                             f"for path '{data_path}' in frame {frame_idx}, BSON file '{bson_file}'"
                         )
-                return np.array(data[range_from:range_to], dtype=np.float32)
+                result = np.array(data[range_from:range_to], dtype=np.float32)
+                if self.logger and frame_idx == 0:  # 只在第一帧打印
+                    self.logger.info(f"🔍 [{bson_file}] {data_path}[{range_from}:{range_to}] → {result.shape[0]}维")
+                return result
             
             raise ValueError(
                 f"Expected list data for path '{data_path}', got {type(data)} with value: {data} "
