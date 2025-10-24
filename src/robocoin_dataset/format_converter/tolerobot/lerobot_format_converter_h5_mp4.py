@@ -207,14 +207,17 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                                         expected_frame_count=expected_frame_count,
                                         data_source="H5 file",
                                         logger=self.logger,
-                                        tolerance=1  # 允许±1帧误差
+                                        tolerance=30  # 允许±30帧误差，自动裁剪到最小帧数
                                     )
                                 except ValueError as e:  # noqa: PERF203
+                                    # 帧数差异超过30帧，记录但继续验证其他文件
+                                    # 在实际转换时会被检测并跳过
                                     self.logger.warning(
-                                        f"⚠️ 视频帧数不匹配\n"
+                                        f"⚠️ 视频帧数差异超过容忍范围（±30帧）\n"
                                         f"📂 Episode: {ep_dir.name}\n"
                                         f"📄 Video: {mp4_file.name}\n"
-                                        f"{str(e)}"
+                                        f"{str(e)}\n"
+                                        f"⚠️  此episode在转换时将被跳过"
                                     )
                                 except RuntimeError as e:
                                     self.logger.warning(
@@ -297,16 +300,31 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             if self.logger:
                 self.logger.debug(f"🧪 Test mode: limiting episode {ep_idx} to {min_frames} frames")
         
-        # 4. 记录帧数差异（用于调试）
-        if self.logger and len(frame_counts) > 1:
+        # 4. 检查并处理帧数差异
+        if len(frame_counts) > 1:
             max_frames = max(count for _, count in frame_counts)
-            if max_frames - min_frames > 1:  # 差异超过1帧时记录（降低阈值以便及时发现问题）
+            frame_diff = max_frames - min_frames
+            
+            if frame_diff > 30:  # 差异超过30帧，跳过这个episode
                 diff_info = "\n".join([f"      - {name}: {count} frames" for name, count in frame_counts])
-                self.logger.warning(
-                    f"⚠️ Frame count mismatch in episode {ep_dir.name}:\n"
+                from .exceptions import CriticalDataError
+                raise CriticalDataError(
+                    f"❌ Frame count mismatch exceeds tolerance in episode {ep_dir.name}:\n"
                     f"{diff_info}\n"
-                    f"   ✅ Using minimum: {min_frames} frames to avoid index errors"
+                    f"   ⚠️  Difference: {frame_diff} frames (tolerance: ±30 frames)\n"
+                    f"   💡 Possible causes:\n"
+                    f"      1. Video recording was interrupted\n"
+                    f"      2. Data collection synchronization issue\n"
+                    f"   ⚠️  Skipping this episode to maintain data integrity."
                 )
+            elif frame_diff > 1:  # 差异在2-30帧之间，自动裁剪
+                if self.logger:
+                    diff_info = "\n".join([f"      - {name}: {count} frames" for name, count in frame_counts])
+                    self.logger.info(
+                        f"📊 Frame count difference in episode {ep_dir.name} (within tolerance):\n"
+                        f"{diff_info}\n"
+                        f"   ✅ Auto-trimming to minimum: {min_frames} frames (difference: {frame_diff} frames)"
+                    )
         
         if self.logger:
             self.logger.debug(
