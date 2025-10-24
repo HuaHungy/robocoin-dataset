@@ -295,116 +295,86 @@ class DBValidatorFixed:
         Returns:
             List[(task_path, episode_index)] - 抽样的episodes
         """
-        self.logger.info(f"🎲 从任务 '{task_name}' 抽取episodes...")
-        self.logger.info(f"   📁 搜索路径: {dataset_path}")
+        self.logger.info(f"🎲 从任务 '{task_name}' 快速抽取episodes...")
         
-        # 策略1: 查找所有task_paths (包含local_task_info.yaml或device_model_annotation.yaml的目录)
-        self.logger.info(f"   🔍 查找task info文件...")
-        task_info_files = (
-            list(dataset_path.rglob("local_task_info.yaml")) +
-            list(dataset_path.rglob("device_model_annotation.yaml"))
-        )
-        self.logger.info(f"   ✅ 找到 {len(task_info_files)} 个task info文件")
+        # 简化策略：直接在当前目录和一级子目录查找episode文件（不递归深层）
+        episode_files = []
         
-        task_paths = []
+        # 1. 当前目录的episode文件
+        episode_files.extend(list(dataset_path.glob("episode_*.h5")))
+        episode_files.extend(list(dataset_path.glob("episode_*.hdf5")))
+        episode_files.extend(list(dataset_path.glob("episode_*.mcap")))
         
-        if task_info_files:
-            # 找到了task info文件，使用这些目录
-            task_paths = [task_info_file.parent for task_info_file in task_info_files]
-        else:
-            # 策略2: 没找到task info文件，尝试直接将dataset_path作为task_path
-            # （处理数据库直接指向任务目录的情况）
-            self.logger.debug(f"⚠️  没有找到task info文件，尝试直接使用路径: {dataset_path}")
-            task_paths = [dataset_path]
+        # 2. 一级子目录中的episode文件（如 episode_0/xxx.h5）
+        for item in dataset_path.glob("*"):
+            if item.is_dir():
+                episode_files.extend(list(item.glob("*.h5")))
+                episode_files.extend(list(item.glob("*.hdf5")))
+                episode_files.extend(list(item.glob("*.mcap")))
+                episode_files.extend(list(item.glob("*.mp4")))
         
-        # 收集所有可用的(task_path, episode_index)组合
-        all_available_episodes = []
+        if not episode_files:
+            self.logger.warning(f"⚠️  任务 '{task_name}' 没有找到episode文件")
+            return []
         
-        for task_path in task_paths:
-            # 尝试估算episode数量
-            episodes = self._estimate_episodes(task_path)
-            
-            if episodes == 0:
-                self.logger.debug(f"⚠️  任务路径 '{task_path}' 中没有找到episodes")
-                continue
-            
-            # 收集该task_path下的所有episode索引
-            for ep_idx in range(episodes):
-                all_available_episodes.append((task_path, ep_idx))
+        self.logger.info(f"   📊 找到 {len(episode_files)} 个episode文件")
         
-        # 从所有可用episodes中随机抽取num_samples_per_task个
+        # 随机抽取num_samples_per_task个文件
+        num_to_sample = min(self.num_samples_per_task, len(episode_files))
+        sampled_files = random.sample(episode_files, num_to_sample)
+        
+        # 构建返回格式：(task_path, episode_index)
         sampled_episodes = []
-        if all_available_episodes:
-            num_to_sample = min(self.num_samples_per_task, len(all_available_episodes))
-            sampled_episodes = random.sample(all_available_episodes, num_to_sample)
+        for file in sampled_files:
+            # 提取episode索引
+            try:
+                filename = file.stem  # 不含扩展名
+                if "episode_" in filename:
+                    ep_idx_str = filename.split("episode_")[1].split("_")[0].split(".")[0]
+                    ep_idx = int(ep_idx_str)
+                else:
+                    ep_idx = 0
+            except:
+                ep_idx = 0
+            
+            # 确定task_path（文件所在目录）
+            task_path = file.parent if file.parent != dataset_path else dataset_path
+            sampled_episodes.append((task_path, ep_idx))
         
-        if sampled_episodes:
-            self.logger.info(f"✅ 抽取了 {len(sampled_episodes)} 个episodes（从{len(task_paths)}个子任务中）")
-        else:
-            self.logger.warning(f"⚠️  任务 '{task_name}' 没有找到可用的episodes")
-        
+        self.logger.info(f"✅ 快速抽取了 {len(sampled_episodes)} 个episodes")
         return sampled_episodes
     
     def _estimate_episodes(self, task_path: Path) -> int:
-        """估算task_path下的episode数量（递归搜索）
+        """估算task_path下的episode数量（快速非递归）
         
         Returns:
             Episode数量，0表示没有找到任何episodes
         """
         if not task_path.exists() or not task_path.is_dir():
-            self.logger.debug(f"❌ 路径不存在或不是目录: {task_path}")
             return 0
         
-        self.logger.info(f"      📂 扫描目录: {task_path.name}")
-        
-        # 调试：显示目录内容
-        try:
-            contents = list(task_path.iterdir())
-            self.logger.info(f"         包含 {len(contents)} 个项目")
-        except Exception as e:
-            self.logger.warning(f"⚠️  无法列出目录内容: {e}")
-            return 0
-        
-        # 策略1: 递归搜索H5文件（使用rglob）
-        self.logger.info(f"         🔍 搜索H5文件...")
-        h5_files = list(task_path.rglob("*.h5")) + list(task_path.rglob("*.hdf5"))
+        # 快速策略：只在当前目录查找，不递归
+        h5_files = list(task_path.glob("*.h5")) + list(task_path.glob("*.hdf5"))
         if h5_files:
-            self.logger.info(f"         ✅ 找到 {len(h5_files)} 个H5文件")
             return len(h5_files)
         
-        # 策略2: 递归搜索MCAP文件
-        self.logger.info(f"         🔍 搜索MCAP文件...")
-        mcap_files = list(task_path.rglob("*.mcap"))
+        # 策略2: 查找MCAP文件
+        mcap_files = list(task_path.glob("*.mcap"))
         if mcap_files:
-            self.logger.info(f"         ✅ 找到 {len(mcap_files)} 个MCAP文件")
-            if self.logger.isEnabledFor(logging.DEBUG):
-                sample_files = [str(f.relative_to(task_path)) for f in mcap_files[:3]]
-                self.logger.debug(f"   示例: {sample_files}")
             return len(mcap_files)
         
         # 策略3: 查找Episode目录（episode_0, episode_1等）
-        all_subdirs = [d for d in task_path.rglob("*") if d.is_dir()]
-        episode_dirs = [d for d in all_subdirs if "episode" in d.name.lower()]
+        episode_dirs = list(task_path.glob("episode_*"))
+        episode_dirs = [d for d in episode_dirs if d.is_dir()]
         if episode_dirs:
-            self.logger.debug(f"✅ 找到 {len(episode_dirs)} 个Episode目录")
-            if self.logger.isEnabledFor(logging.DEBUG):
-                sample_dirs = [str(d.relative_to(task_path)) for d in episode_dirs[:3]]
-                self.logger.debug(f"   示例: {sample_dirs}")
             return len(episode_dirs)
         
-        # 策略4: 递归搜索MP4文件
-        self.logger.info(f"         🔍 搜索MP4文件...")
-        mp4_files = list(task_path.rglob("*.mp4"))
+        # 策略4: 查找MP4文件
+        mp4_files = list(task_path.glob("*.mp4"))
         if mp4_files:
-            self.logger.info(f"         ✅ 找到 {len(mp4_files)} 个MP4文件")
-            if self.logger.isEnabledFor(logging.DEBUG):
-                sample_files = [str(f.relative_to(task_path)) for f in mp4_files[:3]]
-                self.logger.debug(f"   示例: {sample_files}")
             return len(mp4_files)
         
-        # 没有找到任何可识别的episode文件
-        self.logger.warning(f"⚠️  在 {task_path} 及其子目录中没有找到可识别的episode文件")
-        self.logger.warning(f"   已搜索: *.h5, *.hdf5, *.mcap, *.mp4, episode_*/ 目录")
+        # 没有找到任何episode文件
         return 0
     
     def validate_task(
