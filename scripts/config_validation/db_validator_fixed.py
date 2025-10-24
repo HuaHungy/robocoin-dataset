@@ -331,41 +331,64 @@ class DBValidatorFixed:
         return sampled_episodes
     
     def _estimate_episodes(self, task_path: Path) -> int:
-        """估算task_path下的episode数量
+        """估算task_path下的episode数量（递归搜索）
         
         Returns:
             Episode数量，0表示没有找到任何episodes
         """
         if not task_path.exists() or not task_path.is_dir():
+            self.logger.debug(f"❌ 路径不存在或不是目录: {task_path}")
             return 0
         
-        # H5文件
-        h5_files = list(task_path.glob("*.h5")) + list(task_path.glob("*.hdf5"))
+        # 调试：显示目录内容
+        if self.logger.isEnabledFor(logging.DEBUG):
+            try:
+                contents = list(task_path.iterdir())[:10]  # 只显示前10项
+                self.logger.debug(f"📁 目录内容 ({task_path.name}): {[f.name for f in contents]}")
+            except Exception as e:
+                self.logger.debug(f"⚠️  无法列出目录内容: {e}")
+        
+        # 策略1: 递归搜索H5文件（使用rglob）
+        h5_files = list(task_path.rglob("*.h5")) + list(task_path.rglob("*.hdf5"))
         if h5_files:
-            self.logger.debug(f"找到 {len(h5_files)} 个H5文件")
+            self.logger.debug(f"✅ 找到 {len(h5_files)} 个H5文件（递归搜索）")
+            # 显示前几个文件路径
+            if self.logger.isEnabledFor(logging.DEBUG):
+                sample_files = [str(f.relative_to(task_path)) for f in h5_files[:3]]
+                self.logger.debug(f"   示例: {sample_files}")
             return len(h5_files)
         
-        # MCAP文件
-        mcap_files = list(task_path.glob("*.mcap"))
+        # 策略2: 递归搜索MCAP文件
+        mcap_files = list(task_path.rglob("*.mcap"))
         if mcap_files:
-            self.logger.debug(f"找到 {len(mcap_files)} 个MCAP文件")
+            self.logger.debug(f"✅ 找到 {len(mcap_files)} 个MCAP文件（递归搜索）")
+            if self.logger.isEnabledFor(logging.DEBUG):
+                sample_files = [str(f.relative_to(task_path)) for f in mcap_files[:3]]
+                self.logger.debug(f"   示例: {sample_files}")
             return len(mcap_files)
         
-        # Episode目录（如 episode_0, episode_1, ...）
-        episode_dirs = [d for d in task_path.iterdir() if d.is_dir() and "episode" in d.name.lower()]
+        # 策略3: 查找Episode目录（episode_0, episode_1等）
+        all_subdirs = [d for d in task_path.rglob("*") if d.is_dir()]
+        episode_dirs = [d for d in all_subdirs if "episode" in d.name.lower()]
         if episode_dirs:
-            self.logger.debug(f"找到 {len(episode_dirs)} 个Episode目录")
+            self.logger.debug(f"✅ 找到 {len(episode_dirs)} 个Episode目录")
+            if self.logger.isEnabledFor(logging.DEBUG):
+                sample_dirs = [str(d.relative_to(task_path)) for d in episode_dirs[:3]]
+                self.logger.debug(f"   示例: {sample_dirs}")
             return len(episode_dirs)
         
-        # MP4+JSON格式：查找配对的mp4和json文件
-        mp4_files = list(task_path.glob("*.mp4"))
+        # 策略4: 递归搜索MP4文件
+        mp4_files = list(task_path.rglob("*.mp4"))
         if mp4_files:
-            # 假设每个mp4文件对应一个episode
-            self.logger.debug(f"找到 {len(mp4_files)} 个MP4文件")
+            self.logger.debug(f"✅ 找到 {len(mp4_files)} 个MP4文件（递归搜索）")
+            if self.logger.isEnabledFor(logging.DEBUG):
+                sample_files = [str(f.relative_to(task_path)) for f in mp4_files[:3]]
+                self.logger.debug(f"   示例: {sample_files}")
             return len(mp4_files)
         
         # 没有找到任何可识别的episode文件
-        self.logger.debug(f"在 {task_path} 中没有找到可识别的episode文件")
+        self.logger.warning(f"⚠️  在 {task_path} 及其子目录中没有找到可识别的episode文件")
+        self.logger.warning(f"   已搜索: *.h5, *.hdf5, *.mcap, *.mp4, episode_*/ 目录")
         return 0
     
     def validate_task(
