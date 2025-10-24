@@ -66,9 +66,16 @@ class SimReplay:
             arr = np.array(gripper_history)
             if arr.ndim == 1:
                 arr = arr[:, None]
+            
+            # 定义颜色和标签映射 - 调换红色和绿色
+            colors = ['green', 'red']  # gripper_left用绿色，gripper_right用红色
+            labels = ['gripper_left', 'gripper_right']
+            
             if not lines:
                 for i in range(arr.shape[1]):
-                    (line,) = ax.plot(arr[:, i], label=f"gripper_{i}")
+                    color = colors[i] if i < len(colors) else f'C{i}'
+                    label = labels[i] if i < len(labels) else f"gripper_{i}"
+                    (line,) = ax.plot(arr[:, i], color=color, label=label)
                     lines.append(line)
                 ax.legend()
             else:
@@ -150,9 +157,16 @@ class SimReplay:
         gripper_values = np.array(gripper_values)
         if gripper_values.ndim == 1:
             gripper_values = gripper_values[:, None]
+        
+        # 定义颜色和标签映射 - 调换红色和绿色
+        colors = ['green', 'red']  # gripper_left用绿色，gripper_right用红色
+        labels = ['gripper_left', 'gripper_right']
+        
         plt.figure(figsize=(10, 4))
         for i in range(gripper_values.shape[1]):
-            plt.plot(gripper_values[:, i], label=f"gripper_{i}")
+            color = colors[i] if i < len(colors) else f'C{i}'
+            label = labels[i] if i < len(labels) else f"gripper_{i}"
+            plt.plot(gripper_values[:, i], color=color, label=label)
         plt.xlabel("Step")
         plt.ylabel("Gripper Value")
         plt.title(title)
@@ -183,6 +197,7 @@ class SimReplay:
         device_model_version: str,
         err_msg: str = "",
     ) -> None:
+        print(f"[数据库更新] 正在更新数据集 {dataset_uuid} 的状态为 {status.name}")
         item = (
             session.query(LeformatDatasetSimReplayStatusDB)
             .filter(LeformatDatasetSimReplayStatusDB.dataset_uuid == dataset_uuid)
@@ -190,6 +205,7 @@ class SimReplay:
         )
         version_uuid = str(uuid.uuid4())
         if item:
+            print(f"[数据库更新] 找到已存在记录，正在更新...")
             item.convert_path = convert_path
             item.status = status
             item.prestage_version_uuid = prestage_version_uuid
@@ -198,6 +214,7 @@ class SimReplay:
             item.version_uuid = version_uuid
             item.err_msg = err_msg
         else:
+            print(f"[数据库更新] 未找到已存在记录，正在创建新记录...")
             item = LeformatDatasetSimReplayStatusDB(
                 dataset_uuid=dataset_uuid,
                 convert_path=convert_path,
@@ -209,7 +226,10 @@ class SimReplay:
                 err_msg=err_msg,
             )
             session.add(item)
+        
+        print(f"[数据库更新] 正在提交事务...")
         session.commit()
+        print(f"[数据库更新] 事务提交成功，状态已更新为 {status.name}")
 
     def _sync_sim_replay_tasks(
         self, device_model: str | None = None, device_model_version: str | None = None
@@ -222,14 +242,13 @@ class SimReplay:
                 )
                 .filter(
                     not_(
-                        session.query(LeformatDateasetStateActionPostProcessingStatusDB)
+                        session.query(LeformatDatasetSimReplayStatusDB)
                         .filter(
-                            LeformatDateasetStateActionPostProcessingStatusDB.dataset_uuid
-                            == LeformatDatasetSimReplayStatusDB.dataset_uuid
+                            LeformatDatasetSimReplayStatusDB.dataset_uuid
+                            == LeformatDateasetStateActionPostProcessingStatusDB.dataset_uuid
                         )
                         .filter(
-                            LeformatDateasetStateActionPostProcessingStatusDB.prestage_version_uuid
-                            == LeformatDateasetStateActionPostProcessingStatusDB.version_uuid
+                            LeformatDatasetSimReplayStatusDB.status == TaskStatus.COMPLETED
                         )
                         .exists()
                     )
@@ -297,7 +316,9 @@ class SimReplay:
             return
         convert_path = self._get_convert_path(dataset_uuid)
         try:
+            print(f"[数据库状态] 开始回放数据集: {dataset_uuid}")
             self._sim_replay_dataset(dataset_uuid)
+            print(f"[数据库状态] 回放完成，正在更新状态为COMPLETED...")
             with self.db.with_session() as session:
                 self._upsert_leformat_dataset_simulation_replay_status(
                     session=session,
@@ -308,8 +329,10 @@ class SimReplay:
                     device_model_version=device_model_version,
                     status=TaskStatus.COMPLETED,
                 )
+            print(f"[数据库状态] 成功更新数据集 {dataset_uuid} 状态为COMPLETED")
 
         except Exception as e:
+            print(f"[数据库状态] 回放过程中发生异常，正在更新状态为FAILED...")
             self.logger.error(traceback.format_exc())
             with self.db.with_session() as session:
                 self._upsert_leformat_dataset_simulation_replay_status(
@@ -322,3 +345,5 @@ class SimReplay:
                     device_model_version=device_model_version,
                     err_msg=traceback.format_exc(),
                 )
+            print(f"[数据库状态] 成功更新数据集 {dataset_uuid} 状态为FAILED")
+            raise  # 重新抛出异常以便上层处理
