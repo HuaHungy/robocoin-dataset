@@ -438,10 +438,15 @@ class DBValidatorFixed:
             
             # 3. 创建converter实例
             temp_output = self.output_dir / f"temp_{task_name.replace(':', '_')}"
+            temp_output.mkdir(parents=True, exist_ok=True)
+            
             converter = create_converter_instance(
-                config_file=Path(task["converter_config_path"]),
-                dataset_path=dataset_path,
-                output_path=temp_output,
+                module_path=task["converter_module"],
+                class_name=task["converter_class"],
+                dataset_path=str(dataset_path),
+                output_path=str(temp_output),
+                repo_id=f"validation/{task_name.replace(':', '_')}",
+                converter_config_path=task["converter_config_path"],
                 logger=self.logger
             )
             
