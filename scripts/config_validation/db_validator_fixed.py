@@ -447,6 +447,7 @@ class DBValidatorFixed:
                 output_path=str(temp_output),
                 repo_id=f"validation/{task_name.replace(':', '_')}",
                 converter_config_path=task["converter_config_path"],
+                device_model=task["device_model"],  # 添加device_model参数
                 logger=self.logger
             )
             
