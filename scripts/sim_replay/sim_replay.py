@@ -49,6 +49,7 @@ if __name__ == "__main__":
     db_file_path = Path(args.db_file_path).expanduser().absolute()
     converter_factory_config_path = Path(args.converter_factory_config_path).expanduser().absolute()
     device_model = args.device_model
+    device_model_version = args.device_model_version
 
     if not db_file_path.exists():
         print(f"{db_file_path} does not exist")
@@ -88,7 +89,7 @@ if __name__ == "__main__":
         logger=logger,
     )
 
-    sim_replayer.sim_replay_datasets(device_model)
+    sim_replayer.sim_replay_datasets(device_model, device_model_version = device_model_version)
 
 
 """usage:
@@ -111,5 +112,13 @@ python scripts/sim_replay/sim_replay.py \
     --db_file_path /mnt/db/datasets.db \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
     --device_model zhipingfang \
+    --log_dir ./logs/sim_replay
+
+# unitree_g1
+python scripts/sim_replay/sim_replay.py \
+    --db_file_path /mnt/db/datasets.db \
+    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
+    --device_model unitree_g1 \
+    --device_model_version threecam_hand_version \
     --log_dir ./logs/sim_replay
 """

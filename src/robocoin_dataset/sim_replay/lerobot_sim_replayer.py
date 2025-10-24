@@ -49,6 +49,7 @@ class LerobotSimReplayer:
         self.get_mjcf_gripper_joint_data = replay_config.get_mjcf_gripper_joint_data
         self.mjcf_site_names = replay_config.mjcf_site_names
 
+
         if not self.mjcf_file_path.exists():
             raise FileNotFoundError(f"MJCF file not found: {self.mjcf_file_path}")
         if not self.repo_path.exists():
@@ -272,15 +273,16 @@ class LerobotSimReplayer:
         print("[界面] 正在启动 MuJoCo 界面和可视化图表...")
         self.start_viewer()
         
-        if enable_gripper_plot and gripper_plot_callback is not None:
-            import matplotlib.pyplot as plt
-            plt.ion()
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.set_xlabel("Step")
-            ax.set_ylabel("Gripper Value")
-            ax.set_title("Gripper Values (实时)")
-            plt.show(block=False)
-            plt.draw()
+        # 注释掉额外的gripper图表创建，使用callback提供的图表
+        # if enable_gripper_plot and gripper_plot_callback is not None:
+        #     import matplotlib.pyplot as plt
+        #     plt.ion()
+        #     fig, ax = plt.subplots(figsize=(10, 4))
+        #     ax.set_xlabel("Step")
+        #     ax.set_ylabel("Gripper Value")
+        #     ax.set_title("Gripper Values (实时)")
+        #     plt.show(block=False)
+        #     plt.draw()
         
         print("[界面] MuJoCo 界面和可视化图表已启动")
 
@@ -309,6 +311,8 @@ class LerobotSimReplayer:
                 if enable_gripper_plot and gripper_plot_callback is not None and len(leroot_gripper_ids) > 0:
                     gripper_history.append(list(lerobot_gripper_values))
                     gripper_plot_callback(gripper_history, ax, lines)
+                    # 使用matplotlib进行短暂暂停以更新图表
+                    import matplotlib.pyplot as plt
                     plt.pause(0.01)
 
                 self._sync_viewer()

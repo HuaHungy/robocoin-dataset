@@ -117,7 +117,7 @@ unitree_g1:
 - version: onecam_hand_version
   verison_description: two arms and two hands (6 joints each), one rgb cameras with high
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+  mujoco_sim_replay_config_class: UnitreeG1Dof27ThreeFingerHandConfig
 
 - version: dex3v1_version
   verison_description: two arms and two dex3v1 (7 joints each), one rgb cameras with high
@@ -127,7 +127,7 @@ unitree_g1:
 - version: twocam_hand_version
   verison_description: two arms and two hands (6 joints each), two rgb cameras with high_up and high_down
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+  mujoco_sim_replay_config_class: UnitreeG1Dof27ThreeFingerHandConfig
 
 - version: twocam_dex3v1_version
   verison_description: two arms and two dex3v1 (7 joints each), two rgb cameras with high_up and high_down
@@ -137,7 +137,7 @@ unitree_g1:
 - version: threecam_hand_version
   verison_description: two arms and two hands (6 joints each), three rgb cameras with high, left wrist, right wrist
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+  mujoco_sim_replay_config_class: UnitreeG1Dof27ThreeFingerHandConfig
 
 - version: threecam_dex3v1_version
   verison_description: two arms and two dex3v1 (7 joints each), three rgb cameras with high, left wrist, right wrist

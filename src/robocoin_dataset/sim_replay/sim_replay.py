@@ -56,7 +56,6 @@ class SimReplay:
         device_model = item.device_model
         device_model_version = item.device_model_version
         replay_config = self._get_config(device_model, device_model_version)
-
         convert_path = self._get_convert_path(dataset_uuid)
 
         simulator = LerobotSimReplayer(replay_config, convert_path)
@@ -67,23 +66,74 @@ class SimReplay:
             if arr.ndim == 1:
                 arr = arr[:, None]
             
-            # 定义颜色和标签映射 - 调换红色和绿色
-            colors = ['green', 'red']  # gripper_left用绿色，gripper_right用红色
-            labels = ['gripper_left', 'gripper_right']
-            
-            if not lines:
-                for i in range(arr.shape[1]):
-                    color = colors[i] if i < len(colors) else f'C{i}'
-                    label = labels[i] if i < len(labels) else f"gripper_{i}"
-                    (line,) = ax.plot(arr[:, i], color=color, label=label)
-                    lines.append(line)
-                ax.legend()
+            # 检查是否已经创建了窗口（使用全局状态避免重复创建）
+            if not hasattr(gripper_plot_callback, 'figs'):
+                gripper_plot_callback.figs = []
+                gripper_plot_callback.axes = []
+                gripper_plot_callback.lines = []
+                
+                # 假设有两个gripper：gripper_left 和 gripper_right
+                gripper_names = ['gripper_left', 'gripper_right']
+                gripper_colors = ['green', 'red']  # gripper_left用绿色，gripper_right用红色
+                
+                # 检测每个gripper的子数据数量
+                total_grippers = arr.shape[1]
+                grippers_per_side = total_grippers // 2 if total_grippers % 2 == 0 else (total_grippers + 1) // 2
+                
+                print(f"[Gripper可视化] 检测到总共 {total_grippers} 个gripper数据")
+                print(f"[Gripper可视化] 每个gripper预计包含 {grippers_per_side} 个子数据")
+                
+                # 为每个gripper类型创建一个窗口
+                for gripper_idx, gripper_name in enumerate(gripper_names):
+                    if gripper_idx * grippers_per_side >= total_grippers:
+                        break
+                        
+                    fig, ax_sub = plt.subplots(figsize=(10, 6))
+                    fig.suptitle(f'{gripper_name} Values')
+                    
+                    # 在这个窗口中绘制该gripper的所有子数据，使用相同颜色
+                    gripper_lines = []
+                    start_idx = gripper_idx * grippers_per_side
+                    end_idx = min(start_idx + grippers_per_side, total_grippers)
+                    
+                    base_color = gripper_colors[gripper_idx]  # 使用gripper对应的基础颜色
+                    
+                    for sub_idx in range(start_idx, end_idx):
+                        local_sub_idx = sub_idx - start_idx
+                        label = f"{gripper_name}_{local_sub_idx}"
+                        (line,) = ax_sub.plot(arr[:, sub_idx], color=base_color, label=label)
+                        gripper_lines.append(line)
+                    
+                    ax_sub.set_xlabel("Step")
+                    ax_sub.set_ylabel("Gripper Value")
+                    ax_sub.legend()
+                    ax_sub.grid(True, alpha=0.3)
+                    
+                    gripper_plot_callback.figs.append(fig)
+                    gripper_plot_callback.axes.append(ax_sub)
+                    gripper_plot_callback.lines.extend(gripper_lines)
+                    
+                    plt.show(block=False)
+                    
+                    print(f"[Gripper可视化] 已创建 {gripper_name} 窗口，包含 {len(gripper_lines)} 条曲线")
+                
+                # 将创建的lines返回给调用者
+                lines.extend(gripper_plot_callback.lines)
             else:
-                for i, line in enumerate(lines):
-                    line.set_ydata(arr[:, i])
-                    line.set_xdata(np.arange(arr.shape[0]))
-                ax.relim()
-                ax.autoscale_view()
+                # 更新现有的线条数据
+                for i, line in enumerate(gripper_plot_callback.lines):
+                    if i < arr.shape[1]:
+                        line.set_ydata(arr[:, i])
+                        line.set_xdata(np.arange(arr.shape[0]))
+                
+                # 更新每个axes的显示范围
+                for ax_sub in gripper_plot_callback.axes:
+                    ax_sub.relim()
+                    ax_sub.autoscale_view()
+                
+                # 重绘所有图表
+                for fig in gripper_plot_callback.figs:
+                    fig.canvas.draw_idle()
 
         try:
             # 启动界面
@@ -150,29 +200,57 @@ class SimReplay:
 
     @staticmethod
     def plot_gripper_values(gripper_values, title="Gripper Values"):
-        if not gripper_values or not any(gripper_values):
-            print("[可视化] 没有可用的 gripper 数据，不进行绘图。")
-            return
+        """
+        静态方法：绘制gripper值的图表，支持gripper_left和gripper_right各自包含1-5个子数据
+        
+        Args:
+            gripper_values: gripper值的数组或列表
+            title: 图表标题
+        """
+        import matplotlib.pyplot as plt
         import numpy as np
-        gripper_values = np.array(gripper_values)
-        if gripper_values.ndim == 1:
-            gripper_values = gripper_values[:, None]
         
-        # 定义颜色和标签映射 - 调换红色和绿色
-        colors = ['green', 'red']  # gripper_left用绿色，gripper_right用红色
-        labels = ['gripper_left', 'gripper_right']
+        arr = np.array(gripper_values)
+        if arr.ndim == 1:
+            arr = arr[:, None]
         
-        plt.figure(figsize=(10, 4))
-        for i in range(gripper_values.shape[1]):
-            color = colors[i] if i < len(colors) else f'C{i}'
-            label = labels[i] if i < len(labels) else f"gripper_{i}"
-            plt.plot(gripper_values[:, i], color=color, label=label)
-        plt.xlabel("Step")
-        plt.ylabel("Gripper Value")
-        plt.title(title)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
+        # 假设有两个gripper：gripper_left 和 gripper_right
+        gripper_names = ['gripper_left', 'gripper_right']
+        gripper_colors = ['green', 'red']  # gripper_left用绿色，gripper_right用红色
+        
+        # 检测每个gripper的子数据数量
+        total_grippers = arr.shape[1]
+        grippers_per_side = total_grippers // 2 if total_grippers % 2 == 0 else (total_grippers + 1) // 2
+        
+        print(f"[静态Gripper可视化] 检测到总共 {total_grippers} 个gripper数据")
+        print(f"[静态Gripper可视化] 每个gripper预计包含 {grippers_per_side} 个子数据")
+        
+        # 为每个gripper类型创建一个窗口
+        for gripper_idx, gripper_name in enumerate(gripper_names):
+            if gripper_idx * grippers_per_side >= total_grippers:
+                break
+                
+            fig, ax = plt.subplots(figsize=(10, 6))
+            fig.suptitle(f'{gripper_name} Values')
+            
+            # 在这个窗口中绘制该gripper的所有子数据，使用相同颜色
+            start_idx = gripper_idx * grippers_per_side
+            end_idx = min(start_idx + grippers_per_side, total_grippers)
+            
+            base_color = gripper_colors[gripper_idx]  # 使用gripper对应的基础颜色
+            
+            for sub_idx in range(start_idx, end_idx):
+                local_sub_idx = sub_idx - start_idx
+                label = f"{gripper_name}_{local_sub_idx}"
+                ax.plot(arr[:, sub_idx], color=base_color, label=label)
+            
+            ax.set_xlabel("Step")
+            ax.set_ylabel("Gripper Value")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            plt.show()
+            
+            print(f"[静态Gripper可视化] 已创建 {gripper_name} 窗口，包含 {end_idx - start_idx} 条曲线")
 
 
     def _get_convert_path(self, dataset_uuid: str) -> str:

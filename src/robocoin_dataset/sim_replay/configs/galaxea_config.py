@@ -112,5 +112,4 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
             / (self.gripper_position_max - self.gripper_position_min)
         )
         rfrj_joint_data = -rflj_joint_data
-        print(lflj_joint_data, lfrj_joint_data, rflj_joint_data, rfrj_joint_data)
         return [lflj_joint_data, lfrj_joint_data, rflj_joint_data, rfrj_joint_data]
