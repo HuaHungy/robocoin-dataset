@@ -1,149 +1,109 @@
-### 智平方数据集配置 - 右臂单臂版本（包含 arm pose）
-### 
-### 使用场景：单右臂操作，左臂数据为空，包含右臂 pose 数据
-### - observations/camera/rgb/head/images: ✅ 有数据
-### - observations/camera/rgb/right/images: ✅ 有数据
-### - observations/camera/rgb/left/images: ❌ 空
-### - observations/camera/rgb/chest/images: ❌ 空
-### - observations/arm/right/joints: ✅ 有数据
-### - observations/arm/right/pose: ✅ 有数据
-### - observations/arm/right/wrench: ✅ 有数据
-### - observations/arm/left/*: ❌ 空
-
-fps: 30
+fps: 30  # 需根据实际collection_frequency调整
 
 features:
   observation:
     images:
-      ### 右臂相机：head + right wrist
-      - cam_name: camera_head_rgb
+      # 只有head和right_wrist摄像头有数据
+      # chest和left摄像头为空 (Shape: (0,))
+      - cam_name: cam_head_rgb
         args:
-          h5_path: observations/camera/rgb/head/images
-
-      - cam_name: camera_right_wrist_rgb
+          h5_path: "observations/camera/rgb/head/images"
+      
+      - cam_name: cam_right_wrist_rgb
         args:
-          h5_path: observations/camera/rgb/right/images
+          h5_path: "observations/camera/rgb/right/images"
 
     state:
-      ### State: 21D = 7 right joints + 6 right pose + 6 right wrench + 1 right gripper + 1 timestamp
-      
+      # Total dimensions: 14 (7+6+1)
+      # 只有右臂数据
       sub_state:
-        ### Right arm joints (7)
+        # 右臂关节 (7维)
         - names:
-            - right_arm_joint_0
-            - right_arm_joint_1
-            - right_arm_joint_2
-            - right_arm_joint_3
-            - right_arm_joint_4
-            - right_arm_joint_5
-            - right_arm_joint_6
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_arm_joint_7_rad
           args:
-            h5_path: observations/arm/right/joints
+            h5_path: "observations/arm/right/joints"
             range_from: 0
             range_to: 7
-          convert_func: to_float32
-
-        ### Right arm end effector pose (6) - xyz + rpy
+          convert_func: degree2rad
+        
+        # 右臂末端执行器姿态 (6维: position xyz + euler xyz)
         - names:
-            - right_arm_pose_x
-            - right_arm_pose_y
-            - right_arm_pose_z
-            - right_arm_pose_roll
-            - right_arm_pose_pitch
-            - right_arm_pose_yaw
+            - right_eef_pos_x_m
+            - right_eef_pos_y_m
+            - right_eef_pos_z_m
+            - right_eef_rot_euler_x_rad
+            - right_eef_rot_euler_y_rad
+            - right_eef_rot_euler_z_rad
           args:
-            h5_path: observations/arm/right/pose
+            h5_path: "observations/arm/right/pose"
             range_from: 0
             range_to: 6
-          convert_func: to_float32
-
-        ### Right arm wrench (6) - force xyz + torque xyz
+        
+        # 右夹爪位置 (1维)
         - names:
-            - right_arm_wrench_fx
-            - right_arm_wrench_fy
-            - right_arm_wrench_fz
-            - right_arm_wrench_tx
-            - right_arm_wrench_ty
-            - right_arm_wrench_tz
+            - right_gripper_open_rad
           args:
-            h5_path: observations/arm/right/wrench
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
-
-        ### Right gripper position (1)
-        - names:
-            - right_effector_position
-          args:
-            h5_path: observations/effector/right/position
+            h5_path: "observations/effector/right/position"
             range_from: 0
             range_to: 1
-          convert_func: to_float32
-
-        ### Timestamp (1) - filler to match dimensions
-        - names:
-            - timestamp_normalized
-          args:
-            h5_path: observations/timestamp
-            range_from: 0
-            range_to: 1
-          convert_func: to_float32
+        
+        # ⚠️ 以下字段已排除:
+        # - observations/arm/left/joints (100% 全零)
+        # - observations/arm/left/pose (100% 全零)
+        # - observations/arm/left/wrench (100% 全零)
+        # - observations/arm/right/wrench (100% 全零)
+        # - observations/chassis/pose (100% 全零)
+        # - observations/chassis/status (100% 全零)
+        # - observations/chassis/vel (100% 全零)
+        # - observations/neck/joints (100% 全零)
+        # - observations/torso/joints (100% 全零)
+        # - observations/torso/pose (100% 全零)
+        # - observations/effector/left/position (左臂数据全零)
+        # - observations/camera/rgb/chest (Shape: (0,), empty)
+        # - observations/camera/rgb/left (Shape: (0,), empty)
 
   action:
-    ### Action: 20D = 7 right joints + 6 right pose + 6 right wrench + 1 right gripper
-    ### 使用 timeline_offset: 1 从下一帧获取 action
-    
     timeline_offset: 1
-    
+    # ⚠️ H5文件中的action group为空
+    # 使用observation数据作为action（典型的模仿学习设置）
     sub_action:
-      ### Right arm joints (7)
+      # 右臂关节动作 (7维)
       - names:
-          - right_arm_joint_0
-          - right_arm_joint_1
-          - right_arm_joint_2
-          - right_arm_joint_3
-          - right_arm_joint_4
-          - right_arm_joint_5
-          - right_arm_joint_6
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_arm_joint_7_rad
         args:
-          h5_path: observations/arm/right/joints
+          h5_path: "observations/arm/right/joints"
           range_from: 0
           range_to: 7
-        convert_func: to_float32
-
-      ### Right arm end effector pose (6)
+      
+      # 右臂末端执行器姿态动作 (6维)
       - names:
-          - right_arm_pose_x
-          - right_arm_pose_y
-          - right_arm_pose_z
-          - right_arm_pose_roll
-          - right_arm_pose_pitch
-          - right_arm_pose_yaw
+          - right_eef_pos_x_m
+          - right_eef_pos_y_m
+          - right_eef_pos_z_m
+          - right_eef_rot_euler_x_rad
+          - right_eef_rot_euler_y_rad
+          - right_eef_rot_euler_z_rad
         args:
-          h5_path: observations/arm/right/pose
+          h5_path: "observations/arm/right/pose"
           range_from: 0
           range_to: 6
-        convert_func: to_float32
-
-      ### Right arm wrench (6)
+      
+      # 右夹爪动作 (1维)
       - names:
-          - right_arm_wrench_fx
-          - right_arm_wrench_fy
-          - right_arm_wrench_fz
-          - right_arm_wrench_tx
-          - right_arm_wrench_ty
-          - right_arm_wrench_tz
+          - right_gripper_open_rad
         args:
-          h5_path: observations/arm/right/wrench
-          range_from: 0
-          range_to: 6
-        convert_func: to_float32
-
-      ### Right gripper (1)
-      - names:
-          - right_effector_position
-        args:
-          h5_path: observations/effector/right/position
+          h5_path: "observations/effector/right/position"
           range_from: 0
           range_to: 1
-        convert_func: to_float32

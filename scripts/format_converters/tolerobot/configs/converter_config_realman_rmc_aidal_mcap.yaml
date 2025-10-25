@@ -53,7 +53,7 @@ features:
       ### values by function
       # lerobot_feature: observation.state : by _gen_lerobot_features()
       # dtype: float32 
-      # shape: [26]
+      # shape: [38]  # 26 (原有) + 12 (六维力数据: 左右臂各6维)
 
       ## sub_states should be concatenated together here : by _gen_state_names(), such as:
       # names: 
@@ -86,7 +86,7 @@ features:
 
       ### values by manual
       - names: 
-          - right_gripper_open
+          - right_gripper_open_rad
         args:
 
           ### keys and values by manual
@@ -127,6 +127,23 @@ features:
         convert_func: quat_xyzw_2_euler_xyz
 
 
+      ### P1 fields: 六维力传感器 (right arm)
+      ### values by manual
+      - names: 
+          - right_six_force_fx
+          - right_six_force_fy
+          - right_six_force_fz
+          - right_six_force_mx
+          - right_six_force_my
+          - right_six_force_mz
+        args:
+
+          ### keys and values by manual
+          mcap_topic: /right_arm_controller/rm_driver/udp_six_force
+          range_from: 0
+          range_to: 6
+
+
       ### values by manual
       - names: 
           - left_arm_joint_1_rad
@@ -159,6 +176,9 @@ features:
 
         ### values by manual
         # convert_func: degree2rad
+        
+        # ⚠️ 数据质量注意：某些episode中此字段可能为常量（例如GroceryStore_Restrocking_Fallen中恒为0.907）
+        # 这表明该episode中左臂未被使用，但字段仍保留以保持数据一致性
 
 
       ### values by manual
@@ -190,11 +210,28 @@ features:
         convert_func: quat_xyzw_2_euler_xyz
 
 
+      ### P1 fields: 六维力传感器 (left arm)
+      ### values by manual
+      - names: 
+          - left_six_force_fx
+          - left_six_force_fy
+          - left_six_force_fz
+          - left_six_force_mx
+          - left_six_force_my
+          - left_six_force_mz
+        args:
+
+          ### keys and values by manual
+          mcap_topic: /left_arm_controller/rm_driver/udp_six_force
+          range_from: 0
+          range_to: 6
+
+
   action:
     ### values by function
     # lerobot_feature: action : by _gen_lerobot_features()
     # dtype: float32
-    # shape: [26]
+    # shape: [26]  # 不包含六维力（action不需要force sensor）
 
     ## sub_actions should be concatenated together here : by _gen_action_names(), such as:
     # names: 
@@ -228,7 +265,7 @@ features:
 
       ### values by manual
       - names: 
-          - right_gripper_open
+          - right_gripper_open_rad
         args:
 
           ### keys and values by manual
@@ -301,6 +338,9 @@ features:
 
         ### values by manual
         # convert_func: degree2rad
+        
+        # ⚠️ 数据质量注意：某些episode中此字段可能为常量（例如GroceryStore_Restrocking_Fallen中恒为0.907）
+        # 这表明该episode中左臂未被使用，但字段仍保留以保持数据一致性
 
 
       ### values by manual

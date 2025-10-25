@@ -1,259 +1,178 @@
-### 智平方数据集配置 - 双臂版本（包含 arm pose）- 压缩视频格式
-### 
-### 使用场景：双臂操作，包含左右臂 pose 数据，图像以压缩视频格式存储
-### - observations/camera/rgb/head/video: ✅ 有数据（压缩视频）
-### - observations/camera/rgb/head/video_index: ✅ 有数据（帧索引）
-### - observations/camera/rgb/left/video: ✅ 有数据（压缩视频）
-### - observations/camera/rgb/right/video: ✅ 有数据（压缩视频）
-### - observations/camera/rgb/chest/video: ✅ 有数据（压缩视频）
-### - observations/arm/left/joints: ✅ 有数据
-### - observations/arm/left/pose: ✅ 有数据
-### - observations/arm/left/wrench: ✅ 有数据
-### - observations/arm/right/joints: ✅ 有数据
-### - observations/arm/right/pose: ✅ 有数据
-### - observations/arm/right/wrench: ✅ 有数据
-
-fps: 30
+fps: 30  # 需根据实际collection_frequency调整
 
 features:
   observation:
     images:
-      ### 完整的四相机配置 - 使用压缩视频格式
-      - cam_name: camera_head_rgb
+      # RGB cameras with compressed video support
+      - cam_name: cam_chest_rgb
         args:
-          h5_path: observations/camera/rgb/head/images
-          use_compressed_video: true
-
-      - cam_name: camera_right_wrist_rgb
+          h5_path: "observations/camera/rgb/chest/images"
+          use_compressed_video: true  # 启用压缩视频
+      
+      - cam_name: cam_head_rgb
         args:
-          h5_path: observations/camera/rgb/right/images
-          use_compressed_video: true
-
-      - cam_name: camera_left_wrist_rgb
-        args:
-          h5_path: observations/camera/rgb/left/images
+          h5_path: "observations/camera/rgb/head/images"
           use_compressed_video: true
       
-      - cam_name: camera_chest_rgb
+      - cam_name: cam_left_wrist_rgb
         args:
-          h5_path: observations/camera/rgb/chest/images
+          h5_path: "observations/camera/rgb/left/images"
+          use_compressed_video: true
+      
+      - cam_name: cam_right_wrist_rgb
+        args:
+          h5_path: "observations/camera/rgb/right/images"
           use_compressed_video: true
 
     state:
-      ### State: 40D = 7 left joints + 6 left pose + 6 left wrench + 1 left gripper + 7 right joints + 6 right pose + 6 right wrench + 1 right gripper
-      
+      # Total dimensions: 28 (7+6+7+6+1+1)
+      # ⚠️ 注意：压缩版本的某些数据可能为空 (shape=(0,))
+      # 例如: chassis, neck, torso在compressed版本中完全为空
       sub_state:
-        ### Left arm joints (7)
+        # 左臂关节 (7维) - 单位: degree
         - names:
-            - left_arm_joint_0
-            - left_arm_joint_1
-            - left_arm_joint_2
-            - left_arm_joint_3
-            - left_arm_joint_4
-            - left_arm_joint_5
-            - left_arm_joint_6
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
+            - left_arm_joint_7_rad
           args:
-            h5_path: observations/arm/left/joints
+            h5_path: "observations/arm/left/joints"
             range_from: 0
             range_to: 7
-          convert_func: to_float32
-
-        ### Left arm end effector pose (6) - xyz + rpy
+          convert_func: degree2rad
+        
+        # 左臂末端执行器姿态 (6维: position xyz + euler xyz)
         - names:
-            - left_arm_pose_x
-            - left_arm_pose_y
-            - left_arm_pose_z
-            - left_arm_pose_roll
-            - left_arm_pose_pitch
-            - left_arm_pose_yaw
+            - left_eef_pos_x_m
+            - left_eef_pos_y_m
+            - left_eef_pos_z_m
+            - left_eef_rot_euler_x_rad
+            - left_eef_rot_euler_y_rad
+            - left_eef_rot_euler_z_rad
           args:
-            h5_path: observations/arm/left/pose
+            h5_path: "observations/arm/left/pose"
             range_from: 0
             range_to: 6
-          convert_func: to_float32
-
-        ### Left arm wrench (6) - force xyz + torque xyz
+        
+        # 右臂关节 (7维) - 单位: degree
         - names:
-            - left_arm_wrench_fx
-            - left_arm_wrench_fy
-            - left_arm_wrench_fz
-            - left_arm_wrench_tx
-            - left_arm_wrench_ty
-            - left_arm_wrench_tz
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_arm_joint_7_rad
           args:
-            h5_path: observations/arm/left/wrench
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
-
-        ### Left gripper position (1)
-        - names:
-            - left_effector_position
-          args:
-            h5_path: observations/effector/left/position
-            range_from: 0
-            range_to: 1
-          convert_func: to_float32
-
-        ### Right arm joints (7)
-        - names:
-            - right_arm_joint_0
-            - right_arm_joint_1
-            - right_arm_joint_2
-            - right_arm_joint_3
-            - right_arm_joint_4
-            - right_arm_joint_5
-            - right_arm_joint_6
-          args:
-            h5_path: observations/arm/right/joints
+            h5_path: "observations/arm/right/joints"
             range_from: 0
             range_to: 7
-          convert_func: to_float32
-
-        ### Right arm end effector pose (6) - xyz + rpy
+          convert_func: degree2rad
+        
+        # 右臂末端执行器姿态 (6维: position xyz + euler xyz)
         - names:
-            - right_arm_pose_x
-            - right_arm_pose_y
-            - right_arm_pose_z
-            - right_arm_pose_roll
-            - right_arm_pose_pitch
-            - right_arm_pose_yaw
+            - right_eef_pos_x_m
+            - right_eef_pos_y_m
+            - right_eef_pos_z_m
+            - right_eef_rot_euler_x_rad
+            - right_eef_rot_euler_y_rad
+            - right_eef_rot_euler_z_rad
           args:
-            h5_path: observations/arm/right/pose
+            h5_path: "observations/arm/right/pose"
             range_from: 0
             range_to: 6
-          convert_func: to_float32
-
-        ### Right arm wrench (6) - force xyz + torque xyz
+        
+        # 左夹爪位置 (1维)
         - names:
-            - right_arm_wrench_fx
-            - right_arm_wrench_fy
-            - right_arm_wrench_fz
-            - right_arm_wrench_tx
-            - right_arm_wrench_ty
-            - right_arm_wrench_tz
+            - left_gripper_open_rad
           args:
-            h5_path: observations/arm/right/wrench
-            range_from: 0
-            range_to: 6
-          convert_func: to_float32
-
-        ### Right gripper position (1)
-        - names:
-            - right_effector_position
-          args:
-            h5_path: observations/effector/right/position
+            h5_path: "observations/effector/left/position"
             range_from: 0
             range_to: 1
-          convert_func: to_float32
+        
+        # 右夹爪位置 (1维)
+        - names:
+            - right_gripper_open_rad
+          args:
+            h5_path: "observations/effector/right/position"
+            range_from: 0
+            range_to: 1
 
   action:
-    ### Action: 40D = 7 left joints + 6 left pose + 6 left wrench + 1 left gripper + 7 right joints + 6 right pose + 6 right wrench + 1 right gripper
-    ### 使用 timeline_offset: 1 从下一帧获取 action
-    
     timeline_offset: 1
-    
     sub_action:
-      ### Left arm joints (7)
+      # 左臂关节动作 (7维)
       - names:
-          - left_arm_joint_0
-          - left_arm_joint_1
-          - left_arm_joint_2
-          - left_arm_joint_3
-          - left_arm_joint_4
-          - left_arm_joint_5
-          - left_arm_joint_6
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
+          - left_arm_joint_7_rad
         args:
-          h5_path: observations/arm/left/joints
+          h5_path: "observations/arm/left/joints"
           range_from: 0
           range_to: 7
-        convert_func: to_float32
-
-      ### Left arm end effector pose (6)
+        convert_func: degree2rad
+      
+      # 左臂末端执行器姿态动作 (6维)
       - names:
-          - left_arm_pose_x
-          - left_arm_pose_y
-          - left_arm_pose_z
-          - left_arm_pose_roll
-          - left_arm_pose_pitch
-          - left_arm_pose_yaw
+          - left_eef_pos_x_m
+          - left_eef_pos_y_m
+          - left_eef_pos_z_m
+          - left_eef_rot_euler_x_rad
+          - left_eef_rot_euler_y_rad
+          - left_eef_rot_euler_z_rad
         args:
-          h5_path: observations/arm/left/pose
+          h5_path: "observations/arm/left/pose"
           range_from: 0
           range_to: 6
-        convert_func: to_float32
-
-      ### Left arm wrench (6)
+      
+      # 右臂关节动作 (7维)
       - names:
-          - left_arm_wrench_fx
-          - left_arm_wrench_fy
-          - left_arm_wrench_fz
-          - left_arm_wrench_tx
-          - left_arm_wrench_ty
-          - left_arm_wrench_tz
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_arm_joint_7_rad
         args:
-          h5_path: observations/arm/left/wrench
-          range_from: 0
-          range_to: 6
-        convert_func: to_float32
-
-      ### Left gripper (1)
-      - names:
-          - left_effector_position
-        args:
-          h5_path: observations/effector/left/position
-          range_from: 0
-          range_to: 1
-        convert_func: to_float32
-
-      ### Right arm joints (7)
-      - names:
-          - right_arm_joint_0
-          - right_arm_joint_1
-          - right_arm_joint_2
-          - right_arm_joint_3
-          - right_arm_joint_4
-          - right_arm_joint_5
-          - right_arm_joint_6
-        args:
-          h5_path: observations/arm/right/joints
+          h5_path: "observations/arm/right/joints"
           range_from: 0
           range_to: 7
-        convert_func: to_float32
-
-      ### Right arm end effector pose (6)
+        convert_func: degree2rad
+      
+      # 右臂末端执行器姿态动作 (6维)
       - names:
-          - right_arm_pose_x
-          - right_arm_pose_y
-          - right_arm_pose_z
-          - right_arm_pose_roll
-          - right_arm_pose_pitch
-          - right_arm_pose_yaw
+          - right_eef_pos_x_m
+          - right_eef_pos_y_m
+          - right_eef_pos_z_m
+          - right_eef_rot_euler_x_rad
+          - right_eef_rot_euler_y_rad
+          - right_eef_rot_euler_z_rad
         args:
-          h5_path: observations/arm/right/pose
+          h5_path: "observations/arm/right/pose"
           range_from: 0
           range_to: 6
-        convert_func: to_float32
-
-      ### Right arm wrench (6)
+      
+      # 左夹爪动作 (1维)
       - names:
-          - right_arm_wrench_fx
-          - right_arm_wrench_fy
-          - right_arm_wrench_fz
-          - right_arm_wrench_tx
-          - right_arm_wrench_ty
-          - right_arm_wrench_tz
+          - left_gripper_open_rad
         args:
-          h5_path: observations/arm/right/wrench
-          range_from: 0
-          range_to: 6
-        convert_func: to_float32
-
-      ### Right gripper (1)
-      - names:
-          - right_effector_position
-        args:
-          h5_path: observations/effector/right/position
+          h5_path: "observations/effector/left/position"
           range_from: 0
           range_to: 1
-        convert_func: to_float32
+      
+      # 右夹爪动作 (1维)
+      - names:
+          - right_gripper_open_rad
+        args:
+          h5_path: "observations/effector/right/position"
+          range_from: 0
+          range_to: 1
+

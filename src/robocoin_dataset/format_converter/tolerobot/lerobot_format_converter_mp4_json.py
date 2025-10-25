@@ -19,6 +19,14 @@ from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import
 from robocoin_dataset.format_converter.tolerobot.video_frame_validator import (
     validate_video_frame_count,
 )
+from robocoin_dataset.format_converter.tolerobot.lazy_video_reader import (
+    LazyVideoReader,
+    LazyVideoReaderPool,
+)
+from robocoin_dataset.format_converter.utils.unified_episode_locator import (
+    UnifiedEpisodeLocator,
+    is_mp4_json_episode,
+)
 
 
 class LerobotFormatConverterMp4Json(LerobotFormatConverter):
@@ -35,7 +43,14 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         video_backend: str = "pyav",
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
+        strict_episodes: int = 3,
+        failure_threshold: float = 0.8,
+        auto_reencode: bool = False,
     ) -> None:
+        # 🚀 在super().__init__之前初始化，因为父类会调用_get_all_episode_dirs
+        self._episode_locator = UnifiedEpisodeLocator(logger=logger)
+        self._auto_reencode = auto_reencode  # 🎬 自动重编码标志
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -46,22 +61,28 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             video_backend=video_backend,
             image_writer_processes=image_writer_processes,
             image_writer_threads=image_writer_threads,
+            strict_episodes=strict_episodes,
+            failure_threshold=failure_threshold,
         )
         self._json_data_cache = {}  # 缓存JSON数据
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
+        self._video_caps = {}  # 延迟加载的VideoCapture对象缓存 {(task_path, ep_idx, cam_name): cv2.VideoCapture}
 
-    def convert(self, is_test: bool = False) -> None:
+    def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志
         
         Args:
             is_test: 是否为测试模式。测试模式只处理少量帧以快速验证
+        
+        Yields:
+            (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
         """
         self._is_test_mode = is_test
         if is_test and self.logger:
             self.logger.info("🧪 Mp4Json Converter running in TEST mode - will only load first 11 frames per video")
         
-        # 调用父类的转换逻辑
-        super().convert(is_test=is_test)
+        # 调用父类的转换逻辑并 yield 结果
+        yield from super().convert(is_test=is_test)
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -239,7 +260,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                             f"   📊 JSON data frames: {expected_frame_count}"
                         )
                     
-                    # 验证每个MP4文件的帧数
+                    # 验证每个MP4文件的帧数（仅警告，不阻止转换）
                     for mp4_file in mp4_files:
                         try:
                             validate_video_frame_count(
@@ -250,14 +271,17 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                                 tolerance=0  # 要求完全匹配
                             )
                         except ValueError as e:  # noqa: PERF203
-                            # 帧数不匹配，抛出详细错误
-                            raise ValueError(
-                                f"❌ MP4+JSON帧数不匹配\n"
-                                f"📂 Episode: {ep_dir.name}\n"
-                                f"📄 Video: {mp4_file.name}\n"
-                                f"📄 JSON: {json_file.name}\n"
-                                f"{str(e)}"
-                            ) from e
+                            # 🆕 帧数不匹配，记录警告但不阻止转换（由运行时容错机制处理）
+                            if self.logger:
+                                self.logger.warning(
+                                    f"⚠️  MP4+JSON帧数不匹配（将在转换时跳过此episode）\n"
+                                    f"📂 Episode: {ep_dir.name}\n"
+                                    f"📄 Video: {mp4_file.name}\n"
+                                    f"📄 JSON: {json_file.name}\n"
+                                    f"📊 Video frames: {mp4_file}\n"
+                                    f"📊 JSON frames: {expected_frame_count}\n"
+                                    f"💡 此episode将在转换时被容错机制自动跳过"
+                                )
                         except RuntimeError as e:
                             # ffprobe执行失败
                             if self.logger:
@@ -322,18 +346,22 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     )
                     
             except json.JSONDecodeError as e:
-                raise ValueError(
+                from .exceptions import CriticalDataError
+                raise CriticalDataError(
                     f"❌ Failed to parse JSON file.\n"
                     f"   📄 File: {json_file}\n"
                     f"   ❌ JSON error at line {e.lineno}, column {e.colno}: {e.msg}\n"
-                    f"   💡 Check if JSON file is corrupted or has syntax errors."
+                    f"   💡 Check if JSON file is corrupted or has syntax errors.\n"
+                    f"   ⚠️  Skipping this episode due to JSON parsing failure."
                 ) from e
             except Exception as e:
-                raise RuntimeError(
+                from .exceptions import CriticalDataError
+                raise CriticalDataError(
                     f"❌ Failed to load JSON file.\n"
                     f"   📄 File: {json_file}\n"
                     f"   ❌ Error: {e!s}\n"
-                    f"   💡 Check file permissions and disk space."
+                    f"   💡 Check file permissions and disk space.\n"
+                    f"   ⚠️  Skipping this episode due to JSON loading failure."
                 ) from e
         
         return self._json_data_cache[cache_key]
@@ -344,21 +372,48 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         需要返回所有数据源（JSON数据和视频文件）中的最小帧数，
         以确保所有帧都有完整的数据（observation、state、action）
         """
-        # 1. 从JSON获取帧数（记录每个字段的详细信息）
+        from robocoin_dataset.format_converter.tolerobot.constant import (
+            ACTION_KEY,
+            FEATURES_KEY,
+            OBSERVATION_KEY,
+            STATE_KEY,
+        )
+        
+        # 获取配置中实际使用的 json_path 列表
+        used_json_paths = set()
+        
+        # 从 observation.state 获取
+        state_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(STATE_KEY, {})
+        for sub_state in state_configs.get('sub_state', []):
+            json_path = sub_state.get('args', {}).get('json_path', '')
+            if json_path:
+                used_json_paths.add(json_path)
+        
+        # 从 action 获取
+        action_configs = self.converter_config.get(FEATURES_KEY, {}).get(ACTION_KEY, {})
+        for sub_action in action_configs.get('sub_action', []):
+            json_path = sub_action.get('args', {}).get('json_path', '')
+            if json_path:
+                used_json_paths.add(json_path)
+        
+        # 1. 从JSON获取帧数（只计算配置中使用的字段）
         json_data = self._load_json_data(task_path, ep_idx)
         json_frame_counts = {}  # key -> frame_count
         
         if 'data' in json_data:
             for key, value in json_data['data'].items():
-                if isinstance(value, list) and len(value) > 0:
+                # 🆕 只计算配置中实际使用的字段
+                if key in used_json_paths and isinstance(value, list) and len(value) > 0:
                     json_frame_counts[key] = len(value)
         
         if not json_frame_counts:
-            raise ValueError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ Cannot determine frame count from JSON data.\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   📋 Available keys: {list(json_data.get('data', {}).keys())}\n"
-                f"   💡 No valid list data found in JSON file."
+                f"   💡 No valid list data found in JSON file.\n"
+                f"   ⚠️  Skipping this episode due to missing frame data."
             )
         
         min_json_frames = min(json_frame_counts.values())
@@ -395,11 +450,13 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                         )
         
         if not video_frame_counts:
-            raise ValueError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ No valid video frames found.\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, ep_dir={ep_dir}\n"
                 f"   📹 MP4 files: {[f.name for f in mp4_files]}\n"
-                f"   💡 Either no MP4 files found or all videos have 0 frames."
+                f"   💡 Either no MP4 files found or all videos have 0 frames.\n"
+                f"   ⚠️  Skipping this episode due to no valid video data."
             )
         
         min_video_frames = min(video_frame_counts.values())
@@ -448,13 +505,15 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         # 5. 检查帧数是否为0（这会导致后续的ValueError）
         if min_frames == 0:
-            raise ValueError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ Episode has 0 frames after applying minimum!\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   📊 Frame counts:\n"
                 f"      - JSON: {dict(list(json_frame_counts.items())[:5])}{'...' if len(json_frame_counts) > 5 else ''}\n"
                 f"      - Video: {video_frame_counts}\n"
-                f"   💡 This will cause 'You must add one or several frames' error."
+                f"   💡 This will cause 'You must add one or several frames' error.\n"
+                f"   ⚠️  Skipping this episode due to 0 frames."
             )
         
         return min_frames
@@ -464,59 +523,66 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         episodes = self._get_all_episode_dirs(task_path)
         return len(episodes)
     
-    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
-        """获取所有episode目录（支持嵌套结构）
+    def _is_episode(self, path: Path) -> bool:
+        """判断路径是否是一个episode
         
-        该方法支持两种结构：
-        1. 扁平结构：task_path/episode_0/data.json
-        2. 嵌套结构：task_path/xiyiji-1/20250501_record0/data.json
+        MP4+JSON格式的episode标志：目录中包含data.json文件
         """
-        # 首先检查是否是扁平结构
-        direct_episodes = [
-            ep_dir for ep_dir in task_path.glob("*") 
-            if ep_dir.is_dir() and (ep_dir / "data.json").exists()
-        ]
+        return is_mp4_json_episode(path)
+    
+    def _get_all_episode_dirs(self, task_path: Path) -> list[Path]:
+        """获取所有episode目录（使用BFS搜索，支持任意层级结构）
         
-        if direct_episodes:
-            return sorted(direct_episodes)
+        🚀 改进：使用UnifiedEpisodeLocator进行BFS搜索
+        - 不再限制固定层级（扁平/嵌套2层）
+        - 支持任意深度的目录结构
+        - 支持task_path本身就是episode的情况
         
-        # 如果不是扁平结构，尝试嵌套结构
-        nested_episodes = [
-            ep_dir
-            for parent_dir in task_path.glob("*")
-            if parent_dir.is_dir()
-            for ep_dir in parent_dir.glob("*")
-            if ep_dir.is_dir() and (ep_dir / "data.json").exists()
-        ]
-        
-        if nested_episodes:
-            return sorted(nested_episodes)
-        
-        raise FileNotFoundError(
-            f"No episode directories with data.json found in {task_path}. "
-            f"Checked both flat structure (task_path/*/data.json) and "
-            f"nested structure (task_path/*/*/data.json)"
+        支持的结构：
+        1. task_path本身就是episode: task_path/data.json
+        2. 扁平结构: task_path/episode_0/data.json
+        3. 嵌套结构: task_path/subdir1/subdir2/episode_0/data.json
+        """
+        episodes = self._episode_locator.locate_episodes_bfs(
+            dataset_path=task_path,
+            is_episode_func=self._is_episode,
+            max_depth=100  # 实际上无深度限制，防止无限循环
         )
+        
+        if not episodes:
+            # 收集目录信息用于诊断
+            try:
+                all_items = [item.name for item in task_path.iterdir()][:20]
+            except Exception:
+                all_items = []
+            
+            raise FileNotFoundError(
+                f"❌ No episode directories with data.json found in '{task_path}'.\n"
+                f"   🔍 Searched recursively (unlimited depth) using BFS.\n"
+                f"   📋 Items in task_path (first 20): {all_items if all_items else '(empty or inaccessible)'}\n"
+                f"   💡 Episode detection criteria: directory containing 'data.json' file.\n"
+                f"   💡 Ensure your dataset contains at least one directory with data.json."
+            )
+        
+        return episodes
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, list[np.ndarray]]:
-        """准备episode的图像缓冲区
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, LazyVideoReader]:
+        """准备episode的图像缓冲区（使用延迟加载）
+        
+        🚀 性能优化：使用LazyVideoReader替代加载所有帧到内存
+        - 优化前：100帧 × 3相机 × 1MB = 300MB内存/episode
+        - 优化后：仅缓存当前帧，约3MB内存/episode
+        - 内存优化：100x
         
         Args:
             task_path: 任务路径
             ep_idx: Episode索引
-            is_test: 是否为测试模式。测试模式只加载前11帧（10帧数据+1帧用于action offset）
+            is_test: 是否为测试模式（LazyVideoReader下此参数无影响，按需加载）
             
         Returns:
-            字典，键为相机名称，值为帧列表
+            字典，键为相机名称，值为LazyVideoReader对象
+            LazyVideoReader支持索引访问，可直接替代list[np.ndarray]
         """
-        # 🧪 确定要加载的最大帧数
-        max_frames = None
-        if is_test or self._is_test_mode:
-            # Test模式：只加载11帧（10帧数据 + 1帧用于timeline_offset）
-            max_frames = 11
-            if self.logger:
-                self.logger.info(f"🧪 Test mode: loading max {max_frames} frames for episode {ep_idx}")
-        
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             raise IndexError(
@@ -554,59 +620,64 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             
             cap = None
             try:
-                cap = cv2.VideoCapture(str(mp4_file))
-                if not cap.isOpened():
-                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): Cannot open video")
+                # 🚀 使用LazyVideoReader替代加载所有帧
+                reader = LazyVideoReader(
+                    mp4_file, 
+                    logger=self.logger,
+                    auto_reencode=self._auto_reencode  # 🎬 传递自动重编码参数
+                )
+                
+                # 验证视频可以打开且有帧
+                if len(reader) == 0:
+                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): 0 frames")
+                    reader.close()
                     continue
                 
-                frames = []
-                frame_idx = 0
-                while True:
-                    # 🧪 Test模式：限制加载帧数
-                    if max_frames is not None and frame_idx >= max_frames:
-                        if self.logger:
-                            self.logger.debug(f"🧪 Stopped loading {cam_name} at frame {frame_idx} (max_frames={max_frames})")
-                        break
-                    
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    # OpenCV读取的是BGR，转换为RGB
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    frames.append(frame_rgb)
-                    frame_idx += 1
+                images[cam_name] = reader
                 
-                if not frames:
-                    failed_cameras.append(f"{cam_name} ({mp4_file.name}): 0 frames read")
-                else:
-                    images[cam_name] = frames
-                    if self.logger:
-                        self.logger.debug(
-                            f"✓ Loaded {len(frames)} frames from {cam_name} ({mp4_file.name})"
-                        )
+                if self.logger:
+                    self.logger.debug(
+                        f"✓ LazyVideoReader ready for {cam_name}: "
+                        f"{len(reader)} frames ({mp4_file.name})"
+                    )
+                    
+            except FileNotFoundError as e:
+                failed_cameras.append(f"{cam_name} ({mp4_file.name}): File not found")
+                if self.logger:
+                    self.logger.error(f"❌ Video file not found: {mp4_file.name}")
+                    
+            except RuntimeError as e:
+                failed_cameras.append(f"{cam_name} ({mp4_file.name}): {e!s}")
+                if self.logger:
+                    self.logger.error(
+                        f"❌ Failed to open video {mp4_file.name}: {e}"
+                    )
+                    
             except Exception as e:
                 failed_cameras.append(f"{cam_name} ({mp4_file.name}): {e!s}")
                 if self.logger:
                     self.logger.error(
-                        f"❌ Failed to load video {mp4_file.name}: {e}"
+                        f"❌ Unexpected error loading video {mp4_file.name}: {e}"
                     )
             finally:
                 if cap:
                     cap.release()
         
         if not images:
-            raise RuntimeError(
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
                 f"❌ No valid camera images loaded.\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   📂 Episode directory: {ep_dir}\n"
                 f"   📹 MP4 files found: {[f.name for f in mp4_files]}\n"
                 f"   ❌ Failed cameras:\n" + 
                 "\n".join(f"      - {fc}" for fc in failed_cameras) + "\n"
-                f"   💡 Check if video files are corrupted or in unsupported format."
+                f"   💡 Check if video files are corrupted or in unsupported format.\n"
+                f"   ⚠️  Skipping this episode due to all cameras failing to load."
             )
         
         # 检查所有相机的帧数是否一致
-        frame_counts = {cam: len(frames) for cam, frames in images.items()}
+        frame_counts = {cam: len(reader) for cam, reader in images.items()}
         if len(set(frame_counts.values())) > 1:
             if self.logger:
                 self.logger.warning(
@@ -639,7 +710,14 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         json_data = self._load_json_data(task_path, ep_idx)
         
         if 'data' not in json_data:
-            raise ValueError("No 'data' key in JSON file")
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
+                f"❌ No 'data' key in JSON file.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                f"   📋 Available keys: {list(json_data.keys())}\n"
+                f"   💡 JSON file should contain a 'data' key with episode data.\n"
+                f"   ⚠️  Skipping this episode due to missing 'data' key."
+            )
         
         return json_data['data']
 
@@ -814,3 +892,55 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         """获取指定帧的子动作"""
         # 使用与状态相同的逻辑
         return self._get_frame_sub_states(task_path, ep_idx, frame_idx, args_dict, sub_actions_buffer)
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 MP4+JSON episode 的源文件信息
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: episode 索引
+        
+        Returns:
+            dict: 包含源文件信息的字典，包括 episode_dir, json_file, video_files
+        """
+        try:
+            from robocoin_dataset.format_converter.tolerobot.constant import (
+                FEATURES_KEY,
+                IMAGE_KEY,
+                OBSERVATION_KEY,
+            )
+            
+            episode_dirs = self._get_all_episode_dirs(task_path)
+            if ep_idx < len(episode_dirs):
+                episode_dir = episode_dirs[ep_idx]
+                
+                # 收集JSON和视频文件
+                json_file = episode_dir / "data.json"
+                video_files = []
+                
+                # 从 converter_config 中获取图像配置
+                image_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(IMAGE_KEY, [])
+                for cam_config in image_configs:
+                    video_path_template = cam_config.get("args", {}).get("video_path", "")
+                    if video_path_template:
+                        video_path = video_path_template.format(ep_dir=episode_dir.name)
+                        full_video_path = episode_dir / video_path
+                        if full_video_path.exists():
+                            video_files.append({
+                                "camera": cam_config["cam_name"],
+                                "relative_path": str(full_video_path.relative_to(self.dataset_path)),
+                                "absolute_path": str(full_video_path.absolute()),
+                            })
+                
+                return {
+                    "format": "MP4+JSON",
+                    "episode_directory": str(episode_dir.relative_to(self.dataset_path)),
+                    "json_file": str(json_file.relative_to(self.dataset_path)) if json_file.exists() else None,
+                    "video_files": video_files,
+                    "absolute_path": str(episode_dir.absolute()),
+                }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        
+        return {}

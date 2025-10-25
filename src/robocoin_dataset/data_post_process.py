@@ -40,10 +40,6 @@ class DataPostProcessorBase:
         self.new_info_file_path = self.convert_path / "meta" / f"{data_post_process_type}_info.json"
         self.info_file_path = self.convert_path / "meta/info.json"
 
-    # 实现该方法，返回更改后的feature_names
-    def get_new_feature_names(self) -> dict[str, list[str]]:
-        return {}
-
     # 将处理episode数据的准备工作放在这里
     def prepare_processing(self) -> None:
         pass
@@ -103,6 +99,9 @@ class DataPostProcessorBase:
             ori_data = self.get_ori_episode_data(episode_idx)
             new_datas: dict[str, np.ndarray] = self.process_episode_data(ori_data)
 
+            for key, arr in new_datas.items():
+                if isinstance(arr, np.ndarray) and np.issubdtype(arr.dtype, np.floating):
+                    new_datas[key] = arr.astype(np.float32)  # 就地转为 float32
             if new_datas.keys() != self.data_features:
                 raise ValueError(
                     f"new_datas keys {new_datas.keys()} != self.data_features {self.data_features}"

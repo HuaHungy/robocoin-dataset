@@ -419,3 +419,17 @@ class LeformatDatasetEefSimAnnotationStatusDB(Base):
     version_uuid = Column(String(255), nullable=True, default="v0")
     device_model = Column(String(255), index=True, nullable=True)
     device_model_version = Column(String(255), index=True, nullable=True)
+
+
+class LeformatDatasetDataMergeStatusDB(Base):
+    __tablename__ = "leformat_dataset_data_merge_status"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+    convert_path = Column(String(255), index=True, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    err_msg = Column(Text, index=True, nullable=True)
+    prestage_version_uuids = Column(String(255), nullable=True, default="")
+    version_uuid = Column(String(255), nullable=True, default="v0")
+    device_model = Column(String(255), index=True, nullable=True)
+    device_model_version = Column(String(255), index=True, nullable=True)

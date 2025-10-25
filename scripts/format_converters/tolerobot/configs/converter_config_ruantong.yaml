@@ -5,9 +5,9 @@ features:
     images:
 
     ### values by manual
-    - cam_name: head_color
+    - cam_name: cam_high_rgb
       args:
-
+      args:
         ### key and values by manual
         h5_path: camera/{frame_idx}/head_color.jpg
         file_type: jpg
@@ -20,24 +20,22 @@ features:
       # lerobot_feature: observations.images.head_color : by _gen_lerobot_features()
         
 
-    ### values by manual
-    - cam_name: head_depth
-      args:
-
-        ### keys and values by manual
-        h5_path: camera/{frame_idx}/head_depth.png
-        file_type: png
-
-      ### values by function
-      # dtype: video
-      # shape: [480, 640, 3]
-      # names: [height, width, channels]
-      # lerobot_feature: observations.images.head_depth : by _gen_lerobot_features()
+    # ### values by manual
+    # - cam_name: head_depth  # LeRobot不支持depth，已注释
+    #   args:
+    #     ### keys and values by manual
+    #     h5_path: camera/{frame_idx}/head_depth.png
+    #     file_type: png
+    #   ### values by function
+    #   # dtype: video
+    #   # shape: [480, 640, 3]
+    #   # names: [height, width, channels]
+    #   # lerobot_feature: observations.images.head_depth : by _gen_lerobot_features()
 
     ### values by manual
-    - cam_name: hand_left_color
+    - cam_name: cam_left_wrist_rgb
       args:
-        ### keys and values by manual
+      args:
         h5_path: camera/{frame_idx}/hand_left_color.jpg
         file_type: jpg
 
@@ -48,9 +46,9 @@ features:
       # lerobot_feature: observations.images.hand_left_color : by _gen_lerobot_features()
 
     ### values by manual
-    - cam_name: hand_right_color
+    - cam_name: cam_right_wrist_rgb
       args:
-        ### keys and values by manual
+      args:
         h5_path: camera/{frame_idx}/hand_right_color.jpg
         file_type: jpg
 
@@ -61,9 +59,9 @@ features:
       # lerobot_feature: observations.images.hand_right_color : by _gen_lerobot_features()
 
     ### values by manual
-    - cam_name: back_left_fisheye_color
+    - cam_name: cam_back_left_fisheye_rgb
       args:
-        ### keys and values by manual
+      args:
         h5_path: camera/{frame_idx}/back_left_fisheye_color.jpg
         file_type: jpg
 
@@ -74,9 +72,9 @@ features:
       # lerobot_feature: observations.images.back_left_fisheye_color : by _gen_lerobot_features()
 
     ### values by manual
-    - cam_name: back_right_fisheye_color
+    - cam_name: cam_back_right_fisheye_rgb
       args:
-        ### keys and values by manual
+      args:
         h5_path: camera/{frame_idx}/back_right_fisheye_color.jpg
         file_type: jpg
 
@@ -87,9 +85,9 @@ features:
       # lerobot_feature: observations.images.back_right_fisheye_color : by _gen_lerobot_features()
 
     ### values by manual
-    - cam_name: head_center_fisheye_color
+    - cam_name: cam_high_center_fisheye_rgb
       args:
-        ### keys and values by manual
+      args:
         h5_path: camera/{frame_idx}/head_center_fisheye_color.jpg
         file_type: jpg
 
@@ -100,9 +98,9 @@ features:
       # lerobot_feature: observations.images.head_center_fisheye_color : by _gen_lerobot_features()
 
     ### values by manual
-    - cam_name: head_left_fisheye_color
+    - cam_name: cam_high_left_fisheye_rgb
       args:
-        ### keys and values by manual
+      args:
         h5_path: camera/{frame_idx}/head_left_fisheye_color.jpg
         file_type: jpg
 
@@ -113,9 +111,9 @@ features:
       # lerobot_feature: observations.images.head_left_fisheye_color : by _gen_lerobot_features()
 
     ### values by manual
-    - cam_name: head_right_fisheye_color
+    - cam_name: cam_high_right_fisheye_rgb
       args:
-        ### keys and values by manual
+      args:
         h5_path: camera/{frame_idx}/head_right_fisheye_color.jpg
         file_type: jpg
 
@@ -140,16 +138,16 @@ features:
       # - ...
       sub_state:
       - names: 
-        - left_arm_joint_1
-        - left_arm_joint_2
-        - left_arm_joint_3
-        - left_arm_joint_4
-        - left_arm_joint_5
-        - left_arm_joint_6
-        - left_arm_joint_7
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        - left_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/joint/position
           range_from: 0
           range_to: 7
@@ -158,16 +156,16 @@ features:
         convert_func: to_float32
       
       - names: 
-        - right_arm_joint_1
-        - right_arm_joint_2
-        - right_arm_joint_3
-        - right_arm_joint_4
-        - right_arm_joint_5
-        - right_arm_joint_6
-        - right_arm_joint_7
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        - right_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/joint/position
           range_from: 7
           range_to: 14
@@ -177,11 +175,11 @@ features:
 
       ### values by manual
       - names: 
-        - left_end_pos_x
-        - left_end_pos_y
-        - left_end_pos_z
+        - left_end_pos_x_m
+        - left_end_pos_y_m
+        - left_end_pos_z_m
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/end/position
           range_from: 0
           range_to: 3
@@ -203,18 +201,19 @@ features:
           range_to: 4
           array_index: 0
         
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
 
       ### values by manual
       - names: 
-        - right_end_pos_x
-        - right_end_pos_y
-        - right_end_pos_z
+        - right_end_pos_x_m
+        - right_end_pos_y_m
+        - right_end_pos_z_m
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/end/position
           range_from: 0
           range_to: 3
@@ -236,15 +235,16 @@ features:
           range_to: 4
           array_index: 1
 
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
       - names: 
-        - waist_yaw
-        - waist_pitch
+        - waist_yaw_rad
+        - waist_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/waist/position
           range_from: 0
           range_to: 2
@@ -253,11 +253,11 @@ features:
         convert_func: to_float32
 
       - names: 
-        - head_yaw
-        - head_pitch
+        - head_yaw_rad
+        - head_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/head/position
           range_from: 0
           range_to: 2
@@ -266,8 +266,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - left_effector_pos
-        - right_effector_pos
+        - left_effector_open_deg
+        - right_effector_open_deg
 
         args:
           ### keys and values by manual
@@ -275,16 +275,17 @@ features:
           range_from: 0
           range_to: 2
         
+        convert_func: degree2rad
         ### values by manual
         convert_func: to_float32
 
       - names: 
-        - robot_pos_x
-        - robot_pos_y
-        - robot_pos_z
+        - robot_pos_x_m
+        - robot_pos_y_m
+        - robot_pos_z_m
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /state/robot/position
           range_from: 0
           range_to: 3
@@ -304,6 +305,7 @@ features:
           range_from: 0
           range_to: 4
         
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
@@ -326,16 +328,16 @@ features:
     sub_action:
 
       - names: 
-        - left_arm_joint_1
-        - left_arm_joint_2
-        - left_arm_joint_3
-        - left_arm_joint_4
-        - left_arm_joint_5
-        - left_arm_joint_6
-        - left_arm_joint_7
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        - left_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/joint/position
           range_from: 0
           range_to: 7
@@ -344,16 +346,16 @@ features:
         convert_func: to_float32
       
       - names: 
-        - right_arm_joint_1
-        - right_arm_joint_2
-        - right_arm_joint_3
-        - right_arm_joint_4
-        - right_arm_joint_5
-        - right_arm_joint_6
-        - right_arm_joint_7
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        - right_arm_joint_7_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/joint/position
           range_from: 7
           range_to: 14
@@ -363,11 +365,11 @@ features:
 
       ### values by manual
       - names: 
-        - left_end_pos_x
-        - left_end_pos_y
-        - left_end_pos_z
+        - left_end_pos_x_m
+        - left_end_pos_y_m
+        - left_end_pos_z_m
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/end/position
           range_from: 0
           range_to: 3
@@ -389,18 +391,19 @@ features:
           range_to: 4
           array_index: 0
         
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
 
       ### values by manual
       - names: 
-        - right_end_pos_x
-        - right_end_pos_y
-        - right_end_pos_z
+        - right_end_pos_x_m
+        - right_end_pos_y_m
+        - right_end_pos_z_m
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/end/position
           range_from: 0
           range_to: 3
@@ -422,15 +425,16 @@ features:
           range_to: 4
           array_index: 1
 
+        convert_func: quat_xyzw_2_euler_xyz
         ### values by manual
         convert_func: to_float32
 
       - names: 
-        - waist_yaw
-        - waist_pitch
+        - waist_yaw_rad
+        - waist_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/waist/position
           range_from: 0
           range_to: 2
@@ -439,11 +443,11 @@ features:
         convert_func: to_float32
 
       - names: 
-        - head_yaw
-        - head_pitch
+        - head_yaw_rad
+        - head_pitch_rad
 
         args:
-          ### keys and values by manual
+        args:
           h5_path: /action/head/position
           range_from: 0
           range_to: 2
@@ -452,8 +456,8 @@ features:
         convert_func: to_float32
 
       - names: 
-        - left_effector_pos
-        - right_effector_pos
+        - left_effector_open_deg
+        - right_effector_open_deg
 
         args:
           ### keys and values by manual
@@ -461,5 +465,6 @@ features:
           range_from: 0
           range_to: 2
         
+        convert_func: degree2rad
         ### values by manual
         convert_func: to_float32

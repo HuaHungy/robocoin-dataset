@@ -1,9 +1,12 @@
+import json
 import logging
 import uuid
 from pathlib import Path
 
+import numpy as np
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import not_
+from tqdm import tqdm
 
 from robocoin_dataset.database.database import (
     DatasetDatabase,
@@ -15,6 +18,8 @@ from robocoin_dataset.database.models import (
     LeformatDatasetEpisodeSubtaskRangeAnnotationEmbeddingStatusDB,
     TaskStatus,
 )
+
+MAX_SUBTASK_NUM = 5
 
 
 class SubtaskAnnotationDataPostProcess:
@@ -300,6 +305,7 @@ class SubtaskAnnotationDataPostProcess:
             df["subtask_indices"] = pd.Series(
                 [None] * len(df), dtype="object"
             )  # 显式初始化为 object
+            episode_st_anno_indices_np = []
             for i in range(len(episode_st_anno_indices_list)):
                 frame_anno_indices = episode_st_anno_indices_list[i]
                 if len(frame_anno_indices) > MAX_SUBTASK_NUM:
@@ -309,8 +315,10 @@ class SubtaskAnnotationDataPostProcess:
                         [optimized_subtask_annotations_dict["null"]]
                         * (MAX_SUBTASK_NUM - len(frame_anno_indices))
                     )
-                df.at[i, "subtask_indices"] = frame_anno_indices
+                # df.at[i, "subtask_indices"] = frame_anno_indices
+                episode_st_anno_indices_np.append(np.array(frame_anno_indices, dtype=np.int32))
 
+            df["subtask_indices"] = episode_st_anno_indices_np
             df.to_parquet(parquet_file_path)
 
         self._upsert_leformat_dataset_episode_subtask_range_annotation_embedding_status(

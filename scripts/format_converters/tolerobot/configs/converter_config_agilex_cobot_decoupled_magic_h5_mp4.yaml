@@ -39,7 +39,7 @@ features:
 
         # 左臂夹爪状态 (1维)
         - names:
-            - left_gripper_open
+            - left_gripper_open_rad
           args:
             h5_path: qpos
             range_from: 6
@@ -60,7 +60,7 @@ features:
 
         # 右臂夹爪状态 (1维)
         - names:
-            - right_gripper_open
+            - right_gripper_open_rad
           args:
             h5_path: qpos
             range_from: 13
@@ -87,7 +87,7 @@ features:
 
       # 左臂夹爪动作 (1维)
       - names:
-          - left_gripper_open
+          - left_gripper_open_rad
         args:
           h5_path: action
           range_from: 6
@@ -108,7 +108,7 @@ features:
 
       # 右臂夹爪动作 (1维)
       - names:
-          - right_gripper_open
+          - right_gripper_open_rad
         args:
           h5_path: action
           range_from: 13

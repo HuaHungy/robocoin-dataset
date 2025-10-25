@@ -23,6 +23,66 @@ class Mmk2Buffer:
     ep_idx: int = None
 
 
+class BsonFileCache:
+    """BSON文件缓存器 - 避免重复解析同一文件
+    
+    性能优化：类似H5FileCache，复用已解析的BSON数据
+    - 避免重复读取文件
+    - 避免重复解析BSON
+    - 显著提升速度（特别是在多次访问同一episode时）
+    """
+    
+    def __init__(self, max_cache_size: int = 10):
+        """初始化BSON缓存
+        
+        Args:
+            max_cache_size: 最大缓存文件数（默认10个episode）
+        """
+        self._cache = {}  # {file_path: parsed_data}
+        self._max_size = max_cache_size
+        self._access_order = []  # LRU tracking
+    
+    def get(self, bson_file: Path) -> dict:
+        """获取BSON文件的解析数据（带缓存）
+        
+        Args:
+            bson_file: BSON文件路径
+            
+        Returns:
+            解析后的BSON数据字典
+        """
+        cache_key = str(bson_file)
+        
+        # 缓存命中
+        if cache_key in self._cache:
+            # 更新访问顺序（LRU）
+            self._access_order.remove(cache_key)
+            self._access_order.append(cache_key)
+            return self._cache[cache_key]
+        
+        # 缓存未命中 - 读取并解析
+        with open(bson_file, "rb") as f:
+            content = f.read()
+        
+        parsed_data, _ = parse_bson_document(content, 0)
+        
+        # 添加到缓存
+        self._cache[cache_key] = parsed_data
+        self._access_order.append(cache_key)
+        
+        # 检查缓存大小，移除最旧的
+        if len(self._cache) > self._max_size:
+            oldest_key = self._access_order.pop(0)
+            del self._cache[oldest_key]
+        
+        return parsed_data
+    
+    def clear(self):
+        """清空缓存"""
+        self._cache.clear()
+        self._access_order.clear()
+
+
 def parse_bson_document(data: bytes, offset: int = 0) -> tuple[dict, int]:
     """解析单个BSON文档"""
     if offset + 4 > len(data):
@@ -126,6 +186,13 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         image_writer_threads: int = 4,
     ) -> None:
         self.mmk2_buffer: Mmk2Buffer = Mmk2Buffer()
+        
+        # 🚀 性能优化：初始化BSON文件缓存
+        self._bson_cache = BsonFileCache(max_cache_size=10)
+        
+        # 🔥 容错：跟踪结构有问题的episodes
+        self._invalid_episodes: set = set()  # 存储有结构问题的episode目录
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -189,63 +256,121 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                     "💡 MMK2格式要求任务路径必须是包含episode子目录的目录"
                 )
             
-            # 🆕 升级：将episode检查从warning升级为error
-            episode_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('episode_')]
+            # 🔥 使用统一的episode查找方法（支持嵌套结构）
+            episode_dirs = self._find_all_episodes(task_path)
+            
+            # 检查是否找到episode
             if not episode_dirs:
-                # 显示目录内容帮助诊断
-                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
-                all_files = [f.name for f in task_path.iterdir() if f.is_file()]
-                raise FileNotFoundError(
-                    f"❌ No episode directories found\n"
-                    f"   📂 Task path: {task_path}\n"
-                    f"   📋 Directories found: {all_dirs[:10] if all_dirs else 'None'}\n"
-                    f"   📋 Files found: {all_files[:10] if all_files else 'None'}\n"
-                    f"   💡 Expected directory pattern: episode_0000, episode_0001, ...\n"
-                    f"   💡 Check if:\n"
-                    f"      1. Dataset has been extracted correctly\n"
-                    f"      2. Episode directories are named with 'episode_' prefix\n"
-                    f"      3. Task path points to correct location"
-                )
+                # 检查是否是扁平结构
+                if task_path.name.startswith('episode'):
+                    camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('camera')]
+                    if camera_dirs:
+                        if self.logger:
+                            self.logger.info(f"✅ MMK2扁平结构: task_path本身就是episode ({task_path.name})")
+                        # 扁平结构，后续代码会自动处理
+                    else:
+                        raise FileNotFoundError(
+                            f"❌ Task path looks like an episode but has no camera directories\n"
+                            f"   Task path: {task_path}\n"
+                            f"   Expected camera_* subdirectories"
+                        )
+                else:
+                    # 真的没有找到episode
+                    all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+                    all_files = [f.name for f in task_path.iterdir() if f.is_file()]
+                    raise FileNotFoundError(
+                        f"❌ No episode directories found (searched recursively up to 3 levels deep)\n"
+                        f"   📂 Task path: {task_path}\n"
+                        f"   📋 Top-level directories: {all_dirs[:10] if all_dirs else 'None'}\n"
+                        f"   📋 Top-level files: {all_files[:10] if all_files else 'None'}\n"
+                        f"   💡 Expected:\n"
+                        f"      - episode_* directories (at any level up to 3 layers deep)\n"
+                        f"      - OR task_path itself is an episode (flat structure)\n"
+                        f"   💡 Possible issues:\n"
+                        f"      1. Episode directories not named with 'episode' prefix\n"
+                        f"      2. Episodes nested deeper than 3 levels\n"
+                        f"      3. Dataset path is incorrect\n"
+                        f"      4. Dataset has not been extracted/processed"
+                    )
+            else:
+                if self.logger:
+                    self.logger.info(f"✅ 找到 {len(episode_dirs)} 个episode目录")
             
             # Enhanced validation: validate each episode's internal structure
             for i, episode_dir in enumerate(episode_dirs):
-                self._validate_mmk2_episode_structure(episode_dir, i)
+                try:
+                    self._validate_mmk2_episode_structure(episode_dir, i)
+                except Exception as e:
+                    # 记录警告并跳过这个episode
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  Episode {episode_dir.name}: validation failed, will be skipped.\n"
+                            f"    Reason: {e}"
+                        )
+                    self._invalid_episodes.add(episode_dir)
             
-            # 🆕 升级：将subdirectory和image检查从warning升级为error
+            # 🔥 容错：检查camera目录和图像，但不抛出异常
             for episode_dir in episode_dirs:
-                # Check for required subdirectories (observations, actions, etc.)
-                required_subdirs = ['observations']
-                for subdir in required_subdirs:
-                    subdir_path = episode_dir / subdir
-                    if not subdir_path.exists():
-                        # 显示episode目录结构
-                        episode_subdirs = [d.name for d in episode_dir.iterdir() if d.is_dir()]
-                        raise FileNotFoundError(
-                            f"❌ Missing required subdirectory\n"
-                            f"   📂 Episode: {episode_dir.name}\n"
-                            f"   📂 Missing: {subdir}\n"
-                            f"   📋 Existing subdirectories: {episode_subdirs if episode_subdirs else 'None'}\n"
-                            f"   💡 MMK2 format requires '{subdir}' subdirectory in each episode"
-                        )
+                if episode_dir in self._invalid_episodes:
+                    continue  # 已标记为invalid，跳过
+                    
+                # ✅ MMK2格式实际上是: episode_X/camera_*/\*.jpg
+                # 不需要observations子目录！检查camera_*目录即可
+                camera_dirs = [d for d in episode_dir.iterdir() if d.is_dir() and d.name.startswith('camera_')]
                 
-                # Check for image files in observations
-                obs_dir = episode_dir / 'observations'
-                if obs_dir.exists():
-                    image_files = list(obs_dir.glob("*.jpg")) + list(obs_dir.glob("*.png")) + list(obs_dir.glob("*.jpeg"))
-                    if not image_files:
-                        # 显示observations目录内容
-                        obs_contents = [f.name for f in obs_dir.iterdir()]
-                        raise FileNotFoundError(
-                            f"❌ No image files found in observations\n"
-                            f"   📂 Episode: {episode_dir.name}\n"
-                            f"   📂 Observations dir: {obs_dir}\n"
-                            f"   📋 Contents: {obs_contents[:10] if obs_contents else 'Empty directory'}\n"
-                            f"   💡 Expected image formats: .jpg, .png, .jpeg\n"
-                            f"   💡 Check if:\n"
-                            f"      1. Images were recorded properly\n"
-                            f"      2. File extensions are correct\n"
-                            f"      3. Files are in the correct subdirectory"
+                if not camera_dirs:
+                    # 没有找到任何camera目录
+                    episode_subdirs = [d.name for d in episode_dir.iterdir() if d.is_dir()]
+                    error_msg = (
+                        f"❌ No camera directories found\n"
+                        f"   📂 Episode: {episode_dir.name}\n"
+                        f"   📋 Existing subdirectories: {episode_subdirs if episode_subdirs else 'None'}\n"
+                        f"   💡 MMK2 format requires camera_* subdirectories (e.g., camera_head, camera_left_wrist)"
+                    )
+                    if self.logger:
+                        self.logger.warning(f"⚠️  Episode {episode_dir.name}: {error_msg}")
+                    self._invalid_episodes.add(episode_dir)
+                    continue
+                
+                # 检查camera目录中是否有图片
+                has_valid_camera = False
+                for camera_dir in camera_dirs:
+                    jpg_files = list(camera_dir.glob("*.jpg"))
+                    if jpg_files:
+                        has_valid_camera = True
+                        break
+                
+                if not has_valid_camera:
+                    error_msg = (
+                        f"❌ No image files found in camera directories\n"
+                        f"   📂 Episode: {episode_dir.name}\n"
+                        f"   📂 Camera directories: {[d.name for d in camera_dirs]}\n"
+                        f"   💡 Expected .jpg files in camera_* subdirectories"
+                    )
+                    if self.logger:
+                        self.logger.warning(f"⚠️  Episode {episode_dir.name}: {error_msg}")
+                    self._invalid_episodes.add(episode_dir)
+            
+            # 🔥 保存invalid episodes到文件
+            if self._invalid_episodes:
+                invalid_episodes_file = Path(output_path) / "invalid_episodes.txt"
+                try:
+                    from datetime import datetime
+                    with open(invalid_episodes_file, 'w', encoding='utf-8') as f:
+                        f.write(f"# Invalid Episodes (MMK2 format)\n")
+                        f.write(f"# Generated: {datetime.now().isoformat()}\n")
+                        f.write(f"# Total: {len(self._invalid_episodes)} episodes with data issues\n\n")
+                        for ep_dir in sorted(self._invalid_episodes):
+                            f.write(f"{ep_dir}\n")
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  Found {len(self._invalid_episodes)} episodes with structural issues.\n"
+                            f"    These episodes will be skipped during conversion.\n"
+                            f"    Details saved to: {invalid_episodes_file}"
                         )
+                except Exception as e:
+                    if self.logger:
+                        self.logger.error(f"Failed to write invalid_episodes.txt: {e}")
 
     def _validate_mmk2_episode_structure(self, episode_dir: Path, ep_idx: int) -> None:
         """Validate internal MMK2 episode structure against configuration"""
@@ -296,7 +421,8 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                     self.logger.warning(f"Invalid main BSON structure in {bson_file}")
                 return
             
-            available_paths = set(doc["data"].keys())
+            # Normalize paths by removing leading slash for consistent comparison
+            available_paths = set(key.lstrip('/') for key in doc["data"].keys())
             if self.logger:
                 self.logger.info(f"Available main BSON paths: {sorted(available_paths)}")
             
@@ -603,6 +729,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         data_path = args_dict["data_path"]
         range_from = args_dict["range_from"]
         range_to = args_dict["range_to"]
+        
+        # 🔍 调试：记录正在读取的字段
+        expected_dims = range_to - range_from
 
         # 根据不同的BSON文件处理数据
         if bson_file == "episode_0.bson":
@@ -642,7 +771,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                             f"Available paths: {available_paths}"
                         )
                     # 返回指定范围大小的零数组
-                    return np.zeros(range_to - range_from, dtype=np.float32)
+                    result = np.zeros(range_to - range_from, dtype=np.float32)
+                    if self.logger and frame_idx == 0:  # 只在第一帧打印
+                        self.logger.info(f"🔍 [{bson_file}] {data_path}[{range_from}:{range_to}] → {result.shape[0]}维 (零值填充)")
+                    return result
                 
                 if self.logger:
                     self.logger.error(error_msg)
@@ -681,7 +813,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                         f"Requested range [{range_from}:{range_to}] exceeds data length {len(values)} "
                         f"for path '{data_path}', field '{field}' in frame {frame_idx}"
                     )
-            return np.array(values[range_from:range_to], dtype=np.float32)
+            result = np.array(values[range_from:range_to], dtype=np.float32)
+            if self.logger and frame_idx == 0:  # 只在第一帧打印
+                self.logger.info(f"🔍 [{bson_file}] {data_path}.{field}[{range_from}:{range_to}] → {result.shape[0]}维")
+            return result
 
         if bson_file == "xhand_control_data.bson":
             # 手部数据
@@ -744,7 +879,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                             f"Requested range [{range_from}:{range_to}] exceeds data length {len(data)} "
                             f"for path '{data_path}' in frame {frame_idx}, BSON file '{bson_file}'"
                         )
-                return np.array(data[range_from:range_to], dtype=np.float32)
+                result = np.array(data[range_from:range_to], dtype=np.float32)
+                if self.logger and frame_idx == 0:  # 只在第一帧打印
+                    self.logger.info(f"🔍 [{bson_file}] {data_path}[{range_from}:{range_to}] → {result.shape[0]}维")
+                return result
             
             raise ValueError(
                 f"Expected list data for path '{data_path}', got {type(data)} with value: {data} "
@@ -772,7 +910,10 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
     # @override
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """获取episode的帧数 - 使用主BSON文件的帧数"""
+        """获取episode的帧数 - 使用主BSON文件的帧数
+        
+        🚀 性能优化：使用BsonFileCache缓存解析结果
+        """
         episode_dir = self._get_episode_directory(task_path, ep_idx)
         main_bson_file = episode_dir / "episode_0.bson"
 
@@ -800,10 +941,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             )
 
         try:
-            with open(main_bson_file, "rb") as f:
-                content = f.read()
-
-            doc, _ = parse_bson_document(content, 0)
+            # 🚀 使用缓存获取BSON数据
+            doc = self._bson_cache.get(main_bson_file)
+            
             if doc and "data" in doc:
                 # 获取任一数据路径的长度作为帧数
                 for value in doc["data"].values():
@@ -831,43 +971,114 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                 "   3. 重新生成该episode数据"
             )
 
+    def _find_all_episodes(self, task_path: Path) -> list[Path]:
+        """递归查找所有episode目录
+        
+        支持三种结构：
+        1. 直接子目录：task_path/episode_X/
+        2. 嵌套结构：task_path/subtask/episode_X/（最多3层）
+        3. 扁平结构：task_path本身就是episode
+        
+        Returns:
+            episode目录列表（已排序，已过滤invalid episodes）
+        """
+        episode_dirs = []
+        
+        # 第一步：检查直接子目录
+        direct_episodes = [
+            d for d in task_path.iterdir() 
+            if d.is_dir() 
+            and d.name.startswith("episode")
+            and d not in self._invalid_episodes
+        ]
+        
+        if direct_episodes:
+            return sorted(direct_episodes)
+        
+        # 第二步：检查是否是扁平结构（task_path本身就是episode）
+        if task_path.name.startswith("episode"):
+            camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
+            if camera_dirs:
+                # 扁平结构：返回特殊标记（空列表表示扁平结构）
+                return []  # 调用方会检测到空列表并使用task_path本身
+        
+        # 第三步：递归搜索子目录（无深度限制，但避免无限循环）
+        from collections import deque
+        queue = deque([(task_path, 0)])
+        max_depth = 100  # 实际限制，防止无限循环或符号链接循环
+        visited = set()  # 防止重复访问
+        
+        while queue:
+            current_path, depth = queue.popleft()
+            
+            # 防止重复访问（处理符号链接循环）
+            try:
+                real_path = current_path.resolve()
+                if real_path in visited:
+                    continue
+                visited.add(real_path)
+            except (OSError, RuntimeError):
+                continue
+            
+            if depth >= max_depth:
+                continue
+            
+            try:
+                for item in current_path.iterdir():
+                    if not item.is_dir():
+                        continue
+                    
+                    # 跳过隐藏目录和特殊目录
+                    if item.name.startswith('.') or item.name.startswith('@'):
+                        continue
+                    
+                    # 找到episode目录
+                    if item.name.startswith('episode') and item not in self._invalid_episodes:
+                        episode_dirs.append(item)
+                    # 继续搜索子目录
+                    else:
+                        queue.append((item, depth + 1))
+            except (PermissionError, OSError):
+                continue
+        
+        return sorted(episode_dirs)
+
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:
-        """获取任务的episode数量"""
+        """获取任务的episode数量
+        
+        支持三种结构：
+        1. 直接子目录：task_path/episode_X/
+        2. 嵌套结构：task_path/subtask/episode_X/（递归搜索）
+        3. 扁平结构：task_path本身就是episode
+        """
         try:
-            episode_dirs = [
-                d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")
-            ]
-            episode_count = len(episode_dirs)
+            episode_dirs = self._find_all_episodes(task_path)
             
-            if episode_count == 0:
-                # 提供详细的MMK2 Episode计数错误诊断信息
-                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+            # 空列表可能表示扁平结构
+            if len(episode_dirs) == 0:
+                if task_path.name.startswith("episode"):
+                    camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
+                    if camera_dirs:
+                        return 1  # 扁平结构，1个episode
                 
-                warning_msg = (
-                    f"MMK2 Episode Count Warning: No episode directories found in task '{task_path}'. "
-                    f"All directories found: {all_dirs}. "
-                    f"Expected directories starting with 'episode'. "
-                    f"Task path exists: {task_path.exists()}. "
-                    f"This will likely cause conversion failures."
-                )
-                
+                # 真的没有episode
                 if self.logger:
-                    self.logger.warning(f"MMK2 Episode Count Warning: {warning_msg}")
+                    all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+                    self.logger.warning(
+                        f"⚠️  No episode directories found in task '{task_path}'. "
+                        f"Top-level directories: {all_dirs}"
+                    )
+                return 0
             
-            return episode_count
+            return len(episode_dirs)
             
         except Exception as e:
-            error_msg = (
-                f"MMK2 Episode Count Error: Failed to count episodes in task '{task_path}'. "
-                f"Original error: {type(e).__name__}: {e}. "
-                f"Task path exists: {task_path.exists()}."
-            )
-            
             if self.logger:
-                self.logger.error(f"MMK2 Episode Count Error: {error_msg}")
-            
-            raise ValueError(error_msg) from e
+                self.logger.error(
+                    f"❌ Failed to count episodes in task '{task_path}': {type(e).__name__}: {e}"
+                )
+            raise ValueError(f"Failed to count episodes in task '{task_path}'") from e
 
     # @override
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> any:
@@ -892,26 +1103,25 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
 
     # @override
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> any:
-        """准备状态数据缓冲区"""
+        """准备状态数据缓冲区
+        
+        🚀 性能优化：使用BsonFileCache避免重复解析
+        """
         episode_dir = self._get_episode_directory(task_path, ep_idx)
 
-        # 读取主BSON文件
+        # 读取主BSON文件 - 使用缓存
         main_bson_file = episode_dir / "episode_0.bson"
         main_data = {}
         if main_bson_file.exists():
-            with open(main_bson_file, "rb") as f:
-                content = f.read()
-            doc, _ = parse_bson_document(content, 0)
+            doc = self._bson_cache.get(main_bson_file)
             if doc and "data" in doc:
                 main_data = doc["data"]
 
-        # 读取手部BSON文件
+        # 读取手部BSON文件 - 使用缓存
         hand_bson_file = episode_dir / "xhand_control_data.bson"
         hand_data = []
         if hand_bson_file.exists():
-            with open(hand_bson_file, "rb") as f:
-                content = f.read()
-            doc, _ = parse_bson_document(content, 0)
+            doc = self._bson_cache.get(hand_bson_file)
             if doc and "frames" in doc:
                 hand_data = doc["frames"]
 
@@ -923,27 +1133,57 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         return self._prepare_episode_states_buffer(task_path, ep_idx)
 
     def _get_episode_directory(self, task_path: Path, ep_idx: int) -> Path:
-        """获取episode目录"""
-        episode_dirs = sorted(
-            [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")]
-        )
-        if ep_idx >= len(episode_dirs):
-            # 提供详细的MMK2 Episode目录错误诊断信息
+        """获取episode目录
+        
+        支持三种结构：
+        1. 直接子目录：task_path/episode_X/
+        2. 嵌套结构：task_path/subtask/episode_X/（递归搜索）
+        3. 扁平结构：task_path本身就是episode
+        """
+        # 使用统一的episode查找方法
+        episode_dirs = self._find_all_episodes(task_path)
+        
+        # 处理扁平结构
+        if len(episode_dirs) == 0:
+            if task_path.name.startswith("episode"):
+                camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
+                if camera_dirs and ep_idx == 0:
+                    # 扁平结构：task_path本身就是episode
+                    return task_path
+            
+            # 真的没有episode
             all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
-            episode_dir_names = [d.name for d in episode_dirs]
-            
-            error_msg = (
-                f"MMK2 Episode Directory Error: Episode index {ep_idx} out of range in task '{task_path}'. "
-                f"Found {len(episode_dirs)} episode directories. "
-                f"Episode directories found: {episode_dir_names if episode_dir_names else 'None'}. "
-                f"All directories in task: {all_dirs}. "
-                f"Task path exists: {task_path.exists()}. "
-                f"This might indicate missing episode data or incorrect task path."
+            raise ValueError(
+                f"❌ No episode directories found in task '{task_path}'\n"
+                f"   Top-level directories: {all_dirs}\n"
+                f"   Requested episode index: {ep_idx}"
             )
+        
+        # 检查索引是否越界
+        if ep_idx >= len(episode_dirs):
+            episode_dir_names = [d.name for d in episode_dirs]
+            all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
             
-            if self.logger:
-                self.logger.error(f"MMK2 Episode Directory Error: {error_msg}")
-                self.logger.error("WARNING: Check if the task directory contains properly named episode_* folders!")
-            
-            raise ValueError(error_msg)
+            raise ValueError(
+                f"❌ Episode index {ep_idx} out of range\n"
+                f"   Task: {task_path}\n"
+                f"   Found {len(episode_dirs)} episodes: {episode_dir_names}\n"
+                f"   Top-level directories: {all_dirs}"
+            )
+        
         return episode_dirs[ep_idx]
+    
+    def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:
+        """获取 MMK2 episode 的源文件信息"""
+        try:
+            episode_dir = self._get_episode_directory(task_path, ep_idx)
+            return {
+                "format": "MMK2",
+                "episode_directory": str(episode_dir.relative_to(self.dataset_path)),
+                "absolute_path": str(episode_dir.absolute()),
+            }
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get source files for episode {ep_idx}: {e}")
+        return {}
+

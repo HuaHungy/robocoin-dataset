@@ -26,6 +26,7 @@ from robocoin_dataset.distribution_computation.constant import (
 )
 from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import (
+    AUTO_REENCODE,
     CONVERTER_CLASS_NAME,
     CONVERTER_CONFIG,
     CONVERTER_LOG_DIR,
@@ -58,6 +59,7 @@ class LeFormatConverterTaskServer(TaskServer):
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
         is_test: bool = False,
+        auto_reencode: bool = False,
     ) -> None:
         super().__init__(
             logger=logger,
@@ -78,6 +80,7 @@ class LeFormatConverterTaskServer(TaskServer):
         self.image_writer_threads = image_writer_threads
 
         self.is_test = is_test
+        self.auto_reencode = auto_reencode  # 🎬 自动重编码标志
 
         try:
             with open(converter_factory_config_path) as f:
@@ -157,14 +160,15 @@ class LeFormatConverterTaskServer(TaskServer):
             if self.is_test:
                 if not self.specific_device_model:
                     # 情况1：未指定设备型号
-                    # 查询：标注已完成，且未进入测试流程（测试表中不存在）
+                    # 查询：标注已完成，且未进入测试流程或状态不是PROCESSING
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
                         .filter(
                             ~session.query(LeFormatConvertTestDB)
                             .filter(
-                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid
+                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
+                                LeFormatConvertTestDB.convert_status == TaskStatus.PROCESSING,  # 🆕 过滤掉正在处理的
                             )
                             .exists()
                         )
@@ -172,7 +176,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     )
                 else:
                     # 情况2：指定了设备型号
-                    # 查询：标注已完成，设备型号匹配，且未进入测试流程
+                    # 查询：标注已完成，设备型号匹配，且未进入测试流程或状态不是PROCESSING
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
@@ -180,7 +184,8 @@ class LeFormatConverterTaskServer(TaskServer):
                         .filter(
                             ~session.query(LeFormatConvertTestDB)
                             .filter(
-                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid
+                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
+                                LeFormatConvertTestDB.convert_status == TaskStatus.PROCESSING,  # 🆕 过滤掉正在处理的
                             )
                             .exists()
                         )
@@ -198,10 +203,14 @@ class LeFormatConverterTaskServer(TaskServer):
                     .exists()
                 )
 
-                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 该 dataset_uuid
-                not_in_formal_convert = ~(
+                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 或 **状态不是PROCESSING**
+                # 🆕 修复：过滤掉正在处理的任务，防止多个client获取相同任务
+                not_processing_in_formal = ~(
                     session.query(LeFormatConvertDB)
-                    .filter(LeFormatConvertDB.dataset_uuid == DmvAnnotationDB.dataset_uuid)
+                    .filter(
+                        LeFormatConvertDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
+                        LeFormatConvertDB.convert_status == TaskStatus.PROCESSING,  # 🆕 只排除PROCESSING状态
+                    )
                     .exists()
                 )
 
@@ -210,7 +219,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     session.query(DmvAnnotationDB)
                     .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)  # 可选
                     .filter(test_completed)  # ✅ 测试已完成
-                    .filter(not_in_formal_convert)  # ✅ 正式转换未开始（记录不存在）
+                    .filter(not_processing_in_formal)  # ✅ 正式转换未开始或不在处理中
                 )
 
                 # 4. 可选：按设备型号过滤
@@ -265,6 +274,8 @@ class LeFormatConverterTaskServer(TaskServer):
                 session=session,
                 ds_uuid=item.dataset_uuid,
                 convert_status=TaskStatus.PROCESSING,
+                device_model=item.device_model,  # 🆕 初始化时也设置 device_model
+                device_model_version=item.device_model_version,  # 🆕 初始化时也设置 device_model_version
                 is_test=self.is_test,
             )
 
@@ -291,18 +302,31 @@ class LeFormatConverterTaskServer(TaskServer):
                 REPO_ID: repo_id,
                 CONVERTER_LOG_NAME: leformat_name,
                 IS_TEST: self.is_test,
+                AUTO_REENCODE: self.auto_reencode,
             }
         return None
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         ds_uuid = task_content.get(DATASET_UUID)
         leformat_path = task_content.get(LEFORMAT_PATH, "")
+        device_model = task_content.get(DEVICE_MODEL)  # 🆕 从 task_content 获取 device_model
 
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
         convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
+        # 🆕 从数据库查询 device_model_version（因为 task_content 中有 device_model 但需要确保完整性）
+        device_model_version = None
+        with self.db.with_session() as session:
+            dmv_item = (
+                session.query(DmvAnnotationDB)
+                .filter(DmvAnnotationDB.dataset_uuid == ds_uuid)
+                .first()
+            )
+            if dmv_item:
+                device_model_version = dmv_item.device_model_version
+        
         with self.db.with_session() as session:
             upsert_leformat_convert(
                 session=session,
@@ -310,8 +334,12 @@ class LeFormatConverterTaskServer(TaskServer):
                 convert_status=convert_status,
                 leformat_path=leformat_path,
                 err_message=task_status_msg,
+                device_model=device_model,  # 🆕 传递 device_model
+                device_model_version=device_model_version,  # 🆕 传递 device_model_version
                 is_test=self.is_test,
             )
             self.logger.info(
-                f"Upsert {ds_uuid} convert status to {convert_status}, update_message: {task_status_msg}"
+                f"Upsert {ds_uuid} convert status to {convert_status}, "
+                f"device_model={device_model}, device_model_version={device_model_version}, "
+                f"update_message: {task_status_msg}"
             )

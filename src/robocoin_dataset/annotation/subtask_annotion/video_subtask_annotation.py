@@ -248,7 +248,7 @@ class VideoSubtaskAnnotation:
             )
             if item:
                 return item.convert_path
-            return None
+            return ""
 
     def _sort_video_imagehashes_from_frame_num(
         self,

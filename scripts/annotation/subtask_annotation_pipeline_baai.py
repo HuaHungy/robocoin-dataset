@@ -79,17 +79,17 @@ if __name__ == "__main__":
         # 为lerobot格式的episode视频生成文件Hash和指纹,
         # 从lerobot_format_convert表中查找已经完成转换，但还未生成lerobot视频文件hash和视频指纹的数据集,
         # 生成结果写入到数据表leformat_episode_video_hash_status和leformat_episode_video_hash中
-        video_subtask_annotation.generate_leformat_episode_video_hashes_threas_pool()
+        # video_subtask_annotation.generate_leformat_episode_video_hashes_threas_pool()
 
         # 将baai标注团队的子任务标注json文件入库,结果文件写入到数据表url_video_subtask_annotation中
         # video_subtask_annotation.enter_url_video_st_annotation_json_files()
 
         # 下载json文件中的url video到Nas, 结果写入到数据表download_videos中
-        # video_subtask_annotation.download_videos_multi_threads()
+        video_subtask_annotation.download_videos_multi_threads()
 
         # 为url video生成文件Hash和指纹, 结果写入到数据表download_videos中
-        # video_subtask_annotation.generate_url_video_file_hashes_multi_threads()
-        # video_subtask_annotation.generate_url_video_image_hashes_multi_threads
+        video_subtask_annotation.generate_url_video_file_hashes_multi_threads()
+        video_subtask_annotation.generate_url_video_image_hashes_multi_threads()
 
         # 将lerobot格式的episode视频与url video进行匹配
         # 结果写入到leformat_episode_url_video_match及leformat_episode_url_video_match_status中
@@ -114,7 +114,7 @@ if __name__ == "__main__":
 
 """usages:
 python -m scripts.annotation.subtask_annotation_pipeline_baai \
-    --db_file ./db/datasets.db \
+    --db_file /mnt/db/datasets.db \
     --json_src_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/files-to-process \
     --passed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/passed-files \
     --impassed_json_dst_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/impassed-files \
