@@ -160,14 +160,15 @@ class LeFormatConverterTaskServer(TaskServer):
             if self.is_test:
                 if not self.specific_device_model:
                     # 情况1：未指定设备型号
-                    # 查询：标注已完成，且未进入测试流程（测试表中不存在）
+                    # 查询：标注已完成，且未进入测试流程或状态不是PROCESSING
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
                         .filter(
                             ~session.query(LeFormatConvertTestDB)
                             .filter(
-                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid
+                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
+                                LeFormatConvertTestDB.convert_status == TaskStatus.PROCESSING,  # 🆕 过滤掉正在处理的
                             )
                             .exists()
                         )
@@ -175,7 +176,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     )
                 else:
                     # 情况2：指定了设备型号
-                    # 查询：标注已完成，设备型号匹配，且未进入测试流程
+                    # 查询：标注已完成，设备型号匹配，且未进入测试流程或状态不是PROCESSING
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
@@ -183,7 +184,8 @@ class LeFormatConverterTaskServer(TaskServer):
                         .filter(
                             ~session.query(LeFormatConvertTestDB)
                             .filter(
-                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid
+                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
+                                LeFormatConvertTestDB.convert_status == TaskStatus.PROCESSING,  # 🆕 过滤掉正在处理的
                             )
                             .exists()
                         )
@@ -201,10 +203,14 @@ class LeFormatConverterTaskServer(TaskServer):
                     .exists()
                 )
 
-                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 该 dataset_uuid
-                not_in_formal_convert = ~(
+                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 或 **状态不是PROCESSING**
+                # 🆕 修复：过滤掉正在处理的任务，防止多个client获取相同任务
+                not_processing_in_formal = ~(
                     session.query(LeFormatConvertDB)
-                    .filter(LeFormatConvertDB.dataset_uuid == DmvAnnotationDB.dataset_uuid)
+                    .filter(
+                        LeFormatConvertDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
+                        LeFormatConvertDB.convert_status == TaskStatus.PROCESSING,  # 🆕 只排除PROCESSING状态
+                    )
                     .exists()
                 )
 
@@ -213,7 +219,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     session.query(DmvAnnotationDB)
                     .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)  # 可选
                     .filter(test_completed)  # ✅ 测试已完成
-                    .filter(not_in_formal_convert)  # ✅ 正式转换未开始（记录不存在）
+                    .filter(not_processing_in_formal)  # ✅ 正式转换未开始或不在处理中
                 )
 
                 # 4. 可选：按设备型号过滤
