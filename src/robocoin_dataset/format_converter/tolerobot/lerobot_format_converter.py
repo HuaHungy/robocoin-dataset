@@ -36,6 +36,12 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     SUB_STATE_KEY,
     TIMELINE_OFFSET_KEY,
 )
+from robocoin_dataset.format_converter.tolerobot.exceptions import (
+    ConfigError,
+    CriticalDataError,
+    DataQualityError,
+    FrameCountMismatchError,
+)
 from robocoin_dataset.format_converter.utils.spatial_data_convertor import spatial_covertor_funcs
 
 
@@ -795,8 +801,6 @@ class LerobotFormatConverter(ABC):
             ConfigError: 严格模式下遇到数据错误（表明配置可能有问题）
             CriticalDataError: 非严格模式下遇到数据错误（跳过整个episode）
         """
-        from .exceptions import ConfigError, DataQualityError, CriticalDataError
-        
         images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
             task_path, task_ep_idx, is_test=is_test
         )
@@ -901,8 +905,6 @@ class LerobotFormatConverter(ABC):
         Raises:
             ConfigError: 检测到配置错误（前N个episode高失败率）
         """
-        from .exceptions import ConfigError, CriticalDataError
-        
         if not is_test:
             dataset = self._create_lerobot_dataset()
         else:
