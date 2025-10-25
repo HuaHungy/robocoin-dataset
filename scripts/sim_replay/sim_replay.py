@@ -89,7 +89,7 @@ if __name__ == "__main__":
         logger=logger,
     )
 
-    sim_replayer.sim_replay_datasets(device_model, device_model_version = device_model_version)
+    sim_replayer.sim_replay_datasets(device_model, device_model_version=device_model_version)
 
 
 """usage:
