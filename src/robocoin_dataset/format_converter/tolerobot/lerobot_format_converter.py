@@ -36,6 +36,12 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     SUB_STATE_KEY,
     TIMELINE_OFFSET_KEY,
 )
+from robocoin_dataset.format_converter.tolerobot.exceptions import (
+    ConfigError,
+    CriticalDataError,
+    DataQualityError,
+    FrameCountMismatchError,
+)
 from robocoin_dataset.format_converter.utils.spatial_data_convertor import spatial_covertor_funcs
 
 
@@ -764,49 +770,234 @@ class LerobotFormatConverter(ABC):
 
         pass
 
+    def _convert_episode_with_fault_tolerance(
+        self,
+        dataset: LeRobotDataset,
+        task_path: Path,
+        task: str,
+        task_ep_idx: int,
+        global_ep_idx: int,
+        is_strict: bool,
+        is_test: bool,
+    ) -> tuple[int, int]:
+        """转换单个episode，支持episode级容错
+        
+        重要：为了保持时序数据的连续性，任何单帧错误都会导致整个episode被跳过。
+        这是因为跳过单帧会破坏observation-action的时间对齐关系。
+        
+        Args:
+            dataset: LeRobot数据集对象
+            task_path: 任务路径
+            task: 任务名称
+            task_ep_idx: 任务内episode索引
+            global_ep_idx: 全局episode索引
+            is_strict: 是否为严格模式
+            is_test: 是否为测试模式
+        
+        Returns:
+            (converted_frames, 0): 成功转换的帧数（跳过的帧数始终为0，因为要么全转要么全跳）
+            
+        Raises:
+            ConfigError: 严格模式下遇到数据错误（表明配置可能有问题）
+            CriticalDataError: 非严格模式下遇到数据错误（跳过整个episode）
+        """
+        images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
+            task_path, task_ep_idx, is_test=is_test
+        )
+        
+        converted_frames = 0
+        
+        for frame_data in self._gen_episode_frames(
+            task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
+        ):
+            frame_idx = frame_data[FRAME_IDX_KEY]
+            
+            try:
+                lerobot_datas = self._get_lerobot_datas(
+                    task_path=task_path,
+                    ep_idx=task_ep_idx,
+                    frame_idx=frame_idx,
+                    images_buffer=images_buffer,
+                    states_buffer=states_buffer,
+                    actions_buffer=actions_buffer,
+                )
+
+                if not is_test:
+                    dataset.add_frame(frame=lerobot_datas, task=task)
+                
+                converted_frames += 1
+                
+            except DataQualityError as e:
+                # 数据质量问题：
+                # - 严格模式：升级为配置错误，停止整个转换
+                # - 非严格模式：升级为严重数据错误，跳过整个episode
+                if is_strict:
+                    raise ConfigError(
+                        f"严格模式下检测到数据质量问题（可能是配置错误）:\n"
+                        f"  Episode: {global_ep_idx} (task episode: {task_ep_idx})\n"
+                        f"  Frame: {frame_idx}\n"
+                        f"  Error: {e}\n"
+                        f"\n💡 在前{self.strict_episodes}个episode中发现此问题，"
+                        f"可能是配置错误而非数据问题"
+                    ) from e
+                else:
+                    # 非严格模式：跳过整个episode以保持时序连续性
+                    raise CriticalDataError(
+                        f"Episode {global_ep_idx} 数据质量问题，跳过整个episode:\n"
+                        f"  任务: {task}\n"
+                        f"  Episode索引: {task_ep_idx}\n"
+                        f"  问题帧: {frame_idx}\n"
+                        f"  错误: {e}\n"
+                        f"\n⚠️  为保持时序连续性，不能跳过单帧，必须跳过整个episode"
+                    ) from e
+                
+            except Exception as e:
+                # 未分类的异常：在严格模式下作为配置错误处理
+                if is_strict:
+                    raise ConfigError(
+                        f"严格模式下遇到未预期的错误:\n"
+                        f"  Episode: {global_ep_idx} (task episode: {task_ep_idx})\n"
+                        f"  Frame: {frame_idx}\n"
+                        f"  Error type: {type(e).__name__}\n"
+                        f"  Error: {e}"
+                    ) from e
+                else:
+                    # 非严格模式：也升级为CriticalDataError
+                    raise CriticalDataError(
+                        f"Episode {global_ep_idx} 遇到错误，跳过整个episode:\n"
+                        f"  任务: {task}\n"
+                        f"  Episode索引: {task_ep_idx}\n"
+                        f"  问题帧: {frame_idx}\n"
+                        f"  错误类型: {type(e).__name__}\n"
+                        f"  错误: {e}"
+                    ) from e
+        
+        # 如果成功遍历所有帧，返回转换的帧数
+        # 注意：skipped_frames始终为0，因为我们不支持跳过单帧
+        return converted_frames, 0
+
+    def _get_conversion_report(self) -> dict:
+        """生成转换报告"""
+        stats = self._conversion_stats
+        total = stats['total_episodes']
+        successful = stats['successful_episodes']
+        
+        return {
+            'dataset': str(self.dataset_path.name),
+            'total_episodes_attempted': total,
+            'successful_episodes': successful,
+            'skipped_episodes': stats['skipped_episodes'],
+            'total_frames_converted': stats['total_frames'],
+            'total_frames_skipped': stats['skipped_frames'],
+            'success_rate': successful / total if total > 0 else 0,
+            'skip_details': stats['skip_details'][-50:],  # 只保留最近50条
+        }
+
     def convert(self, is_test: bool = False) -> Iterable[tuple[str, int, int]]:
+        """转换数据集，使用智能容错机制
+        
+        Args:
+            is_test: 是否为测试模式（只转换第一个episode）
+        
+        Yields:
+            (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
+        
+        Raises:
+            ConfigError: 检测到配置错误（前N个episode高失败率）
+        """
         if not is_test:
             dataset = self._create_lerobot_dataset()
-        ep_idx = 0
+        else:
+            dataset = None  # 测试模式不需要数据集对象
+        
+        global_ep_idx = 0  # LeRobot中的全局episode索引（只计算成功转换的）
+        original_ep_idx = 0  # 原始数据中的全局episode索引（包含所有episode，包括跳过的）
+        task_stats = {}  # 每个task的统计信息
+        
         for task_path, task in self.path_task_dict.items():
             episodes_num = self._get_task_episodes_num(task_path)
             if is_test:
                 episodes_num = 1
+            
+            # 初始化任务统计
+            task_stats[task] = {
+                'attempted': 0,
+                'successful': 0,
+                'skipped': 0,
+                'skipped_frames': 0,
+            }
+            
             for task_ep_idx in range(episodes_num):
+                is_strict = global_ep_idx < self.strict_episodes
+                
+                # 更新统计
+                self._conversion_stats['total_episodes'] += 1
+                task_stats[task]['attempted'] += 1
+                
                 try:
-                    images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
-                        task_path, task_ep_idx
+                    converted_frames, skipped_frames = self._convert_episode_with_fault_tolerance(
+                        dataset=dataset if not is_test else None,
+                        task_path=task_path,
+                        task=task,
+                        task_ep_idx=task_ep_idx,
+                        global_ep_idx=global_ep_idx,
+                        is_strict=is_strict,
+                        is_test=is_test,
                     )
-                    for frame_data in self._gen_episode_frames(
-                        task_path, task_ep_idx, images_buffer, states_buffer, actions_buffer
-                    ):
-                        try:
-                            lerobot_datas = self._get_lerobot_datas(
-                                task_path=task_path,
-                                ep_idx=task_ep_idx,
-                                frame_idx=frame_data[FRAME_IDX_KEY],
-                                images_buffer=images_buffer,
-                                states_buffer=states_buffer,
-                                actions_buffer=actions_buffer,
-                            )
-
-                            if not is_test:
-                                dataset.add_frame(
-                                    frame=lerobot_datas,
-                                    task=task,
-                                )
-                        except Exception as e:  # noqa: PERF203
-                            if self.logger:
-                                self.logger.error(
-                                    f"Failed to process frame: task_path={task_path}, "
-                                    f"episode={task_ep_idx}, frame={frame_data[FRAME_IDX_KEY]}. "
-                                    f"Error: {e}"
-                                )
-                            raise RuntimeError(
-                                f"Failed to process frame {frame_data[FRAME_IDX_KEY]} "
-                                f"of episode {task_ep_idx} at task_path={task_path}"
-                            ) from e
-
+                    
+                    # Episode完全为空，跳过
+                    if converted_frames == 0 and skipped_frames == 0:
+                        self._conversion_stats['skipped_episodes'] += 1
+                        task_stats[task]['skipped'] += 1
+                        
+                        skip_reason = 'Empty episode or data quality issue'
+                        self._conversion_stats['skip_details'].append({
+                            'episode': original_ep_idx,
+                            'task': task,
+                            'task_episode': task_ep_idx,
+                            'reason': skip_reason,
+                            'skipped_entire_episode': True,
+                        })
+                        
+                        # 🆕 记录跳过的episode到mapping（使用original_ep_idx）
+                        source_files = self._get_episode_source_files(task_path, task_ep_idx)
+                        self.episode_source_mapping[original_ep_idx] = {
+                            "task": task,
+                            "task_path": str(task_path),
+                            "task_ep_idx": task_ep_idx,
+                            "original_ep_idx": original_ep_idx,
+                            "global_ep_idx": None,  # 未转换，无LeRobot索引
+                            "status": "skipped",
+                            "skip_reason": skip_reason,
+                            "source_files": source_files,
+                            "converted_frames": 0,
+                            "skipped_frames": 0,
+                        }
+                        
+                        self.logger.info(
+                            f"⏭️ 跳过 episode {original_ep_idx} "
+                            f"(task: {task}, task_ep: {task_ep_idx}): 空episode"
+                        )
+                        original_ep_idx += 1  # 🆕 original_ep_idx继续递增
+                        continue
+                    
+                    # 更新统计
+                    self._conversion_stats['successful_episodes'] += 1
+                    self._conversion_stats['total_frames'] += converted_frames
+                    self._conversion_stats['skipped_frames'] += skipped_frames
+                    task_stats[task]['successful'] += 1
+                    task_stats[task]['skipped_frames'] += skipped_frames
+                    
+                    if skipped_frames > 0:
+                        self._conversion_stats['skip_details'].append({
+                            'episode': global_ep_idx,
+                            'task': task,
+                            'task_episode': task_ep_idx,
+                            'converted_frames': converted_frames,
+                            'skipped_frames': skipped_frames,
+                        })
+                    
+                    # 保存episode
                     if not is_test:
                         dataset.save_episode()
                     
