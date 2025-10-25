@@ -1088,8 +1088,6 @@ class LerobotFormatConverter(ABC):
         Raises:
             ConfigError: 失败率超过阈值
         """
-        from .exceptions import ConfigError
-        
         total_attempted = self._conversion_stats['total_episodes']
         total_skipped = self._conversion_stats['skipped_episodes']
         failure_rate = total_skipped / total_attempted if total_attempted > 0 else 0
