@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from robocoin_dataset.database.models import (
     DmvAnnotationDB,
@@ -29,59 +30,61 @@ def upsert_leformat_convert(
     :param leformat_path: 可选，转换输出路径
     :param is_test: 是否为测试模式（True=使用 LeFormatConvertTestDB，False=使用 LeFormatConvertDB）
     """
-    try:
-        if is_test:
-            leformat_convert_db = LeFormatConvertTestDB
-        else:
-            leformat_convert_db = LeFormatConvertDB
-
-        query = session.query(DmvAnnotationDB).filter(DmvAnnotationDB.dataset_uuid == ds_uuid)
-        item = query.first()
-        if item is None:
-            device_model = ""
-            device_model_version = ""
-        else:
-            device_model = item.device_model
-            device_model_version = item.device_model_version
-
-        # 查询是否存在
-
-        item = (
-            session.query(leformat_convert_db)
-            .filter(leformat_convert_db.dataset_uuid == ds_uuid)
-            .first()
-        )
-
-        version_uuid = str(uuid.uuid4())
-        if item is None:
-            # 创建新记录
-            item = leformat_convert_db(
-                dataset_uuid=ds_uuid,
-                convert_status=convert_status,
-                convert_path=leformat_path,
-                err_message=err_message,
-                updated_at=datetime.now(),
-                version_uuid=version_uuid,
-                device_model=device_model,
-                device_model_version=device_model_version,
+    if is_test:
+        leformat_convert_db = LeFormatConvertTestDB
+    else:
+        leformat_convert_db = LeFormatConvertDB
+    
+    # 重试机制：处理并发INSERT导致的IntegrityError
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # 查询是否存在
+            item = (
+                session.query(leformat_convert_db)
+                .filter(leformat_convert_db.dataset_uuid == ds_uuid)
+                .first()
             )
-        else:
-            # 更新现有记录
-            item.convert_status = convert_status
-            item.updated_at = datetime.now()
-            if err_message is not None:
-                item.err_message = err_message
-            if leformat_path is not None:
-                item.convert_path = leformat_path
-            item.version_uuid = version_uuid
-            item.device_model = device_model
-            item.device_model_version = device_model_version
 
-        session.add(item)
-        session.commit()
+            if item is None:
+                # 创建新记录
+                item = leformat_convert_db(
+                    dataset_uuid=ds_uuid,
+                    convert_status=convert_status,
+                    convert_path=leformat_path,
+                    # convert_version_uuid=convert_version_uuid,
+                    err_message=err_message,
+                    updated_at=datetime.now(),
+                )
+            else:
+                # 更新现有记录
+                item.convert_status = convert_status
+                item.updated_at = datetime.now()
+                # convert_version_uuid = (convert_version_uuid,)
+                if err_message is not None:
+                    item.err_message = err_message
+                if leformat_path is not None:
+                    item.convert_path = leformat_path
 
-    except Exception as e:
-        session.rollback()
-        raise RuntimeError(
-            f"Failed to upsert LeFormatConvertDB record for dataset {ds_uuid}: {e}"
-        ) from e
+            session.add(item)
+            session.commit()
+            return  # 成功，退出
+        
+        except IntegrityError as e:
+            # 并发INSERT冲突，回滚并重试
+            session.rollback()
+            if attempt < max_retries - 1:
+                # 重新查询并更新（其他进程已经插入了）
+                continue
+            else:
+                # 最后一次尝试仍然失败
+                raise RuntimeError(
+                    f"Failed to upsert LeFormatConvertDB record for dataset {ds_uuid} "
+                    f"after {max_retries} attempts: {e}"
+                ) from e
+        
+        except Exception as e:
+            session.rollback()
+            raise RuntimeError(
+                f"Failed to upsert LeFormatConvertDB record for dataset {ds_uuid}: {e}"
+            ) from e
