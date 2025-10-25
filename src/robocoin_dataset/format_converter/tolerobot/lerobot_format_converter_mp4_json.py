@@ -546,7 +546,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         episodes = self._episode_locator.locate_episodes_bfs(
             dataset_path=task_path,
             is_episode_func=self._is_episode,
-            max_depth=10  # 最多搜索10层
+            max_depth=100  # 实际上无深度限制，防止无限循环
         )
         
         if not episodes:
@@ -558,7 +558,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             
             raise FileNotFoundError(
                 f"❌ No episode directories with data.json found in '{task_path}'.\n"
-                f"   🔍 Searched up to 10 levels deep using BFS.\n"
+                f"   🔍 Searched recursively (unlimited depth) using BFS.\n"
                 f"   📋 Items in task_path (first 20): {all_items if all_items else '(empty or inaccessible)'}\n"
                 f"   💡 Episode detection criteria: directory containing 'data.json' file.\n"
                 f"   💡 Ensure your dataset contains at least one directory with data.json."

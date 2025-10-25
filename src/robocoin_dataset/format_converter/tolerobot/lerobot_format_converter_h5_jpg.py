@@ -271,8 +271,8 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         
         判断标准：包含 aligned_joints.h5 文件的目录即为 episode 目录
         """
-        def find_episode_dirs(path: Path, max_depth: int = 5, current_depth: int = 0) -> list[Path]:
-            """递归查找episode目录（最多支持5层嵌套）"""
+        def find_episode_dirs(path: Path, max_depth: int = 100, current_depth: int = 0) -> list[Path]:
+            """递归查找episode目录（无深度限制，使用visited避免循环）"""
             if current_depth > max_depth:
                 return []
             

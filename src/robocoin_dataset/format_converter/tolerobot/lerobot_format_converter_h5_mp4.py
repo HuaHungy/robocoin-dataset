@@ -96,16 +96,13 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
                 cache_key = str(task_path)
                 saved_cache = self._h5_files_cache.pop(cache_key, None)
                 
+                # 🔥 简化搜索逻辑：直接递归搜索所有H5文件（无深度限制）
+                # 使用rglob递归搜索，过滤隐藏和特殊目录
                 h5_files_all = []
-                h5_files_all = list(task_path.glob("*.hdf5")) + list(task_path.glob("*.h5"))
-                if not h5_files_all:
-                    for subdir in task_path.iterdir():
-                        if subdir.is_dir() and not subdir.name.startswith('.') and not subdir.name.startswith('@'):
-                            h5_files_all.extend(subdir.glob("*.hdf5"))
-                            h5_files_all.extend(subdir.glob("*.h5"))
-                if not h5_files_all:
-                    h5_files_all = list(task_path.glob("**/*.hdf5")) + list(task_path.glob("**/*.h5"))
-                    h5_files_all = [f for f in h5_files_all if not any(part.startswith('.') or part.startswith('@') for part in f.parts)]
+                h5_files_all.extend(task_path.rglob("*.hdf5"))
+                h5_files_all.extend(task_path.rglob("*.h5"))
+                # 过滤掉隐藏目录和特殊目录中的文件
+                h5_files_all = [f for f in h5_files_all if not any(part.startswith('.') or part.startswith('@') for part in f.parts)]
                 
                 # 验证每个H5文件
                 for h5_file in h5_files_all:
@@ -335,44 +332,34 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         return min_frames
 
     def _get_all_episode_h5_files(self, task_path: Path) -> list[Path]:
-        """获取所有episode的H5文件路径（优化：直接定位文件而不是目录）
+        """获取所有episode的H5文件路径（递归搜索，无深度限制）
         
-        性能优化策略：
-        1. 缓存结果（避免重复扫描）
-        2. 先尝试扁平结构（最快）
-        3. 再尝试1层嵌套
-        4. 最后才使用递归（最慢）
+        使用rglob递归搜索所有.h5和.hdf5文件，支持任意深度的目录嵌套。
+        
+        性能优化：
+        - 缓存搜索结果（避免重复扫描）
+        - 自动过滤隐藏目录和特殊目录（.开头或@开头）
         
         支持的结构：
         - 扁平：task_path/*.hdf5
-        - 1层嵌套：task_path/episode_dir/*.hdf5
-        - 深层嵌套：task_path/**/episode_dir/*.hdf5
+        - 任意嵌套：task_path/sub1/sub2/.../episode_dir/*.hdf5
         
         Returns:
-            排序后的H5文件路径列表
+            排序后的H5文件路径列表（已过滤invalid files）
         """
         # 缓存检查
         cache_key = str(task_path)
         if cache_key in self._h5_files_cache:
             return self._h5_files_cache[cache_key]
         
+        # 🔥 简化策略：直接递归搜索（rglob无深度限制）
+        # 性能：现代文件系统递归搜索已经足够快，不需要复杂的多步策略
         h5_files = []
+        h5_files.extend(task_path.rglob("*.hdf5"))
+        h5_files.extend(task_path.rglob("*.h5"))
         
-        # 策略1: 扁平结构（最快，直接在task_path下）
-        h5_files = list(task_path.glob("*.hdf5")) + list(task_path.glob("*.h5"))
-        
-        if not h5_files:
-            # 策略2: 1层嵌套（常见情况）
-            for subdir in task_path.iterdir():
-                if subdir.is_dir() and not subdir.name.startswith('.') and not subdir.name.startswith('@'):
-                    h5_files.extend(subdir.glob("*.hdf5"))
-                    h5_files.extend(subdir.glob("*.h5"))
-        
-        if not h5_files:
-            # 策略3: 递归查找（最慢，但最灵活）
-            h5_files = list(task_path.glob("**/*.hdf5")) + list(task_path.glob("**/*.h5"))
-            # 过滤隐藏目录
-            h5_files = [f for f in h5_files if not any(part.startswith('.') or part.startswith('@') for part in f.parts)]
+        # 过滤隐藏和特殊目录
+        h5_files = [f for f in h5_files if not any(part.startswith('.') or part.startswith('@') for part in f.parts)]
         
         if not h5_files:
             raise FileNotFoundError(

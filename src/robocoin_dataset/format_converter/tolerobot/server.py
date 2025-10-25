@@ -268,6 +268,8 @@ class LeFormatConverterTaskServer(TaskServer):
                 session=session,
                 ds_uuid=item.dataset_uuid,
                 convert_status=TaskStatus.PROCESSING,
+                device_model=item.device_model,  # 🆕 初始化时也设置 device_model
+                device_model_version=item.device_model_version,  # 🆕 初始化时也设置 device_model_version
                 is_test=self.is_test,
             )
 
@@ -301,12 +303,24 @@ class LeFormatConverterTaskServer(TaskServer):
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         ds_uuid = task_content.get(DATASET_UUID)
         leformat_path = task_content.get(LEFORMAT_PATH, "")
+        device_model = task_content.get(DEVICE_MODEL)  # 🆕 从 task_content 获取 device_model
 
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
         convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
+        # 🆕 从数据库查询 device_model_version（因为 task_content 中有 device_model 但需要确保完整性）
+        device_model_version = None
+        with self.db.with_session() as session:
+            dmv_item = (
+                session.query(DmvAnnotationDB)
+                .filter(DmvAnnotationDB.dataset_uuid == ds_uuid)
+                .first()
+            )
+            if dmv_item:
+                device_model_version = dmv_item.device_model_version
+        
         with self.db.with_session() as session:
             upsert_leformat_convert(
                 session=session,
@@ -314,8 +328,12 @@ class LeFormatConverterTaskServer(TaskServer):
                 convert_status=convert_status,
                 leformat_path=leformat_path,
                 err_message=task_status_msg,
+                device_model=device_model,  # 🆕 传递 device_model
+                device_model_version=device_model_version,  # 🆕 传递 device_model_version
                 is_test=self.is_test,
             )
             self.logger.info(
-                f"Upsert {ds_uuid} convert status to {convert_status}, update_message: {task_status_msg}"
+                f"Upsert {ds_uuid} convert status to {convert_status}, "
+                f"device_model={device_model}, device_model_version={device_model_version}, "
+                f"update_message: {task_status_msg}"
             )

@@ -153,17 +153,50 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                 episode_count = 1
                 self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episode (flat structure) for task '{task}'")
             else:
-                # 嵌套结构：在subtask_dir下查找子episode目录
-                for episode_dir in subtask_dir.iterdir():
-                    if episode_dir.is_dir():
-                        metadata_file = episode_dir / "metadata.json"
-                        h5_file = episode_dir / "proprio_stats" / "proprio_stats.hdf5"
-                        
-                        if metadata_file.exists() and h5_file.exists():
-                            task_paths_dict[episode_dir] = task
-                            episode_count += 1
+                # 嵌套结构：递归搜索episode目录（无深度限制）
+                from collections import deque
+                queue = deque([(subtask_dir, 0)])
+                max_depth = 100  # 防止无限循环
+                visited = set()
                 
-                self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}'")
+                while queue:
+                    current_dir, depth = queue.popleft()
+                    
+                    if depth >= max_depth:
+                        continue
+                    
+                    # 防止重复访问
+                    try:
+                        real_path = current_dir.resolve()
+                        if real_path in visited:
+                            continue
+                        visited.add(real_path)
+                    except (OSError, RuntimeError):
+                        continue
+                    
+                    try:
+                        for item in current_dir.iterdir():
+                            if not item.is_dir():
+                                continue
+                            
+                            # 跳过隐藏和特殊目录
+                            if item.name.startswith('.') or item.name.startswith('@'):
+                                continue
+                            
+                            # 检查是否是episode目录
+                            metadata_file = item / "metadata.json"
+                            h5_file = item / "proprio_stats" / "proprio_stats.hdf5"
+                            
+                            if metadata_file.exists() and h5_file.exists():
+                                task_paths_dict[item] = task
+                                episode_count += 1
+                            else:
+                                # 继续搜索子目录
+                                queue.append((item, depth + 1))
+                    except (PermissionError, OSError):
+                        continue
+                
+                self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}' (recursive search)")
         
         if not task_paths_dict:
             # List all subtask directories to help diagnose

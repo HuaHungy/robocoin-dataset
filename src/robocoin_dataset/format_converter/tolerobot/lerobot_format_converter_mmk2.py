@@ -256,35 +256,45 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                     "💡 MMK2格式要求任务路径必须是包含episode子目录的目录"
                 )
             
-            # 🆕 升级：将episode检查从warning升级为error（支持扁平结构）
-            episode_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('episode')]
+            # 🔥 使用统一的episode查找方法（支持嵌套结构）
+            episode_dirs = self._find_all_episodes(task_path)
             
-            # 🆕 扁平结构检查：task_path本身就是episode
-            is_flat_structure = False
-            if not episode_dirs and task_path.name.startswith('episode'):
-                # 检查是否有camera目录
-                camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('camera')]
-                if camera_dirs:
-                    is_flat_structure = True
-                    if self.logger:
-                        self.logger.info(f"✅ MMK2扁平结构验证通过: task_path本身就是episode ({task_path.name})")
-            
-            if not episode_dirs and not is_flat_structure:
-                # 显示目录内容帮助诊断
-                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
-                all_files = [f.name for f in task_path.iterdir() if f.is_file()]
-                raise FileNotFoundError(
-                    f"❌ No episode directories found\n"
-                    f"   📂 Task path: {task_path}\n"
-                    f"   📋 Directories found: {all_dirs[:10] if all_dirs else 'None'}\n"
-                    f"   📋 Files found: {all_files[:10] if all_files else 'None'}\n"
-                    f"   💡 Expected directory pattern: episode_0000, episode_0001, ... or flat structure\n"
-                    f"   💡 Check if:\n"
-                    f"      1. Dataset has been extracted correctly\n"
-                    f"      2. Episode directories are named with 'episode' prefix\n"
-                    f"      3. Task path points to correct location\n"
-                    f"      4. Or task_path itself is an episode (flat structure)"
-                )
+            # 检查是否找到episode
+            if not episode_dirs:
+                # 检查是否是扁平结构
+                if task_path.name.startswith('episode'):
+                    camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith('camera')]
+                    if camera_dirs:
+                        if self.logger:
+                            self.logger.info(f"✅ MMK2扁平结构: task_path本身就是episode ({task_path.name})")
+                        # 扁平结构，后续代码会自动处理
+                    else:
+                        raise FileNotFoundError(
+                            f"❌ Task path looks like an episode but has no camera directories\n"
+                            f"   Task path: {task_path}\n"
+                            f"   Expected camera_* subdirectories"
+                        )
+                else:
+                    # 真的没有找到episode
+                    all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+                    all_files = [f.name for f in task_path.iterdir() if f.is_file()]
+                    raise FileNotFoundError(
+                        f"❌ No episode directories found (searched recursively up to 3 levels deep)\n"
+                        f"   📂 Task path: {task_path}\n"
+                        f"   📋 Top-level directories: {all_dirs[:10] if all_dirs else 'None'}\n"
+                        f"   📋 Top-level files: {all_files[:10] if all_files else 'None'}\n"
+                        f"   💡 Expected:\n"
+                        f"      - episode_* directories (at any level up to 3 layers deep)\n"
+                        f"      - OR task_path itself is an episode (flat structure)\n"
+                        f"   💡 Possible issues:\n"
+                        f"      1. Episode directories not named with 'episode' prefix\n"
+                        f"      2. Episodes nested deeper than 3 levels\n"
+                        f"      3. Dataset path is incorrect\n"
+                        f"      4. Dataset has not been extracted/processed"
+                    )
+            else:
+                if self.logger:
+                    self.logger.info(f"✅ 找到 {len(episode_dirs)} 个episode目录")
             
             # Enhanced validation: validate each episode's internal structure
             for i, episode_dir in enumerate(episode_dirs):
@@ -960,63 +970,114 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                 "   3. 重新生成该episode数据"
             )
 
+    def _find_all_episodes(self, task_path: Path) -> list[Path]:
+        """递归查找所有episode目录
+        
+        支持三种结构：
+        1. 直接子目录：task_path/episode_X/
+        2. 嵌套结构：task_path/subtask/episode_X/（最多3层）
+        3. 扁平结构：task_path本身就是episode
+        
+        Returns:
+            episode目录列表（已排序，已过滤invalid episodes）
+        """
+        episode_dirs = []
+        
+        # 第一步：检查直接子目录
+        direct_episodes = [
+            d for d in task_path.iterdir() 
+            if d.is_dir() 
+            and d.name.startswith("episode")
+            and d not in self._invalid_episodes
+        ]
+        
+        if direct_episodes:
+            return sorted(direct_episodes)
+        
+        # 第二步：检查是否是扁平结构（task_path本身就是episode）
+        if task_path.name.startswith("episode"):
+            camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
+            if camera_dirs:
+                # 扁平结构：返回特殊标记（空列表表示扁平结构）
+                return []  # 调用方会检测到空列表并使用task_path本身
+        
+        # 第三步：递归搜索子目录（无深度限制，但避免无限循环）
+        from collections import deque
+        queue = deque([(task_path, 0)])
+        max_depth = 100  # 实际限制，防止无限循环或符号链接循环
+        visited = set()  # 防止重复访问
+        
+        while queue:
+            current_path, depth = queue.popleft()
+            
+            # 防止重复访问（处理符号链接循环）
+            try:
+                real_path = current_path.resolve()
+                if real_path in visited:
+                    continue
+                visited.add(real_path)
+            except (OSError, RuntimeError):
+                continue
+            
+            if depth >= max_depth:
+                continue
+            
+            try:
+                for item in current_path.iterdir():
+                    if not item.is_dir():
+                        continue
+                    
+                    # 跳过隐藏目录和特殊目录
+                    if item.name.startswith('.') or item.name.startswith('@'):
+                        continue
+                    
+                    # 找到episode目录
+                    if item.name.startswith('episode') and item not in self._invalid_episodes:
+                        episode_dirs.append(item)
+                    # 继续搜索子目录
+                    else:
+                        queue.append((item, depth + 1))
+            except (PermissionError, OSError):
+                continue
+        
+        return sorted(episode_dirs)
+
     # @override
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量
         
-        支持两种结构：
-        1. 嵌套结构：task_path/episode_0, episode_1, ...
-        2. 扁平结构：task_path本身就是episode（当task_path名字以episode开头时）
+        支持三种结构：
+        1. 直接子目录：task_path/episode_X/
+        2. 嵌套结构：task_path/subtask/episode_X/（递归搜索）
+        3. 扁平结构：task_path本身就是episode
         """
         try:
-            # 🔥 容错：过滤掉invalid episodes
-            episode_dirs = [
-                d for d in task_path.iterdir() 
-                if d.is_dir() 
-                and d.name.startswith("episode")
-                and d not in self._invalid_episodes  # 过滤invalid episodes
-            ]
-            episode_count = len(episode_dirs)
+            episode_dirs = self._find_all_episodes(task_path)
             
-            # 🆕 检查扁平结构：如果没有找到子episode目录，检查task_path本身是否是episode
-            if episode_count == 0:
-                # 如果task_path本身以episode开头，且包含camera目录，说明是扁平结构
+            # 空列表可能表示扁平结构
+            if len(episode_dirs) == 0:
                 if task_path.name.startswith("episode"):
-                    # 检查是否有camera目录（MMK2格式的特征）
                     camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
                     if camera_dirs:
-                        # 扁平结构：task_path本身就是episode
-                        if self.logger:
-                            self.logger.info(f"✅ MMK2扁平结构: task_path本身就是episode ({task_path.name})")
-                        return 1
+                        return 1  # 扁平结构，1个episode
                 
-                # 如果不是扁平结构，提供警告
-                all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
-                
-                warning_msg = (
-                    f"MMK2 Episode Count Warning: No episode directories found in task '{task_path}'. "
-                    f"All directories found: {all_dirs}. "
-                    f"Expected directories starting with 'episode'. "
-                    f"Task path exists: {task_path.exists()}. "
-                    f"This will likely cause conversion failures."
-                )
-                
+                # 真的没有episode
                 if self.logger:
-                    self.logger.warning(f"MMK2 Episode Count Warning: {warning_msg}")
+                    all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
+                    self.logger.warning(
+                        f"⚠️  No episode directories found in task '{task_path}'. "
+                        f"Top-level directories: {all_dirs}"
+                    )
+                return 0
             
-            return episode_count
+            return len(episode_dirs)
             
         except Exception as e:
-            error_msg = (
-                f"MMK2 Episode Count Error: Failed to count episodes in task '{task_path}'. "
-                f"Original error: {type(e).__name__}: {e}. "
-                f"Task path exists: {task_path.exists()}."
-            )
-            
             if self.logger:
-                self.logger.error(f"MMK2 Episode Count Error: {error_msg}")
-            
-            raise ValueError(error_msg) from e
+                self.logger.error(
+                    f"❌ Failed to count episodes in task '{task_path}': {type(e).__name__}: {e}"
+                )
+            raise ValueError(f"Failed to count episodes in task '{task_path}'") from e
 
     # @override
     def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int) -> any:
@@ -1073,45 +1134,42 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
     def _get_episode_directory(self, task_path: Path, ep_idx: int) -> Path:
         """获取episode目录
         
-        支持两种结构：
-        1. 嵌套结构：task_path/episode_0, episode_1, ...
-        2. 扁平结构：task_path本身就是episode
+        支持三种结构：
+        1. 直接子目录：task_path/episode_X/
+        2. 嵌套结构：task_path/subtask/episode_X/（递归搜索）
+        3. 扁平结构：task_path本身就是episode
         """
-        # 🔥 容错：过滤掉invalid episodes
-        episode_dirs = sorted(
-            [d for d in task_path.iterdir() 
-             if d.is_dir() 
-             and d.name.startswith("episode")
-             and d not in self._invalid_episodes]  # 过滤invalid episodes
-        )
+        # 使用统一的episode查找方法
+        episode_dirs = self._find_all_episodes(task_path)
         
-        # 🆕 扁平结构处理
-        if len(episode_dirs) == 0 and task_path.name.startswith("episode"):
-            # 检查是否有camera目录
-            camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
-            if camera_dirs and ep_idx == 0:
-                # 扁平结构：task_path本身就是episode
-                return task_path
-        
-        if ep_idx >= len(episode_dirs):
-            # 提供详细的MMK2 Episode目录错误诊断信息
+        # 处理扁平结构
+        if len(episode_dirs) == 0:
+            if task_path.name.startswith("episode"):
+                camera_dirs = [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("camera")]
+                if camera_dirs and ep_idx == 0:
+                    # 扁平结构：task_path本身就是episode
+                    return task_path
+            
+            # 真的没有episode
             all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
-            episode_dir_names = [d.name for d in episode_dirs]
-            
-            error_msg = (
-                f"MMK2 Episode Directory Error: Episode index {ep_idx} out of range in task '{task_path}'. "
-                f"Found {len(episode_dirs)} episode directories. "
-                f"Episode directories found: {episode_dir_names if episode_dir_names else 'None'}. "
-                f"All directories in task: {all_dirs}. "
-                f"Task path exists: {task_path.exists()}. "
-                f"This might indicate missing episode data or incorrect task path."
+            raise ValueError(
+                f"❌ No episode directories found in task '{task_path}'\n"
+                f"   Top-level directories: {all_dirs}\n"
+                f"   Requested episode index: {ep_idx}"
             )
+        
+        # 检查索引是否越界
+        if ep_idx >= len(episode_dirs):
+            episode_dir_names = [d.name for d in episode_dirs]
+            all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
             
-            if self.logger:
-                self.logger.error(f"MMK2 Episode Directory Error: {error_msg}")
-                self.logger.error("WARNING: Check if the task directory contains properly named episode_* folders!")
-            
-            raise ValueError(error_msg)
+            raise ValueError(
+                f"❌ Episode index {ep_idx} out of range\n"
+                f"   Task: {task_path}\n"
+                f"   Found {len(episode_dirs)} episodes: {episode_dir_names}\n"
+                f"   Top-level directories: {all_dirs}"
+            )
+        
         return episode_dirs[ep_idx]
     
     def _get_episode_source_files(self, task_path: Path, ep_idx: int) -> dict:

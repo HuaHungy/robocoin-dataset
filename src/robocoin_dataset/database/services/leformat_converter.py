@@ -18,6 +18,8 @@ def upsert_leformat_convert(
     convert_status: TaskStatus,
     err_message: str | None = None,
     leformat_path: str | None = None,
+    device_model: str | None = None,
+    device_model_version: str | None = None,
     is_test: bool = False,
 ) -> None:
     """
@@ -28,6 +30,8 @@ def upsert_leformat_convert(
     :param convert_status: 转换状态
     :param err_message: 可选，错误消息或状态更新信息
     :param leformat_path: 可选，转换输出路径
+    :param device_model: 可选，设备型号
+    :param device_model_version: 可选，设备型号版本
     :param is_test: 是否为测试模式（True=使用 LeFormatConvertTestDB，False=使用 LeFormatConvertDB）
     """
     if is_test:
@@ -54,6 +58,8 @@ def upsert_leformat_convert(
                     convert_path=leformat_path,
                     # convert_version_uuid=convert_version_uuid,
                     err_message=err_message,
+                    device_model=device_model,  # 🆕 设置 device_model
+                    device_model_version=device_model_version,  # 🆕 设置 device_model_version
                     updated_at=datetime.now(),
                 )
             else:
@@ -65,6 +71,11 @@ def upsert_leformat_convert(
                     item.err_message = err_message
                 if leformat_path is not None:
                     item.convert_path = leformat_path
+                # 🆕 更新 device_model 和 device_model_version（如果提供）
+                if device_model is not None:
+                    item.device_model = device_model
+                if device_model_version is not None:
+                    item.device_model_version = device_model_version
 
             session.add(item)
             session.commit()

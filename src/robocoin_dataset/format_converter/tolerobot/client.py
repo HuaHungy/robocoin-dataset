@@ -97,41 +97,50 @@ class LeFormatConverterTaskClient(TaskClient):
                 auto_reencode=auto_reencode,
             )
 
-            self.logger.info(f"converter_log_dir: {converter_log_dir}")
-            total_episodes = converter.get_episodes_num()
-            
-            converted_count = 0
-            for task_content, task_ep_idx, ep_idx in tqdm(
-                converter.convert(is_test),
-                total=total_episodes,
-                desc="Converting Dataset",
-                unit="episode",
-            ):
-                self.logger.info(
-                    f"Converted episode {task_ep_idx} of task {task_content}, total ep_idx is:{ep_idx}"
-                )
-                converted_count += 1
-            
-            # Log conversion statistics
-            skipped_count = total_episodes - converted_count
-            if skipped_count > 0:
-                self.logger.warning(
-                    f"📊 Conversion completed with some episodes skipped:\n"
-                    f"   Total episodes found: {total_episodes}\n"
-                    f"   Successfully converted: {converted_count}\n"
-                    f"   Skipped (data quality issues): {skipped_count}\n"
-                    f"   ✅ Check error/ directories for skipped files"
-                )
-            else:
-                self.logger.info(
-                    f"✅ Conversion completed successfully: {converted_count}/{total_episodes} episodes"
-                )
-            
-            # Save episode source mapping after conversion completes
-            if not is_test:
-                converter.save_episode_source_mapping()
-            
-            return {}
+            try:
+                self.logger.info(f"converter_log_dir: {converter_log_dir}")
+                total_episodes = converter.get_episodes_num()
+                
+                converted_count = 0
+                for task_content, task_ep_idx, ep_idx in tqdm(
+                    converter.convert(is_test),
+                    total=total_episodes,
+                    desc="Converting Dataset",
+                    unit="episode",
+                ):
+                    self.logger.info(
+                        f"Converted episode {task_ep_idx} of task {task_content}, total ep_idx is:{ep_idx}"
+                    )
+                    converted_count += 1
+                
+                # Log conversion statistics
+                skipped_count = total_episodes - converted_count
+                if skipped_count > 0:
+                    self.logger.warning(
+                        f"📊 Conversion completed with some episodes skipped:\n"
+                        f"   Total episodes found: {total_episodes}\n"
+                        f"   Successfully converted: {converted_count}\n"
+                        f"   Skipped (data quality issues): {skipped_count}\n"
+                        f"   ✅ Check error/ directories for skipped files"
+                    )
+                else:
+                    self.logger.info(
+                        f"✅ Conversion completed successfully: {converted_count}/{total_episodes} episodes"
+                    )
+                
+                # Save episode source mapping after conversion completes
+                if not is_test:
+                    converter.save_episode_source_mapping()
+                
+                return {}
+            finally:
+                # 🔥 确保清理资源，防止semaphore泄漏
+                try:
+                    if hasattr(converter, 'lerobot_dataset') and converter.lerobot_dataset is not None:
+                        converter.lerobot_dataset.stop_image_writer()
+                        self.logger.debug("✅ 已清理image writer资源")
+                except Exception as e:
+                    self.logger.warning(f"⚠️  清理converter资源时出错: {e}")
 
         except Exception as e:
             raise RuntimeError(f"convert dataset {dataset_path} failed") from e

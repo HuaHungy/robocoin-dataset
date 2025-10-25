@@ -118,7 +118,7 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         episodes = self._episode_locator.locate_episodes_bfs(
             dataset_path=task_path,
             is_episode_func=self._is_episode,
-            max_depth=10,  # 允许较深的嵌套
+            max_depth=100,  # 实际无深度限制，防止无限循环
             skip_dirs=[]  # JPG+JSON格式不需要额外排除目录（通过子目录结构判断）
         )
         

@@ -132,6 +132,19 @@ class LerobotFormatConverter(ABC):
 
         self._prevalidate_files()
 
+    def __del__(self) -> None:
+        """析构函数：清理资源，防止semaphore泄漏"""
+        try:
+            if hasattr(self, 'lerobot_dataset') and self.lerobot_dataset is not None:
+                # 停止image writer进程池，释放semaphore
+                self.lerobot_dataset.stop_image_writer()
+                if self.logger:
+                    self.logger.debug("✅ Image writer进程池已清理")
+        except Exception as e:
+            # 析构函数中不应该抛出异常
+            if self.logger:
+                self.logger.warning(f"⚠️  清理资源时出错: {e}")
+
     @abstractmethod
     def _prevalidate_files(self) -> None:
         raise NotImplementedError
