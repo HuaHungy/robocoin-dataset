@@ -421,7 +421,8 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
                     self.logger.warning(f"Invalid main BSON structure in {bson_file}")
                 return
             
-            available_paths = set(doc["data"].keys())
+            # Normalize paths by removing leading slash for consistent comparison
+            available_paths = set(key.lstrip('/') for key in doc["data"].keys())
             if self.logger:
                 self.logger.info(f"Available main BSON paths: {sorted(available_paths)}")
             
