@@ -190,6 +190,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         # 🚀 性能优化：初始化BSON文件缓存
         self._bson_cache = BsonFileCache(max_cache_size=10)
         
+        # 🔥 容错：跟踪结构有问题的episodes
+        self._invalid_episodes: set = set()  # 存储有结构问题的episode目录
+        
         super().__init__(
             dataset_path=dataset_path,
             output_path=output_path,
@@ -285,43 +288,79 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             
             # Enhanced validation: validate each episode's internal structure
             for i, episode_dir in enumerate(episode_dirs):
-                self._validate_mmk2_episode_structure(episode_dir, i)
+                try:
+                    self._validate_mmk2_episode_structure(episode_dir, i)
+                except Exception as e:
+                    # 记录警告并跳过这个episode
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  Episode {episode_dir.name}: validation failed, will be skipped.\n"
+                            f"    Reason: {e}"
+                        )
+                    self._invalid_episodes.add(episode_dir)
             
-            # 🆕 升级：将subdirectory和image检查从warning升级为error
+            # 🔥 容错：检查camera目录和图像，但不抛出异常
             for episode_dir in episode_dirs:
-                # Check for required subdirectories (observations, actions, etc.)
-                required_subdirs = ['observations']
-                for subdir in required_subdirs:
-                    subdir_path = episode_dir / subdir
-                    if not subdir_path.exists():
-                        # 显示episode目录结构
-                        episode_subdirs = [d.name for d in episode_dir.iterdir() if d.is_dir()]
-                        raise FileNotFoundError(
-                            f"❌ Missing required subdirectory\n"
-                            f"   📂 Episode: {episode_dir.name}\n"
-                            f"   📂 Missing: {subdir}\n"
-                            f"   📋 Existing subdirectories: {episode_subdirs if episode_subdirs else 'None'}\n"
-                            f"   💡 MMK2 format requires '{subdir}' subdirectory in each episode"
-                        )
+                if episode_dir in self._invalid_episodes:
+                    continue  # 已标记为invalid，跳过
+                    
+                # ✅ MMK2格式实际上是: episode_X/camera_*/\*.jpg
+                # 不需要observations子目录！检查camera_*目录即可
+                camera_dirs = [d for d in episode_dir.iterdir() if d.is_dir() and d.name.startswith('camera_')]
                 
-                # Check for image files in observations
-                obs_dir = episode_dir / 'observations'
-                if obs_dir.exists():
-                    image_files = list(obs_dir.glob("*.jpg")) + list(obs_dir.glob("*.png")) + list(obs_dir.glob("*.jpeg"))
-                    if not image_files:
-                        # 显示observations目录内容
-                        obs_contents = [f.name for f in obs_dir.iterdir()]
-                        raise FileNotFoundError(
-                            f"❌ No image files found in observations\n"
-                            f"   📂 Episode: {episode_dir.name}\n"
-                            f"   📂 Observations dir: {obs_dir}\n"
-                            f"   📋 Contents: {obs_contents[:10] if obs_contents else 'Empty directory'}\n"
-                            f"   💡 Expected image formats: .jpg, .png, .jpeg\n"
-                            f"   💡 Check if:\n"
-                            f"      1. Images were recorded properly\n"
-                            f"      2. File extensions are correct\n"
-                            f"      3. Files are in the correct subdirectory"
+                if not camera_dirs:
+                    # 没有找到任何camera目录
+                    episode_subdirs = [d.name for d in episode_dir.iterdir() if d.is_dir()]
+                    error_msg = (
+                        f"❌ No camera directories found\n"
+                        f"   📂 Episode: {episode_dir.name}\n"
+                        f"   📋 Existing subdirectories: {episode_subdirs if episode_subdirs else 'None'}\n"
+                        f"   💡 MMK2 format requires camera_* subdirectories (e.g., camera_head, camera_left_wrist)"
+                    )
+                    if self.logger:
+                        self.logger.warning(f"⚠️  Episode {episode_dir.name}: {error_msg}")
+                    self._invalid_episodes.add(episode_dir)
+                    continue
+                
+                # 检查camera目录中是否有图片
+                has_valid_camera = False
+                for camera_dir in camera_dirs:
+                    jpg_files = list(camera_dir.glob("*.jpg"))
+                    if jpg_files:
+                        has_valid_camera = True
+                        break
+                
+                if not has_valid_camera:
+                    error_msg = (
+                        f"❌ No image files found in camera directories\n"
+                        f"   📂 Episode: {episode_dir.name}\n"
+                        f"   📂 Camera directories: {[d.name for d in camera_dirs]}\n"
+                        f"   💡 Expected .jpg files in camera_* subdirectories"
+                    )
+                    if self.logger:
+                        self.logger.warning(f"⚠️  Episode {episode_dir.name}: {error_msg}")
+                    self._invalid_episodes.add(episode_dir)
+            
+            # 🔥 保存invalid episodes到文件
+            if self._invalid_episodes:
+                invalid_episodes_file = Path(output_path) / "invalid_episodes.txt"
+                try:
+                    from datetime import datetime
+                    with open(invalid_episodes_file, 'w', encoding='utf-8') as f:
+                        f.write(f"# Invalid Episodes (MMK2 format)\n")
+                        f.write(f"# Generated: {datetime.now().isoformat()}\n")
+                        f.write(f"# Total: {len(self._invalid_episodes)} episodes with data issues\n\n")
+                        for ep_dir in sorted(self._invalid_episodes):
+                            f.write(f"{ep_dir}\n")
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  Found {len(self._invalid_episodes)} episodes with structural issues.\n"
+                            f"    These episodes will be skipped during conversion.\n"
+                            f"    Details saved to: {invalid_episodes_file}"
                         )
+                except Exception as e:
+                    if self.logger:
+                        self.logger.error(f"Failed to write invalid_episodes.txt: {e}")
 
     def _validate_mmk2_episode_structure(self, episode_dir: Path, ep_idx: int) -> None:
         """Validate internal MMK2 episode structure against configuration"""
@@ -930,8 +969,12 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         2. 扁平结构：task_path本身就是episode（当task_path名字以episode开头时）
         """
         try:
+            # 🔥 容错：过滤掉invalid episodes
             episode_dirs = [
-                d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")
+                d for d in task_path.iterdir() 
+                if d.is_dir() 
+                and d.name.startswith("episode")
+                and d not in self._invalid_episodes  # 过滤invalid episodes
             ]
             episode_count = len(episode_dirs)
             
@@ -1034,8 +1077,12 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
         1. 嵌套结构：task_path/episode_0, episode_1, ...
         2. 扁平结构：task_path本身就是episode
         """
+        # 🔥 容错：过滤掉invalid episodes
         episode_dirs = sorted(
-            [d for d in task_path.iterdir() if d.is_dir() and d.name.startswith("episode")]
+            [d for d in task_path.iterdir() 
+             if d.is_dir() 
+             and d.name.startswith("episode")
+             and d not in self._invalid_episodes]  # 过滤invalid episodes
         )
         
         # 🆕 扁平结构处理
