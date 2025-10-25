@@ -3,7 +3,7 @@ name = "robocoin-dataset"
 version = "0.1.0"
 description = "robocoin dataset tools: such as format-converter, hub-uploader, nas-uploader"
 readme = "README.md"
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.10, <3.14"
 authors = [{ name = "Your Name", email = "YourEmail@email.com" }]
 
 dependencies = [

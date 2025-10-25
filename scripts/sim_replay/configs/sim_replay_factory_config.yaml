@@ -108,7 +108,7 @@ zhipingfang:
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
   mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
 
-unitree_g1:
+unitree_g1: 
 - version: default_version
   verison_description: two arms and two hands (6 joints each), one rgb cameras with high
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config

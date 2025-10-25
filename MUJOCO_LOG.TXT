@@ -13,3 +13,15 @@ ERROR: could not create window
 Fri Oct 24 15:20:44 2025
 ERROR: could not initialize GLFW
 
+Fri Oct 24 22:38:07 2025
+ERROR: could not create window
+
+Fri Oct 24 22:38:34 2025
+ERROR: could not create window
+
+Fri Oct 24 22:39:34 2025
+ERROR: could not create window
+
+Fri Oct 24 22:40:11 2025
+ERROR: could not create window
+
