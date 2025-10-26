@@ -152,11 +152,16 @@ class LeFormatConvertDB(Base):
         nullable=True,  # 允许为空，初始无信息
     )
 
-    version_uuid = Column(String(255), nullable=False)
+    version_uuid = Column(String(255), nullable=True, default="v0")  # 🆕 添加默认值
 
     device_model = Column(String(255), nullable=True)
 
     device_model_version = Column(String(255), nullable=True)
+
+    # 🆕 转换统计信息
+    total_episodes = Column(Integer, nullable=True)  # 总episode数
+    converted_episodes = Column(Integer, nullable=True)  # 成功转换的episode数
+    skipped_episodes = Column(Integer, nullable=True)  # 跳过的episode数
 
     # ✅ 唯一约束：一个 uuid 最多一个转换记录
     __table_args__ = (UniqueConstraint("dataset_uuid", name="uix_dataset_uuid_convert"),)
@@ -191,6 +196,12 @@ class LeFormatConvertTestDB(Base):
     device_model = Column(String(255), nullable=True)
 
     device_model_version = Column(String(255), nullable=True)
+
+    # 🆕 转换统计信息
+    total_episodes = Column(Integer, nullable=True)  # 总episode数
+    converted_episodes = Column(Integer, nullable=True)  # 成功转换的episode数
+    skipped_episodes = Column(Integer, nullable=True)  # 跳过的episode数
+
     # ✅ 唯一约束：一个 uuid 最多一个转换记录
     __table_args__ = (UniqueConstraint("dataset_uuid", name="uix_dataset_uuid_convert"),)
 
