@@ -814,9 +814,33 @@ class LerobotFormatConverter(ABC):
             ConfigError: 严格模式下遇到数据错误（表明配置可能有问题）
             CriticalDataError: 非严格模式下遇到数据错误（跳过整个episode）
         """
-        images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
-            task_path, task_ep_idx, is_test=is_test
-        )
+        # 🆕 容错：处理字段缺失的情况
+        try:
+            images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
+                task_path, task_ep_idx, is_test=is_test
+            )
+        except KeyError as e:
+            # H5字段缺失或配置不匹配
+            if is_strict:
+                # 严格模式：视为配置错误
+                raise ConfigError(
+                    f"严格模式下检测到字段缺失（可能是配置错误）:\n"
+                    f"  Episode: {global_ep_idx} (task episode: {task_ep_idx})\n"
+                    f"  Task: {task}\n"
+                    f"  Error: {e}\n"
+                    f"\n💡 在前{self.strict_episodes}个episode中发现此问题，"
+                    f"可能是配置错误而非数据问题"
+                ) from e
+            else:
+                # 非严格模式：跳过这个episode
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Episode {global_ep_idx} (task episode: {task_ep_idx}) 字段缺失，跳过:\n"
+                        f"   Task: {task}\n"
+                        f"   Reason: {str(e)[:200]}..."  # 只显示前200字符
+                    )
+                # 返回(0, 0)表示跳过整个episode
+                return 0, 0
         
         converted_frames = 0
         

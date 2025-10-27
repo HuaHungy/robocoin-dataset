@@ -160,7 +160,7 @@ class LeFormatConverterTaskServer(TaskServer):
             if self.is_test:
                 if not self.specific_device_model:
                     # 情况1：未指定设备型号
-                    # 查询：标注已完成，且未进入测试流程（不存在记录），排除PROCESSING和COMPLETED
+                    # 查询：标注已完成，且未进入测试流程（不存在记录），排除PROCESSING、COMPLETED和FAILED
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
@@ -171,6 +171,7 @@ class LeFormatConverterTaskServer(TaskServer):
                                 LeFormatConvertTestDB.convert_status.in_([
                                     TaskStatus.PROCESSING,  # 正在处理
                                     TaskStatus.COMPLETED,   # 🆕 已完成也排除
+                                    TaskStatus.FAILED,      # 🔥 失败的任务不再重试
                                 ])
                             )
                             .exists()
@@ -179,7 +180,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     )
                 else:
                     # 情况2：指定了设备型号
-                    # 查询：标注已完成，设备型号匹配，且未进入测试流程（不存在记录），排除PROCESSING和COMPLETED
+                    # 查询：标注已完成，设备型号匹配，且未进入测试流程（不存在记录），排除PROCESSING、COMPLETED和FAILED
                     results = (
                         session.query(DmvAnnotationDB)
                         .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
@@ -191,6 +192,7 @@ class LeFormatConverterTaskServer(TaskServer):
                                 LeFormatConvertTestDB.convert_status.in_([
                                     TaskStatus.PROCESSING,  # 正在处理
                                     TaskStatus.COMPLETED,   # 🆕 已完成也排除
+                                    TaskStatus.FAILED,      # 🔥 失败的任务不再重试
                                 ])
                             )
                             .exists()
@@ -209,8 +211,8 @@ class LeFormatConverterTaskServer(TaskServer):
                     .exists()
                 )
 
-                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 或 **状态不是PROCESSING/COMPLETED**
-                # 🆕 修复：排除正在处理和已完成的任务，允许FAILED重试
+                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 或 **状态不是PROCESSING/COMPLETED/FAILED**
+                # 🔥 修复：排除正在处理、已完成和失败的任务，不允许FAILED重试
                 not_processing_or_completed_in_formal = ~(
                     session.query(LeFormatConvertDB)
                     .filter(
@@ -218,6 +220,7 @@ class LeFormatConverterTaskServer(TaskServer):
                         LeFormatConvertDB.convert_status.in_([
                             TaskStatus.PROCESSING,   # 正在处理
                             TaskStatus.COMPLETED,    # 🆕 已完成也排除
+                            TaskStatus.FAILED,       # 🔥 失败的任务不再重试
                         ])
                     )
                     .exists()
