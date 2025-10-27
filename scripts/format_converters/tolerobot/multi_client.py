@@ -147,7 +147,6 @@ python scripts/format_converters/tolerobot/multi_client.py \
     --log-path=./outputs/leformat_converter/log \
     --num-clients=8
 
-
 # 用于本地测试，用于数据集转换测试
 python scripts/format_converters/tolerobot/multi_client.py \
     --host=127.0.0.1 \

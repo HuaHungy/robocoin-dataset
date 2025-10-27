@@ -242,6 +242,9 @@ class LerobotFormatConverterH5Jpg(LerobotFormatConverter):
         
         # 保存无效episodes列表到文件
         if self._invalid_episodes:
+            # 🆕 确保输出目录存在
+            self.output_path.mkdir(parents=True, exist_ok=True)
+            
             invalid_episodes_file = self.output_path / "invalid_episodes.txt"
             with open(invalid_episodes_file, 'w', encoding='utf-8') as f:
                 f.write(f"# Invalid episodes (data structure issues)\n")

@@ -132,7 +132,13 @@ class LeFormatConverterTaskClient(TaskClient):
                 if not is_test:
                     converter.save_episode_source_mapping()
                 
-                return {}
+                # 🆕 返回转换统计信息给Server
+                return {
+                    "total_episodes": total_episodes,
+                    "converted_episodes": converted_count,
+                    "skipped_episodes": skipped_count,
+                    "is_test": is_test,
+                }
             finally:
                 # 🔥 确保清理资源，防止semaphore泄漏
                 try:

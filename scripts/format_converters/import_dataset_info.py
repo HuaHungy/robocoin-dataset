@@ -10,9 +10,8 @@ from typing import List, Dict, Any
 import concurrent.futures
 import yaml
 import logging
-import traceback
+import traceback  
 import subprocess
-
 # 把项目根目录塞进 sys.path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
@@ -31,21 +30,28 @@ SUPPORTED_YAML_NAMES = {"local_dataset_info.yaml", "local_dataset_info.yml"}
 # 配置日志
 # ------------------------------------------------------------------
 def setup_logging(log_dir: Path, dry_run: bool = False) -> None:
+    """设置日志输出到文件和控制台"""
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "import_dataset_info.log"
+
+    # 清空旧日志（避免追加）
     if log_file.exists() and not dry_run:
         log_file.unlink()
 
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+
+    # 防止重复添加 handler
     if logger.hasHandlers():
         logger.handlers.clear()
 
+    # 控制台 Handler
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
     logger.addHandler(ch)
 
+    # 文件 Handler
     if not dry_run:
         fh = logging.FileHandler(log_file, encoding="utf-8")
         fh.setLevel(logging.INFO)
@@ -63,21 +69,25 @@ def find_local_yaml_files(root: Path) -> List[Path]:
         if SUPPORTED_YAML_NAMES & set(files):
             filename = next(iter(SUPPORTED_YAML_NAMES & set(files)))
             found.append(Path(current) / filename)
-            dirnames.clear()
+            dirnames.clear()  # 不进入子目录
     return found
 
 # ------------------------------------------------------------------
 # 数据清理函数
 # ------------------------------------------------------------------
 def clean_data_value(value: Any) -> Any:
+    """清理数据值，确保数据库兼容"""
     if isinstance(value, list):
-        return str(value[0]) if len(value) == 1 else str(value) if value else None
+        if value:
+            return str(value[0]) if len(value) == 1 else str(value)
+        else:
+            return None
     elif isinstance(value, dict):
         return str(value)
     return value
 
 # ------------------------------------------------------------------
-# 读取 + 检查 dataset_uuid（不再回写 local_dataset_info.yaml）
+# 读取 + 检查 dataset_uuid
 # ------------------------------------------------------------------
 def load_and_patch(yaml_path: Path, dry_run: bool = False) -> Dict[str, Any]:
     try:
@@ -91,26 +101,29 @@ def load_and_patch(yaml_path: Path, dry_run: bool = False) -> Dict[str, Any]:
         logging.warning(f"跳过无效文件（缺少 dataset_name）：{yaml_path}")
         return {}
 
+    # ====== 1. 尝试从主文件获取 UUID ======
     existing_uuid = data.get("dataset_uuid")
+
+    # ====== 2. 如果主文件没有，尝试读取同目录下的 dataset_uuid.yaml ======
+    if not existing_uuid:
+        uuid_yaml = yaml_path.parent / "dataset_uuid.yaml"
+        try:
+            if uuid_yaml.exists():
+                with uuid_yaml.open(encoding="utf-8") as f:
+                    uuid_data = yaml.safe_load(f)
+                    external_uuid = uuid_data.get("uuid") or uuid_data.get("dataset_uuid")
+                    if external_uuid:
+                        logging.info(f"从 {uuid_yaml.name} 获取 UUID: {external_uuid}")
+                        existing_uuid = external_uuid
+        except Exception as e:
+            logging.warning(f"读取 {uuid_yaml} 失败: {e}")
+
+    # ====== 3. 如果还是没有 UUID，才走生成逻辑 ======
     if existing_uuid:
+        data["dataset_uuid"] = existing_uuid
         used_uuids_global.add(existing_uuid)
-
-    # 如果 local 文件里没有，尝试读取同目录 dataset_uuid.yaml
-    if not existing_uuid:
-        sidecar = yaml_path.with_name("dataset_uuid.yaml")
-        if sidecar.exists():
-            try:
-                side_data = yaml.safe_load(sidecar.read_text(encoding="utf-8")) or {}
-                existing_uuid = side_data.get("dataset_uuid")
-                if existing_uuid:
-                    data["dataset_uuid"] = existing_uuid
-                    used_uuids_global.add(existing_uuid)
-                    logging.info(f"从 {sidecar} 读取到 UUID: {existing_uuid}")
-            except Exception as e:
-                logging.warning(f"读取 {sidecar} 失败: {e}")
-
-    # 仍然拿不到则生成新 UUID，仅写入 dataset_uuid.yaml
-    if not existing_uuid:
+        logging.info(f"[{data['dataset_name']}] 使用已有 UUID: {existing_uuid}")
+    else:
         task_desc = data.get("task_description") or data.get("task_desc") or "unknown_task"
         device_model = data.get("device_model") or "unknown_device"
 
@@ -126,22 +139,19 @@ def load_and_patch(yaml_path: Path, dry_run: bool = False) -> Dict[str, Any]:
             data["dataset_uuid"] = new_uuid
             used_uuids_global.add(new_uuid)
 
-            sidecar = yaml_path.with_name("dataset_uuid.yaml")
             if not dry_run:
-                sidecar.write_text(
-                    yaml.dump({"dataset_uuid": new_uuid}, indent=2, allow_unicode=True),
-                    encoding="utf-8",
-                )
-                logging.info(f"已写入新 UUID 到 {sidecar}: {new_uuid}")
+                with yaml_path.open("w", encoding="utf-8") as f:
+                    yaml.dump(data, f, allow_unicode=True, default_flow_style=False, indent=2, sort_keys=False)
+                logging.info(f"已写入新 UUID: {yaml_path} → {new_uuid}")
             else:
-                logging.info(f"[dry-run] 将写入新 UUID 到 {sidecar}: {new_uuid}")
+                logging.info(f"[dry-run] 将生成 UUID: {yaml_path} → {new_uuid}")
 
         except Exception as e:
             logging.error(f"自动生成 UUID 失败 {yaml_path}: {e}")
             return {}
 
-    # 清理字段
-    for key in ('device_model', 'end_effector_type', 'operation_platform_height'):
+    # 清理字段...
+    for key in ['device_model', 'end_effector_type', 'operation_platform_height']:
         if key in data:
             data[key] = clean_data_value(data[key])
 
@@ -149,8 +159,9 @@ def load_and_patch(yaml_path: Path, dry_run: bool = False) -> Dict[str, Any]:
     data['yaml_file_path'] = str(yaml_path)
     return data
 
-# ---------------- 收集模式 ----------------
+# ---------------- 新增：提取 yaml 文件 ----------------
 def collect_yaml_files(root_dirs: List[Path], output_dir: Path, dry_run: bool = False) -> None:
+    """收集所有 local_dataset_info.yml/.yaml 到 output_dir，并记录日志"""
     log_dir = output_dir / "logs"
     setup_logging(log_dir, dry_run=dry_run)
 
@@ -159,7 +170,10 @@ def collect_yaml_files(root_dirs: List[Path], output_dir: Path, dry_run: bool = 
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=False)
     else:
-        logging.info(f"[dry-run] 输出目录: {output_dir} (将被清空或创建)")
+        if output_dir.exists():
+            logging.info(f"[dry-run] 输出目录: {output_dir} (将被清空)")
+        else:
+            logging.info(f"[dry-run] 输出目录: {output_dir} (将被创建)")
 
     hub = {}
     idx = 0
@@ -180,7 +194,7 @@ def collect_yaml_files(root_dirs: List[Path], output_dir: Path, dry_run: bool = 
         hub_file = output_dir / "local_dataset_info_hub.yml"
         hub_file.write_text(
             yaml.dump(hub, sort_keys=True, allow_unicode=True, indent=2),
-            encoding="utf-8",
+            encoding="utf-8"
         )
         logging.info(f"已生成 hub 文件: {hub_file}")
 
@@ -192,17 +206,36 @@ def collect_yaml_files(root_dirs: List[Path], output_dir: Path, dry_run: bool = 
 def process_files_batch(yaml_files: List[Path], max_workers: int = 8, dry_run: bool = False) -> tuple[List[Dict[str, Any]], int]:
     datasets = []
     invalid_count = 0
+    seen_dataset_device_combos = set()  
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_file = {executor.submit(load_and_patch, yml, dry_run): yml for yml in yaml_files}
+        future_to_file = {
+            executor.submit(load_and_patch, yml, dry_run): yml 
+            for yml in yaml_files
+        }
+
         for future in concurrent.futures.as_completed(future_to_file):
             yml = future_to_file[future]
             try:
                 data = future.result()
-                if data:
-                    datasets.append(data)
-                else:
+                if not data:
                     invalid_count += 1
+                    continue
+
+                dataset_name = data.get("dataset_name")
+                device_model = data.get("device_model", "unknown_device")  
+                
+                # 检查 dataset_name 和 device_model 组合是否重复
+                combo_key = (dataset_name, device_model)
+                if combo_key in seen_dataset_device_combos:
+                    logging.warning(f"跳过重复的数据集组合: {dataset_name} (device_model: {device_model}) - 文件: {yml}")
+                    invalid_count += 1
+                    continue
+                
+                # 添加到已见集合
+                seen_dataset_device_combos.add(combo_key)
+                datasets.append(data)
+                
             except Exception as e:
                 logging.error(f"处理文件失败 {yml}: {e}")
                 invalid_count += 1
@@ -213,9 +246,13 @@ def process_files_batch(yaml_files: List[Path], max_workers: int = 8, dry_run: b
 # 主入口
 # ------------------------------------------------------------------
 def main() -> None:
+    """
+    主函数，负责解析命令行参数，设置日志，扫描 YAML 文件，处理这些文件，并将数据导入数据库。
+    """
     global used_uuids_global
     used_uuids_global = set()
 
+    # 解析命令行参数
     parser = argparse.ArgumentParser(
         description="递归查找 local_dataset_info.yaml/.yml，检查 dataset_uuid 并批量入库"
     )
@@ -301,7 +338,7 @@ def main() -> None:
 
     # 1. 创建数据库路径
     db_path = Path(args.db_path).expanduser().absolute()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
 
     # 2. 创建数据库实例
     db = DatasetDatabase(db_path)
@@ -311,18 +348,51 @@ def main() -> None:
     try:
         with db.with_session() as session:
             for record in datasets:
-                upsert_dataset_info(record, session=session)
+                upsert_dataset_info(yaml_data=record, db_path=args.db_path)
             session.commit()
         success_count = len(datasets)
         logging.info(f"成功导入 {success_count} 个数据集到数据库")
 
-       # logging.info("正在执行 separate.py 脚本...")
-       # subprocess.run([sys.executable, "separate.py"], check=True)
-        logging.info("separate.py 脚本执行完毕。")
+        # 执行 separate.py
+        logging.info("正在执行 separate.py 脚本...")
+        separate_script = PROJECT_ROOT / "scripts" / "db" / "separate.py"
+        if not separate_script.exists():
+            logging.critical(f"无法找到 separate.py: {separate_script}")
+            sys.exit(1)
 
-    except subprocess.CalledProcessError as e:
-        logging.critical(f"separate.py 脚本执行失败: {e}")
-        sys.exit(1)
+        cmd = [
+            sys.executable,
+            str(separate_script),
+            *[str(p) for p in root_paths],
+            "--log-dir", str(log_dir / "separate_logs")
+        ]
+        if args.dry_run:
+            cmd.append("--dry-run")
+
+        try:
+            logging.info(f"执行命令: {' '.join(cmd)}")
+            result = subprocess.run(
+                cmd,
+                check=True,
+                cwd=PROJECT_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8'
+            )
+            logging.info("separate.py 脚本执行成功。")
+            if result.stdout.strip():
+                for line in result.stdout.strip().splitlines():
+                    if "DRY RUN" in line or "处理完成" in line or "统计" in line:
+                        logging.info(f"[separate] {line}")
+        except subprocess.CalledProcessError as e:
+            logging.critical(f"separate.py 脚本执行失败: {e}")
+            if e.stdout:
+                logging.critical(f"标准输出:\n{e.stdout}")
+            if e.stderr:
+                logging.critical(f"错误输出:\n{e.stderr}")
+            sys.exit(1)
+
     except Exception as e:
         logging.critical(f"批量导入失败: {e}")
         logging.critical(traceback.format_exc())
@@ -331,21 +401,19 @@ def main() -> None:
 if __name__ == "__main__":
     main()
     
+    
 
 """
-测试
-python scripts/db/import_dataset_info_from_yaml.py \
-       /data/test \
-       --dry-run
-       
-收集文件
-python scripts/db/import_dataset_info_from_yaml.py \
-       data --collect-only \
-       --collect-output ./yaml_backup
+# 收集模式
+python scripts/db/import_dataset_info.py \
+    /mnt/nas/4unitree_g1/basket_storage_apple \
+    --collect-only \
+    --collect-output ./collected_yamls \
+    --dry-run
 
-扫描入库
-python scripts/db/import_dataset_info_from_yaml.py \
-       /mnt/nas/4unitree_g1/basket_storage_apple \
-       --workers 16 \
-       --db-path /home/adminpc1/Desktop/3/datasets.db
+# 导入模式
+python scripts/db/import_dataset_info.py \
+    --db-path /home/adminpc1/robocoin-dataset/db/datasets.db \
+    --workers 4 \
+    /mnt/nas/synnas/docker2/外部数据/智平方
 """
