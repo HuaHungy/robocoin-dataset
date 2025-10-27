@@ -84,9 +84,9 @@ alembic/
 alembic.ini
 
 robocoin_datasets/server_logs/
-<<<<<<< HEAD
+
 
 run*
-=======
+
 *.json
->>>>>>> 4953df2 (add *.json in .gitignore)
+
