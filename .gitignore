@@ -78,15 +78,11 @@ data/
 extracted_data/
 
 
-db/
+
 
 alembic/
 alembic.ini
 
 robocoin_datasets/server_logs/
 
-
-run*
-
 *.json
-
