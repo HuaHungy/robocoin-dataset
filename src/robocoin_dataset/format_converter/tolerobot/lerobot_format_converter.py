@@ -931,10 +931,21 @@ class LerobotFormatConverter(ABC):
         original_ep_idx = 0  # 原始数据中的全局episode索引（包含所有episode，包括跳过的）
         task_stats = {}  # 每个task的统计信息
         
-        for task_path, task in self.path_task_dict.items():
+        # 🆕 Test模式：限制处理的tasks数量
+        tasks_to_process = list(self.path_task_dict.items())
+        if is_test:
+            max_test_tasks = 2  # Test模式只处理前2个tasks
+            tasks_to_process = tasks_to_process[:max_test_tasks]
+            if self.logger:
+                self.logger.info(
+                    f"🧪 Test mode: processing only {len(tasks_to_process)} tasks "
+                    f"out of {len(self.path_task_dict)} total tasks"
+                )
+        
+        for task_path, task in tasks_to_process:
             episodes_num = self._get_task_episodes_num(task_path)
             if is_test:
-                episodes_num = 1
+                episodes_num = 1  # Test模式每个task只处理1个episode
             
             # 初始化任务统计
             task_stats[task] = {
