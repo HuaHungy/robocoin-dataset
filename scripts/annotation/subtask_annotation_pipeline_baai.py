@@ -82,14 +82,16 @@ if __name__ == "__main__":
         # video_subtask_annotation.generate_leformat_episode_video_hashes_threas_pool()
 
         # 将baai标注团队的子任务标注json文件入库,结果文件写入到数据表url_video_subtask_annotation中
-        # video_subtask_annotation.enter_url_video_st_annotation_json_files()
+        video_subtask_annotation.enter_url_video_st_annotation_json_files()
 
         # 下载json文件中的url video到Nas, 结果写入到数据表download_videos中
         video_subtask_annotation.download_videos_multi_threads()
 
         # 为url video生成文件Hash和指纹, 结果写入到数据表download_videos中
         video_subtask_annotation.generate_url_video_file_hashes_multi_threads()
+
         video_subtask_annotation.generate_url_video_image_hashes_multi_threads()
+
 
         # 将lerobot格式的episode视频与url video进行匹配
         # 结果写入到leformat_episode_url_video_match及leformat_episode_url_video_match_status中

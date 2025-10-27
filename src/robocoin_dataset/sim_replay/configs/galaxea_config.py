@@ -58,8 +58,8 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
         "right_arm_joint_5",
         "right_arm_joint_6",
         # torso
-        "torso_joint_1",
-        "torso_joint_2",
+        # "torso_joint_1",
+        # "torso_joint_2",
     ]
 
     action_arm_joint_lerobot_names: list[str] = [

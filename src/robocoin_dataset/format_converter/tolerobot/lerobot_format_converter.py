@@ -918,8 +918,12 @@ class LerobotFormatConverter(ABC):
         Raises:
             ConfigError: 检测到配置错误（前N个episode高失败率）
         """
+        # 🆕 初始化self.lerobot_dataset，确保清理代码可以访问
+        self.lerobot_dataset = None
+        
         if not is_test:
             dataset = self._create_lerobot_dataset()
+            self.lerobot_dataset = dataset  # 🆕 保存到self，用于清理
         else:
             dataset = None  # 测试模式不需要数据集对象
         

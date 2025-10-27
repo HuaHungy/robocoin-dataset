@@ -178,8 +178,14 @@ class TaskServer(ABC):
                         task_content=task_content,
                         task_result_content=task_result_content,
                     )
+                    # ✅ 成功后记录日志
+                    self.logger.info(f"✅ Successfully handled task result for {task_id}")
                 except Exception as e:
-                    self.logger.error(f"Error handling task result: {e}")
+                    # ✅ 详细的错误日志，包含完整堆栈
+                    self.logger.error(
+                        f"❌ Error handling task result for {task_id}: {e}",
+                        exc_info=True  # 打印完整堆栈跟踪
+                    )
 
             elif msg_type == PONG:
                 ctx = self.client_info.get(websocket)

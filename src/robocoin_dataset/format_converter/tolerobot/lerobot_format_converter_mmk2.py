@@ -353,6 +353,9 @@ class LerobotFormatConverterMmk2(LerobotFormatConverter):
             
             # 🔥 保存invalid episodes到文件
             if self._invalid_episodes:
+                # 🆕 确保输出目录存在
+                Path(output_path).mkdir(parents=True, exist_ok=True)
+                
                 invalid_episodes_file = Path(output_path) / "invalid_episodes.txt"
                 try:
                     from datetime import datetime
