@@ -239,7 +239,7 @@ class LeFormatConverterTaskServer(TaskServer):
 
                 # 5. 执行
                 results = query.all()
-<<<<<<< HEAD
+
             
             # 🔧 将后续逻辑移到session内，保证数据一致性
             if not results:
@@ -318,9 +318,7 @@ class LeFormatConverterTaskServer(TaskServer):
                     IS_TEST: self.is_test,
                     AUTO_REENCODE: self.auto_reencode,
                 }
-=======
-        if not results:
->>>>>>> 8fea470 (remove print)
+
             return None
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
