@@ -154,23 +154,15 @@ features:
             range_to: 7
 
   action:
-    # Total: 20维 (不包含velocity/effort，action是控制指令)
-    # 3 body + 2 head + 7 left_arm + 1 left_gripper + 7 right_arm + 1 right_gripper = 21维
-    # 注意：gripper没有action，所以是19维
+    # Total: 16维 (不包含velocity/effort，action是控制指令)
+    # 🆕 删除了body joints (cmd_body_joint字段为空)
+    # 2 head + 7 left_arm + 7 right_arm = 16维
+    # 注意：gripper和body没有action
     
     timeline_offset: 1
     sub_action:
-      # Body joints (3维) - 使用cmd_body_joint
-      - names:
-          - body_joint_1_rad
-          - body_joint_2_rad
-          - body_joint_3_rad
-        args:
-          json_path: cmd_body_joint
-          field_name: position
-          range_from: 0
-          range_to: 3
-
+      # 🆕 Body joints已删除 - cmd_body_joint字段在数据中为空
+      
       # Head joints (2维) - 使用cmd_head_joint_state  
       - names:
           - head_joint_1_rad
