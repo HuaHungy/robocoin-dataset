@@ -374,6 +374,17 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
             else:
                 camera_base_dir = ep_dir / "camera" / "color"
             
+            # 🆕 检查camera基础目录是否存在
+            if not camera_base_dir.exists():
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Camera base directory not found for '{cam_name}'.\n"
+                        f"   📂 Expected: {camera_base_dir}\n"
+                        f"   📂 Episode: {ep_dir}\n"
+                        f"   💡 Skipping this camera"
+                    )
+                continue
+            
             if not camera_folder:
                 # 如果没有指定camera_folder，尝试使用cam_name的前缀匹配
                 if camera_base_dir.exists():
@@ -382,33 +393,88 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
                             camera_folder = cam_folder.name
                             break
             
-            if camera_folder:
-                cam_folder_path = camera_base_dir / camera_folder
-                if cam_folder_path.exists():
-                    image_files = sorted(cam_folder_path.glob("*.jpg")) + sorted(cam_folder_path.glob("*.png"))
-                    
-                    # 🧪 Test模式：限制加载的图像文件数量
-                    if max_frames is not None:
-                        image_files = image_files[:max_frames]
-                        if self.logger:
-                            self.logger.debug(f"🧪 Limited {cam_name} to {len(image_files)} images (max_frames={max_frames})")
-                    
-                    frames = []
-                    for img_file in image_files:
-                        img = Image.open(img_file)
-                        if is_depth:
-                            # 深度图保持单通道或转换为适当格式
-                            img_array = np.array(img)
-                            # 如果是单通道，扩展为3通道以兼容LeRobot格式
-                            if img_array.ndim == 2:
-                                img_array = np.stack([img_array] * 3, axis=-1)
-                        else:
-                            # RGB图像
-                            img_array = np.array(img.convert("RGB"))
-                        frames.append(img_array)
-                    
-                    if frames:
-                        images[cam_name] = frames
+            if not camera_folder:
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Camera folder not specified or found for '{cam_name}'.\n"
+                        f"   📂 Camera base: {camera_base_dir}\n"
+                        f"   💡 Check config 'camera_folder' parameter"
+                    )
+                continue
+            
+            cam_folder_path = camera_base_dir / camera_folder
+            if not cam_folder_path.exists():
+                if self.logger:
+                    available_folders = [d.name for d in camera_base_dir.iterdir() if d.is_dir()]
+                    self.logger.warning(
+                        f"⚠️  Camera folder not found for '{cam_name}'.\n"
+                        f"   📂 Expected: {cam_folder_path}\n"
+                        f"   📂 Camera base: {camera_base_dir}\n"
+                        f"   📋 Available folders: {available_folders}\n"
+                        f"   💡 Check if camera folder name matches"
+                    )
+                continue
+            
+            image_files = sorted(cam_folder_path.glob("*.jpg")) + sorted(cam_folder_path.glob("*.png"))
+            
+            if not image_files:
+                if self.logger:
+                    all_files = list(cam_folder_path.glob("*"))[:10]  # 只显示前10个
+                    self.logger.warning(
+                        f"⚠️  No image files found for '{cam_name}'.\n"
+                        f"   📂 Camera folder: {cam_folder_path}\n"
+                        f"   📋 Files found (first 10): {[f.name for f in all_files]}\n"
+                        f"   💡 Expected .jpg or .png files"
+                    )
+                continue
+            
+            # 🧪 Test模式：限制加载的图像文件数量
+            if max_frames is not None:
+                image_files = image_files[:max_frames]
+                if self.logger:
+                    self.logger.debug(f"🧪 Limited {cam_name} to {len(image_files)} images (max_frames={max_frames})")
+            
+            frames = []
+            for img_file in image_files:
+                try:
+                    img = Image.open(img_file)
+                    if is_depth:
+                        # 深度图保持单通道或转换为适当格式
+                        img_array = np.array(img)
+                        # 如果是单通道，扩展为3通道以兼容LeRobot格式
+                        if img_array.ndim == 2:
+                            img_array = np.stack([img_array] * 3, axis=-1)
+                    else:
+                        # RGB图像
+                        img_array = np.array(img.convert("RGB"))
+                    frames.append(img_array)
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"⚠️  Failed to load image {img_file}: {e}")
+                    # 继续处理其他图像
+                    continue
+            
+            if not frames:
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  All images failed to load for '{cam_name}'.\n"
+                        f"   📂 Camera folder: {cam_folder_path}\n"
+                        f"   📊 Attempted: {len(image_files)} files"
+                    )
+                continue
+            
+            images[cam_name] = frames
+            if self.logger:
+                self.logger.debug(f"✅ Loaded {len(frames)} frames for camera '{cam_name}'")
+        
+        # 🆕 如果没有加载任何相机，记录错误
+        if not images and self.logger:
+            self.logger.error(
+                f"❌ No cameras loaded for episode!\n"
+                f"   📂 Episode: {ep_dir}\n"
+                f"   📋 Configured cameras: {[cfg.get(CAM_NAME_KEY) for cfg in image_configs]}\n"
+                f"   💡 Check episode directory structure and camera configuration"
+            )
         
         return images
 
