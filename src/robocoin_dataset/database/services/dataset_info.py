@@ -1,19 +1,24 @@
 import logging
-from typing import Any, Dict
-from sqlalchemy.orm import Session
+
 from sqlalchemy import select
-logger = logging.getLogger(__name__)
+
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
-    DatasetDB, ObjectDB, 
-    SceneTypeDB, TaskDescriptionDB,
-    AtomicActionDB,dataset_atomic_actions,
-    dataset_objects,dataset_scene_types, 
-    dataset_task_descriptions
-
+    AtomicActionDB,
+    DatasetDB,
+    ObjectDB,
+    SceneTypeDB,
+    TaskDescriptionDB,
+    dataset_atomic_actions,
+    dataset_objects,
+    dataset_scene_types,
+    dataset_task_descriptions,
 )
 
-def upsert_dataset_info(yaml_data: Dict[str, Any], db_path: str) -> None:
+logger = logging.getLogger(__name__)
+
+
+def upsert_dataset_info(yaml_data: dict[str, any], db_path: str) -> None:
     """
     将 YAML 字典写入数据库。
     每次调用内部自己创建 Session、自己提交，保证线程安全。
@@ -63,7 +68,7 @@ def upsert_dataset_info(yaml_data: Dict[str, Any], db_path: str) -> None:
                     session.add(td)
                     # 立即 flush，让 td.id 生成，同时避免并发重复
                     session.flush()
-                task_desc_map[td.id] = td 
+                task_desc_map[td.id] = td
             task_descriptions = list(task_desc_map.values())
 
             # 5. objects
@@ -101,50 +106,52 @@ def upsert_dataset_info(yaml_data: Dict[str, Any], db_path: str) -> None:
 
             # 7. 建立多对多关联
             for obj in db_objects:
-                exists = session.execute(
-                    select(dataset_objects.c.object_id)
-                    .where(dataset_objects.c.dataset_id == ds.id)
-                    .where(dataset_objects.c.object_id == obj.id)
-                ).first() is not None
+                exists = (
+                    session.execute(
+                        select(dataset_objects.c.object_id)
+                        .where(dataset_objects.c.dataset_id == ds.id)
+                        .where(dataset_objects.c.object_id == obj.id)
+                    ).first()
+                    is not None
+                )
 
                 if not exists:
                     session.execute(
-                        dataset_objects.insert().values(
-                            dataset_id=ds.id,
-                            object_id=obj.id
-                        )
+                        dataset_objects.insert().values(dataset_id=ds.id, object_id=obj.id)
                     )
 
             for st in scene_types:
-                exists = session.execute(
-                    select(dataset_scene_types.c.scene_type_id)
-                   .where(dataset_scene_types.c.dataset_id == ds.id)
-                   .where(dataset_scene_types.c.scene_type_id == st.id)
-                ).first() is not None
+                exists = (
+                    session.execute(
+                        select(dataset_scene_types.c.scene_type_id)
+                        .where(dataset_scene_types.c.dataset_id == ds.id)
+                        .where(dataset_scene_types.c.scene_type_id == st.id)
+                    ).first()
+                    is not None
+                )
 
                 if not exists:
                     session.execute(
-                        dataset_scene_types.insert().values(
-                            dataset_id=ds.id,
-                            scene_type_id=st.id
-                        )
+                        dataset_scene_types.insert().values(dataset_id=ds.id, scene_type_id=st.id)
                     )
-                    
+
             for td in task_descriptions:
-                exists = session.execute(
-                    select(dataset_task_descriptions.c.task_description_id)
-                    .where(dataset_task_descriptions.c.dataset_id == ds.id)
-                    .where(dataset_task_descriptions.c.task_description_id == td.id)
-                ).first() is not None
+                exists = (
+                    session.execute(
+                        select(dataset_task_descriptions.c.task_description_id)
+                        .where(dataset_task_descriptions.c.dataset_id == ds.id)
+                        .where(dataset_task_descriptions.c.task_description_id == td.id)
+                    ).first()
+                    is not None
+                )
 
                 if not exists:
                     session.execute(
                         dataset_task_descriptions.insert().values(
-                            dataset_id=ds.id,
-                            task_description_id=td.id
+                            dataset_id=ds.id, task_description_id=td.id
                         )
                     )
-            
+
             # 8. 处理 atomic_actions：建立 dataset 与 atomic_action 的多对多关联
             atomic_actions = yaml_data.get("atomic_actions", [])
             for action_name in atomic_actions:
@@ -152,25 +159,29 @@ def upsert_dataset_info(yaml_data: Dict[str, Any], db_path: str) -> None:
                     continue
 
                 # 步骤1: 获取或创建 AtomicActionDB 记录（全局唯一）
-                atomic_action = session.query(AtomicActionDB).filter_by(action_name=action_name).first()
+                atomic_action = (
+                    session.query(AtomicActionDB).filter_by(action_name=action_name).first()
+                )
                 if not atomic_action:
-                   atomic_action = AtomicActionDB(action_name=action_name)
-                   session.add(atomic_action)
-                   session.flush()  # 立即生成 id，供后续使用
+                    atomic_action = AtomicActionDB(action_name=action_name)
+                    session.add(atomic_action)
+                    session.flush()  # 立即生成 id，供后续使用
 
-                 # 步骤2: 检查是否已关联（查询中间表）
-                exists = session.execute(
-                    select(dataset_atomic_actions.c.atomic_actions_id)
-                   .where(dataset_atomic_actions.c.dataset_id == ds.id)
-                   .where(dataset_atomic_actions.c.atomic_actions_id == atomic_action.id)
-                ).first() is not None
+                # 步骤2: 检查是否已关联（查询中间表）
+                exists = (
+                    session.execute(
+                        select(dataset_atomic_actions.c.atomic_actions_id)
+                        .where(dataset_atomic_actions.c.dataset_id == ds.id)
+                        .where(dataset_atomic_actions.c.atomic_actions_id == atomic_action.id)
+                    ).first()
+                    is not None
+                )
 
                 # 步骤3: 如果未关联，则插入中间表
                 if not exists:
                     session.execute(
                         dataset_atomic_actions.insert().values(
-                            dataset_id=ds.id,
-                            atomic_actions_id=atomic_action.id
+                            dataset_id=ds.id, atomic_actions_id=atomic_action.id
                         )
                     )
 

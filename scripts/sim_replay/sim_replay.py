@@ -1,9 +1,6 @@
 import argparse
-import importlib
 import logging
 from pathlib import Path
-
-import yaml
 
 from robocoin_dataset.sim_replay.sim_replay import SimReplay
 from robocoin_dataset.utils.logger import setup_logger
@@ -18,7 +15,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--converter_factory_config_path",
+        "--sim_replay_config_factory_config_path",
         type=str,
         default="",
         help="Path to the annotation config classes",
@@ -47,35 +44,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
-    converter_factory_config_path = Path(args.converter_factory_config_path).expanduser().absolute()
+    sim_replay_config_factory_config_path = (
+        Path(args.sim_replay_config_factory_config_path).expanduser().absolute()
+    )
     device_model = args.device_model
     device_model_version = args.device_model_version
 
     if not db_file_path.exists():
         print(f"{db_file_path} does not exist")
         exit(1)
-
-    if not converter_factory_config_path.exists():
-        print(f"{converter_factory_config_path} does not exist")
-        exit(1)
-
-    converter_factory_config: dict[str, list[dict]] = {}
-
-    with converter_factory_config_path.open() as f:
-        converter_factory_config = yaml.safe_load(f)
-
-    config_classes_dict = {}
-    for device_model_name, configs in converter_factory_config.items():
-        for config in configs:
-            device_version = config["version"]
-            class_module_path = config.get("mujoco_sim_replay_config_module", None)
-            if class_module_path is None:
-                continue
-            class_name = config.get("mujoco_sim_replay_config_class", None)
-            if class_name is None:
-                continue
-            config_class = importlib.import_module(class_module_path).__getattribute__(class_name)
-            config_classes_dict[(device_model_name, device_version)] = config_class
 
     logger = setup_logger(
         name="sim_replay",
@@ -85,7 +62,7 @@ if __name__ == "__main__":
 
     sim_replayer = SimReplay(
         db_file_path=db_file_path,
-        replay_config_classes=config_classes_dict,
+        sim_replay_config_factory_config_path=sim_replay_config_factory_config_path,
         logger=logger,
     )
 
@@ -95,30 +72,9 @@ if __name__ == "__main__":
 """usage:
 # realman_rmc_aidal
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path /mnt/db/datasets.db \
-    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
+    --db_file_path ./db/datasets_new.db \
+    --sim_replay_config_factory_config_path ./scripts/sim_replay/configs/sim_replay_config_factory_config_path.yaml \
     --device_model realman_rmc_aidal \
     --device_model_version default_version \
-    --log_dir ./logs/sim_replay
-
-python scripts/sim_replay/sim_replay.py \
-    --db_file_path /mnt/db/datasets.db \
-    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
-    --device_model realman_rmc_aidal \
-    --log_dir ./logs/sim_replay
-
-# ai2robotics
-python scripts/sim_replay/sim_replay.py \
-    --db_file_path /mnt/db/datasets.db \
-    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
-    --device_model zhipingfang \
-    --log_dir ./logs/sim_replay
-
-# unitree_g1
-python scripts/sim_replay/sim_replay.py \
-    --db_file_path /mnt/db/datasets.db \
-    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
-    --device_model unitree_g1 \
-    --device_model_version threecam_hand_version \
     --log_dir ./logs/sim_replay
 """

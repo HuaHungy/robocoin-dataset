@@ -1,13 +1,15 @@
 import argparse
+import asyncio
 import logging
 from pathlib import Path
 
 from robocoin_dataset.state_action_data_post_process.state_action_data_post_process import (
-    StateActionDataPostProcess,
+    StateActionDataPostProcessServer,
 )
 from robocoin_dataset.utils.logger import setup_logger
 
-if __name__ == "__main__":
+
+async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--db_file_path",
@@ -57,33 +59,32 @@ if __name__ == "__main__":
         exit(1)
 
     logger = setup_logger(
-        name="sim_replay",
+        name="state action data post process server",
         log_dir=Path(args.log_dir),
-        level=logging.ERROR,
+        level=logging.INFO,
     )
 
-    processor = StateActionDataPostProcess(
+    processor_server = StateActionDataPostProcessServer(
         db_file_path=db_file_path,
-        processor_class_config_path=state_action_data_post_process_factory_config_path,
+        state_action_dpp_classes_config_path=state_action_data_post_process_factory_config_path,
+        host="0.0.0.0",
+        port=8767,
+        heartbeat_interval=30.0,
+        device_model=device_model,
+        device_model_version=device_model_version,
+        timeout=15.0,
         logger=logger,
     )
 
-    processor.state_action_data_post_process_one_dataset(
-        device_model, device_model_version=device_model_version
-    )
+    await processor_server.start()
 
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 """usage:
 # realman_rmc_aidal
-python scripts/state_action_data_post_process/state_action_data_post_process.py \
-    --db_file_path ./db/datasets_new.db \
-    --state_action_data_post_process_factory_config_path ./scripts/state_action_data_post_process/configs/state_action_data_post_process_factory_config.yaml \
-    --device_model realman_rmc_aidal \
-    --device_model_version default_version \
-    --log_dir ./logs/stat_action_data_post_process
-
-
-python scripts/state_action_data_post_process/state_action_data_post_process.py \
+python scripts/state_action_data_post_process/state_action_data_post_process_server.py \
     --db_file_path ./db/datasets_new.db \
     --state_action_data_post_process_factory_config_path ./scripts/state_action_data_post_process/configs/state_action_data_post_process_factory_config.yaml \
     --device_model realman_rmc_aidal \

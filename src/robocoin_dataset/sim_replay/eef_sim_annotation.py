@@ -143,13 +143,14 @@ class EefSimAnnotation:
                     )
                 )
             )
-            if device_model is not None:
+            if device_model:
                 query = query.filter(LeformatDatasetSimReplayStatusDB.device_model == device_model)
 
-            if device_model_version is not None:
-                query = query.filter(
-                    LeformatDatasetSimReplayStatusDB.device_model_version == device_model_version
-                )
+                if device_model_version:
+                    query = query.filter(
+                        LeformatDatasetSimReplayStatusDB.device_model_version
+                        == device_model_version
+                    )
 
         items = query.all()
         for item in items:

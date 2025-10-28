@@ -4,17 +4,16 @@ import logging
 from pathlib import Path
 
 import yaml
+from sqlalchemy import and_, or_
 
 from robocoin_dataset.constant import ROBOCOIN_PLATFORM
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetDB,
-    DmvAnnotationDB,
-    LeFormatConvertDB,
-    LeFormatConvertTestDB,
     TaskStatus,
 )
-from robocoin_dataset.database.services.leformat_converter import upsert_leformat_convert
+
+# from robocoin_dataset.database.services.leformat_converter import upsert_leformat_convert
 from robocoin_dataset.distribution_computation.constant import (
     DATASET_NAME,
     DATASET_PATH,
@@ -158,173 +157,84 @@ class LeFormatConverterTaskServer(TaskServer):
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
             if self.is_test:
-                if not self.specific_device_model:
-                    # 情况1：未指定设备型号
-                    # 查询：标注已完成，且未进入测试流程（不存在记录），排除PROCESSING和COMPLETED
-                    results = (
-                        session.query(DmvAnnotationDB)
-                        .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
-                        .filter(
-                            ~session.query(LeFormatConvertTestDB)
-                            .filter(
-                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
-                                LeFormatConvertTestDB.convert_status.in_([
-                                    TaskStatus.PROCESSING,  # 正在处理
-                                    TaskStatus.COMPLETED,   # 🆕 已完成也排除
-                                ])
-                            )
-                            .exists()
-                        )
-                        .all()
-                    )
-                else:
-                    # 情况2：指定了设备型号
-                    # 查询：标注已完成，设备型号匹配，且未进入测试流程（不存在记录），排除PROCESSING和COMPLETED
-                    results = (
-                        session.query(DmvAnnotationDB)
-                        .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)
-                        .filter(DmvAnnotationDB.device_model == self.specific_device_model)
-                        .filter(
-                            ~session.query(LeFormatConvertTestDB)
-                            .filter(
-                                LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
-                                LeFormatConvertTestDB.convert_status.in_([
-                                    TaskStatus.PROCESSING,  # 正在处理
-                                    TaskStatus.COMPLETED,   # 🆕 已完成也排除
-                                ])
-                            )
-                            .exists()
-                        )
-                        .all()
-                    )
-
-            else:
-                # 1. 子查询：测试已完成
-                test_completed = (
-                    session.query(LeFormatConvertTestDB)
-                    .filter(
-                        LeFormatConvertTestDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
-                        LeFormatConvertTestDB.convert_status == TaskStatus.COMPLETED,
-                    )
-                    .exists()
+                query = session.query(DatasetDB).filter(
+                    DatasetDB.convert_test_status == TaskStatus.PENDING,
                 )
-
-                # 2. 子查询：在 LeFormatConvertDB 中 **不存在** 或 **状态不是PROCESSING/COMPLETED**
-                # 🆕 修复：排除正在处理和已完成的任务，允许FAILED重试
-                not_processing_or_completed_in_formal = ~(
-                    session.query(LeFormatConvertDB)
-                    .filter(
-                        LeFormatConvertDB.dataset_uuid == DmvAnnotationDB.dataset_uuid,
-                        LeFormatConvertDB.convert_status.in_([
-                            TaskStatus.PROCESSING,   # 正在处理
-                            TaskStatus.COMPLETED,    # 🆕 已完成也排除
-                        ])
-                    )
-                    .exists()
-                )
-
-                # 3. 主查询
-                query = (
-                    session.query(DmvAnnotationDB)
-                    .filter(DmvAnnotationDB.annotation_status == TaskStatus.COMPLETED)  # 可选
-                    .filter(test_completed)  # ✅ 测试已完成
-                    .filter(not_processing_or_completed_in_formal)  # ✅ 正式转换未开始或不在处理中/已完成
-                )
-
-                # 4. 可选：按设备型号过滤
                 if self.specific_device_model:
                     query = query.filter(
-                        DmvAnnotationDB.device_model == self.specific_device_model.strip()
+                        DatasetDB.device_model == self.specific_device_model,
                     )
+                item = query.first()
+                if item is None:
+                    return None
 
-                # 5. 执行
-                results = query.all()
+                item.convert_test_version = item.convert_version + 1
+                item.convert_test_status = TaskStatus.PROCESSING
 
-            
-            # 🔧 将后续逻辑移到session内，保证数据一致性
-            if not results:
-                return None
-
-            for item in results:
-                # 🆕 在更新数据库前，先验证DatasetDB记录存在
-                dataset_item = (
-                    session.query(DatasetDB).filter(DatasetDB.dataset_uuid == item.dataset_uuid).first()
-                )
-
-                # 检查 dataset_item 是否存在
-                if dataset_item is None:
-                    self.logger.error(
-                        f"❌ Dataset not found in DatasetDB.\n"
-                        f"   🔍 dataset_uuid: {item.dataset_uuid}\n"
-                        f"   📋 device_model: {item.device_model}\n"
-                        f"   💡 DmvAnnotationDB has this UUID but DatasetDB doesn't\n"
-                        f"   💡 This indicates database inconsistency - skipping this item"
-                    )
-                    continue  # 跳过这个无效的项，继续处理下一个
-
-                # 检查 yaml_file_path 是否存在
-                if not dataset_item.yaml_file_path:
-                    self.logger.error(
-                        f"❌ Dataset has no yaml_file_path.\n"
-                        f"   🔍 dataset_uuid: {item.dataset_uuid}\n"
-                        f"   📋 dataset_name: {dataset_item.dataset_name}\n"
-                        f"   💡 yaml_file_path is NULL or empty - skipping this item"
-                    )
-                    continue
-
-                dataset_path = str(Path(dataset_item.yaml_file_path).parent)
-                dataset_name = dataset_item.dataset_name
-                leformat_path = str(
-                    Path(self.convert_root_path) / f"{item.device_model}_{dataset_name}"
-                )
-
-                leformat_name = f"{item.device_model.lower()}_{dataset_name.lower()}"
-
-                client_log_path = Path(self.convert_root_path) / "client_logs" / leformat_name
-
-                # 🆕 在更新状态为PROCESSING前，确保所有验证都已通过
-                # 这样可以避免：验证失败后状态已被设为PROCESSING，导致任务永久卡住
-                upsert_leformat_convert(
-                    session=session,
-                    ds_uuid=item.dataset_uuid,
-                    convert_status=TaskStatus.PROCESSING,
-                    device_model=item.device_model,  # 🆕 初始化时也设置 device_model
-                    device_model_version=item.device_model_version,  # 🆕 初始化时也设置 device_model_version
-                    is_test=self.is_test,
-                )
-
-                converter_module_path, converter_class_name, converter_config = (
-                    self._get_converter_module_class_config(
-                        device_model=item.device_model, device_model_version=item.device_model_version
+            else:
+                query = session.query(DatasetDB).filter(
+                    and_(
+                        # 必要前提：convert_test 必须成功
+                        DatasetDB.convert_test_status == TaskStatus.COMPLETED,
+                        # 两个触发分支
+                        or_(
+                            # 分支1: 正在排队
+                            DatasetDB.convert_status == TaskStatus.PENDING,
+                            # 分支2: 已完成但版本过期
+                            and_(
+                                DatasetDB.convert_status == TaskStatus.COMPLETED,
+                                DatasetDB.convert_version_ps < DatasetDB.convert_test_version,
+                            ),
+                        ),
                     )
                 )
+                if self.specific_device_model:
+                    query = query.filter(
+                        DatasetDB.device_model == self.specific_device_model,
+                    )
+                item = query.first()
+                if item is None:
+                    return None
+                item.convert_status = TaskStatus.PROCESSING
+                item.convert_version_ps = item.convert_test_version
+                item.convert_version += 1
 
-                repo_id = f"{ROBOCOIN_PLATFORM}/{leformat_name}"
-                return {
-                    DATASET_UUID: item.dataset_uuid,
-                    DATASET_NAME: dataset_name,
-                    LEFORMAT_PATH: leformat_path,
-                    DATASET_PATH: dataset_path,
-                    DEVICE_MODEL: item.device_model,
-                    CONVERTER_CONFIG: converter_config,
-                    CONVERTER_MODULE_PATH: converter_module_path,
-                    CONVERTER_CLASS_NAME: converter_class_name,
-                    VIDEO_BACKEND: self.video_backend,
-                    IMAGE_WRITER_PROCESSES: self.image_writer_processes,
-                    IMAGE_WRITER_THREADS: self.image_writer_threads,
-                    CONVERTER_LOG_DIR: str(client_log_path),
-                    REPO_ID: repo_id,
-                    CONVERTER_LOG_NAME: leformat_name,
-                    IS_TEST: self.is_test,
-                    AUTO_REENCODE: self.auto_reencode,
-                }
+            item.convert_path = str(
+                Path(self.convert_root_path) / f"{item.device_model}_{item.dataset_name}"
+            )
+            item.data_path = str(Path(item.yaml_file_path).parent)
+            session.commit()
+            converter_module_path, converter_class_name, converter_config = (
+                self._get_converter_module_class_config(
+                    device_model=item.device_model,
+                    device_model_version=item.device_model_version,
+                )
+            )
+            leformat_name = f"{item.device_model.lower()}_{item.dataset_name.lower()}"
+            client_log_path = Path(self.convert_root_path) / "client_logs" / leformat_name
+            repo_id = f"{ROBOCOIN_PLATFORM}/{item.dataset_name}"
 
-            return None
+            return {
+                DATASET_UUID: item.dataset_uuid,
+                DATASET_NAME: item.dataset_name,
+                LEFORMAT_PATH: item.convert_path,
+                DATASET_PATH: item.data_path,
+                DEVICE_MODEL: item.device_model,
+                CONVERTER_CONFIG: converter_config,
+                CONVERTER_MODULE_PATH: converter_module_path,
+                CONVERTER_CLASS_NAME: converter_class_name,
+                VIDEO_BACKEND: self.video_backend,
+                IMAGE_WRITER_PROCESSES: self.image_writer_processes,
+                IMAGE_WRITER_THREADS: self.image_writer_threads,
+                CONVERTER_LOG_DIR: str(client_log_path),
+                REPO_ID: repo_id,
+                CONVERTER_LOG_NAME: leformat_name,
+                IS_TEST: self.is_test,
+                AUTO_REENCODE: self.auto_reencode,
+            }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         ds_uuid = task_content.get(DATASET_UUID)
-        leformat_path = task_content.get(LEFORMAT_PATH, "")
-        device_model = task_content.get(DEVICE_MODEL)  # 🆕 从 task_content 获取 device_model
 
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
@@ -339,32 +249,23 @@ class LeFormatConverterTaskServer(TaskServer):
         # 🆕 合并为单个session，保证原子性
         with self.db.with_session() as session:
             # 查询 device_model_version
-            device_model_version = None
-            dmv_item = (
-                session.query(DmvAnnotationDB)
-                .filter(DmvAnnotationDB.dataset_uuid == ds_uuid)
-                .first()
-            )
-            if dmv_item:
-                device_model_version = dmv_item.device_model_version
-            
+            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
+            if item is None:
+                self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+
             # 在同一个session中更新转换状态
-            upsert_leformat_convert(
-                session=session,
-                ds_uuid=ds_uuid,
-                convert_status=convert_status,
-                leformat_path=leformat_path,
-                err_message=task_status_msg,
-                device_model=device_model,  # 🆕 传递 device_model
-                device_model_version=device_model_version,  # 🆕 传递 device_model_version
-                total_episodes=total_episodes,  # 🆕 传递统计信息
-                converted_episodes=converted_episodes,  # 🆕 传递统计信息
-                skipped_episodes=skipped_episodes,  # 🆕 传递统计信息
-                is_test=self.is_test,
-            )
+            item.convert_err_msg = task_status_msg
+            item.converted_episodes = converted_episodes
+            item.total_episodes = total_episodes
+            item.skipped_episodes = skipped_episodes
+            if self.is_test:
+                item.convert_test_status = convert_status
+            else:
+                item.convert_status = convert_status
+            session.commit()
             self.logger.info(
                 f"Upsert {ds_uuid} convert status to {convert_status}, "
-                f"device_model={device_model}, device_model_version={device_model_version}, "
+                f"device_model={item.device_model}, device_model_version={item.device_model_version}, "
                 f"total={total_episodes}, converted={converted_episodes}, skipped={skipped_episodes}, "
                 f"update_message: {task_status_msg}"
             )

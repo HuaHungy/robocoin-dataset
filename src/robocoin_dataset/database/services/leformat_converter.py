@@ -1,13 +1,9 @@
-import uuid
 from datetime import datetime
 
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from robocoin_dataset.database.models import (
-    DmvAnnotationDB,
-    LeFormatConvertDB,
-    LeFormatConvertTestDB,
     TaskStatus,
 )
 
@@ -40,11 +36,7 @@ def upsert_leformat_convert(
     :param skipped_episodes: 可选，跳过的episode数
     :param is_test: 是否为测试模式（True=使用 LeFormatConvertTestDB，False=使用 LeFormatConvertDB）
     """
-    if is_test:
-        leformat_convert_db = LeFormatConvertTestDB
-    else:
-        leformat_convert_db = LeFormatConvertDB
-    
+
     # 重试机制：处理并发INSERT导致的IntegrityError
     max_retries = 3
     for attempt in range(max_retries):
@@ -96,20 +88,19 @@ def upsert_leformat_convert(
             session.add(item)
             session.commit()
             return  # 成功，退出
-        
+
         except IntegrityError as e:
             # 并发INSERT冲突，回滚并重试
             session.rollback()
             if attempt < max_retries - 1:
                 # 重新查询并更新（其他进程已经插入了）
                 continue
-            else:
-                # 最后一次尝试仍然失败
-                raise RuntimeError(
-                    f"Failed to upsert LeFormatConvertDB record for dataset {ds_uuid} "
-                    f"after {max_retries} attempts: {e}"
-                ) from e
-        
+            # 最后一次尝试仍然失败
+            raise RuntimeError(
+                f"Failed to upsert LeFormatConvertDB record for dataset {ds_uuid} "
+                f"after {max_retries} attempts: {e}"
+            ) from e
+
         except Exception as e:
             session.rollback()
             raise RuntimeError(

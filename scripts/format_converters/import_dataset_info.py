@@ -1,30 +1,35 @@
 #!/usr/bin/env python3
 # scripts/db/import_dataset_info_from_yaml.py
 import argparse
-import shutil
-import sys
+import concurrent.futures
+import logging
 import os
 import re
-from pathlib import Path
-from typing import List, Dict, Any
-import concurrent.futures
-import yaml
-import logging
-import traceback  
+import shutil
 import subprocess
+import sys
+import traceback
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from robocoin_dataset.database.check_duplicates import (
+    get_or_create_uuid,
+)
+from robocoin_dataset.database.database import DatasetDatabase
+from robocoin_dataset.database.services.dataset_info import upsert_dataset_info
+
 # 把项目根目录塞进 sys.path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
-
-from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.services.dataset_info import upsert_dataset_info
-from robocoin_dataset.database.check_duplicates import get_or_create_uuid, load_registry, save_registry
 
 # 全局变量（用于本次运行去重）
 used_uuids_global = set()
 
 # 支持的 YAML 文件名
 SUPPORTED_YAML_NAMES = {"local_dataset_info.yaml", "local_dataset_info.yml"}
+
 
 # ------------------------------------------------------------------
 # 配置日志
@@ -60,10 +65,11 @@ def setup_logging(log_dir: Path, dry_run: bool = False) -> None:
 
     logging.info(f"日志已启动，日志文件：{log_file}")
 
+
 # ------------------------------------------------------------------
 # 使用 os.walk 查找 YAML 文件（跳过子目录）
 # ------------------------------------------------------------------
-def find_local_yaml_files(root: Path) -> List[Path]:
+def find_local_yaml_files(root: Path) -> list[Path]:
     found = []
     for current, dirnames, files in os.walk(root):
         if SUPPORTED_YAML_NAMES & set(files):
@@ -71,6 +77,7 @@ def find_local_yaml_files(root: Path) -> List[Path]:
             found.append(Path(current) / filename)
             dirnames.clear()  # 不进入子目录
     return found
+
 
 # ------------------------------------------------------------------
 # 数据清理函数
@@ -80,16 +87,16 @@ def clean_data_value(value: Any) -> Any:
     if isinstance(value, list):
         if value:
             return str(value[0]) if len(value) == 1 else str(value)
-        else:
-            return None
-    elif isinstance(value, dict):
+        return None
+    if isinstance(value, dict):
         return str(value)
     return value
+
 
 # ------------------------------------------------------------------
 # 读取 + 检查 dataset_uuid
 # ------------------------------------------------------------------
-def load_and_patch(yaml_path: Path, dry_run: bool = False) -> Dict[str, Any]:
+def load_and_patch(yaml_path: Path, dry_run: bool = False) -> dict[str, Any]:
     try:
         with yaml_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
@@ -134,14 +141,21 @@ def load_and_patch(yaml_path: Path, dry_run: bool = False) -> Dict[str, Any]:
                 device=device_model,
                 yaml_path=str(yaml_path),
                 registry_file=str(registry_file),
-                used_uuids=used_uuids_global
+                used_uuids=used_uuids_global,
             )
             data["dataset_uuid"] = new_uuid
             used_uuids_global.add(new_uuid)
 
             if not dry_run:
                 with yaml_path.open("w", encoding="utf-8") as f:
-                    yaml.dump(data, f, allow_unicode=True, default_flow_style=False, indent=2, sort_keys=False)
+                    yaml.dump(
+                        data,
+                        f,
+                        allow_unicode=True,
+                        default_flow_style=False,
+                        indent=2,
+                        sort_keys=False,
+                    )
                 logging.info(f"已写入新 UUID: {yaml_path} → {new_uuid}")
             else:
                 logging.info(f"[dry-run] 将生成 UUID: {yaml_path} → {new_uuid}")
@@ -151,16 +165,17 @@ def load_and_patch(yaml_path: Path, dry_run: bool = False) -> Dict[str, Any]:
             return {}
 
     # 清理字段...
-    for key in ['device_model', 'end_effector_type', 'operation_platform_height']:
+    for key in ["device_model", "end_effector_type", "operation_platform_height"]:
         if key in data:
             data[key] = clean_data_value(data[key])
 
     logging.info(f"[{data['dataset_name']}] -> {data['dataset_uuid']}")
-    data['yaml_file_path'] = str(yaml_path)
+    data["yaml_file_path"] = str(yaml_path)
     return data
 
+
 # ---------------- 新增：提取 yaml 文件 ----------------
-def collect_yaml_files(root_dirs: List[Path], output_dir: Path, dry_run: bool = False) -> None:
+def collect_yaml_files(root_dirs: list[Path], output_dir: Path, dry_run: bool = False) -> None:
     """收集所有 local_dataset_info.yml/.yaml 到 output_dir，并记录日志"""
     log_dir = output_dir / "logs"
     setup_logging(log_dir, dry_run=dry_run)
@@ -193,26 +208,25 @@ def collect_yaml_files(root_dirs: List[Path], output_dir: Path, dry_run: bool = 
     if not dry_run:
         hub_file = output_dir / "local_dataset_info_hub.yml"
         hub_file.write_text(
-            yaml.dump(hub, sort_keys=True, allow_unicode=True, indent=2),
-            encoding="utf-8"
+            yaml.dump(hub, sort_keys=True, allow_unicode=True, indent=2), encoding="utf-8"
         )
         logging.info(f"已生成 hub 文件: {hub_file}")
 
     logging.info(f"已收集 {idx} 个文件到 {output_dir}")
 
+
 # ------------------------------------------------------------------
 # 批量处理函数
 # ------------------------------------------------------------------
-def process_files_batch(yaml_files: List[Path], max_workers: int = 8, dry_run: bool = False) -> tuple[List[Dict[str, Any]], int]:
+def process_files_batch(
+    yaml_files: list[Path], max_workers: int = 8, dry_run: bool = False
+) -> tuple[list[dict[str, Any]], int]:
     datasets = []
     invalid_count = 0
-    seen_dataset_device_combos = set()  
+    seen_dataset_device_combos = set()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_file = {
-            executor.submit(load_and_patch, yml, dry_run): yml 
-            for yml in yaml_files
-        }
+        future_to_file = {executor.submit(load_and_patch, yml, dry_run): yml for yml in yaml_files}
 
         for future in concurrent.futures.as_completed(future_to_file):
             yml = future_to_file[future]
@@ -223,24 +237,27 @@ def process_files_batch(yaml_files: List[Path], max_workers: int = 8, dry_run: b
                     continue
 
                 dataset_name = data.get("dataset_name")
-                device_model = data.get("device_model", "unknown_device")  
-                
+                device_model = data.get("device_model", "unknown_device")
+
                 # 检查 dataset_name 和 device_model 组合是否重复
                 combo_key = (dataset_name, device_model)
                 if combo_key in seen_dataset_device_combos:
-                    logging.warning(f"跳过重复的数据集组合: {dataset_name} (device_model: {device_model}) - 文件: {yml}")
+                    logging.warning(
+                        f"跳过重复的数据集组合: {dataset_name} (device_model: {device_model}) - 文件: {yml}"
+                    )
                     invalid_count += 1
                     continue
-                
+
                 # 添加到已见集合
                 seen_dataset_device_combos.add(combo_key)
                 datasets.append(data)
-                
+
             except Exception as e:
                 logging.error(f"处理文件失败 {yml}: {e}")
                 invalid_count += 1
 
     return datasets, invalid_count
+
 
 # ------------------------------------------------------------------
 # 主入口
@@ -274,21 +291,15 @@ def main() -> None:
         help="并行工作线程数，默认8",
     )
     parser.add_argument(
-        "--collect-only",
-        action="store_true",
-        help="仅收集 yaml 文件，不做数据库导入"
+        "--collect-only", action="store_true", help="仅收集 yaml 文件，不做数据库导入"
     )
     parser.add_argument(
         "--collect-output",
         type=Path,
         default=Path("./collected_yamls"),
-        help="收集模式下的输出目录（日志也存放于此）"
+        help="收集模式下的输出目录（日志也存放于此）",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="只扫描和模拟，不写入文件或数据库"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="只扫描和模拟，不写入文件或数据库")
     args = parser.parse_args()
 
     # 解析多个路径
@@ -321,7 +332,9 @@ def main() -> None:
     logging.info(f"找到 {len(all_yaml_files)} 个 YAML 文件")
 
     # 并行处理
-    datasets, invalid_count = process_files_batch(all_yaml_files, args.workers, dry_run=args.dry_run)
+    datasets, invalid_count = process_files_batch(
+        all_yaml_files, args.workers, dry_run=args.dry_run
+    )
 
     if invalid_count > 0:
         logging.warning(f"跳过 {invalid_count} 个无效文件")
@@ -355,7 +368,7 @@ def main() -> None:
 
         # 执行 separate.py
         logging.info("正在执行 separate.py 脚本...")
-        separate_script = PROJECT_ROOT / "scripts" / "db" / "separate.py"
+        separate_script = PROJECT_ROOT / "scripts" / "format_converters" / "separate.py"
         if not separate_script.exists():
             logging.critical(f"无法找到 separate.py: {separate_script}")
             sys.exit(1)
@@ -364,7 +377,8 @@ def main() -> None:
             sys.executable,
             str(separate_script),
             *[str(p) for p in root_paths],
-            "--log-dir", str(log_dir / "separate_logs")
+            "--log-dir",
+            str(log_dir / "separate_logs"),
         ]
         if args.dry_run:
             cmd.append("--dry-run")
@@ -378,7 +392,7 @@ def main() -> None:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                encoding='utf-8'
+                encoding="utf-8",
             )
             logging.info("separate.py 脚本执行成功。")
             if result.stdout.strip():
@@ -398,10 +412,10 @@ def main() -> None:
         logging.critical(traceback.format_exc())
         sys.exit(1)
 
+
 if __name__ == "__main__":
     main()
-    
-    
+
 
 """
 # 收集模式
