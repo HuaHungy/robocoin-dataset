@@ -438,8 +438,18 @@ class LerobotFormatConverter(ABC):
             - 找到第一个可用的样本图像即返回
             这样即使第一个episode有问题（损坏、编解码器不兼容等），
             也能成功初始化并转换其他正常的episode
+            
+            🎯 初始化模式优化（sample_only）：
+            - 部分converter支持sample_only参数，用于只加载1帧样本
+            - 使用PyAV而非OpenCV，更好地处理编解码器兼容性问题
+            - 如果子类支持sample_only，优先使用
         """
         cam_name = args_dict.get(CAM_NAME_KEY, "unknown")
+        
+        # 检查子类是否支持sample_only参数
+        import inspect
+        frame_image_sig = inspect.signature(self._get_frame_image)
+        supports_sample_only = 'sample_only' in frame_image_sig.parameters
         
         # 尝试多个task_path和episode
         attempted = []
@@ -448,13 +458,22 @@ class LerobotFormatConverter(ABC):
             # 尝试前几个episode（最多5个）
             for ep_idx in range(min(5, num_episodes)):
                 try:
-                    image = self._get_frame_image(
-                        task_path=task_path, ep_idx=ep_idx, frame_idx=0, args_dict=args_dict
-                    )
+                    # 🎯 如果支持sample_only，优先使用（更兼容的读取方式）
+                    if supports_sample_only:
+                        image = self._get_frame_image(
+                            task_path=task_path, ep_idx=ep_idx, frame_idx=0, 
+                            args_dict=args_dict, sample_only=True
+                        )
+                    else:
+                        image = self._get_frame_image(
+                            task_path=task_path, ep_idx=ep_idx, frame_idx=0, args_dict=args_dict
+                        )
+                    
                     if self.logger:
+                        mode_info = " (sample mode)" if supports_sample_only else ""
                         self.logger.info(
                             f"✅ Successfully got sample image for camera '{cam_name}' "
-                            f"from task_path={task_path.relative_to(self.dataset_path)}, episode={ep_idx}"
+                            f"from task_path={task_path.relative_to(self.dataset_path)}, episode={ep_idx}{mode_info}"
                         )
                     return image
                 except Exception as e:
