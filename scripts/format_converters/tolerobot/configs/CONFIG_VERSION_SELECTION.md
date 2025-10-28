@@ -23,6 +23,19 @@ else:
 
 ## 📊 配置文件对比
 
+### leju_waibu数据集
+
+| 配置文件 | State维度 | Action维度 | 关键区别 | 适用场景 |
+|---------|----------|-----------|---------|---------|
+| `converter_config_leju_waibu_full.yaml` | 118维 | 54维 | observation.state使用`state/*`路径 | 有完整state数据的新版本 |
+| `converter_config_leju_waibu_lite.yaml` | 54维 | 54维 | observation.state使用`action/*`路径 | 只有action数据的旧版本 |
+
+**特殊说明**：
+- leju的问题与yinhe/mmk2不同：不是部分字段缺失，而是**整个state部分缺失**
+- Full版本：期望有独立的 `state/*` 路径（包含P1/P2扩展字段：effort、EEF、IMU等）
+- Lite版本：将 `action/*` 当作 `state`（因为没有独立的state数据）
+- **当前服务器大部分数据**：使用Lite版本（只有action，没有state）
+
 ### yinhe数据集
 
 | 配置文件 | action维度 | 包含字段 | 适用场景 |
@@ -42,6 +55,35 @@ else:
 ## 🔍 如何判断使用哪个版本？
 
 ### 方法1：快速检查（推荐）
+
+```bash
+# leju_waibu数据集
+cd /path/to/leju/dataset
+python << 'EOF'
+import h5py
+from pathlib import Path
+
+# 检查是否有state/*路径
+episodes = list(Path('.').glob('*/proprio_stats.hdf5'))[:5]
+has_state_count = 0
+
+for ep in episodes:
+    with h5py.File(ep, 'r') as f:
+        # 检查是否有state/路径
+        has_state = any(key.startswith('state/') for key in f.keys())
+        if has_state:
+            has_state_count += 1
+            print(f"✅ {ep.parent.name}: 有state数据")
+        else:
+            print(f"❌ {ep.parent.name}: 只有action数据")
+
+print(f"\n完整数据比例: {has_state_count}/{len(episodes)}")
+if has_state_count > len(episodes)/2:
+    print("推荐配置: full (多数episode有state数据)")
+else:
+    print("推荐配置: lite (多数episode只有action数据)")
+EOF
+```
 
 ```bash
 # yinhe数据集

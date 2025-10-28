@@ -1064,7 +1064,9 @@ class LerobotFormatConverter(ABC):
             }
             
             for task_ep_idx in range(episodes_num):
-                is_strict = global_ep_idx < self.strict_episodes
+                # 🧪 测试模式不使用严格模式（允许跳过字段缺失的episode）
+                # 正式模式：前N个episode使用严格模式（检测配置错误）
+                is_strict = global_ep_idx < self.strict_episodes and not is_test
                 
                 # 更新统计
                 self._conversion_stats['total_episodes'] += 1
