@@ -91,7 +91,7 @@ discover_robotics_aitbot_mmk2:
   verison_description: mmk2 third_view (default=lite, backward compatibility)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mmk2
   class: LerobotFormatConverterMmk2
-  converter_config_path: converter_config_discover_robotics_aitbot_mmk2_third_view_lite.yaml
+  converter_config_path: converter_config_discover_robotics_aitbot_mmk2_third_view_full.yaml
 
 
 agilex_pika_sense_single:
@@ -131,7 +131,7 @@ leju_robot:
   verison_description: leju waibu (default=lite, backward compatibility)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_leju_waibu
   class: LerobotFormatConverterLejuWaibu
-  converter_config_path: converter_config_leju_waibu_lite.yaml
+  converter_config_path: converter_config_leju_waibu_full.yaml
 
 
 agilex_cobot_decoupled_magic:
@@ -209,7 +209,7 @@ yinhe:
   verison_description: yinhe robot (default=lite, backward compatibility)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mp4_json
   class: LerobotFormatConverterMp4Json
-  converter_config_path: converter_config_yinhe_lite.yaml
+  converter_config_path: converter_config_yinhe_full.yaml
 
 zhipingfang:
 - version: left_arm_with_pose
