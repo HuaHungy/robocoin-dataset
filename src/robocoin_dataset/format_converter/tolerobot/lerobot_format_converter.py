@@ -739,16 +739,81 @@ class LerobotFormatConverter(ABC):
         }
 
     def _create_lerobot_dataset(self) -> LeRobotDataset:
-        return LeRobotDataset.create(
-            repo_id=self.repo_id,
-            features=self._get_lerobot_features(),
-            fps=self.fps,
-            robot_type=self.device_model,
-            root=self.output_path,
-            video_backend=self.video_backend,
-            image_writer_processes=self.image_writer_processes,
-            image_writer_threads=self.image_writer_threads,
-        )
+        """创建LeRobot数据集
+        
+        🔥 处理目录已存在的情况（FileExistsError修复）：
+        - 如果output_path已存在，先删除（通常是之前失败的转换残留）
+        - 支持重试机制，处理并发创建的竞态条件
+        - 然后创建新的数据集
+        
+        注意：lerobot库的create方法不支持exist_ok参数，必须手动处理
+        """
+        import shutil
+        import time
+        from pathlib import Path
+        
+        output_path = Path(self.output_path)
+        
+        # 最多重试3次（处理并发竞态条件）
+        max_retries = 3
+        for retry in range(max_retries):
+            # 如果目录已存在，删除它（通常是之前失败的转换）
+            if output_path.exists():
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Output directory already exists: {output_path.name}\n"
+                        f"   This is likely from a previous failed conversion.\n"
+                        f"   🗑️  Removing old directory to retry... (attempt {retry + 1}/{max_retries})"
+                    )
+                try:
+                    shutil.rmtree(output_path)
+                    if self.logger:
+                        self.logger.info(f"✅ Removed old directory: {output_path.name}")
+                except Exception as e:
+                    if retry == max_retries - 1:  # 最后一次重试失败
+                        raise RuntimeError(
+                            f"Failed to remove existing output directory after {max_retries} attempts: {output_path}\n"
+                            f"Error: {e}\n"
+                            f"Please manually delete this directory and retry."
+                        ) from e
+                    else:
+                        if self.logger:
+                            self.logger.warning(f"Failed to remove directory (attempt {retry + 1}), retrying in 2s...")
+                        time.sleep(2)
+                        continue
+            
+            # 尝试创建数据集
+            try:
+                return LeRobotDataset.create(
+                    repo_id=self.repo_id,
+                    features=self._get_lerobot_features(),
+                    fps=self.fps,
+                    robot_type=self.device_model,
+                    root=self.output_path,
+                    video_backend=self.video_backend,
+                    image_writer_processes=self.image_writer_processes,
+                    image_writer_threads=self.image_writer_threads,
+                )
+            except FileExistsError as e:
+                # 并发创建导致的竞态条件
+                if retry == max_retries - 1:  # 最后一次重试
+                    raise RuntimeError(
+                        f"Failed to create dataset after {max_retries} attempts due to concurrent access.\n"
+                        f"Output path: {output_path}\n"
+                        f"This indicates multiple clients are trying to convert the same task.\n"
+                        f"Original error: {e}"
+                    ) from e
+                else:
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  FileExistsError during creation (race condition?), "
+                            f"retrying in 2s... (attempt {retry + 1}/{max_retries})"
+                        )
+                    time.sleep(2)
+                    continue
+        
+        # 不应该到达这里
+        raise RuntimeError("Unexpected error in _create_lerobot_dataset")
 
     def _get_episode_task(self, ep_idx: int) -> str:
         return ""
