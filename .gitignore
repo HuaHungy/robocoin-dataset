@@ -86,3 +86,4 @@ alembic.ini
 robocoin_datasets/server_logs/
 
 *.json
+run*
