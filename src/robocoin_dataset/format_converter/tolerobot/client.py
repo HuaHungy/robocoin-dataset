@@ -101,11 +101,30 @@ class LeFormatConverterTaskClient(TaskClient):
                 self.logger.info(f"converter_log_dir: {converter_log_dir}")
                 total_episodes = converter.get_episodes_num()
                 
+                # 🆕 Test模式下，预估只处理少量episodes（避免tqdm进度条显示混乱）
+                if is_test:
+                    # Test模式：最多2个tasks × 1个episode = 2 episodes
+                    estimated_test_episodes = min(2, total_episodes)
+                    tqdm_total = estimated_test_episodes
+                    mode_str = "TEST"
+                else:
+                    tqdm_total = total_episodes
+                    mode_str = "FORMAL"
+                
+                # 🆕 明确显示转换模式
+                self.logger.info(f"{'='*60}")
+                self.logger.info(f"🚀 Starting conversion in {mode_str} MODE")
+                self.logger.info(f"Dataset: {dataset_path}")
+                self.logger.info(f"Total episodes in dataset: {total_episodes}")
+                if is_test:
+                    self.logger.info(f"Estimated episodes to process (test): {estimated_test_episodes}")
+                self.logger.info(f"{'='*60}")
+                
                 converted_count = 0
                 for task_content, task_ep_idx, ep_idx in tqdm(
                     converter.convert(is_test),
-                    total=total_episodes,
-                    desc="Converting Dataset",
+                    total=tqdm_total,
+                    desc=f"Converting Dataset ({mode_str})",
                     unit="episode",
                 ):
                     self.logger.info(

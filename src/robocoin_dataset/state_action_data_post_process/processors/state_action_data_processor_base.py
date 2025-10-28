@@ -20,8 +20,8 @@ class StateActionDataPostProcessorBase(DataPostProcessorBase):
         if not self.convert_path.exists():
             raise ValueError(f"{self.convert_path} does not exist")
 
-    def get_modified_feature_names(self) -> dict[str, list[str]]:
-        return self.get_ori_state_action_feature_names()
+    # def get_modified_feature_names(self) -> dict[str, list[str]]:
+    #     return self.get_ori_state_action_feature_names()
 
     def get_ori_state_action_feature_names(self) -> dict[str, list[str]]:
         if not self.info_file_path.exists():
@@ -54,6 +54,23 @@ class StateActionDataPostProcessorBase(DataPostProcessorBase):
             "observation.state": self.process_episode_state_data(ori_data["observation.state"]),
             "action": self.process_episode_action_data(ori_data["action"]),
         }
+
+    def get_modified_feature_names(self) -> dict[str, list[str]]:
+        state_names = self.get_modified_state_feature_names()
+        action_names = self.get_modified_action_feature_names()
+
+        return {
+            "observation.state": state_names,
+            "action": action_names,
+        }
+
+    # 在这里填入修改后的state特征名称列表，如果没有修改，则不需要重写函数
+    def get_modified_state_feature_names(self) -> list[str]:
+        return self.get_ori_state_action_feature_names()["observation.state"]
+
+    # 在这里填入修改后的action特征名称列表，如果没有修改，则不需要重写函数
+    def get_modified_action_feature_names(self) -> list[str]:
+        return self.get_ori_state_action_feature_names()["action"]
 
     # 将处理episode数据的准备工作放在这里
     def prepare_processing(self) -> None:

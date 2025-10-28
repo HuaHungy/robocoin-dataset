@@ -8,7 +8,7 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
-        / "mjcfs/galbot/galbot_one_golf_with_sites.xml"
+        / "mjcfs/galbot/robot_with_sites.xml"
     )
 
     # fixed
@@ -34,12 +34,6 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
         "right_arm_joint6",
         "right_arm_joint7",
 
-        # left_hand
-        # "left_gripper_finger_joint1",
-        # "left_gripper_finger_joint2",
-        # right hand
-        # "left_gripper_finger_joint1",
-        # "left_gripper_finger_joint2",
         # torso
         "leg_joint1",
         "leg_joint2",
@@ -48,44 +42,40 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
         # left arm
-        "left_arm_joint_1",
-        "left_arm_joint_2",
-        "left_arm_joint_3",
-        "left_arm_joint_4",
-        "left_arm_joint_5",
-        "left_arm_joint_6",
-        "left_arm_joint_7",
+        "left_arm_joint_1_rad",
+        "left_arm_joint_2_rad",
+        "left_arm_joint_3_rad",
+        "left_arm_joint_4_rad",
+        "left_arm_joint_5_rad",
+        "left_arm_joint_6_rad",
+        "left_arm_joint_7_rad",
         # right arm
-        "right_arm_joint_1",
-        "right_arm_joint_2",
-        "right_arm_joint_3",
-        "right_arm_joint_4",
-        "right_arm_joint_5",
-        "right_arm_joint_6",
-        "right_arm_joint_7",
+        "right_arm_joint_1_rad",
+        "right_arm_joint_2_rad",
+        "right_arm_joint_3_rad",
+        "right_arm_joint_4_rad",
+        "right_arm_joint_5_rad",
+        "right_arm_joint_6_rad",
+        "right_arm_joint_7_rad",
         # torso
-        "torso_joint_1",
-        "torso_joint_2",
-        "torso_joint_3",
+        "body_joint_1_rad",
+        "body_joint_2_rad",
+        "body_joint_3_rad",
     ]
 
-    action_arm_joint_lerobot_names: list[str] = [
-        # left arm
-        "left_arm_target_joint_1",
-        "left_arm_target_joint_2",
-        "left_arm_target_joint_3",
-        "left_arm_target_joint_4",
-        "left_arm_target_joint_5",
-        "left_arm_target_joint_6",
-        "left_arm_target_joint_7",
-        # right arm
-        "right_arm_target_joint_1",
-        "right_arm_target_joint_2",
-        "right_arm_target_joint_3",
-        "right_arm_target_joint_4",
-        "right_arm_target_joint_5",
-        "right_arm_target_joint_6",
-        "right_arm_target_joint_7",
-    ]
-
+    action_arm_joint_lerobot_names= state_arm_joint_lerobot_names
     
+     # gripper names allow not 1v1 assignment
+    state_gripper_joint_mjcf_names: list[str] = []
+    action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
+
+    state_gripper_lerobot_names: list[str] = [
+        # left_hand
+        "left_gripper_width_m",
+        # right hand
+        "right_gripper_width_m",
+    ]
+    action_gripper_lerobot_names = state_gripper_lerobot_names
+
+    def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
+        return []

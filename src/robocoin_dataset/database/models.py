@@ -258,6 +258,17 @@ dataset_objects = Table(
 )
 
 
+class VideoHashDB(Base):
+    __tablename__ = "video_hash"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    ep_idx = Column(Integer, index=True, nullable=False)
+    frame_num = Column(Integer, index=True, nullable=False)
+    video_path = Column(String(255), index=True, nullable=False, unique=True)
+    file_hash = Column(String(255), index=True, nullable=False)
+    image_hashes = Column(Text, index=False, nullable=False)
+
+
 # class LeFormatConvertDB(Base):
 #     __tablename__ = "lerobot_format_convert"
 

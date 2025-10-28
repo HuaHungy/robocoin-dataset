@@ -49,7 +49,7 @@ class DataPostProcessorBase:
         return ori_data.copy()
 
     # 该方法返回处理后的state数据名称
-    def get_modified_feature_names(self) -> dict[str, dict[str, str]]:
+    def get_modified_feature_names(self) -> dict[str, list[str]]:
         return {}
 
     def get_ori_episode_data(self, episode_idx: int) -> dict[str, np.ndarray | None]:

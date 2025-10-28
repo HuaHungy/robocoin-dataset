@@ -70,8 +70,11 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
             (task, task_ep_idx, global_ep_idx): 成功转换的episode信息
         """
         self._is_test_mode = is_test
-        if is_test and self.logger:
-            self.logger.info("🧪 LejuWaibu Converter running in TEST mode - will only load first 11 frames per video")
+        if self.logger:
+            if is_test:
+                self.logger.info("🧪 LejuWaibu: TEST mode - limited frames (11) and episodes (max 2 tasks)")
+            else:
+                self.logger.info("📊 LejuWaibu: FORMAL mode - processing all episodes with full frames")
         
         # 调用父类的转换逻辑并 yield 结果
         yield from super().convert(is_test=is_test)

@@ -160,6 +160,7 @@ class LeFormatConverterTaskServer(TaskServer):
                 query = session.query(DatasetDB).filter(
                     DatasetDB.convert_test_status == TaskStatus.PENDING,
                 )
+
                 if self.specific_device_model:
                     query = query.filter(
                         DatasetDB.device_model == self.specific_device_model,

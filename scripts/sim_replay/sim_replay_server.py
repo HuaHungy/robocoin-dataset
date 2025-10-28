@@ -3,9 +3,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from robocoin_dataset.state_action_data_post_process.state_action_data_post_process import (
-    StateActionDataPostProcessServer,
-)
+from robocoin_dataset.sim_replay.sim_replay import SimReplayServer
 from robocoin_dataset.utils.logger import setup_logger
 
 
@@ -19,7 +17,7 @@ async def main() -> None:
     )
 
     parser.add_argument(
-        "--state_action_data_post_process_factory_config_path",
+        "--sim_replay_config_factory_config_path",
         type=str,
         default="",
         help="Path to the factory config file",
@@ -29,14 +27,14 @@ async def main() -> None:
         "--device_model",
         type=str,
         default=None,
-        help="Device model to post process state and action data",
+        help="Device model to sim replay",
     )
 
     parser.add_argument(
         "--device_model_version",
         type=str,
         default=None,
-        help="Device model version to post process state and action data",
+        help="Device model version to sim replay",
     )
 
     parser.add_argument(
@@ -62,8 +60,8 @@ async def main() -> None:
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
-    state_action_data_post_process_factory_config_path = (
-        Path(args.state_action_data_post_process_factory_config_path).expanduser().absolute()
+    sim_replay_config_factory_config_path = (
+        Path(args.sim_replay_config_factory_config_path).expanduser().absolute()
     )
     device_model = args.device_model
     device_model_version = args.device_model_version
@@ -73,16 +71,16 @@ async def main() -> None:
         exit(1)
 
     logger = setup_logger(
-        name="state action data post process server",
+        name="sim_replay_server",
         log_dir=Path(args.log_dir),
         level=logging.INFO,
     )
 
-    processor_server = StateActionDataPostProcessServer(
+    sim_replay_server = SimReplayServer(
         db_file_path=db_file_path,
-        state_action_dpp_classes_config_path=state_action_data_post_process_factory_config_path,
-        host="0.0.0.0",
-        port=8767,
+        sim_replay_config_factory_config_path=sim_replay_config_factory_config_path,
+        host=args.host,
+        port=args.port,
         heartbeat_interval=30.0,
         device_model=device_model,
         device_model_version=device_model_version,
@@ -90,7 +88,7 @@ async def main() -> None:
         logger=logger,
     )
 
-    await processor_server.start()
+    await sim_replay_server.start()
 
 
 if __name__ == "__main__":
@@ -98,10 +96,12 @@ if __name__ == "__main__":
 
 """usage:
 # realman_rmc_aidal
-python scripts/state_action_data_post_process/state_action_data_post_process_server.py \
+python scripts/sim_replay/sim_replay_server.py \
     --db_file_path ./db/datasets_new.db \
-    --state_action_data_post_process_factory_config_path ./scripts/state_action_data_post_process/configs/state_action_data_post_process_factory_config.yaml \
+    --host 0.0.0.0 \
+    --port 8766 \
+    --sim_replay_config_factory_config_path ./scripts/sim_replay/configs/sim_replay_config_factory_config_path.yaml \
     --device_model realman_rmc_aidal \
     --device_model_version default_version \
-    --log_dir ./logs/stat_action_data_post_process
+    --log_dir ./logs/
 """

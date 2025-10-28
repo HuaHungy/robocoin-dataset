@@ -61,14 +61,68 @@ class RealmanRmcAidalProcessor(StateActionDataPostProcessorBase):
 
         return new_action_data
 
-    # 该方法返回处理后的state数据名称
-    def get_modified_feature_names(self):
-        return super().get_modified_feature_names()
+    # 在这里填入修改后的state特征名称列表，如果没有修改，则不需要重写函数
+    def get_modified_state_feature_names(self) -> list[str]:
+        return [
+            "right_arm_joint_1_rad",
+            "right_arm_joint_2_rad",
+            "right_arm_joint_3_rad",
+            "right_arm_joint_4_rad",
+            "right_arm_joint_5_rad",
+            "right_arm_joint_6_rad",
+            "right_arm_joint_7_rad",
+            "right_gripper_open",
+            "right_eef_pos_x_m",
+            "right_eef_pos_y_m",
+            "right_eef_pos_z_m",
+            "right_eef_rot_euler_x_rad",
+            "right_eef_rot_euler_y_rad",
+            "right_eef_rot_euler_z_rad",
+            "left_arm_joint_1_rad",
+            "left_arm_joint_2_rad",
+            "left_arm_joint_3_rad",
+            "left_arm_joint_4_rad",
+            "left_arm_joint_5_rad",
+            "left_arm_joint_6_rad",
+            "left_arm_joint_7_rad",
+            "left_gripper_open",
+            "left_eef_pos_x_m",
+            "left_eef_pos_y_m",
+            "left_eef_pos_z_m",
+            "left_eef_rot_euler_x_rad",
+            "left_eef_rot_euler_y_rad",
+            "left_eef_rot_euler_z_rad",
+        ]
 
-    def get_modified_info_state_names(self) -> dict[str, str]:
-        return {}
-
-    # 该方法返回处理后的action数据名称
-    def get_modified_info_action_names(self) -> dict[str, str]:
-        return {}
-
+    # 在这里填入修改后的action特征名称列表，如果没有修改，则不需要重写函数
+    def get_modified_action_feature_names(self) -> list[str]:
+        return [
+            "right_arm_joint_1_rad",
+            "right_arm_joint_2_rad",
+            "right_arm_joint_3_rad",
+            "right_arm_joint_4_rad",
+            "right_arm_joint_5_rad",
+            "right_arm_joint_6_rad",
+            "right_arm_joint_7_rad",
+            "right_gripper_open",
+            "right_eef_pos_x_m",
+            "right_eef_pos_y_m",
+            "right_eef_pos_z_m",
+            "right_eef_rot_euler_x_rad",
+            "right_eef_rot_euler_y_rad",
+            "right_eef_rot_euler_z_rad",
+            "left_arm_joint_1_rad",
+            "left_arm_joint_2_rad",
+            "left_arm_joint_3_rad",
+            "left_arm_joint_4_rad",
+            "left_arm_joint_5_rad",
+            "left_arm_joint_6_rad",
+            "left_arm_joint_7_rad",
+            "left_gripper_open",
+            "left_eef_pos_x_m",
+            "left_eef_pos_y_m",
+            "left_eef_pos_z_m",
+            "left_eef_rot_euler_x_rad",
+            "left_eef_rot_euler_y_rad",
+            "left_eef_rot_euler_z_rad",
+        ]

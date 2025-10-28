@@ -1,6 +1,5 @@
 import importlib
 import logging
-import traceback
 from pathlib import Path
 
 # For gripper value visualization
@@ -14,12 +13,31 @@ from robocoin_dataset.database.models import (
     DatasetDB,
     TaskStatus,
 )
+from robocoin_dataset.distribution_computation.constant import (
+    DATASET_UUID,
+    DEVICE_MODEL,
+    ERR_MSG,
+    TASK_RESULT_STATUS,
+    TASK_SUCCESS,
+)
+from robocoin_dataset.distribution_computation.task_client import TaskClient
+from robocoin_dataset.distribution_computation.task_server import TaskServer
+from robocoin_dataset.format_converter.tolerobot.constant import (
+    LEFORMAT_PATH,
+)
 from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import LerobotSimReplayConfig
 from robocoin_dataset.sim_replay.lerobot_sim_replayer import LerobotSimReplayer
 
+SIM_REPLAY_CONFIG_MODULE_PATH = "sim_replay_config_module_path"
+SIM_REPLAY_CONFIG_CLASS_NAME = "sim_replay_config_class"
+SIM_REPLAY_LOG_DIR = "sim_replay_log_dir"
+SIM_REPLAY_LOG_NAME = "sim_replay_log_name"
+DEVICE_MODEL_VERSION = "device_model_version"
 
-def _get_config_class(class_module: str, class_name: str) -> type[LerobotSimReplayConfig]:
-    return importlib.import_module(class_module).__getattribute__(class_name)
+
+def _get_config(class_module: str, class_name: str) -> type[LerobotSimReplayConfig]:
+    config_class = importlib.import_module(class_module).__getattribute__(class_name)
+    return config_class()
 
 
 def _get_config_class_module(
@@ -178,13 +196,13 @@ def plot_gripper_values(gripper_values, title="Gripper Values"):
 
 
 def _sim_replay_dataset(
-    convert_path: str | Path,
-    sim_replay_config_class: type[LerobotSimReplayConfig],
+    repo_path: str | Path,
+    sim_replay_config: LerobotSimReplayConfig,
 ) -> None:
-    if sim_replay_config_class is None:
+    if sim_replay_config is None:
         raise ValueError("sim_replay_config_class is None")
 
-    simulator = LerobotSimReplayer(sim_replay_config_class, convert_path)
+    simulator = LerobotSimReplayer(sim_replay_config, repo_path)
 
     def gripper_plot_callback(gripper_history, ax, lines) -> None:
         import numpy as np
@@ -269,7 +287,7 @@ def _sim_replay_dataset(
     try:
         # 启动界面
         simulator.start_viewer()
-        print(f"[数据集回放] 开始回放数据集数据，数据集地址为: {convert_path}")
+        print(f"[数据集回放] 开始回放数据集数据，数据集地址为: {repo_path}")
         print("[数据集回放] 正在准备 replay...，请在mujoco中调整好观察视角")
         input("[数据集回放] 请按回车键开始 state replay...")
 
@@ -389,13 +407,12 @@ class SimReplay:
                 device_model=device_model,
                 device_model_version=device_model_version,
             )
-            config_class = _get_config_class(class_module=class_module, class_name=class_name)
-            print(class_module, class_name)
-            if not issubclass(config_class, LerobotSimReplayConfig):
+            replay_config = _get_config(class_module=class_module, class_name=class_name)
+            if not isinstance(replay_config, LerobotSimReplayConfig):
                 raise RuntimeError(
-                    f"数据集回放配置类 {config_class} 不是 LerobotSimReplayConfig 子类"
+                    f"数据集回放配置类 {replay_config} 不是 LerobotSimReplayConfig 子类"
                 )
-            _sim_replay_dataset(convert_path=convert_path, sim_replay_config_class=config_class)
+            _sim_replay_dataset(repo_path=convert_path, sim_replay_config=replay_config)
             with self.db.with_session() as session:
                 item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
@@ -406,8 +423,8 @@ class SimReplay:
                 item.sim_replay_status = TaskStatus.COMPLETED
                 session.commit()
 
-        except Exception:
-            self.logger.error(traceback.format_exc())
+        except Exception as e:
+            self.logger.error(e)
             with self.db.with_session() as session:
                 item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
@@ -415,5 +432,174 @@ class SimReplay:
                 if not item:
                     raise RuntimeError(f"数据集 {dataset_uuid} 不存在")
                 item.sim_replay_status = TaskStatus.FAILED
-                item.sim_replay_error_msg = str(traceback.format_exc())
+                item.sim_replay_error_msg = str(e)
                 session.commit()
+
+
+class SimReplayServer(TaskServer):
+    def __init__(
+        self,
+        db_file_path: str | Path,
+        sim_replay_config_factory_config_path: str | Path,
+        host: str = "0.0.0.0",
+        port: int = 8767,
+        heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
+        device_model: str = "",
+        device_model_version: str = "",
+        timeout: float = 15.0,  # 等待 pong 超过15秒则断开
+        logger: logging.Logger | None = None,
+    ) -> None:
+        super().__init__(
+            logger=logger,
+            host=host,
+            port=port,
+            heartbeat_interval=heartbeat_interval,
+            timeout=timeout,
+        )
+        db_file_path = Path(db_file_path).expanduser().absolute()
+        self.device_model = device_model
+        self.device_model_version = device_model_version
+
+        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
+        self.db = DatasetDatabase(self.db_file_path)
+        self.logger = logger or logging.getLogger(__name__)
+        sim_replay_config_factory_config_path = (
+            Path(sim_replay_config_factory_config_path).expanduser().absolute()
+        )
+        if not sim_replay_config_factory_config_path.exists():
+            raise FileNotFoundError(
+                f"sim_replay_config_classes_file_path {sim_replay_config_factory_config_path} not exists"
+            )
+
+        self.sim_replay_classes_config_dict = _get_config_classes_path_dict(
+            sim_replay_config_factory_config_path
+        )
+
+        self.logger.info(
+            f"Simulation Replay Server started, "
+            f"device_model={self.device_model}, "
+            f"device_model_version={self.device_model_version}"
+        )
+
+    def get_task_category(self) -> str:
+        return "simulation_replay"
+
+    def generate_task_content(self) -> dict | None:
+        with self.db.with_session() as session:
+            query = session.query(DatasetDB).filter(
+                and_(
+                    # 必要前提：convert必须成功
+                    DatasetDB.sa_dpp_status == TaskStatus.COMPLETED,
+                    # 两个触发分支
+                    or_(
+                        # 分支1: 正在排队
+                        DatasetDB.sim_replay_status == TaskStatus.PENDING,
+                        # 分支2: 已完成但版本过期
+                        and_(
+                            DatasetDB.sim_replay_status == TaskStatus.COMPLETED,
+                            DatasetDB.sim_replay_version_ps < DatasetDB.sa_dpp_version,
+                        ),
+                    ),
+                )
+            )
+            if self.device_model is not None:
+                query = query.filter(
+                    DatasetDB.device_model == self.device_model,
+                )
+
+            if self.device_model_version is not None:
+                query = query.filter(DatasetDB.device_model_version == self.device_model_version)
+
+            item = query.first()
+
+            if not item:
+                return None
+
+            item.sim_replay_status = TaskStatus.PROCESSING
+            item.sim_replay_version = item.sim_replay_version + 1
+            item.sim_replay_version_ps = item.sa_dpp_version
+
+            session.commit()
+            sim_replay_config_module_path, sim_replay_config_class_name = (
+                self.sim_replay_classes_config_dict.get(
+                    (item.device_model, item.device_model_version),
+                    (None, None),
+                )
+            )
+            if sim_replay_config_module_path is None or sim_replay_config_class_name is None:
+                raise ValueError(
+                    f"No processor config found for device model {item.device_model} and version {item.device_model_version}"
+                )
+
+            return {
+                DATASET_UUID: item.dataset_uuid,
+                LEFORMAT_PATH: item.convert_path,
+                DEVICE_MODEL: item.device_model,
+                DEVICE_MODEL_VERSION: item.device_model_version,
+                SIM_REPLAY_CONFIG_MODULE_PATH: sim_replay_config_module_path,
+                SIM_REPLAY_CONFIG_CLASS_NAME: sim_replay_config_class_name,
+            }
+
+    def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
+        ds_uuid = task_content.get(DATASET_UUID)
+
+        task_status = task_result_content.get(TASK_RESULT_STATUS)
+        task_status_msg = task_result_content.get(ERR_MSG)
+
+        convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+
+        # 🆕 合并为单个session，保证原子性
+        with self.db.with_session() as session:
+            # 查询 device_model_version
+            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
+            if item is None:
+                self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+
+            # 在同一个session中更新转换状态
+            item.sim_replay_status = convert_status
+            item.sim_replay_error_msg = task_status_msg
+            session.commit()
+            self.logger.info(
+                f"Upsert {item.convert_path} sim replay status to {convert_status}, "
+                f"update_message: {task_status_msg}"
+            )
+
+
+class SimReplayClient(TaskClient):
+    def __init__(
+        self,
+        server_uri: str = "ws://localhost:8767",
+        heartbeat_interval: float = 10.0,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        super().__init__(
+            server_uri=server_uri,
+            heartbeat_interval=heartbeat_interval,
+            logger=logger,
+        )
+
+    def get_task_category(self) -> str:
+        return "simulation_replay"
+
+    def generate_task_request_desc(self) -> dict:
+        """客户端可自定义任务请求参数"""
+        return {}
+
+    def _sync_process_task(self, task_content: dict) -> dict:
+        try:
+            repo_path = task_content.get(LEFORMAT_PATH)
+            sim_replay_config_module_path = task_content.get(SIM_REPLAY_CONFIG_MODULE_PATH)
+            sim_replay_config_class_name = task_content.get(SIM_REPLAY_CONFIG_CLASS_NAME)
+
+            sim_replay_config_class = importlib.import_module(
+                sim_replay_config_module_path
+            ).__getattribute__(sim_replay_config_class_name)
+
+            _sim_replay_dataset(
+                repo_path=repo_path,
+                sim_replay_config=sim_replay_config_class(),
+            )
+
+            return {}
+        except Exception as e:
+            raise RuntimeError(f"sim replay dataset {repo_path} failed") from e
