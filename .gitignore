@@ -77,7 +77,7 @@ data/
 
 extracted_data/
 
-
+db/
 
 
 alembic/

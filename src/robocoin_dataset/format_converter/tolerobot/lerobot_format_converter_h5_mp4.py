@@ -381,7 +381,7 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         """获取任务的episode数量"""
         return len(self._get_all_episode_h5_files(task_path))
 
-    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> dict[str, LazyVideoReader | list[np.ndarray]]:
+    def _prepare_episode_images_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False, sample_only: bool = False) -> dict[str, LazyVideoReader | list[np.ndarray]]:
         """准备episode的图像缓冲区
         
         🚀 性能优化：使用LazyVideoReader延迟加载，大幅降低内存占用
@@ -392,14 +392,21 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
             task_path: 任务路径
             ep_idx: Episode索引
             is_test: 是否为测试模式。测试模式加载前11帧用于验证
+            sample_only: 是否只需要样本帧（初始化阶段）。为True时只加载1帧用于获取shape
         
         Returns:
-            字典，键为相机名称，值为LazyVideoReader（正式模式）或帧列表（测试模式）
+            字典，键为相机名称，值为LazyVideoReader（正式模式）或帧列表（测试/样本模式）
         """
         h5_file = self._get_episode_h5_file(task_path, ep_idx)
         ep_dir = h5_file.parent  # 从H5文件获取目录
         
-        # 🧪 Test模式：仍然加载少量帧到内存（用于快速验证）
+        # 🎯 样本模式（初始化阶段）：只加载1帧，使用更兼容的PyAV
+        if sample_only:
+            if self.logger:
+                self.logger.debug(f"🎯 Sample mode: loading 1 frame for initialization (episode {ep_idx})")
+            return self._load_frames_to_memory(ep_dir, max_frames=1)
+        
+        # 🧪 Test模式：加载少量帧到内存（用于快速验证）
         if is_test or self._is_test_mode:
             max_frames = 11
             if self.logger:
@@ -550,11 +557,21 @@ class LerobotFormatConverterH5Mp4(LerobotFormatConverter):
         ep_idx: int, 
         frame_idx: int, 
         args_dict: dict, 
-        images_buffer: dict[str, list[np.ndarray]] | None = None
+        images_buffer: dict[str, list[np.ndarray]] | None = None,
+        sample_only: bool = False
     ) -> np.ndarray:
-        """获取指定帧的图像"""
+        """获取指定帧的图像
+        
+        Args:
+            task_path: 任务路径
+            ep_idx: Episode索引
+            frame_idx: 帧索引
+            args_dict: 参数字典
+            images_buffer: 图像缓冲区（如果为None，会自动创建）
+            sample_only: 是否只需要样本帧（初始化阶段使用，只加载1帧）
+        """
         if images_buffer is None:
-            images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx)
+            images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx, sample_only=sample_only)
         
         cam_name = args_dict.get(CAM_NAME_KEY)
         if cam_name not in images_buffer:
