@@ -991,44 +991,20 @@ class LerobotFormatConverter(ABC):
                 # 跳过整个episode（数据采集过程中设备配置可能发生变化）
                 if self.logger:
                     self.logger.warning(
-                        f"⚠️  Episode {original_ep_idx} (frame {frame_idx}) ValueError (likely image size mismatch):\n"
+                        f"⚠️  Episode {global_ep_idx} (task_ep: {task_ep_idx}, frame {frame_idx}) ValueError (likely image size mismatch):\n"
                         f"   {e}\n"
                         f"   Skipping entire episode. Can be traced via episode_source_mapping.json"
                     )
                 
-                self._conversion_stats['skipped_episodes'] += 1
-                task_stats[task]['skipped'] += 1
-                
-                skip_reason = f"ValueError (image size mismatch): {str(e)}"
-                self._conversion_stats['skip_details'].append({
-                    'episode': original_ep_idx,
-                    'task': task,
-                    'task_episode': task_ep_idx,
-                    'reason': skip_reason,
-                    'skipped_entire_episode': True,
-                })
-                
-                # 记录跳过的episode到mapping
-                source_files = self._get_episode_source_files(task_path, task_ep_idx)
-                self.episode_source_mapping[original_ep_idx] = {
-                    "task": task,
-                    "task_path": str(task_path),
-                    "task_ep_idx": task_ep_idx,
-                    "original_ep_idx": original_ep_idx,
-                    "global_ep_idx": None,  # 未转换，无LeRobot索引
-                    "status": "skipped",
-                    "skip_reason": skip_reason,
-                    "source_files": source_files,
-                    "converted_frames": 0,
-                    "skipped_frames": 0,
-                }
-                
-                self.logger.warning(
-                    f"⏭️  Skipped episode {original_ep_idx} "
-                    f"(task: {task}, task_ep: {task_ep_idx}): {skip_reason}"
-                )
-                original_ep_idx += 1  # original_ep_idx继续递增
-                continue  # 跳过此episode，继续下一个
+                # 抛出CriticalDataError，让上层convert()处理统计和映射
+                raise CriticalDataError(
+                    f"Episode {global_ep_idx} 图像尺寸不匹配，跳过整个episode:\n"
+                    f"  任务: {task}\n"
+                    f"  Episode索引: {task_ep_idx}\n"
+                    f"  问题帧: {frame_idx}\n"
+                    f"  错误: {e}\n"
+                    f"\n💡 这通常是数据采集过程中设备配置变化导致的"
+                ) from e
                 
             except Exception as e:
                 # 未分类的异常：在严格模式下作为配置错误处理
