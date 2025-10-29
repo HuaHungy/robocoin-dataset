@@ -4,6 +4,8 @@ from sqlalchemy import (
     Column,
     Enum,
     Float,
+    ForeignKey,
+    Index,
     Integer,
     String,
     Table,
@@ -264,9 +266,106 @@ class VideoHashDB(Base):
     dataset_uuid = Column(String(255), index=True, nullable=False)
     ep_idx = Column(Integer, index=True, nullable=False)
     frame_num = Column(Integer, index=True, nullable=False)
-    video_path = Column(String(255), index=True, nullable=False, unique=True)
-    file_hash = Column(String(255), index=True, nullable=False)
+    video_path = Column(String(255), index=False, nullable=False, unique=True)
+    file_hash = Column(String(255), index=False, nullable=False)
     image_hashes = Column(Text, index=False, nullable=False)
+
+
+class StAnnotationVideoDB(Base):
+    __tablename__ = "st_annotation_video"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # 视频 URL 唯一
+    video_url = Column(String(255), nullable=False, unique=True, index=True)
+    # 本地路径唯一
+    local_video_path = Column(String(255), nullable=True, unique=True, index=True)
+
+    # 下载状态
+    download_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
+
+    video_hash_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
+    # 文件哈希（如 MD5/SHA1）
+    file_hash = Column(String(255), nullable=True, index=True)
+
+    # 视频内容哈希（如感知哈希）
+    video_hash = Column(Text, nullable=True)  # 不建索引，太大
+
+    # 总帧数
+    frame_num = Column(Integer, nullable=True, default=None)  # 默认 None 比 0 更准确
+
+    # 关联的标注片段
+    annotations = relationship(
+        "UrlVideoStAnnotationDB", back_populates="video", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (Index("ix_st_annotation_video_video_hash_status", "video_hash_status"),)
+
+
+class UrlVideoStAnnotationDB(Base):
+    __tablename__ = "url_video_st_annotation"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 外键关联到 st_annotation_video.id
+    video_id = Column(
+        Integer,
+        ForeignKey("st_annotation_video.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # 如果还需要快速按 URL 查询标注，可以保留 video_url 但不强制唯一
+    # video_url = Column(String(255), index=True)  # 可选：用于快速查询，非必需
+
+    annotation = Column(Text, nullable=False)
+    start_frame_idx = Column(Integer, nullable=False, index=True)
+    end_frame_idx = Column(Integer, nullable=False, index=True)
+
+    # 关联回主表
+    video = relationship("StAnnotationVideoDB", back_populates="annotations")
+
+    # 复合索引：按 video_id + 时间范围查询更快
+    __table_args__ = (
+        Index(
+            "ix_url_video_st_annotation_video_frames",
+            "video_id",
+            "start_frame_idx",
+            "end_frame_idx",
+        ),
+    )
+
+
+class VideoMatchDB(Base):
+    __tablename__ = "video_match"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    url_video_id = Column(
+        Integer,
+        ForeignKey("st_annotation_video.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class VideoStAnnotationDB(Base):
+    __tablename__ = "video_st_annotation"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    start_frame_idx = Column(Integer, nullable=False, index=True)
+    end_frame_idx = Column(Integer, nullable=False, index=True)
+    annotation = Column(Text, nullable=False)
+
+
+class VideoOptStAnnotationDB(Base):
+    __tablename__ = "video_opt_st_annotation"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    start_frame_idx = Column(Integer, nullable=False, index=True)
+    end_frame_idx = Column(Integer, nullable=False, index=True)
+    annotation = Column(Text, nullable=False)
 
 
 # class LeFormatConvertDB(Base):

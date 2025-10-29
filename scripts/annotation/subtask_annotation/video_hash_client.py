@@ -60,5 +60,5 @@ python scripts/annotation/subtask_annotation/video_hash_client.py \
     --host=127.0.0.1 \
     --port=8768 \
     --heartbeat-interval=10.0 \
-    --log_dir ./logs/video_hash
+    --log_dir ./logs/video_hash_client
 """

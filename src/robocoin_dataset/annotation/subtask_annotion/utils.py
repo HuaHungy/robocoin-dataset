@@ -1,4 +1,6 @@
+import base64
 import os
+import pickle
 import re
 import subprocess
 import tempfile
@@ -187,7 +189,25 @@ def extract_frame_phashes_ffmpeg(
         return phash_list
 
 
-def _sort_video_imagehashes_from_frame_num(
+def compute_video_hash(video_path: str | Path) -> tuple[str, int, str]:
+    video_path = Path(video_path).expanduser().absolute()
+    if not video_path.exists():
+        raise FileNotFoundError(f"文件不存在: {video_path}")
+
+    file_hash = compute_sha256(video_path)
+    frame_num = get_frame_num(video_path=video_path)
+
+    image_frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
+    phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
+        video_path=video_path, frame_indices=image_frame_indices
+    )
+    serialized_phashes = pickle.dumps(phashes)
+    serialized_phashes = base64.b64encode(serialized_phashes).decode("ascii")
+
+    return file_hash, frame_num, serialized_phashes
+
+
+def sort_video_imagehashes_from_frame_num(
     video_imagehashes: dict[int, list[imagehash.ImageHash]],
     frame_num_dict: dict[int, int],
 ) -> dict[int, list[tuple[int, list[imagehash.ImageHash]]]]:
@@ -199,13 +219,13 @@ def _sort_video_imagehashes_from_frame_num(
     return dict(result)
 
 
-def _match_video_file_hash(hash: str, file_hash_lib: dict[str, int]) -> int | None:
+def match_video_file_hash(hash: str, file_hash_lib: dict[str, int]) -> int | None:
     if hash in file_hash_lib:
         return file_hash_lib[hash]
     return None
 
 
-def _match_video_image_hashes(
+def match_video_image_hashes(
     frame_num: int,
     image_phashes: list[imagehash.ImageHash],
     video_image_phashes_lib: dict[int, list[tuple[int, list[imagehash.ImageHash]]]],

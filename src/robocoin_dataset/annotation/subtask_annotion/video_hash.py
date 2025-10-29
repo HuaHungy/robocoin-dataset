@@ -1,18 +1,12 @@
-import base64
 import logging
-import pickle
 from pathlib import Path
 
-import imagehash
 import tqdm
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from robocoin_dataset.annotation.subtask_annotion.utils import (
-    compute_sha256,
-    extract_frame_phashes_ffmpeg,
-    gen_frame_indices_from_framenum,
-    get_frame_num,
+    compute_video_hash,
     get_video_paths,
 )
 from robocoin_dataset.database.database import DatasetDatabase
@@ -89,24 +83,6 @@ def _gen_one_video_hash_task(session: Session) -> tuple[str | None, str | None]:
         item.dataset_uuid,
         item.convert_path,
     )
-
-
-def compute_video_hash(video_path: str | Path) -> tuple[str, int, str]:
-    video_path = Path(video_path).expanduser().absolute()
-    if not video_path.exists():
-        raise FileNotFoundError(f"文件不存在: {video_path}")
-
-    file_hash = compute_sha256(video_path)
-    frame_num = get_frame_num(video_path=video_path)
-
-    image_frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
-    phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
-        video_path=video_path, frame_indices=image_frame_indices
-    )
-    serialized_phashes = pickle.dumps(phashes)
-    serialized_phashes = base64.b64encode(serialized_phashes).decode("ascii")
-
-    return file_hash, frame_num, serialized_phashes
 
 
 def compute_dataset_video_hashes(
@@ -280,8 +256,9 @@ class VideoHashServer(TaskServer):
         task_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
         hash_result_tuple_dict: dict[str, tuple[int, int, str, str]] = {}
-        print(task_result_content)
-        video_hash_results: dict = task_result_content.get(TASK_RESULT_CONTENT)
+        video_hash_results: dict = task_result_content.get(TASK_RESULT_CONTENT).get(
+            VIDEO_HASHES_RESULT
+        )
 
         for video_path, value in video_hash_results.items():
             ep_idx = value.get("ep_idx")
@@ -300,7 +277,8 @@ class VideoHashServer(TaskServer):
                 if not item:
                     raise ValueError(f"Dataset {ds_uuid} not found")
 
-                item.video_hash_status = task_status
+                item.video_hash_status = TaskStatus.COMPLETED
+                session.commit()
         else:
             with self.db.with_session() as session:
                 _upsert_video_hashes(session, video_hash_results, ds_uuid)
@@ -313,6 +291,7 @@ class VideoHashServer(TaskServer):
 
                 item.video_hash_status = task_status
                 item.video_hash_err_msg = task_status_msg
+                session.commit()
 
 
 class VideoHashClient(TaskClient):

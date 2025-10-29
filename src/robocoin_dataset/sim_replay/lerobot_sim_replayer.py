@@ -24,6 +24,7 @@ from scipy.spatial.transform import Rotation as R
 from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
     LerobotSimReplayConfig,
 )
+from robocoin_dataset.utils.parquet_paths import get_parquet_paths
 
 
 class EpisodeSampler(torch.utils.data.Sampler):
@@ -74,7 +75,6 @@ class LerobotSimReplayer:
 
         self.action_gripper_joint_mjcf_names = replay_config.action_gripper_joint_mjcf_names
         self.action_gripper_lerobot_names = replay_config.action_gripper_lerobot_names
-
         mjcf_joint_names = self._get_mjcf_joint_names()
 
         exist_flags = [
@@ -232,11 +232,70 @@ class LerobotSimReplayer:
             meta_action_names.index(name) for name in self.action_gripper_lerobot_names
         ]
 
+        _, self.parquet_file_paths = get_parquet_paths(self.repo_path, "state_action")
+
     def _get_mjcf_joint_names(self) -> set[str]:
         return {self.mjcf_model.joint(i).name for i in range(self.mjcf_model.njnt)}
 
     def _get_mjcf_joint_addr(self, name: str) -> int:
         return self.mjcf_model.jnt_qposadr[self.mjcf_model.joint(name).id]
+
+    def replay_episode_background(
+        self,
+        episode_index: int,
+        is_state: bool = True,
+    ) -> list[np.ndarray]:
+        if episode_index >= len(self.parquet_file_paths):
+            raise ValueError(f"episode_index {episode_index} out of range")
+        parquet_file_path = self.parquet_file_paths[episode_index]
+        if not parquet_file_path.exists():
+            raise Exception(f"Parquet file not found: {parquet_file_path}")
+        df = pd.read_parquet(str(parquet_file_path))
+        results: list[np.ndarray] = []
+
+        if is_state:
+            mjcf_arm_joint_addrs = self.state_arm_joint_mjcf_addrs
+            mjcf_gripper_joint_addrs = self.state_gripper_joint_mjcf_addrs
+            lerbot_arm_joint_ids = self.state_arm_joint_lerobot_ids
+            leroot_gripper_ids = self.state_gripper_lerobot_ids
+            data = df["observation.state"].to_list()
+        else:
+            mjcf_arm_joint_addrs = self.action_arm_joint_mjcf_addrs
+            mjcf_gripper_joint_addrs = self.action_gripper_joint_mjcf_addrs
+            lerbot_arm_joint_ids = self.action_arm_joint_lerobot_ids
+            leroot_gripper_ids = self.action_gripper_lerobot_ids
+            data = df["action"].to_list()
+
+        try:
+            for i in range(len(data)):
+                lerobot_arm_joint_values = data[i][lerbot_arm_joint_ids]
+                lerobot_gripper_data = data[i][leroot_gripper_ids]
+                for mjcf_addr, lerobot_value in zip(mjcf_arm_joint_addrs, lerobot_arm_joint_values):
+                    self.mjcf_data.qpos[mjcf_addr] = lerobot_value
+
+                mjcf_gripper_joint_values = self.get_mjcf_gripper_joint_data(
+                    lerobot_gripper_data=lerobot_gripper_data
+                )
+                for mjcf_addr, mjcf_data in zip(
+                    mjcf_gripper_joint_addrs, mjcf_gripper_joint_values
+                ):
+                    self.mjcf_data.qpos[mjcf_addr] = mjcf_data
+
+                mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
+                for site_id in self.mjcf_site_ids:
+                    eef_results = []
+                    site_pos = self.mjcf_data.site_xpos[site_id]
+                    site_rot = self.mjcf_data.site_xmat[site_id]
+                    site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
+                        "xyz", degrees=False
+                    )
+                    eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
+                results.append(eef_results)
+            return results
+
+        finally:
+            # 确保在任何情况下都能正确关闭界面
+            pass
 
     def replay_episode(
         self,
