@@ -898,7 +898,7 @@ class LerobotFormatConverter(ABC):
             ConfigError: 严格模式下遇到数据错误（表明配置可能有问题）
             CriticalDataError: 非严格模式下遇到数据错误（跳过整个episode）
         """
-        # 🆕 容错：处理字段缺失的情况
+        # 🆕 容错：处理字段缺失和文件损坏的情况
         try:
             images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
                 task_path, task_ep_idx, is_test=is_test
@@ -925,6 +925,20 @@ class LerobotFormatConverter(ABC):
                     )
                 # 返回(0, 0)表示跳过整个episode
                 return 0, 0
+        except Exception as e:
+            # MCAP文件损坏或其他buffer准备错误
+            if 'RecordLengthLimitExceeded' in type(e).__name__ or 'mcap' in str(type(e)).lower():
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Episode {global_ep_idx} (task episode: {task_ep_idx}) 文件损坏，跳过:\n"
+                        f"   Task: {task}\n"
+                        f"   Error: {type(e).__name__}: {str(e)[:200]}..."
+                    )
+                # 返回(0, 0)表示跳过整个episode
+                return 0, 0
+            else:
+                # 其他未知错误，重新抛出
+                raise
         
         converted_frames = 0
         
