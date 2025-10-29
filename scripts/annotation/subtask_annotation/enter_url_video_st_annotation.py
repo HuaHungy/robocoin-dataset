@@ -236,11 +236,9 @@ def enter_url_video_st_annotation_json_files(
                                     .first()
                                 )
                                 if not item:
-                                    print(f"{file} 中视频链接为 {video_url}")
                                     video_item: StAnnotationVideoDB = StAnnotationVideoDB(
                                         video_url=video_url,
                                         download_status=TaskStatus.PENDING,
-                                        file_hash_status=TaskStatus.PENDING,
                                         video_hash_status=TaskStatus.PENDING,
                                     )
                                     session.add(video_item)

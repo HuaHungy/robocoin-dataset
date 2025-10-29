@@ -48,7 +48,7 @@ def prepare_video_imagehashes_lib(session: Session) -> dict[str, list[str]]:
         .all()
     )
 
-    image_hashes_list = [pickle.loads(base64.decode(item.video_hash)) for item in items]
+    image_hashes_list = [pickle.loads(base64.b64decode(item.video_hash)) for item in items]
     id_list = [row.id for row in items]
 
     video_imagehashes = {id_list[i]: image_hashes_list[i] for i in range(len(id_list))}
@@ -137,8 +137,15 @@ class VideoMatch:
             self.file_hash_lib = prepare_video_filehash_lib(session)
             self.image_hashes_lib = prepare_video_imagehashes_lib(session)
 
-    def sync_video_match_status(self) -> None:
+    def sync_video_match_status(self, match_failed_videos: bool = False) -> None:
         with self.db.with_session() as session:
+            if match_failed_videos:
+                status_list = [
+                    TaskStatus.FAILED,
+                    TaskStatus.PENDING,
+                ]
+            else:
+                status_list = [TaskStatus.PENDING]
             query = session.query(DatasetDB).filter(
                 and_(
                     # 必要前提：convert必须成功
@@ -146,11 +153,11 @@ class VideoMatch:
                     # 两个触发分支
                     or_(
                         # 分支1: 正在排队
-                        DatasetDB.video_match_status == TaskStatus.PENDING,
+                        DatasetDB.video_match_status.in_(status_list),
                         # 分支2: 已完成但版本过期
                         and_(
                             DatasetDB.video_match_status == TaskStatus.COMPLETED,
-                            DatasetDB.video_match_version_ps < DatasetDB.video_hash_status,
+                            DatasetDB.video_match_version_ps < DatasetDB.video_hash_version,
                         ),
                     ),
                 )
@@ -175,6 +182,7 @@ class VideoMatch:
                 return None
 
             item.video_match_status = TaskStatus.PROCESSING
+            session.flush()
             return item.dataset_uuid
 
     def get_ep_video_hashes(
@@ -193,7 +201,7 @@ class VideoMatch:
                 ep_idx = item.ep_idx
                 frame_num = item.frame_num
                 file_hash = item.file_hash
-                image_hashes = pickle.loads(base64.decode(item.image_hashes))
+                image_hashes = pickle.loads(base64.b64decode(item.image_hashes))
 
                 ep_video_file_hashes[ep_idx].append(file_hash)
                 ep_video_image_hashes[ep_idx].append(image_hashes)
@@ -218,13 +226,11 @@ class VideoMatch:
                 self.image_hashes_lib,
             )
 
-            unmatched_ep_idxs = [
-                ep_idx for ep_idx in dataset_frame_nums.keys() if match_results[ep_idx] is None
-            ]
+            unmatched_ep_idxs = [k for k, v in match_results.items() if v is None]
             if unmatched_ep_idxs:
                 unmactched_ep_idxs_str = _list_to_range_string(unmatched_ep_idxs)
                 self.logger.warning(
-                    f"Dataset {dataset_uuid} has {len(unmatched_ep_idxs)} unmatched episodes: {_list_to_range_string(unmactched_ep_idxs_str)}"
+                    f"Dataset {dataset_uuid} has {len(unmatched_ep_idxs)} unmatched episodes: {unmactched_ep_idxs_str}"
                 )
                 with self.db.with_session() as session:
                     item = (
@@ -259,25 +265,28 @@ class VideoMatch:
                         session.add(
                             VideoMatchDB(
                                 dataset_uuid=dataset_uuid,
-                                ep_idx=ep_idx,
+                                episode_idx=ep_idx,
                                 url_video_id=url_video_id,
                             )
                         )
+
                     session.commit()
 
         except Exception:
-            query = session.query(DatasetDB).filter(
-                DatasetDB.dataset_uuid == dataset_uuid,
-            )
-            item = query.first()
-            if not item:
-                raise ValueError(f"Dataset {dataset_uuid} not found")
+            with self.db.with_session() as session:
+                query = session.query(DatasetDB).filter(
+                    DatasetDB.dataset_uuid == dataset_uuid,
+                )
+                item = query.first()
+                if not item:
+                    raise ValueError(f"Dataset {dataset_uuid} not found")
 
-            item.video_match_status = TaskStatus.FAILED
-            item.video_match_err_msg = traceback.format_exc()
-            session.commit()
+                item.video_match_status = TaskStatus.FAILED
+                item.video_match_err_msg = traceback.format_exc()
+                session.commit()
 
-    def match_videos(self) -> None:
+    def match_videos(self, match_failed_videos: bool = True) -> None:
+        self.sync_video_match_status(match_failed_videos=match_failed_videos)
         with self.db.with_session() as session:
             task_num = (
                 session.query(DatasetDB)
@@ -289,11 +298,15 @@ class VideoMatch:
                 )
                 .count()
             )
+            if task_num == 0:
+                self.logger.info("No video match task")
+                return
         pbar = tqdm.tqdm(total=task_num, desc="Match Videos with URL Videos", unit="dataset")
         while True:
             dataset_uuid = self.gen_one_dataset_video_match_task()
             if dataset_uuid is None:
                 break
+
             self._match_videos_one_dataset(dataset_uuid=dataset_uuid)
             pbar.update(1)
 

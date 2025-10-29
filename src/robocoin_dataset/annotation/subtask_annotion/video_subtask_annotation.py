@@ -1376,7 +1376,7 @@ class VideoSubtaskAnnotation:
                 )
                 return
 
-        original_subtask_annotations = set([item.annotation for item in range_items])
+        original_subtask_annotations = set([itemfor item in range_items])
         from .subtask_annotation_optimization import optimize_annotation
 
         try:

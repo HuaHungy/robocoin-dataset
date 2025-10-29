@@ -93,11 +93,11 @@ class UrlVideoDownload:
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
-    def _download_video(self, url: str, file_path: Path) -> bool:
+    def _download_or_copy_video(self, url: str, file_path: Path) -> bool:
         file_path = Path(file_path).expanduser().absolute()
-        if file_path.exists():
-            self.logger.info(f"{file_path} 已存在, passing")
-            return True
+        # if file_path.exists():
+        #     self.logger.info(f"{file_path} 已存在, passing")
+        #     return True
         try:
             tmp_file_path = file_path.parent / f"{file_path.name}.tmp"
             response = requests.get(url, stream=True, timeout=30)
@@ -109,8 +109,16 @@ class UrlVideoDownload:
                 shutil.move(tmp_file_path, file_path)
                 return True
 
-        except Exception as e:
-            self.logger.error(f"下载失败: {url}, 错误: {e}")
+        except Exception as dowload_error:
+            if tmp_file_path.exists():
+                shutil.rmtree(tmp_file_path)
+            try:
+                local_path = Path(url).expanduser().absolute()
+                shutil.copyfile(local_path, file_path)
+                return True
+            except Exception as move_error:
+                self.logger.error(f"复制文件: {url}, 错误: {move_error}")
+            self.logger.error(f"下载失败: {url}, 错误: {dowload_error}")
             return False
 
     def download_videos_multi_threads(self, num_workers: int = 8) -> None:
@@ -153,7 +161,7 @@ class UrlVideoDownload:
                     session.commit()
 
                 # 获取任务
-                success = self._download_video(video_url, download_path)
+                success = self._download_or_copy_video(video_url, download_path)
                 if success:
                     try:
                         frame_num = get_frame_num(download_path)
@@ -168,7 +176,6 @@ class UrlVideoDownload:
                                 item.download_status = TaskStatus.COMPLETED
                                 session.commit()
                     except Exception:
-                        frame_num = None
                         with self.db.with_session() as session:
                             item = (
                                 session.query(StAnnotationVideoDB)
@@ -177,8 +184,20 @@ class UrlVideoDownload:
                             )
                             if item:
                                 item.download_status = TaskStatus.FAILED
+                                session.commit()
                         success = False
                         self.logger.info(f"video decoding failed: {download_path}")
+                else:
+                    with self.db.with_session() as session:
+                        item = (
+                            session.query(StAnnotationVideoDB)
+                            .filter(StAnnotationVideoDB.id == video_id)
+                            .first()
+                        )
+                        if item:
+                            item.download_status = TaskStatus.FAILED
+                        session.commit()
+                    success = False
 
                 # ✅ 更新进度条（线程安全）
                 with pbar_lock:

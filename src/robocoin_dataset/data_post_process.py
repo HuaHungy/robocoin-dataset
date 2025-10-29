@@ -39,6 +39,7 @@ class DataPostProcessorBase:
         self.data_features = data_feature_keys
         self.new_info_file_path = self.convert_path / "meta" / f"{data_post_process_type}_info.json"
         self.info_file_path = self.convert_path / "meta/info.json"
+        self._ep_idx: int | None = None
 
     # 将处理episode数据的准备工作放在这里
     def prepare_processing(self) -> None:
@@ -51,6 +52,10 @@ class DataPostProcessorBase:
     # 该方法返回处理后的state数据名称
     def get_modified_feature_names(self) -> dict[str, list[str]]:
         return {}
+
+    @property
+    def episode_idx(self) -> int | None:
+        return self._ep_idx
 
     def get_ori_episode_data(self, episode_idx: int) -> dict[str, np.ndarray | None]:
         if episode_idx >= len(self.parquet_files):
@@ -97,6 +102,7 @@ class DataPostProcessorBase:
         ):
             self.prepare_processing()
             ori_data = self.get_ori_episode_data(episode_idx)
+            self._ep_idx = episode_idx
             new_datas: dict[str, np.ndarray] = self.process_episode_data(ori_data)
 
             for key, arr in new_datas.items():
@@ -114,3 +120,4 @@ class DataPostProcessorBase:
                     )
 
             self.write_new_episode_file(new_datas, episode_idx)
+        self._ep_idx = None

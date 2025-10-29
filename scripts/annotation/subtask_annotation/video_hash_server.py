@@ -68,6 +68,6 @@ if __name__ == "__main__":
 python scripts/annotation/subtask_annotation/video_hash_server.py \
     --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
-    --port 8768 \
+    --port 8769 \
     --log_dir ./logs/video_hash_server
 """

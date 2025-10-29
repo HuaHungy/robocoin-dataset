@@ -37,7 +37,7 @@ class DatasetSubtaskAnnotation:
                         DatasetDB.video_ori_subtask_annotation_status == TaskStatus.PENDING,
                         # 分支2: 已完成但版本过期
                         and_(
-                            DatasetDB.video_match_status == TaskStatus.COMPLETED,
+                            DatasetDB.video_ori_subtask_annotation_status == TaskStatus.COMPLETED,
                             DatasetDB.video_ori_subtask_annotation_version_ps
                             < DatasetDB.video_match_version,
                         ),
@@ -47,8 +47,8 @@ class DatasetSubtaskAnnotation:
 
             for item in query.all():
                 item.video_ori_subtask_annotation_status = TaskStatus.PENDING
-                item.video_ori_subtask_annotation_status = (
-                    item.video_ori_subtask_annotation_status + 1
+                item.video_ori_subtask_annotation_version = (
+                    item.video_ori_subtask_annotation_version + 1
                 )
                 item.video_ori_subtask_annotation_version_ps = item.video_match_version
             session.commit()
@@ -68,7 +68,7 @@ class DatasetSubtaskAnnotation:
             item.video_ori_subtask_annotation_status = TaskStatus.PROCESSING
             return item.dataset_uuid
 
-    def _subtask_annotate(self, dataset_uuid: str) -> None:
+    def _annotate_subtask(self, dataset_uuid: str) -> None:
         with self.db.with_session() as session:
             session.query(VideoStAnnotationDB).filter(
                 VideoStAnnotationDB.dataset_uuid == dataset_uuid
@@ -109,7 +109,9 @@ class DatasetSubtaskAnnotation:
                     }
                 )
 
-    def subtask_annotation(self) -> None:
+    def annotate_subtask(self) -> None:
+        self.sync_dataset_subtask_annotation_status()
+
         with self.db.with_session() as session:
             task_num = (
                 session.query(DatasetDB)
@@ -126,7 +128,7 @@ class DatasetSubtaskAnnotation:
             dataset_uuid = self.gen_one_dataset_subtask_annotation_task()
             if dataset_uuid is None:
                 break
-            self._subtask_annotate(dataset_uuid=dataset_uuid)
+            self._annotate_subtask(dataset_uuid=dataset_uuid)
             pbar.update(1)
 
         pbar.close()
