@@ -31,7 +31,7 @@ output_path: ./examples/datasets/outputs/upload_history
 #     log_config: LogConfig = field(default_factory=LogConfig)
 
 # Path to the root directory of the datasets, which contains all datasets.
-root_path: ./examples/example_datas/
+root_path: ./examples/example_datas/ # SHOULD BE CHANGED TO THE REAL DATASET PATH WHEN FORMAL USING
 
 # process_all is set to true by default,
 # it means all subdirectories will be processed,
