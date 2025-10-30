@@ -82,6 +82,8 @@ def _gen_episode_frames(...):
 
 ### **修复后的代码**
 
+#### **修复点1: `_gen_episode_frames`** (line 854-857)
+
 ```python
 def _gen_episode_frames(...):
     for frame_idx in range(max_frame_idx):
@@ -97,6 +99,24 @@ def _gen_episode_frames(...):
                 self.logger.error(...)
             raise RuntimeError(...) from e
         yield frame_data
+```
+
+#### **修复点2: `_get_frame_images`** (line 568-571)
+
+```python
+def _get_frame_images(...):
+    images = {}
+    for image_config in ...:
+        try:
+            image = self._get_frame_image(...)
+            images[lerobot_feature] = image
+        except (CriticalDataError, DataQualityError):
+            # 🔧 容错机制：让 CriticalDataError 和 DataQualityError 直接传播
+            raise  # ✅ 直接传播，保留异常类型
+        except Exception as e:
+            # 其他异常才包装
+            raise Exception(f"Failed to get frame images for {lerobot_feature}") from e
+    return images
 ```
 
 ### **修复后的异常传播链**
@@ -209,7 +229,9 @@ Layer 4 (convert):
 ### **Part 2: 保留异常类型传播** ✅ (本次修复)
 - 文件: `lerobot_format_converter.py`
 - 改动: 让 `CriticalDataError` 直接传播，不包装
-- 位置: `_gen_episode_frames` (line 854-857)
+- 位置: 
+  - `_gen_episode_frames` (line 854-857)
+  - `_get_frame_images` (line 568-571)
 
 ---
 

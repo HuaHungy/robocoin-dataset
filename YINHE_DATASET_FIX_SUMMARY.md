@@ -68,23 +68,32 @@ raise CriticalDataError(f"Frame index out of range (entire episode will be skipp
 
 **文件**: `lerobot_format_converter.py`
 
-**问题**: `_gen_episode_frames` 捕获所有异常并包装成 `RuntimeError`，破坏了异常语义
+**问题**: 多个方法捕获所有异常并包装，破坏了异常语义
+- `_gen_episode_frames`: 包装成 `RuntimeError`
+- `_get_frame_images`: 包装成 `Exception`
 
 **修复**: 让 `CriticalDataError` 和 `DataQualityError` 直接传播
+
+**修复位置** (2处):
+
+| 方法 | Line | 修复内容 |
+|------|------|---------|
+| `_gen_episode_frames` | 854-857 | 让容错异常直接传播 |
+| `_get_frame_images` | 568-571 | 让容错异常直接传播 |
 
 ```python
 # ❌ 修复前
 try:
     frame_data = self._gen_episode_frame(...)
 except Exception as e:  # 捕获所有异常
-    raise RuntimeError(...) from e  # 包装成 RuntimeError
+    raise RuntimeError(...) from e  # 包装，破坏语义
 
 # ✅ 修复后
 try:
     frame_data = self._gen_episode_frame(...)
 except (CriticalDataError, DataQualityError):
     # 让容错异常直接传播，不包装
-    raise
+    raise  # ✅ 保留异常类型
 except Exception as e:
     # 其他异常才包装
     raise RuntimeError(...) from e
