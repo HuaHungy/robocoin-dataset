@@ -24,14 +24,14 @@ class DataPostProcessorBase:
         if not (self.convert_path / "meta/info.json").exists():
             raise FileNotFoundError(f"{convert_path}/meta/info.json does not exist")
 
-        with open(self.convert_path / "meta/info.json") as f:
-            info_json: dict = json.load(f)
-            features = info_json.get("features", None)
-            if not features:
-                raise ValueError(f"{convert_path}/meta/info.json does not contain features")
-            for feature in data_feature_keys:
-                if feature not in features:
-                    raise ValueError(f"{feature} not found in features")
+        # with open(self.convert_path / "meta/info.json") as f:
+        #     info_json: dict = json.load(f)
+        #     features = info_json.get("features", None)
+        # if not features:
+        #     raise ValueError(f"{convert_path}/meta/info.json does not contain features")
+        # for feature in data_feature_keys:
+        #     if feature not in features:
+        #         raise ValueError(f"{feature} not found in features")
 
         self.parquet_files, self.new_parquet_files = get_parquet_paths(
             root_dir=self.convert_path, new_parquet_type=data_post_process_type
@@ -73,22 +73,63 @@ class DataPostProcessorBase:
 
         return results
 
+    def _get_pa_type(self, np_dtype: np.dtype) -> pa.lib.DataType:
+        mapping = {
+            np.int32: pa.int32(),
+            np.int64: pa.int32(),
+            np.float32: pa.float32(),
+            np.float64: pa.float32(),
+            np.bool_: pa.bool_(),
+        }
+        return mapping.get(np.dtype(np_dtype).type, pa.from_numpy_dtype(np_dtype))
+
     def write_new_episode_file(self, new_data: dict[str, np.ndarray], episode_idx: int) -> None:
         if episode_idx >= len(self.new_parquet_files):
             raise ValueError(f"episode_idx {episode_idx} out of range")
 
-        data = {key: value.tolist() for key, value in new_data.items()}
-        df = pd.DataFrame(data)
-        table = pa.Table.from_pandas(df)
-        self.new_parquet_files[episode_idx].parent.mkdir(parents=True, exist_ok=True)
-        pq.write_table(table, self.new_parquet_files[episode_idx])
+        file_path = self.new_parquet_files[episode_idx]
+
+        lengths = {key: arr.shape[0] for key, arr in new_data.items()}
+        if len(set(lengths.values())) > 1:
+            raise ValueError(f"Array length mismatch: {lengths}")
+
+        try:
+            arrays = []
+            fields = []
+
+            for col_name, arr in new_data.items():
+                if arr.ndim == 1:
+                    pa_type = self._get_pa_type(arr.dtype)
+                    pa_array = pa.array(arr, type=pa_type)
+                    arrays.append(pa_array)
+                    fields.append(pa.field(col_name, pa_type))
+                elif arr.ndim == 2:
+                    # 使用 ListArray: 每个元素是一个 list
+                    value_type = self._get_pa_type(arr.dtype)
+                    list_type = pa.list_(value_type)
+                    # 转换为 ListArray
+                    pa_array = pa.array([row.tolist() for row in arr], type=list_type)
+                    arrays.append(pa_array)
+                    fields.append(pa.field(col_name, list_type))
+                else:
+                    raise ValueError(f"Unsupported array dimension: {arr.ndim} for '{col_name}'")
+
+            schema = pa.schema(fields)
+            table = pa.Table.from_arrays(arrays, schema=schema)
+
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            pq.write_table(table, file_path)
+
+        except Exception as e:
+            raise OSError(f"Failed to write episode {episode_idx} to {file_path}: {e}")
 
     def write_new_info_file(self) -> None:
         json_dict = {}
         json_dict["features"] = {}
         for feature_key, names in self.get_modified_feature_names().items():
-            if len(names) != len(set(names)):
-                raise ValueError(f"given feature names contain duplicated names: {names}")
+            if names is not None:
+                if len(names) != len(set(names)):
+                    raise ValueError(f"given feature names contain duplicated names: {names}")
             json_dict["features"][feature_key] = {}
             json_dict["features"][feature_key]["names"] = names
 
@@ -97,23 +138,27 @@ class DataPostProcessorBase:
 
     def process(self) -> None:
         self.write_new_info_file()
+        self.prepare_processing()
         for episode_idx in tqdm(
             range(len(self.parquet_files)), desc="Processing episodes", unit="episode"
         ):
-            self.prepare_processing()
             ori_data = self.get_ori_episode_data(episode_idx)
             self._ep_idx = episode_idx
             new_datas: dict[str, np.ndarray] = self.process_episode_data(ori_data)
 
-            for key, arr in new_datas.items():
-                if isinstance(arr, np.ndarray) and np.issubdtype(arr.dtype, np.floating):
-                    new_datas[key] = arr.astype(np.float32)  # 就地转为 float32
-            if new_datas.keys() != self.data_features:
+            # for key, arr in new_datas.items():
+            #     if isinstance(arr, np.ndarray) and np.issubdtype(arr.dtype, np.floating):
+            #         new_datas[key] = arr.astype(np.float32)  # 就地转为 float32
+            #     if isinstance(arr, np.ndarray) and np.issubdtype(arr.dtype, np.int64):
+            #         new_datas[key] = arr.astype(np.int32)  # 就地转为 int32
+            if set(new_datas.keys()) != set(self.data_features):
                 raise ValueError(
                     f"new_datas keys {new_datas.keys()} != self.data_features {self.data_features}"
                 )
 
             for feature_key, data in ori_data.items():
+                if data is None:
+                    continue
                 if data.shape[0] != new_datas[feature_key].shape[0]:
                     raise ValueError(
                         f"ori_data shape {data.shape}[0] != new_datas shape {new_datas[feature_key].shape}[0]"

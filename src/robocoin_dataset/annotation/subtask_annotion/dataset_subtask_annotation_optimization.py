@@ -146,7 +146,10 @@ class DatasetSubtaskAnnotationOptimization:
                 )
             )
 
+            print(query.count())
+
             for item in query.all():
+                print(item.dataset_uuid)
                 item.video_opt_subtask_annotation_status = TaskStatus.PENDING
                 item.video_opt_subtask_annotation_version = (
                     item.video_opt_subtask_annotation_version + 1
@@ -154,6 +157,7 @@ class DatasetSubtaskAnnotationOptimization:
                 item.video_opt_subtask_annotation_version_ps = (
                     item.video_ori_subtask_annotation_version
                 )
+                print(item.video_opt_subtask_annotation_version)
             session.commit()
 
     def gen_one_dataset_subtask_annotation_optimization_task(self) -> str:
@@ -205,7 +209,7 @@ class DatasetSubtaskAnnotationOptimization:
                                 episode_idx=ori_item.episode_idx,
                                 start_frame_idx=ori_item.start_frame_idx,
                                 end_frame_idx=ori_item.end_frame_idx,
-                                annotation=ori_item.annotation,
+                                annotation=optimized_annotation_dict[ori_item.annotation],
                             )
                         )
                 session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).update(
@@ -227,6 +231,7 @@ class DatasetSubtaskAnnotationOptimization:
                 session.commit()
 
     def optimize_subtask_annotation(self) -> None:
+        self.sync_dataset_subtask_annotation_optimization_status()
         with self.db.with_session() as session:
             task_num = (
                 session.query(DatasetDB)

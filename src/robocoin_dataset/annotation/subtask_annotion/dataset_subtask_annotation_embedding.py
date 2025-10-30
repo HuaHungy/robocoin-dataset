@@ -1,7 +1,9 @@
 import logging
 import traceback
+from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import tqdm
 from sqlalchemy import and_, or_
 
@@ -10,22 +12,100 @@ from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetDB,
     TaskStatus,
+    VideoHashDB,
     VideoOptStAnnotationDB,
 )
+
+
+def annotations_to_frame_array(
+    annotations: list[tuple[int, int, int, int]],
+    max_st_num: int = 5,
+    episode_frame_nums: dict[int, int] = None,
+) -> list[np.ndarray]:
+    episodes = defaultdict(list)
+    for ann in annotations:
+        ep_idx, start, end, data = ann
+        episodes[ep_idx].append((start, end, data))
+
+    result = []
+    episode_indices = sorted(episodes.keys())
+
+    for ep_idx in episode_indices:
+        anns = episodes[ep_idx]
+
+        if episode_frame_nums and ep_idx in episode_frame_nums:
+            max_frame = episode_frame_nums[ep_idx]
+        else:
+            max_frame = max(end for _, end, _ in anns)
+
+        # 明确指定 dtype=np.int32
+        frame_array = np.full(
+            (max_frame + 1, max_st_num),
+            -1,
+            dtype=np.int32,  # 👈 指定为 int32
+        )
+
+        for start, end, data in anns:
+            if isinstance(data, int):
+                data = [data]
+            elif isinstance(data, (list, tuple)):
+                data = list(data)
+            else:
+                raise ValueError("int_data must be int or list/tuple of int")
+
+            # 截断到 n
+            data = data[:max_st_num]
+            # 转为 int32 数组
+            data_arr = np.array(data, dtype=np.int32)
+
+            for frame_idx in range(start, end + 1):
+                if frame_idx <= max_frame:
+                    frame_array[frame_idx, : len(data_arr)] = data_arr
+
+        result.append(frame_array)
+
+    return result
 
 
 class StAnnotationDataPostProcessor(DataPostProcessorBase):
     def __init__(
         self,
         convert_path: str | Path,
+        subtask_annotations: list[str],
+        episode_st_indices: list[np.ndarray],
     ) -> None:
+        self.feature_key = "subtask_annotation"
         super().__init__(
             convert_path=convert_path,
-            data_post_process_type="subtask_annotation",
-            data_feature_keys=["subtask_annotation"],
+            data_post_process_type=self.feature_key,
+            data_feature_keys=[self.feature_key],
         )
 
-        
+        self.subtask_annotations = subtask_annotations
+        self.episode_st_indices = episode_st_indices
+
+    def prepare_processing(self) -> None:
+        self.write_subtask_jsonl_file()
+
+    def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        ep_idx = self.episode_idx
+
+        if ep_idx >= len(self.episode_st_indices):
+            raise ValueError(
+                f"ep_idx: {ep_idx} >= len(self.episode_st_indices): {len(self.episode_st_indices)}"
+            )
+
+        return {self.feature_key: self.episode_st_indices[ep_idx]}
+
+    def get_modified_feature_names(self) -> dict[str, list[str]]:
+        return {self.feature_key: None}
+
+    def write_subtask_jsonl_file(self) -> None:
+        subtask_jsonl_file_path = self.convert_path / "annotations/subtask_annotations.jsonl"
+        subtask_jsonl_file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(subtask_jsonl_file_path, "w") as f:
+            for i, annotation in enumerate(self.subtask_annotations):
+                f.write(f'{{"subtask_index": {i}, "subtask": "{annotation}"}}\n')
 
 
 class DatasetSubtaskAnnotationEmbedding:
@@ -68,7 +148,7 @@ class DatasetSubtaskAnnotationEmbedding:
                 )
             session.commit()
 
-    def gen_one_dataset_subtask_annotation_optimization_task(self) -> str:
+    def gen_one_dataset_subtask_annotation_optimization_task(self) -> tuple[str, str]:
         with self.db.with_session() as session:
             query = session.query(DatasetDB).filter(
                 and_(
@@ -78,84 +158,95 @@ class DatasetSubtaskAnnotationEmbedding:
             )
             item = query.first()
             if not item:
-                return None
+                return None, None
 
             item.video_embed_subtask_annotation_status = TaskStatus.PROCESSING
-            return item.dataset_uuid
+            session.commit()
+            return item.dataset_uuid, item.convert_path
 
-    def _embed_subtask_annotation(self, dataset_uuid: str) -> None:
+    def _embed_subtask_annotation(self, dataset_uuid: str, repo_path: str | Path) -> None:
+        repo_path = Path(repo_path).expanduser().absolute()
         with self.db.with_session() as session:
             items = (
-                session.query(VideoStAnnotationDB)
-                .filter(VideoStAnnotationDB.dataset_uuid == dataset_uuid)
+                session.query(VideoOptStAnnotationDB)
+                .filter(VideoOptStAnnotationDB.dataset_uuid == dataset_uuid)
                 .all()
             )
             if not items:
                 return
-            original_subtask_annotations = set([item.annotation for item in items])
+            optimized_subtask_annotations_list = list(set([item.annotation for item in items]))
+            print(optimized_subtask_annotations_list)
+            optimized_subtask_annotations_dict = {
+                annotation: i for i, annotation in enumerate(optimized_subtask_annotations_list)
+            }
+            print(optimized_subtask_annotations_dict)
+
+            annotations = []
+            for item in items:
+                annotation_idx = optimized_subtask_annotations_dict[item.annotation]
+                annotations.append(
+                    (item.episode_idx, item.start_frame_idx, item.end_frame_idx, annotation_idx)
+                )
+
+            ep_items = (
+                session.query(VideoHashDB).filter(VideoHashDB.dataset_uuid == dataset_uuid).all()
+            )
+            episode_frame_nums = {}
+
+            for ep_item in ep_items:
+                episode_frame_nums[ep_item.ep_idx] = ep_item.frame_num
 
         try:
-            optimized_annotation_dict = optimize_annotation(
-                annotation_set=original_subtask_annotations, ds_api_key=self.ds_api_key
+            annotation_datas = annotations_to_frame_array(
+                annotations=annotations, max_st_num=5, episode_frame_nums=episode_frame_nums
+            )
+
+            processor = StAnnotationDataPostProcessor(
+                convert_path=repo_path,
+                subtask_annotations=optimized_subtask_annotations_list,
+                episode_st_indices=annotation_datas,
+            )
+            processor.process()
+            with self.db.with_session() as session:
+                session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).update(
+                    {
+                        DatasetDB.video_embed_subtask_annotation_status: TaskStatus.COMPLETED,
+                    }
+                )
+                session.commit()
+        except Exception:
+            self.logger.error(
+                f"Error when embedding subtask annotation for dataset {dataset_uuid}: {traceback.format_exc()}"
             )
             with self.db.with_session() as session:
-                session.query(VideoOptStAnnotationDB).filter(
-                    VideoOptStAnnotationDB.dataset_uuid == dataset_uuid
-                ).delete()
-
-                ori_items = (
-                    session.query(VideoStAnnotationDB)
-                    .filter(VideoStAnnotationDB.dataset_uuid == dataset_uuid)
-                    .all()
-                )
-                for ori_item in ori_items:
-                    new_annotation = optimized_annotation_dict.get(ori_item.annotation)
-                    if new_annotation:
-                        session.add(
-                            VideoOptStAnnotationDB(
-                                dataset_uuid=dataset_uuid,
-                                episode_idx=ori_item.episode_idx,
-                                start_frame_idx=ori_item.start_frame_idx,
-                                end_frame_idx=ori_item.end_frame_idx,
-                                annotation=ori_item.annotation,
-                            )
-                        )
                 session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).update(
                     {
-                        DatasetDB.video_opt_subtask_annotation_status: TaskStatus.COMPLETED,
+                        DatasetDB.video_embed_subtask_annotation_status: TaskStatus.FAILED,
+                        DatasetDB.video_embed_subtask_annotation_err_msg: traceback.format_exc(),
                     }
                 )
-                session.commit()
 
-        except Exception as e:
-            self.logger.error(f"Failed to optimize annotation for {dataset_uuid}: {e}")
-            with self.db.with_session() as session:
-                session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).update(
-                    {
-                        DatasetDB.video_opt_subtask_annotation_status: TaskStatus.FAILED,
-                        DatasetDB.video_opt_subtask_annotation_err_msg: traceback.format_exc(),
-                    }
-                )
-                session.commit()
-
-    def optimize_subtask_annotation(self) -> None:
+    def embed_subtask_annotation(self) -> None:
+        self.sync_dataset_subtask_annotation_embedding_status()
         with self.db.with_session() as session:
             task_num = (
                 session.query(DatasetDB)
                 .filter(
                     and_(
-                        DatasetDB.video_ori_subtask_annotation_status == TaskStatus.COMPLETED,
-                        DatasetDB.video_opt_subtask_annotation_status == TaskStatus.PENDING,
+                        DatasetDB.video_opt_subtask_annotation_status == TaskStatus.COMPLETED,
+                        DatasetDB.video_embed_subtask_annotation_status == TaskStatus.PENDING,
                     )
                 )
                 .count()
             )
-        pbar = tqdm.tqdm(total=task_num, desc="Annotate subtask for datasets", unit="dataset")
+        pbar = tqdm.tqdm(
+            total=task_num, desc="Embed subtask annotation for datasets", unit="dataset"
+        )
         while True:
-            dataset_uuid = self.gen_one_dataset_subtask_annotation_optimization_task()
+            dataset_uuid, repo_path = self.gen_one_dataset_subtask_annotation_optimization_task()
             if dataset_uuid is None:
                 break
-            self._optimize_subtask_annotation(dataset_uuid=dataset_uuid)
+            self._embed_subtask_annotation(dataset_uuid=dataset_uuid, repo_path=repo_path)
             pbar.update(1)
 
         pbar.close()
