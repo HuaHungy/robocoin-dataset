@@ -1,8 +1,25 @@
 #!/usr/bin/env python3
 """
-检查MMK2数据集的action维度
+检查MMK2数据集的action维度 - 更新版（适配实际BSON格式）
 
-直接输出每个组件的维度，方便快速诊断
+MMK2的BSON文件结构：
+episode_0.bson:
+{
+    'data': {
+        '/action/left_arm/joint_state': [{'t': ..., 'data': {'pos': [...], 'vel': [...], 'eff': [...]}}, ...],
+        '/action/right_arm/joint_state': [...],
+        '/action/head/joint_state': [...],
+        '/action/spine/joint_state': [...]
+    }
+}
+
+xhand_control_data.bson:
+{
+    'frames': [
+        {'t': ..., 'action': {'left_hand': [...], 'right_hand': [...]}, 'observation': {...}},
+        ...
+    ]
+}
 """
 
 import sys
@@ -34,6 +51,8 @@ def check_episode_action(episode_dir: Path):
         print("❌ 文件不存在: episode_0.bson")
         return
     
+    components = {}
+    
     try:
         with open(episode_bson, "rb") as f:
             data = bson.decode_all(f.read())
@@ -42,98 +61,65 @@ def check_episode_action(episode_dir: Path):
                 print("❌ episode_0.bson 是空的")
                 return
             
-            # 取第一帧
             frame = data[0]
-            print(f"✅ 成功读取，共 {len(data)} 帧\n")
+            print(f"✅ 成功读取，共 {len(data)} 个BSON记录\n")
             
-            if 'action' not in frame:
-                print("❌ 第一帧中没有 'action' 字段")
+            if 'data' not in frame:
+                print("❌ 没有 'data' 字段")
+                print(f"   实际的keys: {list(frame.keys())}")
                 return
             
-            action = frame['action']
-            print(f"📋 action字段的keys: {list(action.keys())}\n")
+            data_field = frame['data']
             
-            components = {}
+            # 定义要检查的action路径
+            action_paths = {
+                'left_arm': '/action/left_arm/joint_state',
+                'right_arm': '/action/right_arm/joint_state',
+                'head': '/action/head/joint_state',
+                'spine': '/action/spine/joint_state'
+            }
             
-            # 左臂
-            print("🔸 左臂 (left_arm):")
-            if 'left_arm' in action:
-                if 'joint_state' in action['left_arm']:
-                    if 'pos' in action['left_arm']['joint_state']:
-                        left_arm_pos = action['left_arm']['joint_state']['pos']
-                        components['left_arm'] = len(left_arm_pos)
-                        print(f"   ✅ action/left_arm/joint_state/pos: {len(left_arm_pos)} 维")
-                        print(f"   📊 数据示例: {left_arm_pos[:3]}...")
+            # 检查每个组件
+            for component_name, path in action_paths.items():
+                print(f"🔸 {component_name}:")
+                
+                if path in data_field:
+                    frames_list = data_field[path]
+                    
+                    if frames_list and isinstance(frames_list, list):
+                        first_frame = frames_list[0]
+                        
+                        if 'data' in first_frame and isinstance(first_frame['data'], dict):
+                            if 'pos' in first_frame['data']:
+                                pos = first_frame['data']['pos']
+                                dims = len(pos)
+                                components[component_name] = dims
+                                print(f"   ✅ {path}: {dims} 维")
+                                print(f"   📊 数据示例: {pos[:3] if len(pos) > 3 else pos}...")
+                                print(f"   ℹ️  总共 {len(frames_list)} 帧")
+                            else:
+                                print(f"   ❌ 缺少 pos 字段")
+                                components[component_name] = 0
+                        else:
+                            print(f"   ❌ 帧数据格式不正确")
+                            components[component_name] = 0
                     else:
-                        print("   ❌ 缺少 pos 字段")
-                        components['left_arm'] = 0
+                        print(f"   ❌ 不是列表或为空")
+                        components[component_name] = 0
                 else:
-                    print("   ❌ 缺少 joint_state 字段")
-                    components['left_arm'] = 0
-            else:
-                print("   ❌ 缺少 left_arm 字段")
-                components['left_arm'] = 0
-            
-            # 右臂
-            print("\n🔸 右臂 (right_arm):")
-            if 'right_arm' in action:
-                if 'joint_state' in action['right_arm']:
-                    if 'pos' in action['right_arm']['joint_state']:
-                        right_arm_pos = action['right_arm']['joint_state']['pos']
-                        components['right_arm'] = len(right_arm_pos)
-                        print(f"   ✅ action/right_arm/joint_state/pos: {len(right_arm_pos)} 维")
-                        print(f"   📊 数据示例: {right_arm_pos[:3]}...")
+                    if component_name == 'head':
+                        print(f"   ⚠️  没有 head action (这在lite版本中是正常的)")
+                        components[component_name] = 0
                     else:
-                        print("   ❌ 缺少 pos 字段")
-                        components['right_arm'] = 0
-                else:
-                    print("   ❌ 缺少 joint_state 字段")
-                    components['right_arm'] = 0
-            else:
-                print("   ❌ 缺少 right_arm 字段")
-                components['right_arm'] = 0
-            
-            # 头部
-            print("\n🔸 头部 (head):")
-            if 'head' in action:
-                if 'joint_state' in action['head']:
-                    if 'pos' in action['head']['joint_state']:
-                        head_pos = action['head']['joint_state']['pos']
-                        components['head'] = len(head_pos)
-                        print(f"   ✅ action/head/joint_state/pos: {len(head_pos)} 维")
-                        print(f"   📊 数据示例: {head_pos}")
-                    else:
-                        print("   ❌ 缺少 pos 字段")
-                        components['head'] = 0
-                else:
-                    print("   ❌ 缺少 joint_state 字段")
-                    components['head'] = 0
-            else:
-                print("   ⚠️  没有 head 字段 (这是正常的，lite版本不需要head)")
-                components['head'] = 0
-            
-            # 脊柱
-            print("\n🔸 脊柱 (spine):")
-            if 'spine' in action:
-                if 'joint_state' in action['spine']:
-                    if 'pos' in action['spine']['joint_state']:
-                        spine_pos = action['spine']['joint_state']['pos']
-                        components['spine'] = len(spine_pos)
-                        print(f"   ✅ action/spine/joint_state/pos: {len(spine_pos)} 维")
-                        print(f"   📊 数据示例: {spine_pos}")
-                    else:
-                        print("   ❌ 缺少 pos 字段")
-                        components['spine'] = 0
-                else:
-                    print("   ❌ 缺少 joint_state 字段")
-                    components['spine'] = 0
-            else:
-                print("   ❌ 缺少 spine 字段")
-                components['spine'] = 0
+                        print(f"   ❌ 缺少 {path}")
+                        components[component_name] = 0
+                
+                print()
             
             subtotal_1 = sum(components.values())
-            print(f"\n📐 Part 1 小计: {subtotal_1} 维")
-            print(f"   left_arm({components['left_arm']}) + right_arm({components['right_arm']}) + head({components['head']}) + spine({components['spine']})")
+            print(f"📐 Part 1 小计: {subtotal_1} 维")
+            comp_str = " + ".join([f"{name}({dims})" for name, dims in components.items()])
+            print(f"   {comp_str}\n")
             
     except Exception as e:
         print(f"❌ 读取 episode_0.bson 失败: {e}")
@@ -144,7 +130,7 @@ def check_episode_action(episode_dir: Path):
     # ========================================
     # Part 2: 检查 xhand_control_data.bson
     # ========================================
-    print("\n" + "-" * 80)
+    print("-" * 80)
     print("📄 Part 2: xhand_control_data.bson (hands)")
     print("-" * 80)
     
@@ -162,40 +148,64 @@ def check_episode_action(episode_dir: Path):
                 return
             
             frame = data[0]
-            print(f"✅ 成功读取，共 {len(data)} 帧\n")
+            print(f"✅ 成功读取，共 {len(data)} 个BSON记录\n")
             
-            if 'action' not in frame:
-                print("❌ 第一帧中没有 'action' 字段")
+            if 'frames' not in frame:
+                print("❌ 没有 'frames' 字段")
+                print(f"   实际的keys: {list(frame.keys())}")
                 return
             
-            action = frame['action']
-            print(f"📋 action字段的keys: {list(action.keys())}\n")
+            frames = frame['frames']
+            print(f"ℹ️  frames 列表长度: {len(frames)}\n")
+            
+            if not frames:
+                print("❌ frames 列表为空")
+                return
+            
+            first_frame = frames[0]
+            
+            if 'action' not in first_frame:
+                print("❌ 第一帧没有 'action' 字段")
+                print(f"   实际的keys: {list(first_frame.keys())}")
+                return
+            
+            action = first_frame['action']
             
             # 左手
             print("🔸 左手 (left_hand):")
             if 'left_hand' in action:
-                left_hand_data = action['left_hand']
-                components['left_hand'] = len(left_hand_data)
-                print(f"   ✅ action.left_hand: {len(left_hand_data)} 维")
-                print(f"   📊 数据示例: {left_hand_data[:3]}...")
+                left_hand = action['left_hand']
+                if isinstance(left_hand, list):
+                    dims = len(left_hand)
+                    components['left_hand'] = dims
+                    print(f"   ✅ action.left_hand: {dims} 维")
+                    print(f"   📊 数据示例: {left_hand[:3]}...")
+                else:
+                    print(f"   ❌ left_hand 不是列表")
+                    components['left_hand'] = 0
             else:
-                print("   ❌ 缺少 left_hand 字段")
+                print(f"   ❌ 缺少 left_hand 字段")
                 components['left_hand'] = 0
             
             # 右手
             print("\n🔸 右手 (right_hand):")
             if 'right_hand' in action:
-                right_hand_data = action['right_hand']
-                components['right_hand'] = len(right_hand_data)
-                print(f"   ✅ action.right_hand: {len(right_hand_data)} 维")
-                print(f"   📊 数据示例: {right_hand_data[:3]}...")
+                right_hand = action['right_hand']
+                if isinstance(right_hand, list):
+                    dims = len(right_hand)
+                    components['right_hand'] = dims
+                    print(f"   ✅ action.right_hand: {dims} 维")
+                    print(f"   📊 数据示例: {right_hand[:3]}...")
+                else:
+                    print(f"   ❌ right_hand 不是列表")
+                    components['right_hand'] = 0
             else:
-                print("   ❌ 缺少 right_hand 字段")
+                print(f"   ❌ 缺少 right_hand 字段")
                 components['right_hand'] = 0
             
             subtotal_2 = components.get('left_hand', 0) + components.get('right_hand', 0)
             print(f"\n📐 Part 2 小计: {subtotal_2} 维")
-            print(f"   left_hand({components['left_hand']}) + right_hand({components['right_hand']})")
+            print(f"   left_hand({components['left_hand']}) + right_hand({components['right_hand']})\n")
             
     except Exception as e:
         print(f"❌ 读取 xhand_control_data.bson 失败: {e}")
@@ -208,7 +218,7 @@ def check_episode_action(episode_dir: Path):
     # ========================================
     total_dims = sum(components.values())
     
-    print("\n" + "=" * 80)
+    print("=" * 80)
     print("📊 最终统计")
     print("=" * 80)
     
@@ -256,9 +266,9 @@ def check_episode_action(episode_dir: Path):
         # 分析缺失的维度
         if total_dims == 35:
             print("\n   🔍 可能的原因（35D = 37D - 2D）:")
-            if components['left_hand'] == 11 and components['right_hand'] == 11:
+            if components.get('left_hand', 0) == 11 and components.get('right_hand', 0) == 11:
                 print("      → 双手各缺1维 (11+11 instead of 12+12)")
-            elif components['spine'] == 0 and (components['left_arm'] == 5 or components['right_arm'] == 5):
+            elif components.get('spine', 0) == 0 and (components.get('left_arm', 0) == 5 or components.get('right_arm', 0) == 5):
                 print("      → spine缺失(1维) + 某个arm缺1维")
             else:
                 print("      → 未知组合，请检查上面的详细数据")
@@ -276,9 +286,8 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python check_mmk2_action_dimensions.py <episode_dir>")
         print("\nExample:")
-        print('  python check_mmk2_action_dimensions.py "/mnt/nas/synnas/docker/6discover_robotics_aitbot_mmk2/storage_peaches_and_pears/the left hand throws the peach into the left compartment, the right hand throws the pear into the right compartment./0"')
+        print('  python check_mmk2_action_dimensions.py "/mnt/nas/.../episode_12"')
         sys.exit(1)
     
     episode_dir = Path(sys.argv[1])
     check_episode_action(episode_dir)
-
