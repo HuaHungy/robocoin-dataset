@@ -1,0 +1,25 @@
+# 场景标注配置文件
+scene_annotation:
+  # RoboCoin-scene-annotator路径
+  annotator_path: "/home/diy02/new_pipeline/robocoin-dataset/third_parties/RoboCoin-scene-annotator"
+  
+  # 服务器配置
+  server:
+    host: "0.0.0.0"
+    port: 8770
+    
+  # 客户端配置
+  client:
+    heartbeat_interval: 10.0
+    max_retries: 5
+    retry_delay: 5
+    
+  # 输出配置
+  output:
+    base_dir: "/home/diy02/new_pipeline/robocoin-dataset/third_parties/RoboCoin-scene-annotator/results/annotations_refined"
+    
+  # 日志配置
+  logging:
+    level: "INFO"
+    server_log_dir: "./logs/scene_annotation_server"
+    client_log_dir: "./logs/scene_annotation_client"

@@ -50,7 +50,7 @@ class TaskServer(ABC):
             self.logger = logger
         else:
             self.logger = setup_logger(
-                name=f"task_server_{self.get_task_category()}", log_path="./log"
+                name=f"task_server_{self.get_task_category()}", log_dir="./log"
             )
         self._client_num = 0
         self._current_task_idx = 0

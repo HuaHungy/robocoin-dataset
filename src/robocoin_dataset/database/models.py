@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Table,
     Text,
@@ -49,8 +50,6 @@ class DatasetDB(Base):
     end_effector_type = Column(String(100), nullable=False)
     operation_platform_height = Column(Float, nullable=True)
     yaml_file_path = Column(String(255), nullable=True)
-    device_model = Column(String(100), nullable=True)
-    device_model_version = Column(String(100), nullable=True)
 
     data_path = Column(String(255), nullable=True)
 
@@ -684,3 +683,41 @@ class VideoOptStAnnotationDB(Base):
 #     version_uuid = Column(String(255), nullable=True, default="v0")
 #     device_model = Column(String(255), index=True, nullable=True)
 #     device_model_version = Column(String(255), index=True, nullable=True)
+
+# # 场景标注结果
+# class LeformatDatasetSceneAnnotationDB(Base):
+#     __tablename__ = "leformat_dataset_scene_annotation"
+#     id = Column(Integer, primary_key=True, index=True)
+#     dataset_uuid = Column(String(255), index=True, nullable=False)
+#     episode_idx = Column(Integer, index=True, nullable=False)
+#     description = Column(Text, nullable=False)
+#     object_name = Column(Text, nullable=False)
+#     box_x_center = Column(Numeric(12, 10), nullable=False)
+#     box_y_center = Column(Numeric(12, 10), nullable=False)
+#     box_width = Column(Numeric(12, 10), nullable=False)
+#     box_height = Column(Numeric(12, 10), nullable=False)
+#     object_logit = Column(Numeric(10, 8), nullable=False)
+
+# # 场景标注状态
+# class LeformatDatasetSceneAnnotationStatusDB(Base):
+#     __tablename__ = "leformat_dataset_scene_annotation_status"
+#     id = Column(Integer, primary_key=True, index=True)
+#     dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+#     convert_path = Column(String(255), index=True, nullable=True)
+#     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+#     err_msg = Column(Text, index=True, nullable=True)
+#     # 同步版本用，两个值相互独立
+#     version_uuid = Column(String(255), nullable=True)
+#     prestage_version_uuid = Column(String(255), nullable=True)
+#     # 下面两个属性方便查询
+#     device_model = Column(String(255), index=True, nullable=True)
+#     device_model_version = Column(String(255), index=True, nullable=True)
+
+# # 场景标注embedding状态
+# class LeformatDatasetSceneAnnotationEmbeddingStatusDB(Base):
+#     __tablename__ = "leformat_dataset_scene_annotation_embedding_status"
+#     id = Column(Integer, primary_key=True, index=True)
+#     dataset_uuid = Column(String(255), index=True, nullable=False, unique=True)
+#     convert_path = Column(String(255), index=True, nullable=True)
+#     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+#     err_msg = Column(Text, index=True, nullable=True)
