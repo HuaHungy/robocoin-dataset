@@ -55,7 +55,19 @@ discover_robotics_aitbot_mmk2:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.discover_robotics_aitbot_mmk2_processor
   post_processor_class: ThirdViewProcessor
 
+ruantong_a2d:
+- version: default_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.ruantong_a2d_processor
+  post_processor_class: RuantongA2dProcessor
 
+leju_robot:
+- version: waibu_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.leju_robot_processor
+  post_processor_class: LejuRobotProcessor
+
+- version: waibu_lite
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.leju_robot_processor
+  post_processor_class: LejuRobotProcessor
 # - version: h5_version
 #   verison_description: galaxea r1 lite H5 format (qpos + eepose, no images)
 #   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
