@@ -150,6 +150,7 @@ class LeFormatConverterTaskClient(TaskClient):
                 # Save episode source mapping after conversion completes
                 if not is_test:
                     converter.save_episode_source_mapping()
+                    converter.save_original_data_paths()  # 🆕 保存绝对路径mapping
                 
                 # 🆕 返回转换统计信息给Server
                 return {

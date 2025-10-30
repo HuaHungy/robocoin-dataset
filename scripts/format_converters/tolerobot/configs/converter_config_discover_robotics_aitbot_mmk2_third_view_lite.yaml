@@ -262,8 +262,14 @@ features:
 
   action:
     # MMK2动作包含：
-    # 左臂6 + 右臂6 + 头部2 + 脊柱1 + 双手24 = 39维
+    # 左臂6 + 右臂6 + 脊柱1 + 双手24 = 37维
     # 🆕 2025-10-24: 修正维度，移除不存在的 left_arm_eef/right_arm_eef 字段
+    # 🔧 精简版本 (lite): 删除了head字段，适用于不完整数据
+    # 
+    # ⚠️ 使用场景：
+    #    - 当整个task的head字段都缺失时使用此配置
+    #    - 如果只是少数episode缺失，应使用full版本+容错跳过
+    # 
     sub_action:
     
     # 左臂动作 (6关节)
@@ -296,16 +302,8 @@ features:
         range_from: 0
         range_to: 6
         
-    # 头部动作 (2关节)
-    - names:
-      - head_action_1_rad
-      - head_action_2_rad
-      args:
-        bson_file: episode_0.bson
-        data_path: action/head/joint_state
-        field: pos
-        range_from: 0
-        range_to: 2
+    # 🆕 头部动作已删除 - action/head/joint_state字段在某些数据版本中缺失
+    # 注意：使用lite版本时，头部只有observation，没有action控制
         
     # 脊柱动作 (1关节)
     - names:

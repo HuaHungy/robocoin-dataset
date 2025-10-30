@@ -438,8 +438,18 @@ class LerobotFormatConverter(ABC):
             - 找到第一个可用的样本图像即返回
             这样即使第一个episode有问题（损坏、编解码器不兼容等），
             也能成功初始化并转换其他正常的episode
+            
+            🎯 初始化模式优化（sample_only）：
+            - 部分converter支持sample_only参数，用于只加载1帧样本
+            - 使用PyAV而非OpenCV，更好地处理编解码器兼容性问题
+            - 如果子类支持sample_only，优先使用
         """
         cam_name = args_dict.get(CAM_NAME_KEY, "unknown")
+        
+        # 检查子类是否支持sample_only参数
+        import inspect
+        frame_image_sig = inspect.signature(self._get_frame_image)
+        supports_sample_only = 'sample_only' in frame_image_sig.parameters
         
         # 尝试多个task_path和episode
         attempted = []
@@ -448,13 +458,22 @@ class LerobotFormatConverter(ABC):
             # 尝试前几个episode（最多5个）
             for ep_idx in range(min(5, num_episodes)):
                 try:
-                    image = self._get_frame_image(
-                        task_path=task_path, ep_idx=ep_idx, frame_idx=0, args_dict=args_dict
-                    )
+                    # 🎯 如果支持sample_only，优先使用（更兼容的读取方式）
+                    if supports_sample_only:
+                        image = self._get_frame_image(
+                            task_path=task_path, ep_idx=ep_idx, frame_idx=0, 
+                            args_dict=args_dict, sample_only=True
+                        )
+                    else:
+                        image = self._get_frame_image(
+                            task_path=task_path, ep_idx=ep_idx, frame_idx=0, args_dict=args_dict
+                        )
+                    
                     if self.logger:
+                        mode_info = " (sample mode)" if supports_sample_only else ""
                         self.logger.info(
                             f"✅ Successfully got sample image for camera '{cam_name}' "
-                            f"from task_path={task_path.relative_to(self.dataset_path)}, episode={ep_idx}"
+                            f"from task_path={task_path.relative_to(self.dataset_path)}, episode={ep_idx}{mode_info}"
                         )
                     return image
                 except Exception as e:
@@ -720,16 +739,81 @@ class LerobotFormatConverter(ABC):
         }
 
     def _create_lerobot_dataset(self) -> LeRobotDataset:
-        return LeRobotDataset.create(
-            repo_id=self.repo_id,
-            features=self._get_lerobot_features(),
-            fps=self.fps,
-            robot_type=self.device_model,
-            root=self.output_path,
-            video_backend=self.video_backend,
-            image_writer_processes=self.image_writer_processes,
-            image_writer_threads=self.image_writer_threads,
-        )
+        """创建LeRobot数据集
+        
+        🔥 处理目录已存在的情况（FileExistsError修复）：
+        - 如果output_path已存在，先删除（通常是之前失败的转换残留）
+        - 支持重试机制，处理并发创建的竞态条件
+        - 然后创建新的数据集
+        
+        注意：lerobot库的create方法不支持exist_ok参数，必须手动处理
+        """
+        import shutil
+        import time
+        from pathlib import Path
+        
+        output_path = Path(self.output_path)
+        
+        # 最多重试3次（处理并发竞态条件）
+        max_retries = 3
+        for retry in range(max_retries):
+            # 如果目录已存在，删除它（通常是之前失败的转换）
+            if output_path.exists():
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Output directory already exists: {output_path.name}\n"
+                        f"   This is likely from a previous failed conversion.\n"
+                        f"   🗑️  Removing old directory to retry... (attempt {retry + 1}/{max_retries})"
+                    )
+                try:
+                    shutil.rmtree(output_path)
+                    if self.logger:
+                        self.logger.info(f"✅ Removed old directory: {output_path.name}")
+                except Exception as e:
+                    if retry == max_retries - 1:  # 最后一次重试失败
+                        raise RuntimeError(
+                            f"Failed to remove existing output directory after {max_retries} attempts: {output_path}\n"
+                            f"Error: {e}\n"
+                            f"Please manually delete this directory and retry."
+                        ) from e
+                    else:
+                        if self.logger:
+                            self.logger.warning(f"Failed to remove directory (attempt {retry + 1}), retrying in 2s...")
+                        time.sleep(2)
+                        continue
+            
+            # 尝试创建数据集
+            try:
+                return LeRobotDataset.create(
+                    repo_id=self.repo_id,
+                    features=self._get_lerobot_features(),
+                    fps=self.fps,
+                    robot_type=self.device_model,
+                    root=self.output_path,
+                    video_backend=self.video_backend,
+                    image_writer_processes=self.image_writer_processes,
+                    image_writer_threads=self.image_writer_threads,
+                )
+            except FileExistsError as e:
+                # 并发创建导致的竞态条件
+                if retry == max_retries - 1:  # 最后一次重试
+                    raise RuntimeError(
+                        f"Failed to create dataset after {max_retries} attempts due to concurrent access.\n"
+                        f"Output path: {output_path}\n"
+                        f"This indicates multiple clients are trying to convert the same task.\n"
+                        f"Original error: {e}"
+                    ) from e
+                else:
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️  FileExistsError during creation (race condition?), "
+                            f"retrying in 2s... (attempt {retry + 1}/{max_retries})"
+                        )
+                    time.sleep(2)
+                    continue
+        
+        # 不应该到达这里
+        raise RuntimeError("Unexpected error in _create_lerobot_dataset")
 
     def _get_episode_task(self, ep_idx: int) -> str:
         return ""
@@ -814,7 +898,7 @@ class LerobotFormatConverter(ABC):
             ConfigError: 严格模式下遇到数据错误（表明配置可能有问题）
             CriticalDataError: 非严格模式下遇到数据错误（跳过整个episode）
         """
-        # 🆕 容错：处理字段缺失的情况
+        # 🆕 容错：处理字段缺失和文件损坏的情况
         try:
             images_buffer, states_buffer, actions_buffer = self._prepare_episode_buffers(
                 task_path, task_ep_idx, is_test=is_test
@@ -841,6 +925,20 @@ class LerobotFormatConverter(ABC):
                     )
                 # 返回(0, 0)表示跳过整个episode
                 return 0, 0
+        except Exception as e:
+            # MCAP文件损坏或其他buffer准备错误
+            if 'RecordLengthLimitExceeded' in type(e).__name__ or 'mcap' in str(type(e)).lower():
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Episode {global_ep_idx} (task episode: {task_ep_idx}) 文件损坏，跳过:\n"
+                        f"   Task: {task}\n"
+                        f"   Error: {type(e).__name__}: {str(e)[:200]}..."
+                    )
+                # 返回(0, 0)表示跳过整个episode
+                return 0, 0
+            else:
+                # 其他未知错误，重新抛出
+                raise
         
         converted_frames = 0
         
@@ -887,6 +985,26 @@ class LerobotFormatConverter(ABC):
                         f"  错误: {e}\n"
                         f"\n⚠️  为保持时序连续性，不能跳过单帧，必须跳过整个episode"
                     ) from e
+                
+            except ValueError as e:
+                # ValueError: 图像尺寸不匹配等格式验证错误
+                # 跳过整个episode（数据采集过程中设备配置可能发生变化）
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️  Episode {global_ep_idx} (task_ep: {task_ep_idx}, frame {frame_idx}) ValueError (likely image size mismatch):\n"
+                        f"   {e}\n"
+                        f"   Skipping entire episode. Can be traced via episode_source_mapping.json"
+                    )
+                
+                # 抛出CriticalDataError，让上层convert()处理统计和映射
+                raise CriticalDataError(
+                    f"Episode {global_ep_idx} 图像尺寸不匹配，跳过整个episode:\n"
+                    f"  任务: {task}\n"
+                    f"  Episode索引: {task_ep_idx}\n"
+                    f"  问题帧: {frame_idx}\n"
+                    f"  错误: {e}\n"
+                    f"\n💡 这通常是数据采集过程中设备配置变化导致的"
+                ) from e
                 
             except Exception as e:
                 # 未分类的异常：在严格模式下作为配置错误处理
@@ -980,7 +1098,9 @@ class LerobotFormatConverter(ABC):
             }
             
             for task_ep_idx in range(episodes_num):
-                is_strict = global_ep_idx < self.strict_episodes
+                # 🧪 测试模式不使用严格模式（允许跳过字段缺失的episode）
+                # 正式模式：前N个episode使用严格模式（检测配置错误）
+                is_strict = global_ep_idx < self.strict_episodes and not is_test
                 
                 # 更新统计
                 self._conversion_stats['total_episodes'] += 1

@@ -107,3 +107,16 @@ python scripts/state_action_data_post_process/state_action_data_post_process.py 
     --device_model_version default_version \
     --log_dir ./logs/state_action_data_post_process
 """
+
+
+
+
+"""usage:
+# agilex_cobot_decoupled_magic
+python scripts/state_action_data_post_process/state_action_data_post_process.py \
+    --db_file_path /mnt/db/datasets.db \
+    --state_action_data_post_process_factory_config_path ./scripts/state_action_data_post_process/configs/state_action_data_post_process_factory_config.yaml \
+    --device_model agilex_cobot_decoupled_magic \
+    --device_model_version h5_mp4_new \
+    --log_dir ./logs/stat_action_data_post_process
+"""
