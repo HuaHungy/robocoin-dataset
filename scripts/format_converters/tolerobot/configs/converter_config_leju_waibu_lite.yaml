@@ -176,7 +176,7 @@ features:
             range_to: 2
 
         ### Left arm joint velocities (7) - 单位: rad/s
-        ### 🔧 使用 action/joint/velocity 替代 state/joint/velocity
+        ### 🔧 修复: 使用 state/joint/velocity (与full版本一致)
         - names: 
             - left_arm_joint_1_vel_rad_s
             - left_arm_joint_2_vel_rad_s
@@ -187,12 +187,12 @@ features:
             - left_arm_joint_7_vel_rad_s
           args:
             ### keys and values by manual
-            h5_path: action/joint/velocity
+            h5_path: state/joint/velocity
             range_from: 0
             range_to: 7
         
         ### Right arm joint velocities (7) - 单位: rad/s
-        ### 🔧 使用 action/joint/velocity 替代 state/joint/velocity
+        ### 🔧 修复: 使用 state/joint/velocity (与full版本一致)
         - names: 
             - right_arm_joint_1_vel_rad_s
             - right_arm_joint_2_vel_rad_s
@@ -203,7 +203,7 @@ features:
             - right_arm_joint_7_vel_rad_s
           args:
             ### keys and values by manual
-            h5_path: action/joint/velocity
+            h5_path: state/joint/velocity
             range_from: 7
             range_to: 14
 
@@ -334,7 +334,7 @@ features:
           range_from: 0
           range_to: 2
 
-      ### Left arm joint velocities (7) - 单位: rad/s
+      ### Left arm joint velocities (7) - 单位: rad/s (using state velocity as action)
       - names: 
           - left_arm_joint_1_vel_rad_s
           - left_arm_joint_2_vel_rad_s
@@ -345,11 +345,11 @@ features:
           - left_arm_joint_7_vel_rad_s
         args:
           ### keys and values by manual
-          h5_path: action/joint/velocity
+          h5_path: state/joint/velocity
           range_from: 0
           range_to: 7
       
-      ### Right arm joint velocities (7) - 单位: rad/s
+      ### Right arm joint velocities (7) - 单位: rad/s (using state velocity as action)
       - names: 
           - right_arm_joint_1_vel_rad_s
           - right_arm_joint_2_vel_rad_s
@@ -360,7 +360,7 @@ features:
           - right_arm_joint_7_vel_rad_s
         args:
           ### keys and values by manual
-          h5_path: action/joint/velocity
+          h5_path: state/joint/velocity
           range_from: 7
           range_to: 14
 
