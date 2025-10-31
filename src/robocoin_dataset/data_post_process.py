@@ -38,6 +38,9 @@ class DataPostProcessorBase:
         )
         self.data_features = data_feature_keys
         self.new_info_file_path = self.convert_path / "meta" / f"{data_post_process_type}_info.json"
+        self.new_episodes_stats_file_path = (
+            self.convert_path / "meta" / f"{data_post_process_type}_episodes_stats.json"
+        )
         self.info_file_path = self.convert_path / "meta/info.json"
         self._ep_idx: int | None = None
 
@@ -139,6 +142,7 @@ class DataPostProcessorBase:
     def process(self) -> None:
         self.write_new_info_file()
         self.prepare_processing()
+        self.episodes_stats = []
         for episode_idx in tqdm(
             range(len(self.parquet_files)), desc="Processing episodes", unit="episode"
         ):
@@ -146,11 +150,6 @@ class DataPostProcessorBase:
             self._ep_idx = episode_idx
             new_datas: dict[str, np.ndarray] = self.process_episode_data(ori_data)
 
-            # for key, arr in new_datas.items():
-            #     if isinstance(arr, np.ndarray) and np.issubdtype(arr.dtype, np.floating):
-            #         new_datas[key] = arr.astype(np.float32)  # 就地转为 float32
-            #     if isinstance(arr, np.ndarray) and np.issubdtype(arr.dtype, np.int64):
-            #         new_datas[key] = arr.astype(np.int32)  # 就地转为 int32
             if set(new_datas.keys()) != set(self.data_features):
                 raise ValueError(
                     f"new_datas keys {new_datas.keys()} != self.data_features {self.data_features}"
@@ -165,4 +164,29 @@ class DataPostProcessorBase:
                     )
 
             self.write_new_episode_file(new_datas, episode_idx)
+            self.episodes_stats.append(self._compute_episode_stat(new_datas))
+        self._write_new_episodes_stats_file()
         self._ep_idx = None
+
+    def _compute_episode_stat(
+        self, episode_data: dict[str, np.ndarray]
+    ) -> dict[str, dict[str, list[float]]]:
+        ep_stats = {}
+        ep_stats["episode_index"] = self.ep_idx
+        ep_stats["stat"] = {}
+        for feature_key, data in episode_data.items():
+            if data is None:
+                raise ValueError(f"ori_data {feature_key} is None")
+            ep_stats["stat"][feature_key] = {}
+            ep_stats["stat"][feature_key]["mean"] = np.mean(data, axis=0).tolist()
+            ep_stats["stat"][feature_key]["std"] = np.std(data, axis=0).tolist()
+            ep_stats["stat"][feature_key]["min"] = np.min(data, axis=0).tolist()
+            ep_stats["stat"][feature_key]["max"] = np.max(data, axis=0).tolist()
+            ep_stats["stat"][feature_key]["count"] = data.shape[0].tolist()
+        self.episodes_stats.append(ep_stats)
+
+    def _write_new_episodes_stats_file(self) -> None:
+        with open(self.new_episodes_stats_file_path, "w") as f:
+            for stat in self.episodes_stats:
+                json.dump(stat, f)
+                f.write("\n")

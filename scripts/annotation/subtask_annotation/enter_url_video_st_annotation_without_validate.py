@@ -200,15 +200,15 @@ def enter_url_video_st_annotation_json_files(
                 with open(file) as f:
                     try:
                         data = json.load(f)
-                        errors = validate_annotation_json(data, start_frame_idx=1)
-                        if errors:
-                            for error in errors:
-                                if error:
-                                    logger.error(f"File {file} 检验失败: {error}")
-                                    success = False
+                        # errors = validate_annotation_json(data, start_frame_idx=1)
+                        # if errors:
+                        #     for error in errors:
+                        #         if error:
+                        #             logger.error(f"File {file} 检验失败: {error}")
+                        #             success = False
 
-                        else:
-                            success = True
+                        # else:
+                        success = True
 
                     except Exception as e:
                         logger.error(f"❌ {file} is not a valid annotation json: {e}")
@@ -332,15 +332,6 @@ if __name__ == "__main__":
     )
 """Usage:
 python scripts/annotation/subtask_annotation/enter_url_video_st_annotation.py \
-    --db_file_path ./db/datasets_new.db \
-    --json_src_dir ./datas/annotation/subtask_annotation/json_files \
-    --passed_json_dst_dir ./datas/annotation/subtask_annotation/passed_json_files_passed \
-    --impassed_json_dst_dir ./datas/annotation/subtask_annotation/impassed_json_files \
-    --download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos \
-    --logger_path ./logs
-
-    
-python scripts/annotation/subtask_annotation/enter_url_video_st_annotation_without_validate.py \
     --db_file_path ./db/datasets_new.db \
     --json_src_dir ./datas/annotation/subtask_annotation/json_files \
     --passed_json_dst_dir ./datas/annotation/subtask_annotation/passed_json_files_passed \

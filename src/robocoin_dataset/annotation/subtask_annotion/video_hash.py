@@ -60,16 +60,6 @@ def _sync_video_hash_status(session: Session) -> None:
     session.commit()
 
 
-def _get_video_hash_task_num(session: Session) -> int:
-    return (
-        session.query(DatasetDB)
-        .filter(
-            DatasetDB.video_hash_status == TaskStatus.PENDING,
-        )
-        .count()
-    )
-
-
 def _gen_one_video_hash_task(session: Session) -> tuple[str | None, str | None]:
     query = session.query(DatasetDB).filter(
         DatasetDB.video_hash_status == TaskStatus.PENDING,

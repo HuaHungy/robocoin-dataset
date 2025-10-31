@@ -175,11 +175,9 @@ class DatasetSubtaskAnnotationEmbedding:
             if not items:
                 return
             optimized_subtask_annotations_list = list(set([item.annotation for item in items]))
-            print(optimized_subtask_annotations_list)
             optimized_subtask_annotations_dict = {
                 annotation: i for i, annotation in enumerate(optimized_subtask_annotations_list)
             }
-            print(optimized_subtask_annotations_dict)
 
             annotations = []
             for item in items:
