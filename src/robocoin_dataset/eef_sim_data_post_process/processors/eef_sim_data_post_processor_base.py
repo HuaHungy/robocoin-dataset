@@ -150,7 +150,7 @@ class EefSimDataPostProcessorBase(DataPostProcessorBase):
         import json
         
         json_dict = {}
-        json_dict["has_gripper"] = self.has_gripper
+        # json_dict["has_gripper"] = self.has_gripper
         json_dict["features"] = {}
         
         for feature_key, names in self.get_modified_feature_names().items():
