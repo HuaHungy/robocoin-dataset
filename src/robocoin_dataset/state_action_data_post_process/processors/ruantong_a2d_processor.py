@@ -5,7 +5,7 @@ import numpy as np
 from .state_action_data_processor_base import StateActionDataPostProcessorBase
 
 
-class RuantongD2dProcessor(StateActionDataPostProcessorBase):
+class RuantongA2dProcessor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
 

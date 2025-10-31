@@ -565,6 +565,10 @@ class LerobotFormatConverter(ABC):
                     images_buffer=images_buffer,
                 )
                 images[lerobot_feature] = image
+            except (CriticalDataError, DataQualityError):
+                # 🔧 容错机制：让 CriticalDataError 和 DataQualityError 直接传播
+                # 上层的 _convert_episode_with_fault_tolerance 会捕获并跳过episode
+                raise
             except Exception as e:  # noqa: PERF203
                 raise Exception(f"Failed to get frame images for {lerobot_feature} failed") from e
 
@@ -851,6 +855,10 @@ class LerobotFormatConverter(ABC):
                 frame_data = self._gen_episode_frame(
                     task_path, ep_idx, frame_idx, images_buffer, states_buffer, actions_buffer
                 )
+            except (CriticalDataError, DataQualityError):
+                # 🔧 容错机制：让 CriticalDataError 和 DataQualityError 直接传播
+                # 上层的 _convert_episode_with_fault_tolerance 会捕获并跳过episode
+                raise
             except Exception as e:
                 if self.logger:
                     self.logger.error(

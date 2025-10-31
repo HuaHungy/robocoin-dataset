@@ -740,11 +740,13 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         cam_name = args_dict.get(CAM_NAME_KEY)
         if cam_name not in images_buffer:
+            # 🔥 修复：使用CriticalDataError，因为缺少相机意味着整个episode数据不完整
+            from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
             available_cameras = list(images_buffer.keys())
             # 提供详细的相机帧数信息
             cam_frame_info = {cam: len(frames) for cam, frames in images_buffer.items()}
-            raise KeyError(
-                f"❌ Camera not found in images buffer.\n"
+            raise CriticalDataError(
+                f"❌ Camera not found in images buffer (entire episode will be skipped).\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
                 f"   📹 Requested camera: '{cam_name}'\n"
                 f"   📋 Available cameras: {available_cameras}\n"
@@ -753,10 +755,12 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             )
         
         if frame_idx >= len(images_buffer[cam_name]):
+            # 🔥 修复：使用CriticalDataError，因为相机帧数不足意味着episode数据不完整
+            from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
             # 显示所有相机的帧数，帮助快速定位问题
             cam_frame_info = {cam: len(frames) for cam, frames in images_buffer.items()}
-            raise IndexError(
-                f"❌ Frame index out of range for camera.\n"
+            raise CriticalDataError(
+                f"❌ Frame index out of range for camera (entire episode will be skipped).\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   📹 Camera: '{cam_name}'\n"
                 f"   🎯 Requested frame_idx: {frame_idx}\n"
@@ -805,8 +809,10 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         # 检查是否成功获取到列表数据
         if not isinstance(frame_data, list):
-            raise ValueError(
-                f"❌ Expected list data from JSON path.\n"
+            # 🔥 修复：使用CriticalDataError，因为JSON数据格式错误意味着episode数据不可用
+            from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
+            raise CriticalDataError(
+                f"❌ Expected list data from JSON path (entire episode will be skipped).\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
                 f"   🔍 JSON path: '{json_path}'\n"
                 f"   ❌ Got {type(frame_data).__name__} instead of list\n"
@@ -815,13 +821,16 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             )
         
         if frame_idx >= len(frame_data):
-            raise IndexError(
-                f"❌ Frame index out of range in JSON data.\n"
+            # 🔥 修复：使用CriticalDataError替代IndexError，让容错机制正确处理
+            from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
+            raise CriticalDataError(
+                f"❌ Frame index out of range in JSON data (entire episode will be skipped).\n"
                 f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
                 f"   🔍 JSON path: '{json_path}'\n"
                 f"   🎯 Requested frame_idx: {frame_idx}\n"
                 f"   📊 JSON data length: {len(frame_data)} (valid range: 0-{len(frame_data)-1})\n"
                 f"   💡 This JSON field has fewer entries than expected.\n"
+                f"      This is likely a data collection issue where this field was not recorded properly.\n"
                 f"      Check if this field is the bottleneck in _get_episode_frames_num."
             )
         
@@ -841,9 +850,11 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             # 尝试从 args_dict 获取字段名，默认使用 'position'
             field_name = args_dict.get('field_name', 'position')
             if field_name not in value:
+                # 🔥 修复：使用CriticalDataError，因为JSON字段缺失意味着episode数据不完整
+                from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
                 available_fields = list(value.keys())
-                raise KeyError(
-                    f"❌ Field not found in JSON dict value.\n"
+                raise CriticalDataError(
+                    f"❌ Field not found in JSON dict value (entire episode will be skipped).\n"
                     f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}, frame_idx={frame_idx}\n"
                     f"   🔍 JSON path: '{json_path}'\n"
                     f"   🎯 Requested field: '{field_name}'\n"

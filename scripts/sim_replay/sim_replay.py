@@ -121,12 +121,4 @@ python scripts/sim_replay/sim_replay.py \
     --device_model unitree_g1 \
     --device_model_version threecam_hand_version \
     --log_dir ./logs/sim_replay
-
-# agilex_cobot_decoupled_magic default_version realsense_version h5_mp4_new headdown_version
-python scripts/sim_replay/sim_replay.py \
-    --db_file_path /mnt/db/datasets.db \
-    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
-    --device_model agilex_cobot_decoupled_magic \
-    --device_model_version h5_mp4_new \
-    --log_dir ./logs/sim_replay
 """

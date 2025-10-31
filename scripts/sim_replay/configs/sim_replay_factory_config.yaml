@@ -1,3 +1,73 @@
+# agilex_cobot_decoupled_magic
+agilex_cobot_decoupled_magic:
+- version: default_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+- version: realsense_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+- version: depthhead_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+- version: headdown_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+- version: masterpuppet_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+- version: h5_mp4
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+- version: h5_mp4_new
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+- version: mult_sensor
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+
+# discover_robotics_aitbot_mmk2
+discover_robotics_aitbot_mmk2:
+- version: third_view
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.mmk2_config
+  mujoco_sim_replay_config_class: Mmk2LerobotSimReplayConfig
+
+# galaxea_r1_lite
+galaxea_r1_lite:
+- version: default_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
+  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
+
+- version: h5_version
+  verison_description: galaxea r1 lite H5 format (qpos + eepose, no images)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
+  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
+
+# galbot
+galbot:
+- version: default_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galbot_config
+  mujoco_sim_replay_config_class: GalbotLerobotSimReplayConfig
+
+# leju_robot
+leju_robot:
+- version: waibu_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.leju_robot_config
+  mujoco_sim_replay_config_class: LejuRobotLerobotSimReplayConfig 
+
+- version: waibu_lite
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.leju_robot_config
+  mujoco_sim_replay_config_class: LejuRobotLerobotSimReplayConfig 
+
+# realman_rmc_aidal
 realman_rmc_aidal: 
 - version: default_version
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.realman_rmc_aidal_config
@@ -11,37 +81,61 @@ realman_rmc_aidal:
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.realman_rmc_aidal_config
   mujoco_sim_replay_config_class: RealmanRmcAidalLerobotSimReplayConfig
 
-galaxea_r1_lite:
+# ruantong_a2d
+ruantong_a2d:
 - version: default_version
-  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
-  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ruantong_config
+  mujoco_sim_replay_config_class: RuantongA2dLerobotSimReplayConfig
 
-
-- version: h5_version
-  verison_description: galaxea r1 lite H5 format (qpos + eepose, no images)
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
-  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
-
-galbot:
+# unitree_g1
+unitree_g1: 
 - version: default_version
-  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galbot_config
-  mujoco_sim_replay_config_class: GalbotLerobotSimReplayConfig
+  verison_description: two arms and two hands (6 joints each), one rgb cameras with high
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
 
+- version: onecam_hand_version
+  verison_description: two arms and two hands (6 joints each), one rgb cameras with high
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
+
+- version: dex3v1_version
+  verison_description: two arms and two dex3v1 (7 joints each), one rgb cameras with high
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: twocam_hand_version
+  verison_description: two arms and two hands (6 joints each), two rgb cameras with high_up and high_down
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
+
+- version: twocam_dex3v1_version
+  verison_description: two arms and two dex3v1 (7 joints each), two rgb cameras with high_up and high_down
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+- version: threecam_hand_version
+  verison_description: two arms and two hands (6 joints each), three rgb cameras with high, left wrist, right wrist
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
+
+- version: threecam_dex3v1_version
+  verison_description: two arms and two dex3v1 (7 joints each), three rgb cameras with high, left wrist, right wrist
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
+  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
+
+# zhipingfang
 zhipingfang:
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
   mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
 
-
 - version: left_arm_with_pose
   verison_description: zhipingfang single left arm with pose (left joints + pose + wrench + gripper, right arm empty)
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
   mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
   
-
 - version: left_arm_no_pose
   verison_description: zhipingfang single left arm without pose (left joints + wrench + gripper, right arm empty, pose empty)
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
@@ -107,75 +201,4 @@ zhipingfang:
   verison_description: zhipingfang dual arm without pose (compressed video format - images stored as MP4)
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ai2robotics_config
   mujoco_sim_replay_config_class: Ai2roboticsLerobotSimReplayConfig
-
-unitree_g1: 
-- version: default_version
-  verison_description: two arms and two hands (6 joints each), one rgb cameras with high
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
-
-- version: onecam_hand_version
-  verison_description: two arms and two hands (6 joints each), one rgb cameras with high
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
-
-- version: dex3v1_version
-  verison_description: two arms and two dex3v1 (7 joints each), one rgb cameras with high
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: twocam_hand_version
-  verison_description: two arms and two hands (6 joints each), two rgb cameras with high_up and high_down
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
-
-- version: twocam_dex3v1_version
-  verison_description: two arms and two dex3v1 (7 joints each), two rgb cameras with high_up and high_down
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-- version: threecam_hand_version
-  verison_description: two arms and two hands (6 joints each), three rgb cameras with high, left wrist, right wrist
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29FiveFingerHandConfig
-
-- version: threecam_dex3v1_version
-  verison_description: two arms and two dex3v1 (7 joints each), three rgb cameras with high, left wrist, right wrist
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.unitree_g1_config
-  mujoco_sim_replay_config_class: UnitreeG1Dof29ThreeFingerHandConfig
-
-
-agilex_cobot_decoupled_magic:
-- version: default_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
-- version: realsense_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
-- version: depthhead_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
-- version: headdown_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
-- version: masterpuppet_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
-- version: h5_mp4
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
-- version: h5_mp4_new
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
-- version: mult_sensor
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
-
 
