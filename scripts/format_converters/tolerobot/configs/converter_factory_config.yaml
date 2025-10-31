@@ -133,6 +133,12 @@ leju_robot:
   class: LerobotFormatConverterLejuWaibu
   converter_config_path: converter_config_leju_waibu_lite.yaml
 
+- version: waibu_fixed_velocity
+  verison_description: leju waibu fixed velocity paths (uses state/joint/velocity instead of action/joint/velocity, 54D state + 54D action)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_leju_waibu
+  class: LerobotFormatConverterLejuWaibu
+  converter_config_path: converter_config_leju_waibu_fixed_velocity.yaml
+
 - version: waibu_version
   verison_description: leju waibu (default=lite, backward compatibility)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_leju_waibu

@@ -3,7 +3,8 @@
 **日期**: 2025-10-30  
 **问题**: lite版本配置文件使用了不存在的H5路径  
 **数据集**: 乐聚2 `/hotel_services`  
-**状态**: ✅ 已修复
+**解决方案**: 创建新版本 `waibu_fixed_velocity` ✅  
+**状态**: ✅ 已完成
 
 ---
 
@@ -37,11 +38,15 @@ KeyError: Unable to synchronously open object (object 'velocity' doesn't exist)
 
 ## 🔧 修复方案
 
+### **方法：创建新版本而非修改现有版本**
+
+**❌ 错误做法**: 直接修改 `converter_config_leju_waibu_lite.yaml`  
+**✅ 正确做法**: 创建新版本 `converter_config_leju_waibu_fixed_velocity.yaml`
+
 ### **修复内容**
 
-**文件**: `converter_config_leju_waibu_lite.yaml`
-
-**修改**: 2处 (observation section + action section)
+**新文件**: `converter_config_leju_waibu_fixed_velocity.yaml`  
+**修改**: 4处 (observation section 2处 + action section 2处)
 
 | Section | Line | 修改前 | 修改后 |
 |---------|------|--------|--------|
@@ -225,14 +230,70 @@ h5_file.visititems(print_structure)
 
 ---
 
+## 📋 配置版本对比
+
+| 版本 | observation velocity | action velocity | 状态 | 适用场景 |
+|------|---------------------|-----------------|------|---------|
+| **full** | `state/joint/velocity` | `state/joint/velocity` | ✅ 正确 | 完整的state数据 (118D) |
+| **lite** | `state/joint/velocity` | `action/joint/velocity` | ❌ 错误 | 原lite版本（路径错误） |
+| **fixed_velocity** | `state/joint/velocity` | `state/joint/velocity` | ✅ 正确 | 修复后的lite版本 (54D) |
+
+---
+
+## 🗄️ 更新数据库
+
+### **方法1: 更新有问题的数据集**
+
+```bash
+cd /home/liu/program/robocoin-dataset
+
+python3 << 'EOF'
+import sqlite3
+conn = sqlite3.connect("db/datasets.db")
+cursor = conn.cursor()
+
+# 将使用lite版本的数据集更新为fixed_velocity
+cursor.execute("""
+    UPDATE dmv_annotation
+    SET device_model_version = 'waibu_fixed_velocity'
+    WHERE device_model = 'leju_waibu'
+      AND device_model_version = 'waibu_lite'
+      AND dataset_name LIKE '%hotel_services%'
+""")
+
+conn.commit()
+print(f"✅ 更新了 {cursor.rowcount} 条记录")
+conn.close()
+EOF
+```
+
+### **方法2: 手动检查和更新**
+
+```sql
+-- 1. 查看当前使用lite版本的数据集
+SELECT dataset_name, device_model_version, annotation_status
+FROM dmv_annotation
+WHERE device_model = 'leju_waibu'
+  AND device_model_version = 'waibu_lite';
+
+-- 2. 更新特定数据集
+UPDATE dmv_annotation
+SET device_model_version = 'waibu_fixed_velocity'
+WHERE dataset_uuid = 'your-dataset-uuid';
+```
+
+---
+
 ## 📋 修复清单
 
-- [x] 修复 observation section 的 left arm velocity路径
-- [x] 修复 observation section 的 right arm velocity路径
-- [x] 修复 action section 的 left arm velocity路径
-- [x] 修复 action section 的 right arm velocity路径
+- [x] 创建新配置文件 `converter_config_leju_waibu_fixed_velocity.yaml`
+- [x] 修改 observation section 的 left arm velocity路径
+- [x] 修改 observation section 的 right arm velocity路径
+- [x] 修改 action section 的 left arm velocity路径
+- [x] 修改 action section 的 right arm velocity路径
+- [x] 更新 `converter_factory_config.yaml` 添加新版本
+- [ ] 更新数据库中有问题的数据集到新版本
 - [ ] 重新测试乐聚数据集转换
-- [ ] 确认full版本和lite版本都能正常工作
 
 ---
 
