@@ -82,6 +82,9 @@ class UnitreeG1Dof29ThreeFingerHandConfig(LerobotSimReplayConfig):
         "right_hand_joint_7_rad",
     ]
 
+    # eef_sim 配置
+    has_gripper = False
+
     action_arm_joint_lerobot_names = state_arm_joint_lerobot_names
 
     # gripper names allow not 1v1 assignment
@@ -158,6 +161,9 @@ class UnitreeG1Dof29FiveFingerHandConfig(LerobotSimReplayConfig):
     ]
 
     action_arm_joint_lerobot_names = state_arm_joint_lerobot_names
+
+    # eef_sim 配置
+    has_gripper = False
 
     # gripper names allow not 1v1 assignment
     state_gripper_joint_mjcf_names: list[str] = []

@@ -77,6 +77,11 @@ class Ai2roboticsLerobotSimReplayConfig(LerobotSimReplayConfig):
     state_gripper_joint_mjcf_names: list[str] = []
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
+
+    # eef_sim 配置
+    has_gripper = False
+
+
     state_gripper_lerobot_names: list[str] = ["left_effector_position", "right_effector_position"]
     action_gripper_lerobot_names: list[str] = [
         "left_effector_position",

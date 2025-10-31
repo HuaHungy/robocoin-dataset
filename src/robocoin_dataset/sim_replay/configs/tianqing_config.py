@@ -52,6 +52,9 @@ class TianqingLerobotSimReplayConfig(LerobotSimReplayConfig):
 
     action_arm_joint_lerobot_names = state_arm_joint_lerobot_names
 
+    # eef_sim 配置
+    has_gripper = False
+
     # gripper names allow not 1v1 assignment
     state_gripper_joint_mjcf_names: list[str] = []
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names

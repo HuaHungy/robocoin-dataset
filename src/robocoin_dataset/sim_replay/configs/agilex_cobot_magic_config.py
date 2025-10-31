@@ -62,6 +62,13 @@ class AgilexCobotMagicLerobotSimReplayConfig(LerobotSimReplayConfig):
     gripper_joint_max = 0.04
     gripper_joint_min = 0
 
+
+    # eef_sim 配置
+    has_gripper = True
+    gripper_value_open = gripper_open_max
+    gripper_value_close = gripper_open_min
+
+
     def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
         left_gripper_data = lerobot_gripper_data[0]
         right_gripper_data = lerobot_gripper_data[1]

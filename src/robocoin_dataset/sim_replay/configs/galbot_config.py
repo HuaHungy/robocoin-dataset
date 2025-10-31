@@ -63,6 +63,9 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
         "body_joint_3_rad",
     ]
 
+    # eef_sim 配置
+    has_gripper = False
+
     action_arm_joint_lerobot_names= state_arm_joint_lerobot_names
     
      # gripper names allow not 1v1 assignment

@@ -282,15 +282,22 @@ class LerobotSimReplayer:
                     self.mjcf_data.qpos[mjcf_addr] = mjcf_data
 
                 mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
+                # 收集所有site的EEF数据
+                frame_eef_results = []
                 for site_id in self.mjcf_site_ids:
-                    eef_results = []
                     site_pos = self.mjcf_data.site_xpos[site_id]
                     site_rot = self.mjcf_data.site_xmat[site_id]
                     site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
                         "xyz", degrees=False
                     )
-                    eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
-                results.append(eef_results)
+                    # 拼接当前site的 EEF 位置和姿态
+                    frame_eef_results.extend(site_pos)
+                    frame_eef_results.extend(site_rot_euler)
+                
+                # 在所有site数据之后添加夹爪数据
+                frame_eef_results.extend(lerobot_gripper_data)
+                # 转换为numpy数组并添加到结果中
+                results.append(np.array(frame_eef_results))
             return results
 
         finally:
