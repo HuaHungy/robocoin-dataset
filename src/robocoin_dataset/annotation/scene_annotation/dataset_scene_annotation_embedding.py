@@ -1,19 +1,11 @@
-import logging
-import traceback
-from collections import defaultdict
-from pathlib import Path
 import json
+from pathlib import Path
 
 import numpy as np
-import tqdm
-from sqlalchemy import and_, or_
 
 from robocoin_dataset.data_post_process import DataPostProcessorBase
 from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import (
-    DatasetDB,
-    TaskStatus
-)
+from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
 
 class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
@@ -56,17 +48,20 @@ class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
             for i, annotation in enumerate(self.scene_annotations):
                 f.write(f'{{"scene_index": {i}, "scene": {annotation}}}\n')
 
+
 class SceneAnnotationEmbedding:
     def __init__(
-        self, 
+        self,
         database_file: str | Path,
-        ) -> None:
+    ) -> None:
         self.database_file = database_file
         self.database = DatasetDatabase(database_file)
-    
+
     def dataset_scene_embedding(self, dataset_uuid: str, scene_annotations: list[str]) -> None:
         with self.database.with_session() as session:
-            dataset = session.query(DatasetDB).filter(DatasetDB.dataset_uuid== dataset_uuid).first()
+            dataset = (
+                session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+            )
             if dataset is None:
                 raise ValueError(f"dataset_uuid: {dataset_uuid} not found")
             # get dataset path
@@ -81,7 +76,9 @@ class SceneAnnotationEmbedding:
                 raise ValueError(f"dataset_uuid: {dataset_uuid} meta_path: {meta_path} not exists")
             episodes_jsonl_path = meta_path / "episodes.jsonl"
             if not episodes_jsonl_path.exists():
-                raise ValueError(f"dataset_uuid: {dataset_uuid} episodes_jsonl_path: {episodes_jsonl_path} not exists")
+                raise ValueError(
+                    f"dataset_uuid: {dataset_uuid} episodes_jsonl_path: {episodes_jsonl_path} not exists"
+                )
             with open(episodes_jsonl_path, "r") as f:
                 for line in f:
                     line = line.strip()

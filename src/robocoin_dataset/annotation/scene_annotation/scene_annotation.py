@@ -1,3 +1,4 @@
+import glob
 import json
 import logging
 from pathlib import Path
@@ -84,15 +85,13 @@ def _gen_one_scene_annotation_task(session: Session) -> tuple[str | None, str | 
 
 
 # local converter
-class SceneAnnotation:
+class SceneAnnotationLocal:
     def __init__(
         self,
         db_file_path: str | Path,
-        json_file_path: str | Path,
         logger: logging.Logger | None = None,
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
-        self.json_file_path: Path = Path(json_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
@@ -106,6 +105,7 @@ class SceneAnnotation:
                 raise FileNotFoundError(f"文件夹 {folder} 下没有数据集文件夹")
             self.logger.info(f"在文件夹 {folder} 发现 {len(dataset_folders)} 个数据集文件夹:")
             self.logger.info("开始处理所有数据集的JSON到parquet转换...")
+
             success_count = 0
             failed_count = 0
             for dataset_folder in tqdm.tqdm(dataset_folders, desc="处理数据集", unit="数据集"):
@@ -120,260 +120,67 @@ class SceneAnnotation:
                         .first()
                     )
                     if not dataset_record:
-                        print(f"未找到数据集 {dataset_name} 的记录，跳过")
+                        self.logger.warning(f"未找到数据集 {dataset_name} 的记录，跳过")
                         failed_count += 1
                         continue
                     if dataset_record.scene_annotation_status == TaskStatus.COMPLETED:
-                        print(f"数据集 {dataset_name} 的场景注释已经完成，跳过")
+                        self.logger.info(f"数据集 {dataset_name} 的场景注释已经完成，跳过")
                         continue
-                    # 提取json文件中的description
-                    import glob
-                    import json
 
                     json_pattern = str(dataset_folder / "episode_*.json")
                     json_files = glob.glob(json_pattern)
 
                     if not json_files:
-                        print(f"数据集 {dataset_name} 中没有找到JSON文件，跳过")
+                        self.logger.warning(f"数据集 {dataset_name} 中没有找到JSON文件，跳过")
                         failed_count += 1
                         continue
 
                     descriptions = []
                     for json_file in json_files:
-                        try:
-                            with open(json_file, encoding="utf-8") as f:
-                                data = json.load(f)
-                                if "description" in data:
-                                    descriptions.append(data["description"])
-                        except Exception as e:
-                            print(f"读取JSON文件 {json_file} 失败: {e}")
-                            continue
+                        with open(json_file, encoding="utf-8") as f:
+                            data = json.load(f)
+                            if "description" in data:
+                                descriptions.append(data["description"])
 
                     if not descriptions:
-                        print(f"数据集 {dataset_name} 中没有找到有效的description，跳过")
+                        self.logger.warning(
+                            f"数据集 {dataset_name} 中没有找到有效的description，跳过"
+                        )
                         failed_count += 1
                         continue
 
                     # 调用场景注释嵌入
-                    try:
-                        scene_embedding = SceneAnnotationEmbedding(self.db_file_path)
-                        scene_embedding.dataset_scene_embedding(
-                            dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions
-                        )
+                    scene_embedding = SceneAnnotationEmbedding(self.db_file_path)
+                    scene_embedding.dataset_scene_embedding(
+                        dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions
+                    )
 
-                        # 更新状态为完成
-                        dataset_record.scene_annotation_status = TaskStatus.COMPLETED
-                        session.commit()
+                    # 更新状态为完成
+                    dataset_record.scene_annotation_status = TaskStatus.COMPLETED
+                    session.commit()
 
-                        print(f"数据集 {dataset_name} 场景注释处理完成")
-                        success_count += 1
+                    self.logger.info(f"数据集 {dataset_name} 场景注释处理完成")
+                    success_count += 1
 
-                    except Exception as e:
-                        print(f"处理数据集 {dataset_name} 的场景注释时发生错误: {e}")
-                        dataset_record.scene_annotation_status = TaskStatus.FAILED
-                        session.commit()
-                        failed_count += 1
-                        continue
-
-            print(f"\n处理完成！成功: {success_count}, 失败: {failed_count}")
+            self.logger.info(f"\n处理完成！成功: {success_count}, 失败: {failed_count}")
 
         except Exception as e:
             self.logger.error(f"处理文件夹 {folder} 时发生错误: {e}")
             return
 
+    def syn_scene_annotation_task(self) -> None:
+        try:
+            with self.db.with_session() as session:
+                _sync_scene_annotation_status(session)
+        except Exception as e:
+            raise RuntimeError("SYN TASK ERROR") from e
 
-def test_scene_annotation() -> None:
-    """测试场景注释功能的小脚本"""
-    import tempfile
-
-    print("=== 场景注释测试脚本 ===")
-
-    # 创建临时测试环境
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-
-        # 创建测试数据库文件路径
-        test_db_path = temp_path / "test_dataset.db"
-
-        # 创建测试数据集文件夹
-        test_dataset_folder = temp_path / "test_dataset"
-        test_dataset_folder.mkdir()
-
-        # 创建测试JSON文件
-        test_json_files = [
-            {"description": "机器人抓取红色方块"},
-            {"description": "机器人移动到目标位置"},
-            {"description": "机器人放置物体到容器中"},
-        ]
-
-        for i, data in enumerate(test_json_files):
-            json_file = test_dataset_folder / f"episode_{i:03d}.json"
-            with open(json_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-
-        print(f"创建测试环境: {temp_path}")
-        print(f"测试数据库: {test_db_path}")
-        print(f"测试数据集: {test_dataset_folder}")
-        print(f"创建了 {len(test_json_files)} 个测试JSON文件")
-
-        # 注意：这里只是演示测试结构，实际运行需要真实的数据库
-        print("\n测试结构创建完成！")
-        print("要运行完整测试，请确保:")
-        print("1. 数据库文件存在且包含相应的数据集记录")
-        print("2. JSON文件格式正确")
-        print("3. 数据集路径配置正确")
-
-        return temp_path, test_db_path, test_dataset_folder
-
-
-def test_with_real_data() -> None:
-    """使用真实数据进行测试"""
-    print("=== 真实数据测试 ===")
-
-    # 测试配置
-    db_path = "/mnt/nas/synnas/docker2/database-backups/datasets_new.db"
-    data_folder = "/mnt/nas/synnas/docker2/scene_annotation"
-
-    # 检查路径是否存在
-    if not Path(db_path).exists():
-        print(f"数据库文件不存在: {db_path}")
-        print("请检查路径或使用 test_scene_annotation() 进行模拟测试")
-        return
-
-    if not Path(data_folder).exists():
-        print(f"数据文件夹不存在: {data_folder}")
-        print("请检查路径或使用 test_scene_annotation() 进行模拟测试")
-        return
-
-    try:
-        # 创建场景注释处理器
-        scene_annotation = SceneAnnotation(
-            db_file_path=db_path,
-            json_file_path=f"{data_folder}/episode_*.json",
-        )
-
-        print(f"开始处理文件夹: {data_folder}")
-        scene_annotation.process_folder(data_folder)
-        print("处理完成！")
-
-    except Exception as e:
-        print(f"测试过程中发生错误: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-
-def test_scene_annotation_server():
-    """测试场景标注服务器"""
-    try:
-        print("测试场景标注服务器...")
-
-        # 创建临时数据库文件
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp_db:
-            db_path = tmp_db.name
-
-        # 创建服务器实例
-        server = SceneAnnotationServer(db_file_path=db_path, host="localhost", port=8769)
-
-        print(f"场景标注服务器创建成功，任务类别: {server.get_task_category()}")
-        print("注意：实际运行需要启动服务器的run()方法")
-
-        # 清理临时文件
-        import os
-
-        os.unlink(db_path)
-
-    except Exception as e:
-        print(f"服务器测试失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-
-def test_scene_annotation_client():
-    """测试场景标注客户端"""
-    try:
-        print("测试场景标注客户端...")
-
-        # 创建客户端实例
-        client = SceneAnnotationClient(server_uri="ws://localhost:8769")
-
-        print(f"场景标注客户端创建成功，任务类别: {client.get_task_category()}")
-        print("注意：实际运行需要连接到运行中的服务器")
-
-    except Exception as e:
-        print(f"客户端测试失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-
-def run_server():
-    """实际运行场景标注服务器"""
-    try:
-        print("启动场景标注服务器...")
-
-        # 使用真实的数据库路径
-        db_path = "/mnt/nas/synnas/docker2/database-backups/datasets_new.db"
-
-        if not Path(db_path).exists():
-            print(f"数据库文件不存在: {db_path}")
-            print("请检查数据库路径")
-            return
-
-        # 创建并启动服务器
-        server = SceneAnnotationServer(db_file_path=db_path, host="0.0.0.0", port=8769)
-
-        print("场景标注服务器启动成功！")
-        print("服务器地址: ws://localhost:8769")
-        print(f"任务类别: {server.get_task_category()}")
-        print("按 Ctrl+C 停止服务器")
-
-        # 启动服务器（这会阻塞）
-        import asyncio
-
-        asyncio.run(server.start())
-
-    except KeyboardInterrupt:
-        print("\n服务器已停止")
-    except Exception as e:
-        print(f"服务器运行失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-
-def run_client():
-    """实际运行场景标注客户端"""
-    try:
-        print("启动场景标注客户端...")
-
-        # 创建并启动客户端
-        client = SceneAnnotationClient(server_uri="ws://localhost:8769", heartbeat_interval=10.0)
-
-        print("场景标注客户端启动成功！")
-        print("连接到服务器: ws://localhost:8769")
-        print(f"任务类别: {client.get_task_category()}")
-        print("按 Ctrl+C 停止客户端")
-
-        # 启动客户端（这会阻塞）
-        import asyncio
-
-        asyncio.run(client.run())
-
-    except KeyboardInterrupt:
-        print("\n客户端已停止")
-    except Exception as e:
-        print(f"客户端运行失败: {e}")
-        import traceback
-
-        traceback.print_exc()
+    def online_process(self) -> None:
+        pass
 
 
 class SceneAnnotationServer(TaskServer):
-    def __init__(self, db_file_path: str | Path, **kwargs) -> None:
+    def __init__(self, db_file_path: str | Path, **kwargs: dict) -> None:
         super().__init__(**kwargs)
         self.db = DatasetDatabase(Path(db_file_path).expanduser().absolute())
 
@@ -531,36 +338,4 @@ class SceneAnnotationClient(TaskClient):
 
 
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        # 运行模拟测试
-        test_scene_annotation()
-    elif len(sys.argv) > 1 and sys.argv[1] == "real":
-        # 运行真实数据测试
-        test_with_real_data()
-    elif len(sys.argv) > 1 and sys.argv[1] == "server":
-        # 测试服务器
-        test_scene_annotation_server()
-    elif len(sys.argv) > 1 and sys.argv[1] == "client":
-        # 测试客户端
-        test_scene_annotation_client()
-    elif len(sys.argv) > 1 and sys.argv[1] == "run-server":
-        # 实际运行服务器
-        run_server()
-    elif len(sys.argv) > 1 and sys.argv[1] == "run-client":
-        # 实际运行客户端
-        run_client()
-    else:
-        # 默认运行真实数据处理
-        print("使用方法:")
-        print("  python scene_annotation.py test       # 运行模拟测试")
-        print("  python scene_annotation.py real       # 运行真实数据测试")
-        print("  python scene_annotation.py server     # 测试场景标注服务器")
-        print("  python scene_annotation.py client     # 测试场景标注客户端")
-        print("  python scene_annotation.py run-server # 实际运行服务器")
-        print("  python scene_annotation.py run-client # 实际运行客户端")
-        print("  python scene_annotation.py            # 显示帮助信息")
-        print()
-        print("直接运行真实数据测试...")
-        test_with_real_data()
+    pass
