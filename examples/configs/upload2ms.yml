@@ -16,7 +16,7 @@ hub_name: modelscope
 # NOTICE: must match the def in DatasetsHubEnum, in @dataclass -> class LocalDsUploadConfig(LocalDsConfig):
 
 # token for authentication with the hub.
-token:
+token: NULL
 
 # output path where the history info of dataset uploading should be saved.
 output_path: ./examples/datasets/outputs/upload_history
