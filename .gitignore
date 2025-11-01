@@ -78,6 +78,7 @@ data/
 extracted_data/
 
 examples/dataloader_test/
+examples/database_transfer_test/
 
 db/
 
