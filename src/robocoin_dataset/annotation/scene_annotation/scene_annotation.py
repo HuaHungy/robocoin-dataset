@@ -254,15 +254,17 @@ class SceneAnnotationServer(TaskServer):
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         """处理任务结果"""
+        task_result_content = task_result_content.get("task_result_content")
         ds_uuid = task_content.get("dataset_uuid")
         task_status = task_result_content.get(TASK_RESULT_STATUS)
-
+        print(task_result_content)
+        print(task_status)
         status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
         with self.db.with_session() as session:
             update_data = {DatasetDB.scene_annotation_status: status}
             if status == TaskStatus.FAILED:
-                update_data[DatasetDB.scene_annotation_err_msg] = task_result_content.get(ERR_MSG)
+                update_data[DatasetDB.scene_annotation_err_msg] = task_result_content.get("task_result_content").get("error")
 
             updated_rows = (
                 session.query(DatasetDB)

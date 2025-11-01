@@ -69,11 +69,9 @@ if __name__ == "__main__":
 
 """usage:
 # realman_rmc_aidal
-python scripts/scene_annotation/scene_annotat_server.py \
+python scripts/scene_annotation/scene_annotation_server.py \
     --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
     --port 8766 \
-    --device_model realman_rmc_aidal \
-    --device_model_version default_version \
     --log_dir ./logs/
 """
