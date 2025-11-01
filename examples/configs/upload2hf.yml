@@ -1,9 +1,9 @@
 # upload2hf.yml
 # used to config class LocalDsUploadConfig
-# class LocalDsUploadConfig(LocalDsConfig): 
+# class LocalDsUploadConfig(LocalDsConfig):
 
 # ---------------------------------------------------------------------------
-# refer to 
+# refer to
 # class LocalDsUploadConfig(LocalDsConfig):
 #     hub_name: DatasetsHubEnum = DatasetsHubEnum.HUGGINGFACE
 #     token: str = ""
@@ -12,16 +12,17 @@
 # Path to the directory containing task tags YAML files.
 # which hub to upload to
 # Huggingface or Modelscope
-hub_name: Huggingface
+hub_name: huggingface
+# NOTICE: must match the def in DatasetsHubEnum, in @dataclass -> class LocalDsUploadConfig(LocalDsConfig):
 
 # token for authentication with the hub.
-token: 
+token: NULL
 
 # output path where the history info of dataset uploading should be saved.
 output_path: ./examples/datasets/outputs/upload_history
 
 # ---------------------------------------------------------------------------
-# refer to 
+# refer to
 # class LocalDsConfig:
 #     root_path: Path = field(default_factory=Path)
 #     process_all: bool = True
@@ -30,7 +31,7 @@ output_path: ./examples/datasets/outputs/upload_history
 #     log_config: LogConfig = field(default_factory=LogConfig)
 
 # Path to the root directory of the datasets, which contains all datasets.
-root_path: ./examples/datasets/example_datas/
+root_path: ./examples/example_datas/ # SHOULD BE CHANGED TO THE REAL DATASET PATH WHEN FORMAL USING
 
 # process_all is set to true by default,
 # it means all subdirectories will be processed,
@@ -44,7 +45,7 @@ process_all: true
 # or you can use the following format to specify subdirs to process,
 # each subdir will be considered as a separate dataset.
 # process_all: false
-# subdirs_to_process: 
+# subdirs_to_process:
   # - realman_task_build_blocks_500_4.18
   # - realman_task_stack_basket_500_4.27
 subdirs_to_process: []

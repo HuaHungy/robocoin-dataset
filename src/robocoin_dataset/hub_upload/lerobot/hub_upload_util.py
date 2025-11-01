@@ -70,11 +70,11 @@ class LocalDsUploadUtil(LocalDsUtil):
     self.config = config
 
     if config.hub_name == DatasetsHubEnum.modelscope:
-      from .hubs.ms_hub import ModelscopeUploadHub
+      from ..hubs.ms_hub import ModelscopeUploadHub
 
       self.hub = ModelscopeUploadHub(self.config.token)
     elif config.hub_name == DatasetsHubEnum.huggingface:
-      from .hubs.hf_hub import HuggingfaceUploadHub
+      from ..hubs.hf_hub import HuggingfaceUploadHub
 
       self.hub = HuggingfaceUploadHub(self.config.token)
     else:
@@ -309,7 +309,7 @@ class LocalDsUploadUtil(LocalDsUtil):
 if __name__ == "__main__":
   """
     Main entry point for the dataset uploader.
-    
+
     Parses command line configuration and runs the upload process.
     """
   config = draccus.parse(LocalDsUploadConfig)
