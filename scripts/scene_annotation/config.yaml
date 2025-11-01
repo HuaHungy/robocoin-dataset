@@ -1,0 +1,100 @@
+# 场景注释配置文件
+# 该文件包含场景注释脚本的常用配置参数
+
+# 数据库配置
+database:
+  # 数据库文件路径（必需）
+  file_path: "/mnt/nas/synnas/docker2/database-backups/datasets_new.db"
+  
+# 数据路径配置
+data:
+  # 数据集根目录
+  root_folder: "/mnt/nas/synnas/docker2/scene_annotation"
+  
+  # JSON文件匹配模式
+  json_pattern: "episode_*.json"
+
+# 服务器配置
+server:
+  # 服务器主机地址
+  host: "0.0.0.0"
+  
+  # 服务器端口
+  port: 8769
+  
+  # 日志级别
+  log_level: "INFO"
+
+# 客户端配置
+client:
+  # 默认服务器地址
+  default_host: "127.0.0.1"
+  
+  # 默认服务器端口
+  default_port: 8769
+  
+  # 心跳间隔（秒）
+  heartbeat_interval: 10.0
+  
+  # 日志级别
+  log_level: "INFO"
+
+# 日志配置
+logging:
+  # 日志文件保存目录
+  log_dir: "./logs"
+  
+  # 日志级别选项: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # 是否启用文件日志
+  enable_file_logging: true
+  
+  # 日志文件最大大小（MB）
+  max_file_size: 100
+  
+  # 保留的日志文件数量
+  backup_count: 5
+
+# 处理配置
+processing:
+  # 批处理大小
+  batch_size: 100
+  
+  # 超时时间（秒）
+  timeout: 300
+  
+  # 重试次数
+  max_retries: 3
+  
+  # 重试间隔（秒）
+  retry_interval: 5
+
+# 测试配置
+testing:
+  # 测试数据库路径
+  test_db_path: "/tmp/test_scene_annotation.db"
+  
+  # 测试数据目录
+  test_data_dir: "/tmp/test_scene_annotation_data"
+  
+  # 测试JSON文件数量
+  test_json_count: 5
+
+# 示例使用方法:
+# 
+# 1. 本地处理:
+#    python scene_annotation.py \
+#      --db_file_path "$(yq '.database.file_path' config.yaml)" \
+#      --data_folder "$(yq '.data.root_folder' config.yaml)"
+#
+# 2. 启动服务器:
+#    python scene_annotation_server.py \
+#      --db_file_path "$(yq '.database.file_path' config.yaml)" \
+#      --host "$(yq '.server.host' config.yaml)" \
+#      --port "$(yq '.server.port' config.yaml)"
+#
+# 3. 启动客户端:
+#    python scene_annotation_client.py \
+#      --host "$(yq '.client.default_host' config.yaml)" \
+#      --port "$(yq '.client.default_port' config.yaml)"
