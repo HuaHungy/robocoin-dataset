@@ -308,9 +308,10 @@ class LerobotSimReplayer:
         self,
         episode_index: int,
         is_state: bool = True,
-        sleep_time_ms: int = 0,
+        # sleep_time_ms: int = 0,
         enable_gripper_plot: bool = False,
         gripper_plot_callback=None,
+        target_fps: int = 30,
     ) -> None:
         parquet_file_path = (
             self.repo_path
@@ -338,6 +339,11 @@ class LerobotSimReplayer:
         gripper_history = []
         fig, ax, lines = None, None, []
 
+        # target frame duration (seconds) - enforce a strict playback rate
+        if target_fps <= 0:
+            target_fps = 30
+        frame_duration = 1.0 / float(target_fps)
+
         # 同时启动 MuJoCo 界面和可视化图表
         print("[界面] 正在启动 MuJoCo 界面和可视化图表...")
         self.start_viewer()
@@ -357,6 +363,7 @@ class LerobotSimReplayer:
 
         try:
             for i in range(len(data)):
+                frame_start = time.perf_counter()
                 lerobot_arm_joint_values = data[i][lerbot_arm_joint_ids]
                 lerobot_gripper_data = data[i][leroot_gripper_ids]
                 for mjcf_addr, lerobot_value in zip(mjcf_arm_joint_addrs, lerobot_arm_joint_values):
@@ -381,21 +388,30 @@ class LerobotSimReplayer:
                     eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
 
                 # 实时gripper曲线刷新
+                # Only plot gripper data when:
+                # - plotting enabled by caller,
+                # - a callback is provided,
+                # - the dataset actually contains gripper fields (leroot_gripper_ids),
+                # - AND the replay config declares gripper MJCF joint names. If the
+                #   config's `state_gripper_joint_mjcf_names` is empty, do not draw.
                 if (
                     enable_gripper_plot
                     and gripper_plot_callback is not None
                     and len(leroot_gripper_ids) > 0
+                    and len(self.state_gripper_joint_mjcf_names) > 0
                 ):
                     gripper_history.append(list(lerobot_gripper_data))
                     gripper_plot_callback(gripper_history, ax, lines)
                     # 使用matplotlib进行短暂暂停以更新图表
                     import matplotlib.pyplot as plt
 
-                    plt.pause(0.01)
+                    plt.pause(0.001)
 
                 self._sync_viewer()
-                if sleep_time_ms > 0:
-                    time.sleep(sleep_time_ms / 1000)
+                elapsed = time.perf_counter() - frame_start
+                remaining = frame_duration - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
 
         finally:
             # 确保在任何情况下都能正确关闭界面

@@ -5,6 +5,7 @@ from pathlib import Path
 # For gripper value visualization
 import matplotlib.pyplot as plt
 import yaml
+import json
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import and_, or_
 
@@ -253,6 +254,44 @@ def _sim_replay_dataset(
 
                 ax_sub.set_xlabel("Step")
                 ax_sub.set_ylabel("Gripper Value")
+                # 确定该窗口的 y 轴上下界：优先使用当前数据范围并添加边距，
+                # 如果需要也可以在 sim replay 配置类中暴露固定范围（以后可扩展）。
+                try:
+                    # 优先使用 sim_replay_config.has_gripper 来判定是否使用配置中的固定上下界。
+                    # 兼容性：如果没有 has_gripper 字段，再回退到检查 state_gripper_joint_mjcf_names
+                    has_gripper_attr = getattr(sim_replay_config, "has_gripper", None)
+                    if has_gripper_attr is None:
+                        cfg_has_gripper = bool(getattr(sim_replay_config, "state_gripper_joint_mjcf_names", None))
+                    else:
+                        cfg_has_gripper = bool(has_gripper_attr)
+
+                    if cfg_has_gripper and hasattr(sim_replay_config, "gripper_value_close") and hasattr(
+                        sim_replay_config, "gripper_value_open"
+                    ):
+                        ymin = float(getattr(sim_replay_config, "gripper_value_close"))
+                        ymax = float(getattr(sim_replay_config, "gripper_value_open"))
+                        # 保证 ymin <= ymax
+                        if ymin > ymax:
+                            ymin, ymax = ymax, ymin
+                    else:
+                        # 动态范围：根据当前数据计算 min/max 并添加边距
+                        col = arr[:, start_idx:end_idx]
+                        vmin = float(col.min())
+                        vmax = float(col.max())
+                        if vmin == vmax:
+                            # 单一值时给一个小范围
+                            margin = max(abs(vmin) * 0.1, 0.01)
+                        else:
+                            margin = (vmax - vmin) * 0.1
+                        ymin = vmin - margin
+                        ymax = vmax + margin
+                except Exception:
+                    ymin, ymax = -0.1, 1.1
+                ax_sub.set_ylim(ymin, ymax)
+                # 记录初始 ylim，后续更新时保持不变以避免缩放抖动
+                if not hasattr(gripper_plot_callback, "ylims"):
+                    gripper_plot_callback.ylims = []
+                gripper_plot_callback.ylims.append((ymin, ymax))
                 ax_sub.legend()
                 ax_sub.grid(True, alpha=0.3)
 
@@ -269,20 +308,43 @@ def _sim_replay_dataset(
             # 将创建的lines返回给调用者
             lines.extend(gripper_plot_callback.lines)
         else:
-            # 更新现有的线条数据
+            # 更新现有的线条数据（只对 x 轴 做 autoscale，y 轴保持固定范围）
             for i, line in enumerate(gripper_plot_callback.lines):
                 if i < arr.shape[1]:
                     line.set_ydata(arr[:, i])
                     line.set_xdata(np.arange(arr.shape[0]))
 
-            # 更新每个axes的显示范围
-            for ax_sub in gripper_plot_callback.axes:
-                ax_sub.relim()
-                ax_sub.autoscale_view()
+            # 对每个 axes 重新计算数据范围但仅自动缩放 x 轴，y 轴使用创建时记录的固定范围
+            for idx, ax_sub in enumerate(gripper_plot_callback.axes):
+                # 先重新计算数据边界
+                try:
+                    ax_sub.relim()
+                    # 仅对 x 轴自动缩放，保持 y 轴不变
+                    ax_sub.autoscale_view(scalex=True, scaley=False)
+                except Exception:
+                    # 如果 relim/autoscale 失败，忽略并继续（保持之前的显示）
+                    pass
 
-            # 重绘所有图表
+                # 恢复每个axes的初始 ylim（如果存在）以保证固定上下界
+                if hasattr(gripper_plot_callback, "ylims") and idx < len(gripper_plot_callback.ylims):
+                    ymin, ymax = gripper_plot_callback.ylims[idx]
+                    ax_sub.set_ylim(ymin, ymax)
+
+            # 请求界面重绘
             for fig in gripper_plot_callback.figs:
                 fig.canvas.draw_idle()
+
+    # 读取 meta/info.json 中的 fps（优先），若不存在则回退到 30
+    fps_from_meta = None
+    try:
+        meta_info_file = Path(repo_path) / "meta" / "info.json"
+        if meta_info_file.exists():
+            with open(meta_info_file, "r") as f:
+                info = json.load(f)
+                fps_from_meta = info.get("fps", None)
+                print(f"[数据集回放] 从 meta/info.json 中读取到 fps: {fps_from_meta}")
+    except Exception:
+        fps_from_meta = None
 
     try:
         # 启动界面
@@ -297,9 +359,9 @@ def _sim_replay_dataset(
             simulator.replay_episode(
                 0,
                 is_state=True,
-                sleep_time_ms=30,
                 enable_gripper_plot=True,
                 gripper_plot_callback=gripper_plot_callback,
+                target_fps=int(fps_from_meta) if fps_from_meta else 30,
             )
             print("[State Replay] 状态数据播放完成")
 
@@ -334,9 +396,9 @@ def _sim_replay_dataset(
             simulator.replay_episode(
                 0,
                 is_state=False,
-                sleep_time_ms=30,
                 enable_gripper_plot=True,
                 gripper_plot_callback=gripper_plot_callback,
+                target_fps=int(fps_from_meta) if fps_from_meta else 30,
             )
             print("[Action Replay] 动作数据播放完成")
 
