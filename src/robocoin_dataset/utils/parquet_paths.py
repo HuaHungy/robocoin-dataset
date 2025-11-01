@@ -29,11 +29,13 @@ def get_parquet_paths(root_dir: str | Path, new_parquet_type: str) -> tuple[list
 
 
 def get_meta_info_file_path(root_dir: str | Path, new_parquet_type: str) -> tuple[Path, Path]:
+    root_dir = Path(root_dir).expanduser().absolute()
     return root_dir / "meta/info.json", root_dir / f"meta/{new_parquet_type}_info.json"
 
 
 def get_episode_stats_file_path(root_dir: str | Path, new_parquet_type: str) -> tuple[Path, Path]:
+    root_dir = Path(root_dir).expanduser().absolute()
     return (
-        root_dir / "meta/episode_stats.jsonl",
-        root_dir / f"meta/{new_parquet_type}_episode_stats.jsonl",
+        root_dir / "meta/episodes_stats.jsonl",
+        root_dir / f"meta/{new_parquet_type}_episodes_stats.jsonl",
     )

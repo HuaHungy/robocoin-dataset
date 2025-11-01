@@ -30,7 +30,7 @@ class DataPostProcessorBase:
         self.data_features = data_feature_keys
         self.new_info_file_path = self.convert_path / "meta" / f"{data_post_process_type}_info.json"
         self.new_episodes_stats_file_path = (
-            self.convert_path / "meta" / f"{data_post_process_type}_episodes_stats.json"
+            self.convert_path / "meta" / f"{data_post_process_type}_episodes_stats.jsonl"
         )
         self.info_file_path = self.convert_path / "meta/info.json"
         self._ep_idx: int | None = None
@@ -171,16 +171,16 @@ class DataPostProcessorBase:
     ) -> dict[str, dict[str, list[float]]]:
         ep_stats = {}
         ep_stats["episode_index"] = self.episode_idx
-        ep_stats["stat"] = {}
+        ep_stats["stats"] = {}
         for feature_key, data in episode_data.items():
             if data is None:
                 raise ValueError(f"ori_data {feature_key} is None")
-            ep_stats["stat"][feature_key] = {}
-            ep_stats["stat"][feature_key]["mean"] = np.mean(data, axis=0).tolist()
-            ep_stats["stat"][feature_key]["std"] = np.std(data, axis=0).tolist()
-            ep_stats["stat"][feature_key]["min"] = np.min(data, axis=0).tolist()
-            ep_stats["stat"][feature_key]["max"] = np.max(data, axis=0).tolist()
-            ep_stats["stat"][feature_key]["count"] = [data.shape[0]]
+            ep_stats["stats"][feature_key] = {}
+            ep_stats["stats"][feature_key]["mean"] = np.mean(data, axis=0).tolist()
+            ep_stats["stats"][feature_key]["std"] = np.std(data, axis=0).tolist()
+            ep_stats["stats"][feature_key]["min"] = np.min(data, axis=0).tolist()
+            ep_stats["stats"][feature_key]["max"] = np.max(data, axis=0).tolist()
+            ep_stats["stats"][feature_key]["count"] = [data.shape[0]]
         return ep_stats
 
     def _write_new_episodes_stats_file(self) -> None:

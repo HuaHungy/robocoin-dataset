@@ -133,7 +133,7 @@ class DatasetDB(Base):
     data_merge_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True)
     data_merge_version_ps_sta = Column(Integer, nullable=True, default=0)
     data_merge_version_ps_sa = Column(Integer, nullable=True, default=0)
-    data_merge_version_ps_dpp = Column(Integer, nullable=True, default=0)
+    data_merge_version_ps_ma = Column(Integer, nullable=True, default=0)
     data_merge_version = Column(Integer, nullable=True, default=0)
     data_merge_err_msg = Column(Text, nullable=True)
 

@@ -20,8 +20,8 @@ from robocoin_dataset.database.models import (
 def annotations_to_frame_array(
     annotations: list[tuple[int, int, int, int]],
     annotation_num: int,
+    episode_frame_nums: dict[int, int],
     max_st_num: int = 5,
-    episode_frame_nums: dict[int, int] = None,
 ) -> list[np.ndarray]:
     episodes = defaultdict(list)
     for ann in annotations:
@@ -34,14 +34,11 @@ def annotations_to_frame_array(
     for ep_idx in episode_indices:
         anns = episodes[ep_idx]
 
-        if episode_frame_nums and ep_idx in episode_frame_nums:
-            max_frame = episode_frame_nums[ep_idx]
-        else:
-            max_frame = max(end for _, end, _ in anns)
+        max_frame = episode_frame_nums[ep_idx]
 
         # 明确指定 dtype=np.int32
         frame_array = np.full(
-            (max_frame + 1, max_st_num),
+            (max_frame, max_st_num),
             annotation_num,
             dtype=np.int32,  # 👈 指定为 int32
         )
@@ -59,8 +56,8 @@ def annotations_to_frame_array(
             # 转为 int32 数组
             data_arr = np.array(data, dtype=np.int32)
 
-            for frame_idx in range(start, end + 1):
-                if frame_idx <= max_frame:
+            for frame_idx in range(start, end - 1):
+                if frame_idx < max_frame:
                     frame_array[frame_idx, : len(data_arr)] = data_arr
 
         result.append(frame_array)
@@ -197,6 +194,7 @@ class DatasetSubtaskAnnotationEmbedding:
                 episode_frame_nums[ep_item.ep_idx] = ep_item.frame_num
 
         try:
+            print(f"episode_frame_nums: {episode_frame_nums}")
             annotation_datas = annotations_to_frame_array(
                 annotations=annotations,
                 annotation_num=len(optimized_subtask_annotations_dict),
