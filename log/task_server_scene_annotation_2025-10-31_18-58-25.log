@@ -1,0 +1,34 @@
+2025-10-31 18:58:25 | INFO     | task_server_scene_annotation | The log system has been started, log file: /home/diy02/new_pipeline/robocoin-dataset/log/task_server_scene_annotation_2025-10-31_18-58-25.log
+2025-10-31 18:58:29 | INFO     | task_server_scene_annotation | Task server started successfully: ws://0.0.0.0:8769
+2025-10-31 18:58:31 | INFO     | task_server_scene_annotation | Client registered successfully | ID: scene_annotation_0 | IP: 172.16.19.253 | Current connections: 1
+2025-10-31 18:58:31 | ERROR    | task_server_scene_annotation | Failed to process message: Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 163, in handle_message
+    await self.send_task_to_client(websocket)
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 123, in send_task_to_client
+    task_content = await asyncio.to_thread(self.generate_task_content)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 386, in generate_task_content
+    DatasetDB.scene_annotation_status.in_([TaskStatus.PENDIND, TaskStatus.COMPLETED, TaskStatus.PROCESSING, TaskStatus.FAILED])
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/enum.py", line 437, in __getattr__
+    raise AttributeError(name) from None
+AttributeError: PENDIND
+
+2025-10-31 18:58:36 | ERROR    | task_server_scene_annotation | Failed to process message: Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 163, in handle_message
+    await self.send_task_to_client(websocket)
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 123, in send_task_to_client
+    task_content = await asyncio.to_thread(self.generate_task_content)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 386, in generate_task_content
+    DatasetDB.scene_annotation_status.in_([TaskStatus.PENDIND, TaskStatus.COMPLETED, TaskStatus.PROCESSING, TaskStatus.FAILED])
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/enum.py", line 437, in __getattr__
+    raise AttributeError(name) from None
+AttributeError: PENDIND
+
+2025-10-31 18:58:40 | INFO     | task_server_scene_annotation | Client disconnected | ID: scene_annotation_0

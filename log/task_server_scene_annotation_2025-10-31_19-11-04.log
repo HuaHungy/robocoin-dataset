@@ -1,0 +1,15 @@
+2025-10-31 19:11:04 | INFO     | task_server_scene_annotation | The log system has been started, log file: /home/diy02/new_pipeline/robocoin-dataset/log/task_server_scene_annotation_2025-10-31_19-11-04.log
+2025-10-31 19:11:09 | INFO     | task_server_scene_annotation | Task server started successfully: ws://0.0.0.0:8769
+2025-10-31 19:11:15 | INFO     | task_server_scene_annotation | Client registered successfully | ID: scene_annotation_0 | IP: 172.16.19.253 | Current connections: 1
+2025-10-31 19:11:15 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:20 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:25 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:30 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:35 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:40 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:45 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:50 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:11:55 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:12:00 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:12:05 | INFO     | task_server_scene_annotation | No task available for client scene_annotation_0
+2025-10-31 19:12:06 | INFO     | task_server_scene_annotation | Client disconnected | ID: scene_annotation_0

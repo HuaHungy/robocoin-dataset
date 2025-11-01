@@ -1,0 +1,589 @@
+2025-10-31 19:18:04 | INFO     | task_server_scene_annotation | The log system has been started, log file: /home/diy02/new_pipeline/robocoin-dataset/log/task_server_scene_annotation_2025-10-31_19-18-04.log
+2025-10-31 19:18:10 | INFO     | task_server_scene_annotation | Task server started successfully: ws://0.0.0.0:8769
+2025-10-31 19:18:13 | INFO     | task_server_scene_annotation | Client registered successfully | ID: scene_annotation_0 | IP: 172.16.19.253 | Current connections: 1
+2025-10-31 19:18:14 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:15 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:15 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:19 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:20 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:20 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:23 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:24 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:25 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:29 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:30 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:30 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:33 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:34 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:35 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:38 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:39 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:39 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:43 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:44 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:44 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:48 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:49 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:50 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:53 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:54 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:55 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:18:58 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:18:59 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:18:59 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:03 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:04 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:05 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:08 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:09 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:09 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:13 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:14 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:15 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:19 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:20 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:20 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:23 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:24 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:25 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:29 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:30 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:30 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:34 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:35 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:35 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:39 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:40 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:41 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:43 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:44 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:45 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:48 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:49 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:50 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:53 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:19:54 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:19:55 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:19:59 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:00 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:00 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:03 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:04 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:05 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:08 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:09 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:09 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:13 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:14 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:14 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:18 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:19 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:19 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:23 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:24 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:24 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:28 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:29 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:29 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:34 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:35 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:35 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:39 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:40 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:40 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:43 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:44 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:44 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:48 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:49 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:50 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:53 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:54 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:20:55 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:20:58 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:20:59 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:00 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:03 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:04 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:05 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:08 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:09 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:10 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:14 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:15 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:15 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:18 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:19 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:20 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:23 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:24 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:25 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:28 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:29 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:30 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:33 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:34 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:35 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:38 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:39 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:39 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:44 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:45 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:45 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:49 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:50 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:50 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:54 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:21:55 | INFO     | task_server_scene_annotation | Received task result | Client ID: None | Task ID: None
+2025-10-31 19:21:55 | ERROR    | task_server_scene_annotation | ❌ Error handling task result for None: Dataset None not found
+Traceback (most recent call last):
+  File "/home/diy02/new_pipeline/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 176, in handle_message
+    await asyncio.to_thread(
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/home/diy02/miniconda3/envs/robocoin/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/diy02/new_pipeline/robocoin-dataset/./src/robocoin_dataset/annotation/scene_annotation/scene_annotation.py", line 442, in handle_task_result
+    raise ValueError(f"Dataset {ds_uuid} not found")
+ValueError: Dataset None not found
+2025-10-31 19:21:55 | INFO     | task_server_scene_annotation | Client disconnected | ID: scene_annotation_0
