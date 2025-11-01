@@ -38,15 +38,25 @@ discover_robotics_aitbot_mmk2:
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.mmk2_config
   mujoco_sim_replay_config_class: Mmk2LerobotSimReplayConfig
 
+- version: 5d_arms
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.mmk2_config
+  mujoco_sim_replay_config_class: Mmk2LerobotSimReplayConfig
+
+- version: third_view_lite
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.mmk2_config
+  mujoco_sim_replay_config_class: Mmk2LerobotSimReplayConfig
+
 # galaxea_r1_lite
 galaxea_r1_lite:
 - version: default_version
-  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
   mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
 
 - version: h5_version
-  verison_description: galaxea r1 lite H5 format (qpos + eepose, no images)
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
+  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
+
+- version: h5_mp4_version
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
   mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
 
@@ -86,6 +96,10 @@ ruantong_a2d:
 - version: default_version
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ruantong_config
   mujoco_sim_replay_config_class: RuantongA2dLerobotSimReplayConfig
+
+- version: gt02_new_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ruantong_config
+  mujoco_sim_replay_config_class: RuantongA2dLerobotSimReplayConfig  
 
 # unitree_g1
 unitree_g1: 
