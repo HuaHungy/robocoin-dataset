@@ -5,7 +5,7 @@ import numpy as np
 
 from robocoin_dataset.data_post_process import DataPostProcessorBase
 from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import DatasetDB, TaskStatus
+from robocoin_dataset.database.models import DatasetDB
 
 
 class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
