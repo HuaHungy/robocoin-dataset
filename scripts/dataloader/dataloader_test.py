@@ -26,7 +26,7 @@ import logging
 import sys
 from pathlib import Path
 
-from robocoin_dataset.dataloader.dataloader_db import (
+from robocoin_dataset.dataloader.dataloader import (
     DataloaderDbClient,
     DataloaderDbProcess,
     DataloaderDbServer,

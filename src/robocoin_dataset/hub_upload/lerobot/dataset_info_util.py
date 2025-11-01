@@ -334,7 +334,7 @@ class LocalDsInfoUtil(LocalDsUtil):
 if __name__ == "__main__":
     """
     Main entry point for the dataset info generator.
-    
+
     Parses command line configuration and runs the info generation process.
     """
     config = draccus.parse(LocalDsInfoConfig)
