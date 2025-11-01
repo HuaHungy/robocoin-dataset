@@ -17,7 +17,7 @@ async def main() -> None:
         default="",
         help="Path to the database file",
     )
-    
+
     parser.add_argument(
         "--log_dir",
         type=str,
@@ -41,9 +41,6 @@ async def main() -> None:
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
-    sim_replay_config_path = Path(args.sim_replay_config_path).expanduser().absolute()
-    device_model = args.device_model
-    device_model_version = args.device_model_version
 
     if not db_file_path.exists():
         print(f"{db_file_path} does not exist")
@@ -57,12 +54,9 @@ async def main() -> None:
 
     sim_replay_server = SceneAnnotationServer(
         db_file_path=db_file_path,
-        sim_replay_config_path=sim_replay_config_path,
         host=args.host,
         port=args.port,
         heartbeat_interval=30.0,
-        device_model=device_model,
-        device_model_version=device_model_version,
         timeout=15.0,
         logger=logger,
     )
@@ -75,9 +69,11 @@ if __name__ == "__main__":
 
 """usage:
 # realman_rmc_aidal
-python scripts/scene_annotation/scene_annotation_server.py \
+python scripts/scene_annotation/scene_annotat_server.py \
     --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
     --port 8766 \
+    --device_model realman_rmc_aidal \
+    --device_model_version default_version \
     --log_dir ./logs/
 """
