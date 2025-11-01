@@ -77,6 +77,8 @@ data/
 
 extracted_data/
 
+examples/dataloader_test/
+
 db/
 
 
