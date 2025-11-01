@@ -5,6 +5,7 @@ from pathlib import Path
 from robocoin_dataset.eef_sim_data_post_process.eef_sim_data_post_process import (
     EefSimDataProcess,
 )
+
 from robocoin_dataset.utils.logger import setup_logger
 
 if __name__ == "__main__":
@@ -77,7 +78,7 @@ if __name__ == "__main__":
 # realman_rmc_aidal
 python scripts/eef_sim_data_post_process/eef_sim_data_post_process.py \
     --db_file_path ./db/datasets_new.db \
-    --sim_replay_factory_config_path ./scripts/sim_replay/configs/sim_replay_config_factory_config_path.yaml \
+    --sim_replay_factory_config_path ./scripts/sim_replay/configs/sim_replay_config_path.yaml \
     --device_model realman_rmc_aidal \
     --device_model_version default_version \
     --log_dir ./logs/eef_sim_data_post_process

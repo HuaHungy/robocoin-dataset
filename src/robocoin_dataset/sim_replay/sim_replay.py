@@ -377,14 +377,14 @@ class SimReplay:
     def __init__(
         self,
         db_file_path: str | Path,
-        sim_replay_config_factory_config_path: str | Path,
+        sim_replay_config_path: str | Path,
         logger: logging.Logger | None = None,
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
         self.sim_replay_config_classes_path_dict = _get_config_classes_path_dict(
-            file_path=sim_replay_config_factory_config_path
+            file_path=sim_replay_config_path
         )
 
     def sim_replay_datasets(self, device_model: str, device_model_version: str = "") -> None:
@@ -440,7 +440,7 @@ class SimReplayServer(TaskServer):
     def __init__(
         self,
         db_file_path: str | Path,
-        sim_replay_config_factory_config_path: str | Path,
+        sim_replay_config_path: str | Path,
         host: str = "0.0.0.0",
         port: int = 8767,
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
@@ -463,17 +463,13 @@ class SimReplayServer(TaskServer):
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
-        sim_replay_config_factory_config_path = (
-            Path(sim_replay_config_factory_config_path).expanduser().absolute()
-        )
-        if not sim_replay_config_factory_config_path.exists():
+        sim_replay_config_path = Path(sim_replay_config_path).expanduser().absolute()
+        if not sim_replay_config_path.exists():
             raise FileNotFoundError(
-                f"sim_replay_config_classes_file_path {sim_replay_config_factory_config_path} not exists"
+                f"sim_replay_config_classes_file_path {sim_replay_config_path} not exists"
             )
 
-        self.sim_replay_classes_config_dict = _get_config_classes_path_dict(
-            sim_replay_config_factory_config_path
-        )
+        self.sim_replay_classes_config_dict = _get_config_classes_path_dict(sim_replay_config_path)
 
         self.logger.info(
             f"Simulation Replay Server started, "

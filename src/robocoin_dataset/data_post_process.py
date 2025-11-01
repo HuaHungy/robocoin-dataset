@@ -24,15 +24,6 @@ class DataPostProcessorBase:
         if not (self.convert_path / "meta/info.json").exists():
             raise FileNotFoundError(f"{convert_path}/meta/info.json does not exist")
 
-        # with open(self.convert_path / "meta/info.json") as f:
-        #     info_json: dict = json.load(f)
-        #     features = info_json.get("features", None)
-        # if not features:
-        #     raise ValueError(f"{convert_path}/meta/info.json does not contain features")
-        # for feature in data_feature_keys:
-        #     if feature not in features:
-        #         raise ValueError(f"{feature} not found in features")
-
         self.parquet_files, self.new_parquet_files = get_parquet_paths(
             root_dir=self.convert_path, new_parquet_type=data_post_process_type
         )
@@ -151,6 +142,13 @@ class DataPostProcessorBase:
             new_datas: dict[str, np.ndarray] = self.process_episode_data(ori_data)
 
             if set(new_datas.keys()) != set(self.data_features):
+                print(f"new_datas keys {new_datas.keys()} != data_features {self.data_features}")
+                print(
+                    f"set(new_datas.keys())-set(self.data_features): {set(new_datas.keys()) - set(self.data_features)}"
+                )
+                print(
+                    f"set(self.data_features)-set(new_datas.keys()): {set(self.data_features) - set(new_datas.keys())}"
+                )
                 raise ValueError(
                     f"new_datas keys {new_datas.keys()} != self.data_features {self.data_features}"
                 )
@@ -172,7 +170,7 @@ class DataPostProcessorBase:
         self, episode_data: dict[str, np.ndarray]
     ) -> dict[str, dict[str, list[float]]]:
         ep_stats = {}
-        ep_stats["episode_index"] = self.ep_idx
+        ep_stats["episode_index"] = self.episode_idx
         ep_stats["stat"] = {}
         for feature_key, data in episode_data.items():
             if data is None:
@@ -182,8 +180,8 @@ class DataPostProcessorBase:
             ep_stats["stat"][feature_key]["std"] = np.std(data, axis=0).tolist()
             ep_stats["stat"][feature_key]["min"] = np.min(data, axis=0).tolist()
             ep_stats["stat"][feature_key]["max"] = np.max(data, axis=0).tolist()
-            ep_stats["stat"][feature_key]["count"] = data.shape[0].tolist()
-        self.episodes_stats.append(ep_stats)
+            ep_stats["stat"][feature_key]["count"] = [data.shape[0]]
+        return ep_stats
 
     def _write_new_episodes_stats_file(self) -> None:
         with open(self.new_episodes_stats_file_path, "w") as f:

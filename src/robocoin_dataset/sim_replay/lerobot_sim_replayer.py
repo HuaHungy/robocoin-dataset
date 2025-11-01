@@ -293,7 +293,7 @@ class LerobotSimReplayer:
                     # 拼接当前site的 EEF 位置和姿态
                     frame_eef_results.extend(site_pos)
                     frame_eef_results.extend(site_rot_euler)
-                
+
                 # 在所有site数据之后添加夹爪数据
                 frame_eef_results.extend(lerobot_gripper_data)
                 # 转换为numpy数组并添加到结果中

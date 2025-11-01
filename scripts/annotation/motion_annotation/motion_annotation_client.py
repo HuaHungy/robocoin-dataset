@@ -3,12 +3,14 @@ import asyncio
 import logging
 from pathlib import Path
 
-from robocoin_dataset.sim_replay.sim_replay import SimReplayClient
+from robocoin_dataset.annotation.motion_annotation.motion_annotation_data_post_process import (
+    MotionAnnotationDataPostProcessClient,
+)
 from robocoin_dataset.utils.logger import setup_logger
 
 
 async def main() -> None:
-    parser = argparse.argumentparser()
+    parser = argparse.ArgumentParser()
 
     parser.add_argument(
         "--host",
@@ -39,16 +41,16 @@ async def main() -> None:
 
     args = parser.parse_args()
     logger = setup_logger(
-        name="sim_replay_client",
+        name="motion_annotation_client",
         log_dir=Path(args.log_dir),
-        level=logging.info,
+        level=logging.INFO,
     )
 
     server_uri = f"ws://{args.host}:{args.port}"
-    sim_replay_client = SimReplayClient(
+    motion_annotation_client = MotionAnnotationDataPostProcessClient(
         server_uri=server_uri, logger=logger, heartbeat_interval=args.heartbeat_interval
     )
-    await sim_replay_client.run()
+    await motion_annotation_client.run()
 
 
 if __name__ == "__main__":
@@ -56,9 +58,9 @@ if __name__ == "__main__":
 
 """usage:
 # realman_rmc_aidal
-python scripts/sim_replay/sim_replay_client.py \
+python scripts/annotation/motion_annotation/motion_annotation_client.py \
     --host=127.0.0.1 \
     --port=8766 \
     --heartbeat-interval=10.0 \
-    --log_dir ./logs/sim_replay
+    --log_dir ./logs/motion_annotation
 """

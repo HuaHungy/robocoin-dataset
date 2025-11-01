@@ -3,7 +3,9 @@ import asyncio
 import logging
 from pathlib import Path
 
-from robocoin_dataset.sim_replay.sim_replay import SimReplayServer
+from robocoin_dataset.annotation.motion_annotation.motion_annotation_data_post_process import (
+    MotionAnnotationDataPostProcessServer,
+)
 from robocoin_dataset.utils.logger import setup_logger
 
 
@@ -60,41 +62,39 @@ async def main() -> None:
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
-    sim_replay_config_path = Path(args.sim_replay_config_path).expanduser().absolute()
-    device_model = args.device_model
-    device_model_version = args.device_model_version
 
     if not db_file_path.exists():
         print(f"{db_file_path} does not exist")
         exit(1)
 
     logger = setup_logger(
-        name="sim_replay_server",
+        name="video hash server",
         log_dir=Path(args.log_dir),
         level=logging.INFO,
     )
 
-    sim_replay_server = SimReplayServer(
+    motion_annotation_server = MotionAnnotationDataPostProcessServer(
         db_file_path=db_file_path,
-        sim_replay_config_path=sim_replay_config_path,
+        sim_replay_config_path=args.sim_replay_config_path,
         host=args.host,
         port=args.port,
         heartbeat_interval=30.0,
-        device_model=device_model,
-        device_model_version=device_model_version,
+        device_model=args.device_model,
+        device_model_version=args.device_model_version,
         timeout=15.0,
         logger=logger,
     )
 
-    await sim_replay_server.start()
+    await motion_annotation_server.start()
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 
-"""usage:
-# realman_rmc_aidal
-python scripts/sim_replay/sim_replay_server.py \
+
+"""Usage:
+
+python scripts/annotation/motion_annotation/motion_annotation_server.py \
     --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
     --port 8766 \

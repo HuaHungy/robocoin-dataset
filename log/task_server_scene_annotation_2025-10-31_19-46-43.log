@@ -1,0 +1,41 @@
+2025-10-31 19:46:43 | INFO     | task_server_scene_annotation | The log system has been started, log file: /home/lxc/work/robocoin-dataset/log/task_server_scene_annotation_2025-10-31_19-46-43.log
+2025-10-31 19:46:43 | INFO     | task_server_scene_annotation | Task server started successfully: ws://0.0.0.0:8765
+2025-10-31 19:48:40 | INFO     | task_server_scene_annotation | Client registered successfully | ID: scene_annotation_0 | IP: 172.16.13.93 | Current connections: 1
+2025-10-31 19:48:40 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:41 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_0
+2025-10-31 19:48:41 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_0
+2025-10-31 19:48:41 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:42 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_1
+2025-10-31 19:48:42 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_1
+2025-10-31 19:48:42 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:43 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_2
+2025-10-31 19:48:43 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_2
+2025-10-31 19:48:43 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:44 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_3
+2025-10-31 19:48:44 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_3
+2025-10-31 19:48:44 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:45 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_4
+2025-10-31 19:48:45 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_4
+2025-10-31 19:48:45 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:46 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_5
+2025-10-31 19:48:46 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_5
+2025-10-31 19:48:46 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:47 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_6
+2025-10-31 19:48:47 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_6
+2025-10-31 19:48:47 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:48 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_7
+2025-10-31 19:48:48 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_7
+2025-10-31 19:48:48 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:49 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_8
+2025-10-31 19:48:49 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_8
+2025-10-31 19:48:49 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:50 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_9
+2025-10-31 19:48:50 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_9
+2025-10-31 19:48:50 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:51 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_10
+2025-10-31 19:48:51 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_10
+2025-10-31 19:48:51 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:52 | INFO     | task_server_scene_annotation | Received task result | Client ID: scene_annotation_0 | Task ID: scene_annotation_11
+2025-10-31 19:48:52 | INFO     | task_server_scene_annotation | ✅ Successfully handled task result for scene_annotation_11
+2025-10-31 19:48:52 | INFO     | task_server_scene_annotation | Assigned task task_id to client scene_annotation_0
+2025-10-31 19:48:53 | INFO     | task_server_scene_annotation | Client disconnected | ID: scene_annotation_0

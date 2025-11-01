@@ -19,6 +19,7 @@ from robocoin_dataset.database.models import (
 
 def annotations_to_frame_array(
     annotations: list[tuple[int, int, int, int]],
+    annotation_num: int,
     max_st_num: int = 5,
     episode_frame_nums: dict[int, int] = None,
 ) -> list[np.ndarray]:
@@ -41,7 +42,7 @@ def annotations_to_frame_array(
         # 明确指定 dtype=np.int32
         frame_array = np.full(
             (max_frame + 1, max_st_num),
-            -1,
+            annotation_num,
             dtype=np.int32,  # 👈 指定为 int32
         )
 
@@ -106,6 +107,7 @@ class StAnnotationDataPostProcessor(DataPostProcessorBase):
         with open(subtask_jsonl_file_path, "w") as f:
             for i, annotation in enumerate(self.subtask_annotations):
                 f.write(f'{{"subtask_index": {i}, "subtask": "{annotation}"}}\n')
+            f.write(f'{{"subtask_index": {len(self.subtask_annotations)}, "subtask": "null"}}\n')
 
 
 class DatasetSubtaskAnnotationEmbedding:
@@ -196,7 +198,10 @@ class DatasetSubtaskAnnotationEmbedding:
 
         try:
             annotation_datas = annotations_to_frame_array(
-                annotations=annotations, max_st_num=5, episode_frame_nums=episode_frame_nums
+                annotations=annotations,
+                annotation_num=len(optimized_subtask_annotations_dict),
+                max_st_num=5,
+                episode_frame_nums=episode_frame_nums,
             )
 
             processor = StAnnotationDataPostProcessor(

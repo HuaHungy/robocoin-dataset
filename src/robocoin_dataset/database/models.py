@@ -7,7 +7,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    Numeric,
     String,
     Table,
     Text,
@@ -47,6 +46,7 @@ class DatasetDB(Base):
 
     # 入库相关
     device_model = Column(String(100), nullable=False)
+    device_model_version = Column(String(100), nullable=False)
     end_effector_type = Column(String(100), nullable=False)
     operation_platform_height = Column(Float, nullable=True)
     yaml_file_path = Column(String(255), nullable=True)

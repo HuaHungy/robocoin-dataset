@@ -3,8 +3,8 @@
 场景标注服务器脚本
 """
 
+import asyncio
 import sys
-import os
 from pathlib import Path
 
 # 添加项目根目录到Python路径
@@ -14,7 +14,9 @@ sys.path.insert(0, str(project_root / "src"))
 import argparse
 import logging
 
-from robocoin_dataset.annotation.scene_annotation.scene_annotation import SceneAnnotationServer
+from robocoin_dataset.annotation.scene_annotation.scene_annotation_server import (
+    SceneAnnotationServer,
+)
 
 
 async def main():
@@ -82,12 +84,12 @@ async def main():
     # 创建场景标注服务器
     server = SceneAnnotationServer(
         db_file_path=args.db_file_path,
-        output_dir=args.output_dir,
-        host=args.host,
-        port=args.port,
-        heartbeat_interval=args.heartbeat_interval,
-        timeout=args.timeout,
-        logger=logger,
+        # output_dir=args.output_dir,
+        # host=args.host,
+        # port=args.port,
+        # heartbeat_interval=args.heartbeat_interval,
+        # timeout=args.timeout,
+        # logger=logger,
     )
 
     # 启动服务器

@@ -7,6 +7,9 @@ import yaml
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import and_, or_
 
+from robocoin_dataset.annotation.motion_annotation.processors.motion_annotation_data_post_processor import (
+    MotionAnnotationDataPostProcessor,
+)
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetDB,
@@ -24,8 +27,8 @@ from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import (
     LEFORMAT_PATH,
 )
-from robocoin_dataset.eef_sim_data_post_process.processors.eef_sim_data_post_processor_base import (
-    EefSimDataPostProcessorBase,
+from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
+    LerobotSimReplayConfig,
 )
 
 DEVICE_MODEL_VERSION = "device_model_version"
@@ -38,9 +41,7 @@ def _get_sim_replay_config_classes_dict(
 ) -> dict[tuple[str, str], tuple[str, str]]:
     """获取 sim_replay 配置字典"""
     if not sim_replay_config_file_path.exists():
-        raise FileNotFoundError(
-            f"sim_replay_config_path {sim_replay_config_file_path} not exists"
-        )
+        raise FileNotFoundError(f"sim_replay_config_path {sim_replay_config_file_path} not exists")
     with open(sim_replay_config_file_path) as f:
         yaml_dict = yaml.safe_load(f)
 
@@ -62,7 +63,7 @@ def _get_sim_replay_config_classes_dict(
     return replay_config_dict
 
 
-def _sync_eef_sim_data_post_processing_tasks(
+def _sync_motion_annotation_data_post_processing_tasks(
     session: Session, device_model: str | None = None, device_model_version: str | None = None
 ) -> None:
     query = session.query(DatasetDB).filter(
@@ -101,10 +102,11 @@ def _sync_eef_sim_data_post_processing_tasks(
     session.commit()
 
 
-def _gen_one_eef_sim_data_post_processing_task(
+def _gen_one_motion_annotation_data_post_processing_task(
     session: Session, device_model: str = "", device_model_version: str = ""
 ) -> tuple[str | None, str | None, str | None, str | None]:
     query = session.query(DatasetDB).filter(
+        DatasetDB.sim_replay_status == TaskStatus.COMPLETED,
         DatasetDB.motion_annotation_status == TaskStatus.PENDING,
     )
     if device_model:
@@ -125,18 +127,17 @@ def _gen_one_eef_sim_data_post_processing_task(
     return item.dataset_uuid, item.convert_path, item.device_model, item.device_model_version
 
 
-def _eef_sim_data_post_process(
+def _motion_annotation_data_post_process(
     repo_path: str | Path,
-    sim_replay_config,
+    sim_replay_config: LerobotSimReplayConfig,
 ) -> None:
-    """直接使用 EefSimDataPostProcessorBase 进行处理"""
-    processor: EefSimDataPostProcessorBase = EefSimDataPostProcessorBase(
+    processor: MotionAnnotationDataPostProcessor = MotionAnnotationDataPostProcessor(
         convert_path=repo_path, sim_replay_config=sim_replay_config
     )
     processor.process()
 
 
-class EefSimDataProcess:
+class MotionAnnotationDataPostProcess:
     def __init__(
         self,
         db_file_path: str | Path,
@@ -148,15 +149,15 @@ class EefSimDataProcess:
         self.logger = logger or logging.getLogger(__name__)
         self.sim_replay_config_dict = _get_sim_replay_config_classes_dict(sim_replay_config_path)
 
-    def eef_sim_data_post_process_one_dataset(
+    def motion_annotation_data_post_process_one_dataset(
         self, device_model: str = "", device_model_version: str = ""
     ) -> None:
         with self.db.with_session() as session:
-            _sync_eef_sim_data_post_processing_tasks(
+            _sync_motion_annotation_data_post_processing_tasks(
                 session, device_model, device_model_version
             )
             dataset_uuid, convert_path, device_model, device_model_version = (
-                _gen_one_eef_sim_data_post_processing_task(
+                _gen_one_motion_annotation_data_post_processing_task(
                     session, device_model, device_model_version
                 )
             )
@@ -166,7 +167,7 @@ class EefSimDataProcess:
 
         try:
             key = (device_model, device_model_version)
-            
+
             # 获取 sim_replay 配置
             sim_replay_module_path, sim_replay_class_name = self.sim_replay_config_dict.get(
                 key, (None, None)
@@ -175,20 +176,20 @@ class EefSimDataProcess:
                 raise ValueError(
                     f"sim_replay_config not found for {device_model} {device_model_version}"
                 )
-            
+
             sim_replay_config_class = importlib.import_module(
                 sim_replay_module_path
             ).__getattribute__(sim_replay_class_name)
             sim_replay_config = sim_replay_config_class()
-            
-            _eef_sim_data_post_process(convert_path, sim_replay_config)
+
+            _motion_annotation_data_post_process(convert_path, sim_replay_config)
             with self.db.with_session() as session:
                 item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
                 )
                 item.motion_annotation_status = TaskStatus.COMPLETED
                 session.commit()
-        except Exception as e:
+        except Exception:
             with self.db.with_session() as session:
                 item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
@@ -198,10 +199,12 @@ class EefSimDataProcess:
                 item.motion_annotation_status = TaskStatus.FAILED
                 item.motion_annotation_err_msg = str(traceback.format_exc())
                 session.commit()
-            self.logger.error(f"State Action Data post process dataset {convert_path} failed: {e}")
+            self.logger.error(
+                f"State Action Data post process dataset {convert_path} failed: {traceback.format_exc()}"
+            )
 
 
-class EefSimDataProcessServer(TaskServer):
+class MotionAnnotationDataPostProcessServer(TaskServer):
     def __init__(
         self,
         db_file_path: str | Path,
@@ -228,16 +231,12 @@ class EefSimDataProcessServer(TaskServer):
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
-        
+
         sim_replay_config_path = Path(sim_replay_config_path).expanduser().absolute()
         if not sim_replay_config_path.exists():
-            raise FileNotFoundError(
-                f"sim_replay_config_path {sim_replay_config_path} not exists"
-            )
+            raise FileNotFoundError(f"sim_replay_config_path {sim_replay_config_path} not exists")
 
-        self.sim_replay_config_dict = _get_sim_replay_config_classes_dict(
-            sim_replay_config_path
-        )
+        self.sim_replay_config_dict = _get_sim_replay_config_classes_dict(sim_replay_config_path)
 
         self.logger.info(
             f"EEF Sim Data Post Process Server started, "
@@ -246,7 +245,7 @@ class EefSimDataProcessServer(TaskServer):
         )
 
     def get_task_category(self) -> str:
-        return "eef_sim_data_post_process"
+        return "motion_annotaton_data_post_process"
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
@@ -284,7 +283,7 @@ class EefSimDataProcessServer(TaskServer):
             item.motion_annotation_version_ps = item.sim_replay_version
 
             session.commit()
-            
+
             # 获取 sim_replay 配置
             sim_replay_module_path, sim_replay_class_name = self.sim_replay_config_dict.get(
                 (item.device_model, item.device_model_version),
@@ -310,7 +309,9 @@ class EefSimDataProcessServer(TaskServer):
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
-        motion_annotation_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+        motion_annotation_status = (
+            TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+        )
 
         # 🆕 合并为单个session，保证原子性
         with self.db.with_session() as session:
@@ -321,15 +322,15 @@ class EefSimDataProcessServer(TaskServer):
 
             # 在同一个session中更新转换状态
             item.motion_annotation_status = motion_annotation_status
-            item.sim_replay_err_msg = task_status_msg
+            item.motion_annotation_err_msg = task_status_msg
             session.commit()
             self.logger.info(
-                f"Upsert {item.convert_path} state action data post process status to {motion_annotation_status}, "
+                f"Upsert {item.convert_path} motion annotation data post process status to {motion_annotation_status}, "
                 f"update_message: {task_status_msg}"
             )
 
 
-class EefSimDataProcessClient(TaskClient):
+class MotionAnnotationDataPostProcessClient(TaskClient):
     def __init__(
         self,
         server_uri: str = "ws://localhost:8767",
@@ -343,7 +344,7 @@ class EefSimDataProcessClient(TaskClient):
         )
 
     def get_task_category(self) -> str:
-        return "eef_sim_data_post_process"
+        return "motion_annotation_data_post_process"
 
     def generate_task_request_desc(self) -> dict:
         """客户端可自定义任务请求参数"""
@@ -360,12 +361,10 @@ class EefSimDataProcessClient(TaskClient):
             ).__getattribute__(sim_replay_class_name)
             sim_replay_config = sim_replay_config_class()
 
-            _eef_sim_data_post_process(
+            _motion_annotation_data_post_process(
                 repo_path=repo_path, sim_replay_config=sim_replay_config
             )
 
             return {}
         except Exception as e:
-            raise RuntimeError(
-                f"eef sim data post process dataset {repo_path} failed"
-            ) from e
+            raise RuntimeError(f"motion annotation post process dataset {repo_path} failed") from e
