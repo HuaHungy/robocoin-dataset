@@ -1,0 +1,370 @@
+### fps by manual
+fps: 30
+
+# 🔧 Lite版本说明：
+# 适用于只有 action/* 数据、缺失 state/* 数据的旧版本leju数据集
+# observation.state 使用 action/* 路径（将action当作state）
+# 维度：54维（去除了P1/P2扩展字段）
+
+features:
+  observation:
+    images:
+      ### Head camera - RGB
+      - cam_name: camera_head_rgb
+        args:
+          ### keys and values by manual
+          cam_name: camera_head_rgb
+          video_file_pattern: camera/video/head_cam_h.mp4
+
+        ### values by function
+        # dtype: video
+        # shape: [480, 640, 3]
+        # names: [height, width, channels]
+        # lerobot_feature: observations.images.camera_head_rgb : by _gen_lerobot_features()
+
+      ### Left wrist camera - RGB
+      - cam_name: camera_left_wrist_rgb
+        args:
+          ### keys and values by manual
+          cam_name: camera_left_wrist_rgb
+          video_file_pattern: camera/video/wrist_cam_l.mp4
+
+        ### values by function
+        # dtype: video
+        # shape: [480, 640, 3]
+        # names: [height, width, channels]
+        # lerobot_feature: observations.images.camera_left_wrist_rgb : by _gen_lerobot_features()
+
+      ### Right wrist camera - RGB
+      - cam_name: camera_right_wrist_rgb
+        args:
+          ### keys and values by manual
+          cam_name: camera_right_wrist_rgb
+          video_file_pattern: camera/video/wrist_cam_r.mp4
+
+        ### values by function
+        # dtype: video
+        # shape: [480, 640, 3]
+        # names: [height, width, channels]
+        # lerobot_feature: observations.images.camera_right_wrist_rgb : by _gen_lerobot_features()
+
+    state:
+      ### values by function
+      # lerobot_feature: observation.state : by _gen_lerobot_features()
+      # dtype: float32 
+      # shape: [54]  # 🔧 Lite版本：去除P1/P2扩展字段，只保留基础position和velocity
+      
+      ### 数据结构说明（总计54维）：
+      ### - Joint positions (14): 左臂7个 + 右臂7个
+      ### - Leg positions (12): 左腿6个 + 右腿6个
+      ### - Dexhand positions (12): 左手6个 + 右手6个
+      ### - Head positions (2): 2个关节
+      ### - Joint velocities (14): 左臂7个 + 右臂7个
+      ###
+      ### 🔧 相比full版本，去除了：
+      ### - Joint/Leg/Head effort (P1字段)
+      ### - Leg/Head velocities (P1字段)
+      ### - EEF position/orientation (P2字段)
+      ### - IMU数据 (P2字段)
+
+      ## sub_states should be concatenated together here : by _gen_state_names()
+      sub_state:
+        ### Left arm joint positions (7) - 单位: rad
+        ### 🔧 使用 action/joint/position 替代 state/joint/position
+        - names: 
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
+            - left_arm_joint_7_rad
+          args:
+            ### keys and values by manual
+            h5_path: action/joint/position
+            range_from: 0
+            range_to: 7
+        
+        ### Right arm joint positions (7) - 单位: rad
+        ### 🔧 使用 action/joint/position 替代 state/joint/position
+        - names: 
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_arm_joint_7_rad
+          args:
+            ### keys and values by manual
+            h5_path: action/joint/position
+            range_from: 7
+            range_to: 14
+
+        ### Left leg joint positions (6) - 单位: rad
+        ### 🔧 使用 action/leg/position 替代 state/leg/position
+        - names: 
+            - left_leg_joint_1_rad
+            - left_leg_joint_2_rad
+            - left_leg_joint_3_rad
+            - left_leg_joint_4_rad
+            - left_leg_joint_5_rad
+            - left_leg_joint_6_rad
+          args:
+            ### keys and values by manual
+            h5_path: action/leg/position
+            range_from: 0
+            range_to: 6
+        
+        ### Right leg joint positions (6) - 单位: rad
+        ### 🔧 使用 action/leg/position 替代 state/leg/position
+        - names: 
+            - right_leg_joint_1_rad
+            - right_leg_joint_2_rad
+            - right_leg_joint_3_rad
+            - right_leg_joint_4_rad
+            - right_leg_joint_5_rad
+            - right_leg_joint_6_rad
+          args:
+            ### keys and values by manual
+            h5_path: action/leg/position
+            range_from: 6
+            range_to: 12
+
+        ### Left dexhand joint positions (6) - 单位: deg (度数)
+        ### 数据范围：0-100度
+        ### 🔧 使用 action/effector/position(dexhand) 替代 state/effector/position(dexhand)
+        - names: 
+            - left_hand_joint_1_rad
+            - left_hand_joint_2_rad
+            - left_hand_joint_3_rad
+            - left_hand_joint_4_rad
+            - left_hand_joint_5_rad
+            - left_hand_joint_6_rad
+          args:
+            ### keys and values by manual
+            h5_path: action/effector/position(dexhand)
+            range_from: 0
+            range_to: 6
+          convert_func: degree2rad  # ✅ 度数转弧度
+        
+        ### Right dexhand joint positions (6) - 单位: deg (度数)
+        ### 🔧 使用 action/effector/position(dexhand) 替代 state/effector/position(dexhand)
+        - names: 
+            - right_hand_joint_1_rad
+            - right_hand_joint_2_rad
+            - right_hand_joint_3_rad
+            - right_hand_joint_4_rad
+            - right_hand_joint_5_rad
+            - right_hand_joint_6_rad
+          args:
+            ### keys and values by manual
+            h5_path: action/effector/position(dexhand)
+            range_from: 6
+            range_to: 12
+          convert_func: degree2rad  # ✅ 度数转弧度
+
+        ### Head joint positions (2) - 单位: rad
+        ### 🔧 使用 action/head/position 替代 state/head/position
+        - names: 
+            - head_joint_1_rad
+            - head_joint_2_rad
+          args:
+            ### keys and values by manual
+            h5_path: action/head/position
+            range_from: 0
+            range_to: 2
+
+        ### Left arm joint velocities (7) - 单位: rad/s
+        ### 🔧 修复: 使用 state/joint/velocity (与full版本一致)
+        - names: 
+            - left_arm_joint_1_vel_rad_s
+            - left_arm_joint_2_vel_rad_s
+            - left_arm_joint_3_vel_rad_s
+            - left_arm_joint_4_vel_rad_s
+            - left_arm_joint_5_vel_rad_s
+            - left_arm_joint_6_vel_rad_s
+            - left_arm_joint_7_vel_rad_s
+          args:
+            ### keys and values by manual
+            h5_path: state/joint/velocity
+            range_from: 0
+            range_to: 7
+        
+        ### Right arm joint velocities (7) - 单位: rad/s
+        ### 🔧 修复: 使用 state/joint/velocity (与full版本一致)
+        - names: 
+            - right_arm_joint_1_vel_rad_s
+            - right_arm_joint_2_vel_rad_s
+            - right_arm_joint_3_vel_rad_s
+            - right_arm_joint_4_vel_rad_s
+            - right_arm_joint_5_vel_rad_s
+            - right_arm_joint_6_vel_rad_s
+            - right_arm_joint_7_vel_rad_s
+          args:
+            ### keys and values by manual
+            h5_path: state/joint/velocity
+            range_from: 7
+            range_to: 14
+
+        ### 🔧 P1/P2字段已删除 (lite版本)
+        ### 删除原因: action/* 中没有这些数据
+        ### 包括:
+        ### - Joint/Leg/Head effort
+        ### - Leg/Head velocities  
+        ### - EEF position/orientation
+        ### - IMU acceleration/gyroscope/quaternion
+
+      ### values by function
+      # names: 自动生成（见上面sub_state定义）
+      # shape: [54]
+
+  action:
+    ### values by function
+    # lerobot_feature: action : by _gen_lerobot_features()
+    # dtype: float32
+    # shape: [54]  # Same as state
+    
+    ### 数据结构说明（与 state 相同）：
+    ### - Joint positions (14): [0-6] 左臂 + [7-13] 右臂
+    ### - Leg positions (12): [0-5] 左腿 + [6-11] 右腿  
+    ### - Dexhand positions (12): [0-5] 左手 + [6-11] 右手
+    ### - Head positions (2): 2个关节
+    ### - Joint velocities (14): [0-6] 左臂速度 + [7-13] 右臂速度
+
+    ## sub_actions should be concatenated together here : by _gen_action_names()
+    ### values by manual
+    timeline_offset: 1
+    sub_action:
+      ### Left arm joint positions (7) - 单位: rad
+      - names: 
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
+          - left_arm_joint_7_rad
+        args:
+          ### keys and values by manual
+          h5_path: action/joint/position
+          range_from: 0
+          range_to: 7
+      
+      ### Right arm joint positions (7) - 单位: rad
+      - names: 
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_arm_joint_7_rad
+        args:
+          ### keys and values by manual
+          h5_path: action/joint/position
+          range_from: 7
+          range_to: 14
+
+      ### Left leg joint positions (6) - 单位: rad
+      - names: 
+          - left_leg_joint_1_rad
+          - left_leg_joint_2_rad
+          - left_leg_joint_3_rad
+          - left_leg_joint_4_rad
+          - left_leg_joint_5_rad
+          - left_leg_joint_6_rad
+        args:
+          ### keys and values by manual
+          h5_path: action/leg/position
+          range_from: 0
+          range_to: 6
+      
+      ### Right leg joint positions (6) - 单位: rad
+      - names: 
+          - right_leg_joint_1_rad
+          - right_leg_joint_2_rad
+          - right_leg_joint_3_rad
+          - right_leg_joint_4_rad
+          - right_leg_joint_5_rad
+          - right_leg_joint_6_rad
+        args:
+          ### keys and values by manual
+          h5_path: action/leg/position
+          range_from: 6
+          range_to: 12
+
+      ### Left dexhand joint positions (6) - 单位: deg (度数)
+      - names: 
+          - left_hand_joint_1_rad
+          - left_hand_joint_2_rad
+          - left_hand_joint_3_rad
+          - left_hand_joint_4_rad
+          - left_hand_joint_5_rad
+          - left_hand_joint_6_rad
+        args:
+          ### keys and values by manual
+          h5_path: action/effector/position(dexhand)
+          range_from: 0
+          range_to: 6
+        convert_func: degree2rad  # ✅ 度数转弧度
+      
+      ### Right dexhand joint positions (6) - 单位: deg (度数)
+      - names: 
+          - right_hand_joint_1_rad
+          - right_hand_joint_2_rad
+          - right_hand_joint_3_rad
+          - right_hand_joint_4_rad
+          - right_hand_joint_5_rad
+          - right_hand_joint_6_rad
+        args:
+          ### keys and values by manual
+          h5_path: action/effector/position(dexhand)
+          range_from: 6
+          range_to: 12
+        convert_func: degree2rad  # ✅ 度数转弧度
+
+      ### Head joint positions (2) - 单位: rad
+      - names: 
+          - head_joint_1_rad
+          - head_joint_2_rad
+        args:
+          ### keys and values by manual
+          h5_path: action/head/position
+          range_from: 0
+          range_to: 2
+
+      ### Left arm joint velocities (7) - 单位: rad/s (using state velocity as action)
+      - names: 
+          - left_arm_joint_1_vel_rad_s
+          - left_arm_joint_2_vel_rad_s
+          - left_arm_joint_3_vel_rad_s
+          - left_arm_joint_4_vel_rad_s
+          - left_arm_joint_5_vel_rad_s
+          - left_arm_joint_6_vel_rad_s
+          - left_arm_joint_7_vel_rad_s
+        args:
+          ### keys and values by manual
+          h5_path: state/joint/velocity
+          range_from: 0
+          range_to: 7
+      
+      ### Right arm joint velocities (7) - 单位: rad/s (using state velocity as action)
+      - names: 
+          - right_arm_joint_1_vel_rad_s
+          - right_arm_joint_2_vel_rad_s
+          - right_arm_joint_3_vel_rad_s
+          - right_arm_joint_4_vel_rad_s
+          - right_arm_joint_5_vel_rad_s
+          - right_arm_joint_6_vel_rad_s
+          - right_arm_joint_7_vel_rad_s
+        args:
+          ### keys and values by manual
+          h5_path: state/joint/velocity
+          range_from: 7
+          range_to: 14
+
+    ### values by function
+    # names: 自动生成（见上面sub_action定义）
+    # shape: [54]
+

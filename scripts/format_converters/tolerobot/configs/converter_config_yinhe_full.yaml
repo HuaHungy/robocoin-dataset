@@ -1,0 +1,218 @@
+fps: 30
+features:
+  observation:
+    images:
+      - cam_name: cam_high_rgb
+        args:
+          cam_name: camera_front_head_rgb
+          video_file_pattern: "*camera_front_head_rgb.mp4"
+      - cam_name: cam_left_wrist_rgb
+        args:
+          cam_name: camera_left_wrist
+          video_file_pattern: "*camera_left_wrist.mp4"
+      - cam_name: cam_right_wrist_rgb
+        args:
+          cam_name: camera_right_wrist
+          video_file_pattern: "*camera_right_wrist.mp4"
+
+    state:
+      # Total: 48维 (20 P0 + 28 P1)
+      # P0: 3 body + 2 head + 7 left_arm + 1 left_gripper + 7 right_arm + 1 right_gripper = 21维
+      # P1: 7 left_arm_vel + 7 left_arm_eff + 7 right_arm_vel + 7 right_arm_eff = 28维
+      
+      sub_state:
+        # Body joints (3维 position)
+        - names:
+            - body_joint_1_rad
+            - body_joint_2_rad
+            - body_joint_3_rad
+          args:
+            json_path: state_body_joint_position
+            field_name: position  # 从dict中提取position字段
+            range_from: 0
+            range_to: 3
+          # ⚠️ 数据质量注意：部分维度为常量 (dim_1=1.3141)
+
+        # Head joints (2维 position) 
+        - names:
+            - head_joint_1_rad
+            - head_joint_2_rad
+          args:
+            json_path: state_front_head_joint
+            field_name: position
+            range_from: 0
+            range_to: 2
+          # ⚠️ 数据质量注意：该episode中全零（头部未使用）
+
+        # Left arm joints (7维 position)
+        - names:
+            - left_arm_joint_1_rad
+            - left_arm_joint_2_rad
+            - left_arm_joint_3_rad
+            - left_arm_joint_4_rad
+            - left_arm_joint_5_rad
+            - left_arm_joint_6_rad
+            - left_arm_joint_7_rad
+          args:
+            json_path: state_left_arm_joint_position
+            field_name: position
+            range_from: 0
+            range_to: 7
+
+        # Left gripper (1维)
+        - names:
+            - left_gripper_width_m
+          args:
+            json_path: state_left_arm_gripper_width
+            field_name: position
+            range_from: 0
+            range_to: 1
+          # ⚠️ 数据质量注意：该episode中为常量0.9886（左夹爪未使用）
+
+        # Right arm joints (7维 position)
+        - names:
+            - right_arm_joint_1_rad
+            - right_arm_joint_2_rad
+            - right_arm_joint_3_rad
+            - right_arm_joint_4_rad
+            - right_arm_joint_5_rad
+            - right_arm_joint_6_rad
+            - right_arm_joint_7_rad
+          args:
+            json_path: state_right_arm_joint_position
+            field_name: position
+            range_from: 0
+            range_to: 7
+
+        # Right gripper (1维)
+        - names:
+            - right_gripper_width_m
+          args:
+            json_path: state_right_arm_gripper_width
+            field_name: position
+            range_from: 0
+            range_to: 1
+
+        # P1: Left arm velocity (7维)
+        - names:
+            - left_arm_joint_1_vel_rad_s
+            - left_arm_joint_2_vel_rad_s
+            - left_arm_joint_3_vel_rad_s
+            - left_arm_joint_4_vel_rad_s
+            - left_arm_joint_5_vel_rad_s
+            - left_arm_joint_6_vel_rad_s
+            - left_arm_joint_7_vel_rad_s
+          args:
+            json_path: state_left_arm_joint_position
+            field_name: velocity
+            range_from: 0
+            range_to: 7
+
+        # P1: Left arm effort (7维)
+        - names:
+            - left_arm_joint_1_eff_nm
+            - left_arm_joint_2_eff_nm
+            - left_arm_joint_3_eff_nm
+            - left_arm_joint_4_eff_nm
+            - left_arm_joint_5_eff_nm
+            - left_arm_joint_6_eff_nm
+            - left_arm_joint_7_eff_nm
+          args:
+            json_path: state_left_arm_joint_position
+            field_name: effort
+            range_from: 0
+            range_to: 7
+
+        # P1: Right arm velocity (7维)
+        - names:
+            - right_arm_joint_1_vel_rad_s
+            - right_arm_joint_2_vel_rad_s
+            - right_arm_joint_3_vel_rad_s
+            - right_arm_joint_4_vel_rad_s
+            - right_arm_joint_5_vel_rad_s
+            - right_arm_joint_6_vel_rad_s
+            - right_arm_joint_7_vel_rad_s
+          args:
+            json_path: state_right_arm_joint_position
+            field_name: velocity
+            range_from: 0
+            range_to: 7
+
+        # P1: Right arm effort (7维)
+        - names:
+            - right_arm_joint_1_eff_nm
+            - right_arm_joint_2_eff_nm
+            - right_arm_joint_3_eff_nm
+            - right_arm_joint_4_eff_nm
+            - right_arm_joint_5_eff_nm
+            - right_arm_joint_6_eff_nm
+            - right_arm_joint_7_eff_nm
+          args:
+            json_path: state_right_arm_joint_position
+            field_name: effort
+            range_from: 0
+            range_to: 7
+
+  action:
+    # Total: 20维 (不包含velocity/effort，action是控制指令)
+    # 4 body + 2 head + 7 left_arm + 7 right_arm = 20维
+    # 注意：gripper没有action
+    # 🔧 完整版本 (full): 包含所有字段，适用于完整数据
+    
+    timeline_offset: 1
+    sub_action:
+      # Body joints (4维) - 使用cmd_body_joint
+      # 📌 如果此字段在某些episode中为空，容错机制会自动跳过这些episode
+      - names:
+          - body_joint_1_rad
+          - body_joint_2_rad
+          - body_joint_3_rad
+          - body_joint_4_rad
+        args:
+          json_path: cmd_body_joint
+          field_name: position
+          range_from: 0
+          range_to: 4
+
+      # Head joints (2维) - 使用cmd_head_joint_state
+      # 📌 如果此字段在某些episode中为空，容错机制会自动跳过这些episode
+      - names:
+          - head_joint_1_rad
+          - head_joint_2_rad
+        args:
+          json_path: cmd_head_joint_state
+          field_name: position
+          range_from: 0
+          range_to: 2
+
+      # Left arm joints (7维) - 使用cmd_left_joint_state
+      - names:
+          - left_arm_joint_1_rad
+          - left_arm_joint_2_rad
+          - left_arm_joint_3_rad
+          - left_arm_joint_4_rad
+          - left_arm_joint_5_rad
+          - left_arm_joint_6_rad
+          - left_arm_joint_7_rad
+        args:
+          json_path: cmd_left_joint_state
+          field_name: position
+          range_from: 0
+          range_to: 7
+
+      # Right arm joints (7维) - 使用cmd_right_joint_state
+      - names:
+          - right_arm_joint_1_rad
+          - right_arm_joint_2_rad
+          - right_arm_joint_3_rad
+          - right_arm_joint_4_rad
+          - right_arm_joint_5_rad
+          - right_arm_joint_6_rad
+          - right_arm_joint_7_rad
+        args:
+          json_path: cmd_right_joint_state
+          field_name: position
+          range_from: 0
+          range_to: 7
+
+

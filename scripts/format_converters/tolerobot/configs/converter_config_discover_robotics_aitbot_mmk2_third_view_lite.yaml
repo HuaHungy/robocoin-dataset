@@ -1,0 +1,356 @@
+### fps by manual
+fps: 30
+
+features:
+  observation:
+    images:
+    
+    # 头部相机 (camera_head)
+    - cam_name: cam_high_rgb
+      args:
+        camera_dir: camera_head
+    
+    # 左手相机 (camera_left_wrist) 
+    - cam_name: cam_left_wrist_rgb
+      args:
+        camera_dir: camera_left_wrist
+        
+    # 右手相机 (camera_right_wrist)
+    - cam_name: cam_right_wrist_rgb
+      args:
+        camera_dir: camera_right_wrist
+        
+    # 第三人称视角相机 (camera_third_view)
+    - cam_name: cam_third_view
+      args:
+        camera_dir: camera_third_view
+
+    state:
+      # MMK2状态包含（P0 + P1字段）：
+      # 左臂: pos6 + vel6 + eff6 + pose_t3 + euler3 = 24维
+      # 右臂: pos6 + vel6 + eff6 + pose_t3 + euler3 = 24维
+      # 头部: pos2 + vel2 + eff2 = 6维
+      # 脊柱: pos1 = 1维
+      # 双手: left12 + right12 = 24维
+      # 总计: 24 + 24 + 6 + 1 + 24 = 79维
+      # 🆕 2025-10-24: 使用欧拉角(3维)代替四元数(4维)，通过convert_func转换
+      sub_state:
+      
+      # 左臂关节位置 (6关节)
+      - names: 
+        - left_arm_joint_1_rad
+        - left_arm_joint_2_rad
+        - left_arm_joint_3_rad
+        - left_arm_joint_4_rad
+        - left_arm_joint_5_rad
+        - left_arm_joint_6_rad
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/left_arm/joint_state
+          field: pos
+          range_from: 0
+          range_to: 6
+      
+      # 🆕 左臂关节速度 (6关节) - P1字段
+      - names:
+        - left_arm_joint_1_vel_rad_s
+        - left_arm_joint_2_vel_rad_s
+        - left_arm_joint_3_vel_rad_s
+        - left_arm_joint_4_vel_rad_s
+        - left_arm_joint_5_vel_rad_s
+        - left_arm_joint_6_vel_rad_s
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/left_arm/joint_state
+          field: vel
+          range_from: 0
+          range_to: 6
+      
+      # 🆕 左臂关节力矩 (6关节) - P1字段
+      - names:
+        - left_arm_joint_1_eff_nm
+        - left_arm_joint_2_eff_nm
+        - left_arm_joint_3_eff_nm
+        - left_arm_joint_4_eff_nm
+        - left_arm_joint_5_eff_nm
+        - left_arm_joint_6_eff_nm
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/left_arm/joint_state
+          field: eff
+          range_from: 0
+          range_to: 6
+      
+      # 🆕 左臂末端执行器位置 (3维) - P1字段
+      - names:
+        - left_eef_pos_x_m
+        - left_eef_pos_y_m
+        - left_eef_pos_z_m
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/left_arm/pose
+          field: t
+          range_from: 0
+          range_to: 3
+      
+      # 🆕 左臂末端执行器姿态欧拉角 (3维，从4维四元数转换而来) - P1字段
+      - names:
+        - left_eef_euler_x_rad
+        - left_eef_euler_y_rad
+        - left_eef_euler_z_rad
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/left_arm/pose
+          field: r
+          range_from: 0
+          range_to: 4
+        convert_func: quat_xyzw_2_euler_xyz
+      
+      # 右臂关节位置 (6关节)  
+      - names:
+        - right_arm_joint_1_rad
+        - right_arm_joint_2_rad
+        - right_arm_joint_3_rad
+        - right_arm_joint_4_rad
+        - right_arm_joint_5_rad
+        - right_arm_joint_6_rad
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/right_arm/joint_state
+          field: pos
+          range_from: 0
+          range_to: 6
+      
+      # 🆕 右臂关节速度 (6关节) - P1字段
+      - names:
+        - right_arm_joint_1_vel_rad_s
+        - right_arm_joint_2_vel_rad_s
+        - right_arm_joint_3_vel_rad_s
+        - right_arm_joint_4_vel_rad_s
+        - right_arm_joint_5_vel_rad_s
+        - right_arm_joint_6_vel_rad_s
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/right_arm/joint_state
+          field: vel
+          range_from: 0
+          range_to: 6
+      
+      # 🆕 右臂关节力矩 (6关节) - P1字段
+      - names:
+        - right_arm_joint_1_eff_nm
+        - right_arm_joint_2_eff_nm
+        - right_arm_joint_3_eff_nm
+        - right_arm_joint_4_eff_nm
+        - right_arm_joint_5_eff_nm
+        - right_arm_joint_6_eff_nm
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/right_arm/joint_state
+          field: eff
+          range_from: 0
+          range_to: 6
+      
+      # 🆕 右臂末端执行器位置 (3维) - P1字段
+      - names:
+        - right_eef_pos_x_m
+        - right_eef_pos_y_m
+        - right_eef_pos_z_m
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/right_arm/pose
+          field: t
+          range_from: 0
+          range_to: 3
+      
+      # 🆕 右臂末端执行器姿态欧拉角 (3维，从4维四元数转换而来) - P1字段
+      - names:
+        - right_eef_euler_x_rad
+        - right_eef_euler_y_rad
+        - right_eef_euler_z_rad
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/right_arm/pose
+          field: r
+          range_from: 0
+          range_to: 4
+        convert_func: quat_xyzw_2_euler_xyz
+      
+      # 头部关节位置 (2关节)
+      - names:
+        - head_joint_1_rad
+        - head_joint_2_rad
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/head/joint_state
+          field: pos
+          range_from: 0
+          range_to: 2
+      
+      # 🆕 头部关节速度 (2关节) - P1字段
+      - names:
+        - head_joint_1_vel_rad_s
+        - head_joint_2_vel_rad_s
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/head/joint_state
+          field: vel
+          range_from: 0
+          range_to: 2
+      
+      # 🆕 头部关节力矩 (2关节) - P1字段
+      - names:
+        - head_joint_1_eff_nm
+        - head_joint_2_eff_nm
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/head/joint_state
+          field: eff
+          range_from: 0
+          range_to: 2
+          
+      # 脊柱关节位置 (1关节)
+      # ⚠️ 注意：spine的vel和eff全零，不添加
+      - names:
+        - spine_joint_1_rad
+        args:
+          bson_file: episode_0.bson
+          data_path: observation/spine/joint_state
+          field: pos
+          range_from: 0
+          range_to: 1
+      
+      # 左手关节 (12关节) - ⚠️ 注意：xhand数据在frames数组中
+      - names:
+        - left_hand_joint_1_rad
+        - left_hand_joint_2_rad
+        - left_hand_joint_3_rad
+        - left_hand_joint_4_rad
+        - left_hand_joint_5_rad
+        - left_hand_joint_6_rad
+        - left_hand_joint_7_rad
+        - left_hand_joint_8_rad
+        - left_hand_joint_9_rad
+        - left_hand_joint_10_rad
+        - left_hand_joint_11_rad
+        - left_hand_joint_12_rad
+        args:
+          bson_file: xhand_control_data.bson
+          data_path: observation.left_hand
+          range_from: 0
+          range_to: 12
+      
+      # 右手关节 (12关节) - ⚠️ 注意：xhand数据在frames数组中
+      - names:
+        - right_hand_joint_1_rad
+        - right_hand_joint_2_rad
+        - right_hand_joint_3_rad
+        - right_hand_joint_4_rad
+        - right_hand_joint_5_rad
+        - right_hand_joint_6_rad
+        - right_hand_joint_7_rad
+        - right_hand_joint_8_rad
+        - right_hand_joint_9_rad
+        - right_hand_joint_10_rad
+        - right_hand_joint_11_rad
+        - right_hand_joint_12_rad
+        args:
+          bson_file: xhand_control_data.bson
+          data_path: observation.right_hand
+          range_from: 0
+          range_to: 12
+
+  action:
+    # MMK2动作包含：
+    # 左臂6 + 右臂6 + 脊柱1 + 双手24 = 37维
+    # 🆕 2025-10-24: 修正维度，移除不存在的 left_arm_eef/right_arm_eef 字段
+    # 🔧 精简版本 (lite): 删除了head字段，适用于不完整数据
+    # 
+    # ⚠️ 使用场景：
+    #    - 当整个task的head字段都缺失时使用此配置
+    #    - 如果只是少数episode缺失，应使用full版本+容错跳过
+    # 
+    sub_action:
+    
+    # 左臂动作 (6关节)
+    - names:
+      - left_arm_action_1_rad
+      - left_arm_action_2_rad
+      - left_arm_action_3_rad
+      - left_arm_action_4_rad
+      - left_arm_action_5_rad
+      - left_arm_action_6_rad
+      args:
+        bson_file: episode_0.bson
+        data_path: action/left_arm/joint_state
+        field: pos
+        range_from: 0
+        range_to: 6
+        
+    # 右臂动作 (6关节)
+    - names:
+      - right_arm_action_1_rad
+      - right_arm_action_2_rad
+      - right_arm_action_3_rad
+      - right_arm_action_4_rad
+      - right_arm_action_5_rad
+      - right_arm_action_6_rad
+      args:
+        bson_file: episode_0.bson
+        data_path: action/right_arm/joint_state
+        field: pos
+        range_from: 0
+        range_to: 6
+        
+    # 🆕 头部动作已删除 - action/head/joint_state字段在某些数据版本中缺失
+    # 注意：使用lite版本时，头部只有observation，没有action控制
+        
+    # 脊柱动作 (1关节)
+    - names:
+      - spine_action_1_rad
+      args:
+        bson_file: episode_0.bson
+        data_path: action/spine/joint_state
+        field: pos
+        range_from: 0
+        range_to: 1
+        
+    # 左手动作 (12关节) - ⚠️ 注意：xhand数据在frames数组中
+    - names:
+      - left_hand_action_1_rad
+      - left_hand_action_2_rad
+      - left_hand_action_3_rad
+      - left_hand_action_4_rad
+      - left_hand_action_5_rad
+      - left_hand_action_6_rad
+      - left_hand_action_7_rad
+      - left_hand_action_8_rad
+      - left_hand_action_9_rad
+      - left_hand_action_10_rad
+      - left_hand_action_11_rad
+      - left_hand_action_12_rad
+      args:
+        bson_file: xhand_control_data.bson
+        data_path: action.left_hand
+        range_from: 0
+        range_to: 12
+        
+    # 右手动作 (12关节) - ⚠️ 注意：xhand数据在frames数组中
+    - names:
+      - right_hand_action_1_rad
+      - right_hand_action_2_rad
+      - right_hand_action_3_rad
+      - right_hand_action_4_rad
+      - right_hand_action_5_rad
+      - right_hand_action_6_rad
+      - right_hand_action_7_rad
+      - right_hand_action_8_rad
+      - right_hand_action_9_rad
+      - right_hand_action_10_rad
+      - right_hand_action_11_rad
+      - right_hand_action_12_rad
+      args:
+        bson_file: xhand_control_data.bson
+        data_path: action.right_hand
+        range_from: 0
+        range_to: 12

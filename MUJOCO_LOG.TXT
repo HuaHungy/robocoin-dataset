@@ -25,3 +25,12 @@ ERROR: could not create window
 Fri Oct 24 22:40:11 2025
 ERROR: could not create window
 
+Wed Oct 29 21:23:12 2025
+WARNING: Nan, Inf or huge value in QVEL at DOF 9. The simulation is unstable. Time = 0.0040.
+
+Thu Oct 30 12:18:12 2025
+WARNING: Nan, Inf or huge value in QVEL at DOF 9. The simulation is unstable. Time = 0.0040.
+
+Thu Oct 30 14:33:09 2025
+WARNING: Nan, Inf or huge value in QVEL at DOF 9. The simulation is unstable. Time = 0.0040.
+
