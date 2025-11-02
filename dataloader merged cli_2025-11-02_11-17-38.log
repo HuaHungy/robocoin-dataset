@@ -1,0 +1,11 @@
+2025-11-02 11:17:38 | INFO     | dataloader merged cli | The log system has been started, log file: /home/rogerspyke/projects/robocoin-dataset/dataloader merged cli_2025-11-02_11-17-38.log
+2025-11-02 11:17:38 | INFO     | dataloader merged cli | Found 2 dataset(s) to process
+2025-11-02 11:17:38 | INFO     | dataloader merged cli | Processing dataset 1/2: 88e35314-80f0-4a2b-a92e-5b0e769483ae
+2025-11-02 11:17:38 | ERROR    | dataloader merged cli | Dataset 88e35314-80f0-4a2b-a92e-5b0e769483ae: dataloader detection failed: 'shape'
+2025-11-02 11:17:38 | INFO     | dataloader merged cli | Processing dataset 2/2: 7509637a-3057-4a5d-97b8-974d09c2ab97
+2025-11-02 11:18:33 | INFO     | dataloader merged cli | Dataset 7509637a-3057-4a5d-97b8-974d09c2ab97: dataloader detection completed
+2025-11-02 11:18:33 | INFO     | dataloader merged cli | ============================================================
+2025-11-02 11:18:33 | INFO     | dataloader merged cli | Processing complete: 1 succeeded, 1 failed
+2025-11-02 11:18:33 | INFO     | dataloader merged cli | Succeeded: ['7509637a-3057-4a5d-97b8-974d09c2ab97']
+2025-11-02 11:18:33 | INFO     | dataloader merged cli | Failed datasets:
+2025-11-02 11:18:33 | INFO     | dataloader merged cli |   - 88e35314-80f0-4a2b-a92e-5b0e769483ae: 'shape'

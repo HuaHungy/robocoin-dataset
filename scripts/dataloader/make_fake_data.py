@@ -69,9 +69,16 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy import text
+
+from robocoin_dataset.database.database import DatasetDatabase
+from robocoin_dataset.database.models import TaskStatus
+from robocoin_dataset.dataloader.make_data_sym_links import create_lerobot_symlink_structure
 
 # Try to import pandas and pyarrow for parquet file generation
 try:
@@ -1220,7 +1227,7 @@ def generate_fake_pipeline_data(
             "stats": stats_obj,
             # Additional merged-specific fields (ignored by LeRobot loader)
             "merged_timestamp": f"{episode_num * 100.0:.2f}",
-            "merge_status": "completed",
+            "merge_status": "COMPLETED",
             "merge_version": "v2.1",
         })
     create_jsonl_file(meta_dir / "merged_episodes_stats.jsonl", merged_episodes_stats_data)
@@ -1449,6 +1456,181 @@ def generate_fake_pipeline_data(
     print_actual_structure_tree(output_dir)
 
 
+def _db_read_meta_info(dataset_root: Path) -> dict:
+    meta_file = dataset_root / "meta" / "info.json"
+    if not meta_file.exists():
+        return {}
+    try:
+        return json.loads(meta_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _db_count_total_episodes(dataset_root: Path, meta: dict) -> int:
+    try:
+        total = meta.get("total_episodes")
+        if isinstance(total, int) and total >= 0:
+            return total
+    except Exception:
+        pass
+
+    data_dir = dataset_root / "data"
+    if data_dir.exists():
+        try:
+            chunk_dirs = [d for d in data_dir.iterdir() if d.is_dir() and d.name.startswith("chunk-")]
+            if chunk_dirs:
+                count = 0
+                for chunk_dir in chunk_dirs:
+                    count += len(list(chunk_dir.glob("episode_*.parquet")))
+                if count > 0:
+                    return count
+            flat = len(list(data_dir.glob("episode_*.parquet")))
+            if flat > 0:
+                return flat
+        except Exception:
+            pass
+
+    episodes_jsonl = dataset_root / "meta" / "episodes.jsonl"
+    if episodes_jsonl.exists():
+        try:
+            with open(episodes_jsonl, encoding="utf-8") as f:
+                return sum(1 for _ in f)
+        except Exception:
+            pass
+
+    return 0
+
+
+def upsert_fake_dataset(
+    db_path: Path,
+    dataset_root: Path,
+    dataset_name: str | None,
+    dataset_uuid_str: str | None,
+    end_effector_type: str,
+) -> str:
+    db = DatasetDatabase(db_path)
+    meta = _db_read_meta_info(dataset_root)
+
+    ds_name = dataset_name or dataset_root.name
+    ds_uuid = dataset_uuid_str or str(uuid.uuid4())
+
+    with db.with_session() as session:
+        # Remove existing rows with the same dataset_name
+        session.execute(text("DELETE FROM datasets WHERE dataset_name = :ds_name"), {"ds_name": ds_name})
+        session.commit()
+
+        # Discover existing columns in the target DB to avoid missing-column errors
+        result = session.execute(text("PRAGMA table_info(datasets)"))
+        existing_columns = {row[1] for row in result}
+
+        # Prepare values (TaskStatus stored as strings)
+        episodes_count = _db_count_total_episodes(dataset_root, meta)
+        values = {
+            "dataset_name": ds_name,
+            "dataset_uuid": ds_uuid,
+            "end_effector_type": end_effector_type,
+
+            "data_path": str(dataset_root),
+            "convert_path": str(dataset_root),
+
+            "device_model": "robot",
+            "device_model_version": "default_version",
+            "operation_platform_height": 77.2,
+            "yaml_file_path": str(dataset_root),
+
+            "convert_test_status": TaskStatus.COMPLETED.value,
+            "convert_test_version": 1,
+            "convert_status": TaskStatus.COMPLETED.value,
+            "convert_version_ps": 1,
+            "convert_version": 1,
+
+            "total_episodes": episodes_count,
+            "converted_episodes": episodes_count,
+            "skipped_episodes": 0,
+            "convert_err_msg": None,
+
+            "sa_dpp_status": TaskStatus.COMPLETED.value,
+            "sa_dpp_version_ps": 1,
+            "sa_dpp_version": 1,
+            "sa_dpp_err_msg": None,
+
+            "sim_replay_status": TaskStatus.COMPLETED.value,
+            "sim_replay_version_ps": 1,
+            "sim_replay_version": 1,
+            "sim_replay_error_msg": None,
+
+            "motion_annotation_status": TaskStatus.COMPLETED.value,
+            "motion_annotation_version_ps": 1,
+            "motion_annotation_version": 1,
+            "motion_annotation_err_msg": None,
+
+            "video_hash_status": None,
+            "video_hash_version_ps": 1,
+            "video_hash_version": 1,
+            "video_hash_err_msg": None,
+
+            "video_match_status": TaskStatus.COMPLETED.value,
+            "video_match_version_ps": 1,
+            "video_match_version": 1,
+            "video_match_err_msg": None,
+
+            "video_ori_subtask_annotation_status": TaskStatus.COMPLETED.value,
+            "video_ori_subtask_annotation_version_ps": 1,
+            "video_ori_subtask_annotation_version": 1,
+            "video_ori_subtask_annotation_err_msg": None,
+
+            "video_opt_subtask_annotation_status": TaskStatus.COMPLETED.value,
+            "video_opt_subtask_annotation_version_ps": 1,
+            "video_opt_subtask_annotation_version": 1,
+            "video_opt_subtask_annotation_err_msg": None,
+
+            "video_embed_subtask_annotation_status": TaskStatus.COMPLETED.value,
+            "video_embed_subtask_annotation_version_ps": 1,
+            "video_embed_subtask_annotation_version": 1,
+            "video_embed_subtask_annotation_err_msg": None,
+
+            "scene_annotation_status": TaskStatus.COMPLETED.value,
+            "scene_annotation_version_ps": 1,
+            "scene_annotation_version": 1,
+            "scene_annotation_err_msg": None,
+
+            "data_merge_status": TaskStatus.COMPLETED.value,
+            "data_merge_version_ps_sta": 1,
+            "data_merge_version_ps_sa": 1,
+            "data_merge_version_ps_ma": 1,
+            "data_merge_version": 1,
+            "data_merge_err_msg": None,
+
+            "data_loader_detection_status": None,
+            "data_loader_detection_version_ps": None,
+            "data_loader_detection_version": None,
+            "data_loader_detection_err_msg": None,
+
+            "ms_upload_status": None,
+            "ms_upload_version_ps": None,
+            "ms_upload_version": None,
+            "ms_upload_err_msg": None,
+
+            "huggingface_upload_status": None,
+            "huggingface_upload_version_ps": None,
+            "huggingface_upload_version": None,
+            "huggingface_upload_err_msg": None,
+
+            "dataset_info_sync_status": None,
+            "dataset_info_sync_version_ps": None,
+            "dataset_info_sync_version": None,
+            "dataset_info_sync_err_msg": None,
+        }
+
+        # Filter to existing columns only
+        cols = [c for c in values.keys() if c in existing_columns]
+        sql = f"INSERT INTO datasets ({', '.join(cols)}) VALUES ({', '.join(':'+c for c in cols)})"
+        session.execute(text(sql), {c: values[c] for c in cols})
+        session.commit()
+
+    return ds_uuid
+
+
 def find_next_available_name(base_dir: Path, dataset_name: str) -> str:
     """
     Find the next available dataset name by auto-incrementing the version number.
@@ -1540,8 +1722,8 @@ Note: Dataset names are auto-incremented if they already exist
     parser.add_argument(
         "--episodes",
         type=int,
-        default=100,
-        help="Number of episodes to generate (default: 100)"
+        default=1,
+        help="Number of episodes to generate (default: 1)"
     )
 
     parser.add_argument(
@@ -1562,8 +1744,24 @@ Note: Dataset names are auto-incremented if they already exist
         "--reference-data",
         dest="reference_data_dir",
         type=Path,
-        default=(Path(__file__).parent.parent / "examples" / "dataloader_test" / "reference_data"),
+        default=None,
         help="Path to a reference dataset to copy videos/parquets/meta from when available"
+    )
+
+    # Database-related options
+    parser.add_argument(
+        "--db",
+        dest="db_path",
+        type=Path,
+        default=None,
+        help="Path to SQLite database file (default: examples/dataloader_test/datasets_new.db in project root)"
+    )
+    parser.add_argument(
+        "--uuid",
+        dest="dataset_uuid",
+        type=str,
+        default=None,
+        help="Dataset UUID to store (defaults to a newly generated UUID4)"
     )
 
     args = parser.parse_args()
@@ -1584,15 +1782,17 @@ Note: Dataset names are auto-incremented if they already exist
     else:
         output_base_dir = args.output_base_dir.resolve()
 
-    # Determine reference dataset root if provided
+    # Determine reference dataset root (default under project_root/examples/...)
     reference_root = None
-    if args.reference_data_dir is not None:
+    if args.reference_data_dir is None:
+        candidate = (project_root / "examples" / "dataloader_test" / "reference_data").resolve()
+    else:
         candidate = args.reference_data_dir.resolve()
-        if candidate.exists():
-            reference_root = candidate
-            print(f"Using reference dataset at: {reference_root}")
-        else:
-            print(f"⚠️  Warning: reference dataset not found at {candidate}. Ignoring.")
+    if candidate.exists():
+        reference_root = candidate
+        print(f"Using reference dataset at: {reference_root}")
+    else:
+        print(f"⚠️  Warning: reference dataset not found at {candidate}. Ignoring.")
 
     # Auto-increment dataset name if it already exists
     final_dataset_name = find_next_available_name(output_base_dir, args.dataset_name)
@@ -1616,6 +1816,41 @@ Note: Dataset names are auto-incremented if they already exist
         import traceback
         traceback.print_exc()
         return 1
+
+    # Create a LeRobot-compatible symlink structure next to the generated dataset by default
+    try:
+        symlink_target_dir = output_dir.parent / f"{final_dataset_name}_symlink"
+        print(f"\n🔗 Creating default symlink structure beside dataset: {symlink_target_dir}")
+        create_lerobot_symlink_structure(
+            source_dir=output_dir.resolve(),
+            target_dir=symlink_target_dir.resolve(),
+            relative=True,
+            skip_missing=False,
+        )
+    except Exception as e:
+        print(f"\n⚠️  Failed to create symlink structure: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # After generating data, upsert fake dataset record into DB
+    try:
+        default_db = project_root / "examples" / "dataloader_test" / "datasets_new.db"
+        db_path: Path = (args.db_path if args.db_path is not None else default_db).resolve()
+        ds_uuid = upsert_fake_dataset(
+            db_path=db_path,
+            dataset_root=output_dir,
+            dataset_name=final_dataset_name,
+            dataset_uuid_str=args.dataset_uuid,
+            end_effector_type="unknown",
+        )
+        print("OK")
+        print(f"db: {db_path}")
+        print(f"dataset_root: {output_dir}")
+        print(f"dataset_uuid: {ds_uuid}")
+    except Exception as e:
+        print(f"\n⚠️  Failed to upsert dataset into DB: {e}")
+        import traceback
+        traceback.print_exc()
 
     return 0
 

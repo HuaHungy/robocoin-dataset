@@ -13,7 +13,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from sqlalchemy.schema import ForeignKey
 
 Base = declarative_base()
 
@@ -24,10 +23,10 @@ Base = declarative_base()
 
 
 class TaskStatus(str, PyEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 # =====================

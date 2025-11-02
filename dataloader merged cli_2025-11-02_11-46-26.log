@@ -1,0 +1,51 @@
+2025-11-02 11:46:26 | INFO     | dataloader merged cli | The log system has been started, log file: /home/rogerspyke/projects/robocoin-dataset/dataloader merged cli_2025-11-02_11-46-26.log
+2025-11-02 11:46:26 | INFO     | dataloader merged cli | Task server started successfully: ws://0.0.0.0:8771
+2025-11-02 11:46:32 | INFO     | dataloader merged cli | Client registered successfully | ID: dataloader_detection_0 | IP: 172.16.13.94 | Current connections: 1
+2025-11-02 11:46:32 | INFO     | dataloader merged cli | No task available for client dataloader_detection_0
+2025-11-02 11:46:47 | INFO     | dataloader merged cli | Client disconnected | ID: dataloader_detection_0
+2025-11-02 11:51:58 | INFO     | dataloader merged cli | Client registered successfully | ID: dataloader_detection_1 | IP: 172.16.13.94 | Current connections: 1
+2025-11-02 11:51:58 | ERROR    | dataloader merged cli | Failed to process message: Traceback (most recent call last):
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/sql/sqltypes.py", line 1709, in _object_value_for_elem
+    return self._object_lookup[elem]  # type: ignore[return-value]
+KeyError: 'completed'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/rogerspyke/projects/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 163, in handle_message
+    await self.send_task_to_client(websocket)
+  File "/home/rogerspyke/projects/robocoin-dataset/src/robocoin_dataset/distribution_computation/task_server.py", line 123, in send_task_to_client
+    task_content = await asyncio.to_thread(self.generate_task_content)
+  File "/usr/lib/python3.10/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/rogerspyke/projects/robocoin-dataset/src/robocoin_dataset/dataloader/dataloader.py", line 355, in generate_task_content
+    _sync_dataloader_detection_tasks(session)
+  File "/home/rogerspyke/projects/robocoin-dataset/src/robocoin_dataset/dataloader/dataloader.py", line 185, in _sync_dataloader_detection_tasks
+    items = query.all()
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/orm/query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/engine/result.py", line 1774, in all
+    return self._allrows()
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/engine/result.py", line 548, in _allrows
+    rows = self._fetchall_impl()
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/engine/result.py", line 1681, in _fetchall_impl
+    return self._real_result._fetchall_impl()
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/engine/result.py", line 2275, in _fetchall_impl
+    return list(self.iterator)
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/orm/loading.py", line 220, in chunks
+    fetch = cursor._raw_all_rows()
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/engine/result.py", line 541, in _raw_all_rows
+    return [make_row(row) for row in rows]
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/engine/result.py", line 541, in <listcomp>
+    return [make_row(row) for row in rows]
+  File "lib/sqlalchemy/cyextension/resultproxy.pyx", line 22, in sqlalchemy.cyextension.resultproxy.BaseRow.__init__
+  File "lib/sqlalchemy/cyextension/resultproxy.pyx", line 79, in sqlalchemy.cyextension.resultproxy._apply_processors
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/sql/sqltypes.py", line 1829, in process
+    value = self._object_value_for_elem(value)
+  File "/home/rogerspyke/projects/robocoin-dataset/.venv/lib/python3.10/site-packages/sqlalchemy/sql/sqltypes.py", line 1711, in _object_value_for_elem
+    raise LookupError(
+LookupError: 'completed' is not among the defined enum values. Enum name: taskstatus. Possible values: PENDING, PROCESSING, COMPLETED, FAILED
+
+2025-11-02 11:52:13 | INFO     | dataloader merged cli | Client disconnected | ID: dataloader_detection_1
