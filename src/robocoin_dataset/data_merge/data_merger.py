@@ -1,16 +1,27 @@
 import json
 import logging
-import uuid
-from collections import defaultdict
+import traceback
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.expression import and_, or_
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetDB,
     TaskStatus,
+)
+from robocoin_dataset.distribution_computation.constant import (
+    DATASET_UUID,
+    ERR_MSG,
+    TASK_RESULT_STATUS,
+    TASK_SUCCESS,
+)
+from robocoin_dataset.distribution_computation.task_client import TaskClient
+from robocoin_dataset.distribution_computation.task_server import TaskServer
+from robocoin_dataset.format_converter.tolerobot.constant import (
+    LEFORMAT_PATH,
 )
 from robocoin_dataset.utils.parquet_paths import (
     get_episode_stats_file_path,
@@ -79,6 +90,7 @@ def _merge_episode_parquet_files(
             updated_columns.add(col)
 
     # 3. 保存结果
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     result_df.to_parquet(output_path, index=False)
 
 
@@ -116,7 +128,7 @@ def merge_dataset_parquet_files(
     for feature in patch_features:
         _, feature_parquet_files = get_parquet_paths(root_dir, feature)
         if not feature_parquet_files[0].exists():
-            raise ValueError(f"{features_parquet_files[0]} file not found")
+            raise ValueError(f"{feature_parquet_files[0]} file not found")
         features_parquet_files.append(feature_parquet_files)
 
     _merge_parquet_files(ori_parquet_files, features_parquet_files, merge_parquet_files)
@@ -238,12 +250,162 @@ def merge_dataset_stats_jsonl_files(
     _merge_jsonl_files(ori_stats_file, patch_stats_files, merged_stats_file)
 
 
-def merge_dataset_data(
-    root_dir: str | Path, ori_stats_file: str | Path, patch_features: list[str], merge_feature: str
+def merge_dataset_data(root_dir: str | Path, patch_features: list[str], merge_feature: str) -> None:
+    merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
+    merge_dataset_info_files(root_dir, patch_features, merge_feature)
+    merge_dataset_stats_jsonl_files(root_dir, patch_features, merge_feature)
+
+
+def _sync_tasks(
+    session: Session,
+    task_status_field: str,
+    task_version_field: str,
+    dependencies: list[dict[str, any]],
 ) -> None:
-    merge_dataset_parquet_files(root_dir, ori_stats_file, patch_features, merge_feature)
-    merge_dataset_info_files(root_dir, ori_stats_file, patch_features, merge_feature)
-    merge_dataset_stats_jsonl_files(root_dir, ori_stats_file, patch_features, merge_feature)
+    try:
+        cur_status_col = getattr(DatasetDB, task_status_field)
+        cur_version_col = getattr(DatasetDB, task_version_field)
+    except AttributeError as e:
+        raise ValueError(f"当前任务字段不存在: {e}")
+
+    # 1. 所有前置任务必须满足状态要求
+    dependency_status_conditions = []
+    # 2. 判断是否任一依赖的 version > 其对应的 version_ps（版本过期）
+    version_outdated_conditions = []
+
+    for dep in dependencies:
+        try:
+            status_col = getattr(DatasetDB, dep["status_field"])
+            version_col = getattr(DatasetDB, dep["version_field"])
+            version_ps_col = getattr(DatasetDB, dep["version_ps_field"])
+        except AttributeError as e:
+            raise ValueError(f"字段不存在: {e}")
+
+        # 条件1：前置任务状态达标
+        dependency_status_conditions.append(status_col == dep["required_status"])
+
+        # 条件2：当前任务已完成，但该依赖的版本 > 其对应的 version_ps（说明过期）
+        version_outdated_conditions.append(version_col > version_ps_col)
+
+    # 所有前置状态必须满足
+    all_deps_satisfied = and_(*dependency_status_conditions)
+
+    # 触发条件：两个分支
+    trigger_condition = or_(
+        # 分支1：当前任务已经是 PENDING（已在队列中）
+        cur_status_col == TaskStatus.PENDING,
+        # 分支2：已完成，但至少一个依赖版本更新了（version > version_ps）
+        and_(
+            cur_status_col == TaskStatus.COMPLETED,
+            or_(*version_outdated_conditions),  # 任一依赖版本更新
+        ),
+    )
+
+    query = session.query(DatasetDB).filter(and_(all_deps_satisfied, trigger_condition))
+    items = query.all()
+
+    for item in items:
+        # 跳过已在 PENDING 的任务
+        if getattr(item, task_status_field) == TaskStatus.PENDING:
+            continue
+
+        # 检查是否任一依赖版本更新（触发重跑判断）
+        need_update = False
+        for dep in dependencies:
+            dep_status = getattr(item, dep["status_field"])
+            dep_version = getattr(item, dep["version_field"])
+            dep_version_ps = getattr(item, dep["version_ps_field"])
+
+            if dep_status == dep["required_status"] and dep_version > dep_version_ps:
+                need_update = True
+                break
+
+        if not need_update:
+            continue
+
+        # ✅ 动态更新：当前任务状态 + 版本
+        setattr(item, task_status_field, TaskStatus.PENDING)
+        setattr(item, task_version_field, getattr(item, task_version_field) + 1)
+
+        # ✅ 关键：为每一个依赖项更新其对应的 version_ps 字段（这才是完整的适配）
+        for dep in dependencies:
+            current_version = getattr(item, dep["version_field"])
+            setattr(item, dep["version_ps_field"], current_version)
+
+
+def _sync_data_merge_tasks(
+    session: Session, device_model: str | None = None, device_model_version: str | None = None
+) -> None:
+    query = (
+        session.query(DatasetDB)
+        .filter(DatasetDB.motion_annotation_status == TaskStatus.COMPLETED)
+        .filter(DatasetDB.video_embed_subtask_annotation_status == TaskStatus.COMPLETED)
+        .filter(DatasetDB.scene_annotation_status == TaskStatus.COMPLETED)
+    )
+
+    query = query.filter(
+        or_(
+            DatasetDB.data_merge_status == TaskStatus.PENDING,
+            and_(
+                DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+                or_(
+                    DatasetDB.data_merge_version_ps_ma < DatasetDB.motion_annotation_version,
+                    or_(
+                        DatasetDB.data_merge_version_ps_sa < DatasetDB.scene_annotation_version,
+                        DatasetDB.data_merge_version_ps_sta
+                        < DatasetDB.video_embed_subtask_annotation_version,
+                    ),
+                ),
+            ),
+        )
+    )
+
+    if device_model:
+        query = query.filter(
+            DatasetDB.device_model == device_model,
+        )
+
+        if device_model_version:
+            query = query.filter(DatasetDB.device_model_version == device_model_version)
+
+    items = query.all()
+
+    if not items:
+        return
+    for item in items:
+        item.data_merge_status = TaskStatus.PENDING
+        item.data_merge_version = item.data_merge_version + 1
+        item.data_merge_version_ps_ma = item.motion_annotation_version
+        item.data_merge_version_ps_sa = item.scene_annotation_version
+        item.data_merge_version_ps_sta = item.video_embed_subtask_annotation_version
+
+    session.commit()
+
+
+def _gen_one_dataset_data_merge_task(
+    session: Session,
+) -> tuple[str | None, str | None]:
+    query = (
+        session.query(DatasetDB)
+        .filter(
+            DatasetDB.data_merge_status == TaskStatus.PENDING,
+        )
+        .filter(
+            DatasetDB.video_embed_subtask_annotation_status == TaskStatus.COMPLETED,
+        )
+        .filter(
+            DatasetDB.motion_annotation_status == TaskStatus.COMPLETED,
+        )
+        .filter(
+            DatasetDB.scene_annotation_status == TaskStatus.COMPLETED,
+        )
+    )
+    item = query.first()
+    if not item:
+        return None, None
+    item.data_merge_status = TaskStatus.PROCESSING
+    session.commit()
+    return item.dataset_uuid, item.convert_path
 
 
 class DataMerger:
@@ -265,170 +427,130 @@ class DataMerger:
             self.data_merge_config.merge_feature,
         )
 
-    def _upsert_leformat_dataset_data_merge_status(
-        self,
-        session: Session,
-        dataset_uuid: str,
-        convert_path: str,
-        status: TaskStatus,
-        prestage_version_uuids: list[str],
-        device_model: str,
-        device_model_version: str,
-        err_msg: str = "",
-    ) -> None:
-        item = (
-            session.query(LeformatDatasetDataMergeStatusDB)
-            .filter(LeformatDatasetDataMergeStatusDB.dataset_uuid == dataset_uuid)
-            .first()
-        )
-        prestage_version_uuids = _get_string_from_uuid_list(prestage_version_uuids)
-        version_uuid = str(uuid.uuid4())
-        if item:
-            item.convert_path = convert_path
-            item.status = status
-            item.prestage_version_uuids = prestage_version_uuids
-            item.device_model = device_model
-            item.device_model_version = device_model_version
-            item.version_uuid = version_uuid
-            item.err_msg = err_msg
-        else:
-            item = LeformatDatasetDataMergeStatusDB(
-                dataset_uuid=dataset_uuid,
-                convert_path=convert_path,
-                status=status,
-                prestage_version_uuids=prestage_version_uuids,
-                device_model=device_model,
-                device_model_version=device_model_version,
-                version_uuid=version_uuid,
-                err_msg=err_msg,
-            )
-            session.add(item)
-        session.commit()
-
-    def _sync_data_merge_tasks(
-        self, device_model: str | None = None, device_model_version: str | None = None
-    ) -> None:
+    def merge_data_one_dataset(self) -> None:
         with self.db.with_session() as session:
-            dirty_items = {}
-            completed_items = {
-                item.dataset_uuid: item.prestage_version_uuids
-                for item in session.query(LeformatDatasetDataMergeStatusDB)
-                .filter(LeformatDatasetDataMergeStatusDB.status == TaskStatus.COMPLETED)
-                .all()
-            }
-            for dataset_uuid, prestage_version_uuids in completed_items:
-                prestage_version_uuid_list = []
-                prestage_version_uuids = _get_uuid_list_from_string(prestage_version_uuids)
-                success = False
-                for i, prestage_version_uuid in enumerate(prestage_version_uuids):
-                    cls = self.pre_stage_classes[i]
-                    item = session.query(cls).filter(cls.dataset_uuid == dataset_uuid).first()
-                    if item is None:
-                        success = False
-                        break
-                    version_uuid = item.version_uuid
-                    if version_uuid != prestage_version_uuid:
-                        success = True
-                    prestage_version_uuid_list.append(version_uuid)
-                if success:
-                    dirty_items[dataset_uuid] = prestage_version_uuid_list
-
-            unexist_items = defaultdict(list)
-            for cls in self.pre_stage_classes:
-                items = (
-                    session.query(cls)
-                    .filter(
-                        cls.dataset_uuid
-                        != LeformatDatasetDataMergeStatusDB.dataset_uuid.filter(
-                            cls.status == TaskStatus.COMPLETED
-                        )
-                    )
-                    .all()
-                )
-                for item in items:
-                    unexist_items[item.dataset_uuid].append(item.version_uuid)
-
-            unexist_items = {
-                k: v for k, v in unexist_items.items() if len(v) == len(self.pre_stage_classes)
-            }
-
-            sync_items = dirty_items | unexist_items
-
-        for dataset_uuid, prestage_version_uuid_list in sync_items.items():
-            convert_path = self._get_convert_path(dataset_uuid)
-            device_model, device_model_version = self._get_device_model_and_version(dataset_uuid)
-            prestage_version_uuids = _get_string_from_uuid_list(prestage_version_uuid_list)
-            with self.db.with_session() as session:
-                self._upsert_leformat_dataset_data_merge_status(
-                    session=session,
-                    dataset_uuid=dataset_uuid,
-                    convert_path=convert_path,
-                    prestage_version_uuid=prestage_version_uuids,
-                    device_model=device_model,
-                    device_model_version=device_model_version,
-                    status=TaskStatus.PENDING,
-                )
-
-    def _gen_one_data_merge_task(
-        self, device_model: str | None = None, device_model_version: str | None = None
-    ) -> tuple[str, str, str, str]:
-        with self.db.with_session() as session:
-            query = session.query(LeformatDatasetDataMergeStatusDB).filter(
-                LeformatDatasetDataMergeStatusDB.status == TaskStatus.PENDING,
-            )
-            if device_model:
-                query = query.filter(LeformatDatasetDataMergeStatusDB.device_model == device_model)
-                if device_model_version:
-                    query = query.filter(
-                        LeformatDatasetDataMergeStatusDB.device_model_version
-                        == device_model_version
-                    )
-            item = query.first()
-            if not item:
-                return None, None, None, None
-            item.status = TaskStatus.PROCESSING
-            return (
-                item.dataset_uuid,
-                item.prestage_version_uuids,
-                item.device_model,
-                item.device_model_version,
-            )
-
-    def merge_data(
-        self, device_model: str | None = None, device_model_version: str | None = None
-    ) -> None:
-        self._sync_data_merge_tasks(device_model, device_model_version=device_model_version)
-        dataset_uuid, prestage_version_uuid, device_model, device_model_version = (
-            self._gen_one_data_merge_task(
-                device_model=device_model, device_model_version=device_model_version
-            )
-        )
-
-        if dataset_uuid is None:
-            return
-        convert_path = self._get_convert_path(dataset_uuid)
+            _sync_data_merge_tasks(session)
+            dataset_uuid, repo_path = _gen_one_dataset_data_merge_task(session=session)
+            if dataset_uuid is None:
+                return
         try:
-            self._sim_replay_dataset(dataset_uuid)
+            self._merge_data(repo_path)
             with self.db.with_session() as session:
-                self._upsert_leformat_dataset_simulation_replay_status(
-                    session=session,
-                    dataset_uuid=dataset_uuid,
-                    convert_path=convert_path,
-                    prestage_version_uuid=prestage_version_uuid,
-                    device_model=device_model,
-                    device_model_version=device_model_version,
-                    status=TaskStatus.COMPLETED,
+                item = (
+                    session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
                 )
 
+                if not item:
+                    return
+                item.data_merge_status = TaskStatus.COMPLETED
+                session.commit()
         except Exception as e:
             with self.db.with_session() as session:
-                self._upsert_leformat_dataset_simulation_replay_status(
-                    session=session,
-                    dataset_uuid=dataset_uuid,
-                    convert_path=convert_path,
-                    status=TaskStatus.FAILED,
-                    prestage_version_uuid=prestage_version_uuid,
-                    device_model=device_model,
-                    device_model_version=device_model_version,
-                    err_msg=str(e),
-                )
+                query = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid)
+                item = query.first()
+                if not item:
+                    return
+                item.data_merge_status = TaskStatus.FAILED
+                item.data_merge_err_msg = str(traceback.format_exc())
+            self.logger.error(e)
+
+
+class DataMergerServer(TaskServer):
+    def __init__(
+        self,
+        db_file_path: str | Path,
+        host: str = "0.0.0.0",
+        port: int = 8765,
+        heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
+        timeout: float = 15.0,  # 等待 pong 超过15秒则断开
+        logger: logging.Logger | None = None,
+    ) -> None:
+        super().__init__(
+            logger=logger,
+            host=host,
+            port=port,
+            heartbeat_interval=heartbeat_interval,
+            timeout=timeout,
+        )
+        db_file_path = Path(db_file_path).expanduser().absolute()
+
+        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
+        self.db = DatasetDatabase(self.db_file_path)
+        self.logger = logger or logging.getLogger(__name__)
+
+    def get_task_category(self) -> str:
+        return "data_merge"
+
+    def generate_task_content(self) -> dict | None:
+        with self.db.with_session() as session:
+            _sync_data_merge_tasks(session)
+            dataset_uuid, repo_path = _gen_one_dataset_data_merge_task(session)
+
+            if not dataset_uuid:
+                return None
+            return {
+                DATASET_UUID: dataset_uuid,
+                LEFORMAT_PATH: repo_path,
+            }
+
+    def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
+        ds_uuid = task_content.get(DATASET_UUID)
+
+        task_status = task_result_content.get(TASK_RESULT_STATUS)
+        task_status_msg = task_result_content.get(ERR_MSG)
+
+        data_merge_status = (
+            TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+        )
+
+        # 🆕 合并为单个session，保证原子性
+        with self.db.with_session() as session:
+            # 查询 device_model_version
+            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
+            if item is None:
+                self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+
+            # 在同一个session中更新转换状态
+            item.data_merge_status = data_merge_status
+            item.data_merge_err_msg = task_status_msg
+            session.commit()
+            self.logger.info(
+                f"Upsert {item.convert_path} data merge status to {data_merge_status}, "
+                f"update_message: {task_status_msg}"
+            )
+
+
+class DataMergerClient(TaskClient):
+    def __init__(
+        self,
+        server_uri: str = "ws://localhost:8767",
+        heartbeat_interval: float = 10.0,
+        logger: logging.Logger | None = None,
+        data_merge_config: DataMergeConfig = DataMergeConfig(),
+    ) -> None:
+        super().__init__(
+            server_uri=server_uri,
+            heartbeat_interval=heartbeat_interval,
+            logger=logger,
+        )
+        self.data_merge_config = data_merge_config
+
+    def get_task_category(self) -> str:
+        return "data_merge"
+
+    def generate_task_request_desc(self) -> dict:
+        """客户端可自定义任务请求参数"""
+        return {}
+
+    def _sync_process_task(self, task_content: dict) -> dict:
+        try:
+            repo_path = task_content.get(LEFORMAT_PATH)
+            merge_dataset_data(
+                repo_path,
+                patch_features=self.data_merge_config.patch_features,
+                merge_feature=self.data_merge_config.merge_feature,
+            )
+
+            return {}
+        except Exception as e:
+            raise RuntimeError(f"data merge dataset {repo_path} failed") from e

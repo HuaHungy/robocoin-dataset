@@ -21,10 +21,6 @@ def annotate_device_model(db_file_path: Path) -> None:
         items = session.query(DatasetDB).all()
 
         for item in items:
-            print(item.yaml_file_path)
-            print(item.device_model_version)
-            input("press any key to continue...")
-            print(f"yaml_file_path: {item.yaml_file_path}")
             dataset_path = Path(item.yaml_file_path).parent
             dmv_annotation_file_path = dataset_path / DEVICE_MODEL_ANNOTATION_FILE_NAME
             if Path(dmv_annotation_file_path).exists():

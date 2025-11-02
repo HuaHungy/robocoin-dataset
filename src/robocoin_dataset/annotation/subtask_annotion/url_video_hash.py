@@ -34,9 +34,10 @@ def _gen_video_hash_tasks(session: Session, num: int = 100) -> dict[int, str]:
         session.query(StAnnotationVideoDB)
         .filter(
             StAnnotationVideoDB.video_hash_status == TaskStatus.PENDING,
+            StAnnotationVideoDB.download_status == TaskStatus.COMPLETED,
         )
-        .limit(num)
-    )
+        .order_by(StAnnotationVideoDB.id)
+    ).limit(num)
     results = {}
     items = query.all()
     for item in items:

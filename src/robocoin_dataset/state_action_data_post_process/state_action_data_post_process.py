@@ -127,12 +127,12 @@ def _gen_one_state_action_data_post_processing_task(
 
 
 def _state_action_data_post_process(
-    repo_path: str | Path,
+    convert_path: str | Path,
     processor_class: type[StateActionDataPostProcessorBase],
 ) -> None:
     if processor_class is None:
         raise ValueError("processor_class is None")
-    processor: StateActionDataPostProcessorBase = processor_class(convert_path=repo_path)
+    processor: StateActionDataPostProcessorBase = processor_class(convert_path=convert_path)
     processor.process()
 
 
@@ -302,7 +302,7 @@ class StateActionDataPostProcessServer(TaskServer):
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
-        sa_dpp_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+        convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
         # 🆕 合并为单个session，保证原子性
         with self.db.with_session() as session:
@@ -312,11 +312,11 @@ class StateActionDataPostProcessServer(TaskServer):
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
 
             # 在同一个session中更新转换状态
-            item.sa_dpp_status = sa_dpp_status
+            item.sa_dpp_status = convert_status
             item.convert_err_msg = task_status_msg
             session.commit()
             self.logger.info(
-                f"Upsert {item.convert_path} state action data post process status to {sa_dpp_status}, "
+                f"Upsert {item.convert_path} state action data post process status to {convert_status}, "
                 f"update_message: {task_status_msg}"
             )
 
@@ -343,7 +343,7 @@ class StateActionDataPostProcessClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
-            repo_path = task_content.get(LEFORMAT_PATH)
+            convert_path = task_content.get(LEFORMAT_PATH)
             processor_module_path = task_content.get(PROCESSOR_MODULE_PATH)
             processor_class_name = task_content.get(PROCESSOR_CLASS_NAME)
 
@@ -352,11 +352,11 @@ class StateActionDataPostProcessClient(TaskClient):
             )
 
             _state_action_data_post_process(
-                repo_path=repo_path, processor_class=processor_class
+                convert_path=convert_path, processor_class=processor_class
             )
 
             return {}
         except Exception as e:
             raise RuntimeError(
-                f"state action data post process dataset {repo_path} failed"
+                f"state action data post process dataset {convert_path} failed"
             ) from e

@@ -10,7 +10,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logger = setup_logger(name="url_video_hash", log_dir=args.logger_path)
-    url_video_hasher = UrlVideoHash(args.db_file_path, batch_size=2, logger=logger)
+    url_video_hasher = UrlVideoHash(args.db_file_path, batch_size=100, logger=logger)
     url_video_hasher.compute_url_video_hashes()
 
 """Usage:
