@@ -1177,9 +1177,45 @@ class LerobotFormatConverter(ABC):
                             'skipped_frames': skipped_frames,
                         })
                     
-                    # 保存episode
+                    # 保存episode（带NAS错误重试）
                     if not is_test:
-                        dataset.save_episode()
+                        max_retries = 3
+                        for retry in range(max_retries):
+                            try:
+                                dataset.save_episode()
+                                break  # 成功则退出重试
+                            except OSError as e:
+                                # Stale file handle (Errno 116) 或其他NAS错误
+                                if e.errno == 116 or 'Stale file handle' in str(e):
+                                    if retry < max_retries - 1:
+                                        if self.logger:
+                                            self.logger.warning(
+                                                f"⚠️  NAS文件句柄错误 (Stale file handle)，"
+                                                f"重试 {retry + 1}/{max_retries}... "
+                                                f"Episode {global_ep_idx}, Task: {task}"
+                                            )
+                                        import time
+                                        time.sleep(2 ** retry)  # 指数退避: 1s, 2s, 4s
+                                        continue
+                                    else:
+                                        # 最后一次重试也失败
+                                        error_msg = (
+                                            f"❌ NAS文件系统错误 (Stale file handle)\n"
+                                            f"   Episode: {global_ep_idx} (task episode: {task_ep_idx})\n"
+                                            f"   Task: {task}\n"
+                                            f"   重试 {max_retries} 次后仍然失败\n"
+                                            f"   💡 建议:\n"
+                                            f"      1. 检查NAS网络连接\n"
+                                            f"      2. 重新挂载NAS: sudo umount && sudo mount\n"
+                                            f"      3. 清除转换记录后重试该数据集\n"
+                                            f"   Error: {e}"
+                                        )
+                                        if self.logger:
+                                            self.logger.error(error_msg)
+                                        raise RuntimeError(error_msg) from e
+                                else:
+                                    # 其他OSError，直接抛出
+                                    raise
                     
                     # 🔧 收集源文件映射信息（成功转换的episode）
                     source_files = self._get_episode_source_files(task_path, task_ep_idx)
