@@ -151,3 +151,71 @@ class GalaxeaR1LiteProcessor(StateActionDataPostProcessorBase):
     def get_modified_info_action_names(self) -> dict[str, str]:
         return {}
 
+
+
+class GalaxeaR1LiteH5Mp4Processor(StateActionDataPostProcessorBase):
+    def __init__(self, convert_path: str | Path) -> None:
+        super().__init__(convert_path)
+
+    def prepare_processing(self) -> None:
+        pass
+
+    def _smooth_gripper_open_data(self, data: np.ndarray) -> np.ndarray:
+        smoothed = data.copy()
+        return smoothed
+
+    def get_modified_state_feature_names(self) -> list[str]:
+        return [
+                "left_arm_joint_1",
+                "left_arm_joint_2",
+                "left_arm_joint_3",
+                "left_arm_joint_4",
+                "left_arm_joint_5",
+                "left_arm_joint_6",
+                "left_gripper_position",
+                "right_arm_joint_1",
+                "right_arm_joint_2",
+                "right_arm_joint_3",
+                "right_arm_joint_4",
+                "right_arm_joint_5",
+                "right_arm_joint_6",
+                "right_gripper_position"
+                ]
+
+    def get_modified_action_feature_names(self) -> list[str]:
+        return [
+                "left_arm_target_joint_1",
+                "left_arm_target_joint_2",
+                "left_arm_target_joint_3",
+                "left_arm_target_joint_4",
+                "left_arm_target_joint_5",
+                "left_arm_target_joint_6",
+                "left_gripper_target_position",
+                "right_arm_target_joint_1",
+                "right_arm_target_joint_2",
+                "right_arm_target_joint_3",
+                "right_arm_target_joint_4",
+                "right_arm_target_joint_5",
+                "right_arm_target_joint_6",
+                "right_gripper_target_position"
+                ]
+
+    # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
+    def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
+        new_state_data = ori_state_data.copy()
+        return new_state_data
+
+    # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
+    def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
+        new_action_data = ori_action_data.copy()
+        return new_action_data
+    
+    def get_modified_feature_names(self):
+        return super().get_modified_feature_names()
+
+    def get_modified_info_state_names(self) -> dict[str, str]:
+        return {}
+
+    # 该方法返回处理后的action数据名称
+    def get_modified_info_action_names(self) -> dict[str, str]:
+        return {}

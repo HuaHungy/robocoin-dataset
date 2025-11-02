@@ -58,7 +58,7 @@ galaxea_r1_lite:
 
 - version: h5_mp4_version
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.galaxea_config
-  mujoco_sim_replay_config_class: GalaxeaR1LiteLerobotSimReplayConfig
+  mujoco_sim_replay_config_class: GalaxeaR1LiteH5Mp4LerobotSimReplayConfig
 
 # galbot
 galbot:

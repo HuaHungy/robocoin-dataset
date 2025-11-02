@@ -16,6 +16,10 @@ galaxea_r1_lite:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.galaxea_r1_lite_processor
   post_processor_class: GalaxeaR1LiteProcessor
 
+- version: h5_mp4_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.galaxea_r1_lite_processor
+  post_processor_class: GalaxeaR1LiteH5Mp4Processor
+
 agilex_cobot_decoupled_magic:
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
@@ -51,11 +55,15 @@ unitree_g1:
   post_processor_class: UnitreeG1Processor
 
 discover_robotics_aitbot_mmk2:
-# - version: third_view
-#   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.discover_robotics_aitbot_mmk2_processor
-#   post_processor_class: ThirdViewProcessor
+- version: third_view
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.discover_robotics_aitbot_mmk2_processor
+  post_processor_class: ThirdViewProcessor
 
-- version: 5d_arms
+- version: third_view
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.discover_robotics_aitbot_mmk2_processor
+  post_processor_class: ThirdViewProcessor
+
+- version: third_view_lite
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.discover_robotics_aitbot_mmk2_processor
   post_processor_class: FivedArmsProcessor
 
@@ -63,6 +71,10 @@ ruantong_a2d:
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.ruantong_a2d_processor
   post_processor_class: RuantongA2dProcessor
+
+- version: gt02_new_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.ruantong_a2d_processor
+  post_processor_class: RuantongA2dGt02Processor
 
 leju_robot:
 - version: waibu_version

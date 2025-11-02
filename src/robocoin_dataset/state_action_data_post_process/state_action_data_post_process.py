@@ -154,7 +154,7 @@ class StateActionDataPostProcess:
                 )
                 if dmv_item is None:
                     dmv_device_model = None
-                    dmv_device_model = None
+                    dmv_device_model_version = None
                 else:
                     dmv_device_model = dmv_item.device_model
                     dmv_device_model_version = dmv_item.device_model_version
