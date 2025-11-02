@@ -17,7 +17,7 @@ async def main() -> None:
         default="",
         help="Path to the database file",
     )
-    
+
     parser.add_argument(
         "--log_dir",
         type=str,
@@ -41,9 +41,6 @@ async def main() -> None:
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
-    sim_replay_config_path = Path(args.sim_replay_config_path).expanduser().absolute()
-    device_model = args.device_model
-    device_model_version = args.device_model_version
 
     if not db_file_path.exists():
         print(f"{db_file_path} does not exist")
@@ -57,12 +54,9 @@ async def main() -> None:
 
     sim_replay_server = SceneAnnotationServer(
         db_file_path=db_file_path,
-        sim_replay_config_path=sim_replay_config_path,
         host=args.host,
         port=args.port,
         heartbeat_interval=30.0,
-        device_model=device_model,
-        device_model_version=device_model_version,
         timeout=15.0,
         logger=logger,
     )
