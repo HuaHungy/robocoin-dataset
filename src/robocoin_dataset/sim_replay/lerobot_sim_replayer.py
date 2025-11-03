@@ -344,22 +344,8 @@ class LerobotSimReplayer:
             target_fps = 30
         frame_duration = 1.0 / float(target_fps)
 
-        # 同时启动 MuJoCo 界面和可视化图表
-        print("[界面] 正在启动 MuJoCo 界面和可视化图表...")
+        # 启动 MuJoCo 界面
         self.start_viewer()
-
-        # 注释掉额外的gripper图表创建，使用callback提供的图表
-        # if enable_gripper_plot and gripper_plot_callback is not None:
-        #     import matplotlib.pyplot as plt
-        #     plt.ion()
-        #     fig, ax = plt.subplots(figsize=(10, 4))
-        #     ax.set_xlabel("Step")
-        #     ax.set_ylabel("Gripper Value")
-        #     ax.set_title("Gripper Values (实时)")
-        #     plt.show(block=False)
-        #     plt.draw()
-
-        print("[界面] MuJoCo 界面和可视化图表已启动")
 
         try:
             for i in range(len(data)):
