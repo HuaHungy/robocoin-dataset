@@ -59,12 +59,12 @@ CLIENT MODE (Connect and Process):
     # Connect with custom heartbeat interval
     python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --heartbeat-interval 20.0
 
-MULTI-CLIENT MODE (Spawn Multiple Processes on Single Machine):
+MULTI-CLIENT MODE (Spawn Multiple Client Processes on Single Machine):
     # Spawn 12 client processes on one machine
     python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --num-clients 12
 
-    # Spawn 4 local processes to parallelize local testing
-    python scripts/dataloader/dataloader_test.py --local --num-clients 4
+    # Note: --num-clients is ONLY supported with --client mode
+    # Multi-local mode has been abandoned
 
 DISTRIBUTED WORKFLOW (Server + Multiple Clients):
     # On Server Machine (192.168.1.100)
@@ -91,7 +91,8 @@ COMMON OPTIONS:
     --host HOST             Server IP (server: bind address, client: connect address)
     --port PORT             Port number (default: 8771)
     --log-level LEVEL       Logging verbosity (default: INFO)
-    --num-clients N         Number of parallel processes (default: 1, max: 32)
+    --num-clients N         Number of parallel client processes (default: 1, max: 32)
+                            ⚠️  Only supported with --client mode
 
 VALIDATION OPTIONS:
     --episodes SPEC         Episodes to test: "all" (default), "0", "0,1,2", "0-5"
@@ -119,87 +120,15 @@ import multiprocessing as mp
 import sys
 from pathlib import Path
 
-from sqlalchemy import func
-
-from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import DatasetDB, TaskStatus
 from robocoin_dataset.dataloader.dataloader import (
     DataloaderDbServer,
-    _run_dataloader_detection,
     run_client_async,
+    run_local_batch_detection,
     run_multi_client,
-    run_multi_local,
-)
-from robocoin_dataset.dataloader.make_data_sym_links import (
-    create_lerobot_symlink_structure,
 )
 from robocoin_dataset.utils.logger import setup_logger
 
 DEFAULT_DB = Path("examples/dataloader_test/datasets_new.db").absolute()
-
-
-def _find_first_dataset_with_convert_path(db: DatasetDatabase) -> tuple[str, Path] | None:
-    """Find first dataset with valid convert_path.
-
-    STRICT REQUIREMENTS:
-      - data_merge_status must be COMPLETED
-      - convert_status must be COMPLETED
-      - convert_path must be non-NULL and exist as directory
-    """
-    with db.with_session() as session:
-        row = (
-            session.query(DatasetDB.dataset_uuid, DatasetDB.convert_path)
-            .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
-            .filter(DatasetDB.convert_status == TaskStatus.COMPLETED)
-            .filter(DatasetDB.convert_path != None)  # noqa: E711
-            .first()
-        )
-        if not row:
-            return None
-        ds_uuid, convert_path = row
-        src = Path(convert_path)
-        if not (src.exists() and src.is_dir()):
-            return None
-        return ds_uuid, src
-
-
-def _find_all_datasets_with_convert_path(db: DatasetDatabase) -> list[tuple[str, Path]]:
-    """Find all datasets with valid convert_path.
-
-    STRICT REQUIREMENTS:
-      - data_merge_status must be COMPLETED
-      - convert_status must be COMPLETED
-      - convert_path must be non-NULL and exist as directory
-    """
-    with db.with_session() as session:
-        rows = (
-            session.query(DatasetDB.dataset_uuid, DatasetDB.convert_path)
-            .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
-            .filter(DatasetDB.convert_status == TaskStatus.COMPLETED)
-            .filter(DatasetDB.convert_path != None)  # noqa: E711
-            .all()
-        )
-        result = []
-        for ds_uuid, convert_path in rows:
-            src = Path(convert_path)
-            if src.exists() and src.is_dir():
-                result.append((ds_uuid, src))
-        return result
-
-
-def _update_detection_status(db: DatasetDatabase, ds_uuid: str, ok: bool, err_msg: str | None) -> None:
-    with db.with_session() as session:
-        values = {
-            DatasetDB.data_loader_detection_status: TaskStatus.COMPLETED if ok else TaskStatus.FAILED,
-            DatasetDB.data_loader_detection_version: func.coalesce(DatasetDB.data_loader_detection_version, 0)
-            + 1,
-            # set PS to current data_merge_version as requested
-            DatasetDB.data_loader_detection_version_ps: DatasetDB.data_merge_version,
-        }
-        if not ok and err_msg:
-            values[DatasetDB.data_loader_detection_err_msg] = err_msg
-        session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).update(values, synchronize_session=False)
-        session.commit()
 
 
 def run_local(
@@ -213,101 +142,60 @@ def run_local(
     num_workers: int,
     logger: logging.Logger,
 ) -> int:
-    db = DatasetDatabase(db_file)
-    datasets = _find_all_datasets_with_convert_path(db)
-    if not datasets:
-        print("No dataset with a valid convert_path found in DB", file=sys.stderr)
-        return 2
+    """Local mode: thin wrapper that calls core logic in dataloader.py"""
 
-    logger.info(f"Found {len(datasets)} dataset(s) to process")
+    result = run_local_batch_detection(
+        db_file=db_file,
+        episodes=episodes,
+        strict_mode=strict_mode,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        create_symlinks=True,
+        symlink_target_dir=target_dir,
+        symlink_relative=not absolute_symlinks,
+        symlink_skip_missing=skip_missing,
+        logger=logger,
+    )
 
-    succeeded = []
-    failed = []
+    # Check if no tasks were processed
+    if result["datasets_processed"] == 0:
+        print("\n" + "=" * 70, file=sys.stderr)
+        print("ℹ️  NO TASKS TO PROCESS", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print("\nAll datasets are either:", file=sys.stderr)
+        print("  • Already validated and up-to-date (data_loader_detection_status = COMPLETED", file=sys.stderr)
+        print("    AND data_loader_detection_version_ps == data_merge_version)", file=sys.stderr)
+        print("  • Not ready for validation (data_merge_status or convert_status not COMPLETED)", file=sys.stderr)
+        print("\nIf you expected tasks to process, check:", file=sys.stderr)
+        print("  1. Database has datasets with data_merge_status = COMPLETED", file=sys.stderr)
+        print("  2. Database has datasets with convert_status = COMPLETED", file=sys.stderr)
+        print("  3. Datasets have valid convert_path", file=sys.stderr)
+        print("  4. data_loader_detection_status is NULL, PENDING, or outdated COMPLETED", file=sys.stderr)
+        print("=" * 70 + "\n", file=sys.stderr)
+        return 0
 
-    for idx, (ds_uuid, source_dir) in enumerate(datasets, 1):
-        logger.info(f"Processing dataset {idx}/{len(datasets)}: {ds_uuid}")
-
-        tgt = target_dir
-        if tgt is None:
-            tgt = source_dir.parent / f"{source_dir.name}_symlink"
-
-        # Try symlink creation
-        try:
-            create_lerobot_symlink_structure(
-                source_dir=source_dir,
-                target_dir=tgt,
-                relative=not absolute_symlinks,
-                skip_missing=skip_missing,
-            )
-        except Exception as e:
-            err_msg = f"Symlink creation failed: {e}"
-            logger.error(f"Dataset {ds_uuid}: {err_msg}")
-            print(f"\n⚠️  WARNING: Dataset {ds_uuid} FAILED dataloader test", file=sys.stderr)
-            print(f"    Reason: {err_msg}", file=sys.stderr)
-            print(f"    Source: {source_dir}\n", file=sys.stderr)
-            _update_detection_status(db, ds_uuid, ok=False, err_msg=err_msg)
-            failed.append((ds_uuid, err_msg))
-            continue  # Go to next dataset
-
-        # Try comprehensive dataloader detection with user-specified parameters
-        result = _run_dataloader_detection(
-            tgt,
-            episode_indices=episodes,
-            strict_mode=strict_mode,
-            batch_size=batch_size,
-            num_workers=num_workers,
-        )
-
-        ok = result["success"]
-        err = result.get("error_summary")
-
-        if ok:
-            logger.info(
-                f"Dataset {ds_uuid}: validation completed - "
-                f"{result['total_frames_validated']} frames in {len(result['episodes_tested'])} episodes"
-            )
-            succeeded.append(ds_uuid)
-        else:
-            logger.error(f"Dataset {ds_uuid}: validation failed: {err}")
-            print(f"\n⚠️  WARNING: Dataset {ds_uuid} FAILED dataloader test", file=sys.stderr)
-            print(f"    Reason: {err}", file=sys.stderr)
-            print(f"    Episodes tested: {len(result['episodes_tested'])}", file=sys.stderr)
-            print(f"    Episodes failed: {len(result['episodes_failed'])}", file=sys.stderr)
-            print(f"    Source: {source_dir}", file=sys.stderr)
-            print(f"    Symlink: {tgt}\n", file=sys.stderr)
-            failed.append((ds_uuid, err))
-
-        # Update status
-        _update_detection_status(db, ds_uuid, ok=ok, err_msg=err)
-
-    # Summary
-    logger.info("=" * 60)
-    logger.info(f"Processing complete: {len(succeeded)} succeeded, {len(failed)} failed")
-
+    # Print summary
     print("\n" + "=" * 70, file=sys.stderr)
     print("📊 DATALOADER TEST SUMMARY", file=sys.stderr)
     print("=" * 70, file=sys.stderr)
-    print(f"✅ Succeeded: {len(succeeded)}", file=sys.stderr)
-    print(f"❌ Failed: {len(failed)}", file=sys.stderr)
+    print(f"📦 Datasets processed: {result['datasets_processed']}", file=sys.stderr)
+    print(f"✅ Succeeded: {len(result['succeeded'])}", file=sys.stderr)
+    print(f"❌ Failed: {len(result['failed'])}", file=sys.stderr)
 
-    if succeeded:
-        logger.info(f"Succeeded: {succeeded}")
+    if result["succeeded"]:
         print("\n✅ Successful datasets:", file=sys.stderr)
-        for ds_uuid in succeeded:
+        for ds_uuid in result["succeeded"]:
             print(f"   - {ds_uuid}", file=sys.stderr)
 
-    if failed:
-        logger.info("Failed datasets:")
-        for ds_uuid, err_msg in failed:
-            logger.info(f"  - {ds_uuid}: {err_msg}")
-        print("\n❌ Failed datasets with error details:", file=sys.stderr)
-        for ds_uuid, err_msg in failed:
+    if result["failed"]:
+        print("\n❌ Failed datasets:", file=sys.stderr)
+        for ds_uuid, err_msg in result["failed"]:
             print(f"   - {ds_uuid}", file=sys.stderr)
             print(f"     Error: {err_msg}", file=sys.stderr)
 
     print("=" * 70 + "\n", file=sys.stderr)
 
-    return 0 if not failed else 1
+    return 0 if not result["failed"] else 1
 
 
 async def run_server_async(
@@ -354,7 +242,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8771, help="Port number (default: 8771)")
     parser.add_argument("--heartbeat-interval", type=float, default=30.0, help="Heartbeat interval in seconds")
     parser.add_argument("--timeout", type=float, default=15.0, help="Server: heartbeat timeout in seconds")
-    parser.add_argument("--log-dir", type=Path, default=Path("/logs/dataloader"), help="Log directory (default: /logs/dataloader)")
+    parser.add_argument("--log-dir", type=Path, default=Path("logs/dataloader"), help="Log directory relative to current directory (default: logs/dataloader)")
 
     # local symlink args
     parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for symlinked dataset")
@@ -391,7 +279,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--num-clients",
         type=int,
         default=1,
-        help="Number of concurrent client/local processes to spawn (default: 1, max: 32)",
+        help="Number of concurrent client processes to spawn (default: 1, max: 32, only supported with --client mode)",
     )
 
     return parser.parse_args(argv)
@@ -406,15 +294,21 @@ def main(argv: list[str]) -> int:
 
     logger = setup_logger(
         name="dataloader merged cli",
-        log_dir=Path(args.log_dir) if hasattr(args, "log_dir") else Path("/logs/dataloader"),
+        log_dir=Path(args.log_dir) if hasattr(args, "log_dir") else Path("logs/dataloader"),
         level=getattr(logging, args.log_level, logging.INFO),
     )
 
-    # Validation: reject --num-clients with --server
+    # Validation: reject --num-clients with --server or --local
     num_clients = getattr(args, 'num_clients', 1)
     if args.server and num_clients > 1:
         print("ERROR: --num-clients is not supported with --server mode", file=sys.stderr)
-        print("       Use --num-clients with --client or --local mode only", file=sys.stderr)
+        print("       Use --num-clients with --client mode only", file=sys.stderr)
+        return 2
+
+    if args.local and num_clients > 1:
+        print("ERROR: --num-clients is not supported with --local mode", file=sys.stderr)
+        print("       Multi-local mode has been abandoned", file=sys.stderr)
+        print("       Use --num-clients with --client mode only", file=sys.stderr)
         return 2
 
     # Apply max limit to num_clients
@@ -442,19 +336,7 @@ def main(argv: list[str]) -> int:
     run_local_mode = bool(args.local or (not args.server and not (args.client or args.cliet)))
 
     if run_local_mode:
-        # Multi-local mode: spawn multiple processes
-        if num_clients > 1:
-            return run_multi_local(
-                db_file=db_file,
-                num_processes=num_clients,
-                target_dir=(args.target.expanduser().absolute() if args.target else None),
-                absolute_symlinks=bool(args.absolute),
-                skip_missing=bool(args.symlink_skip_missing),
-                log_dir=args.log_dir,
-                log_level=args.log_level,
-            )
-
-        # Single-process local mode (original behavior)
+        # Single-process local mode
         return run_local(
             db_file=db_file,
             target_dir=(args.target.expanduser().absolute() if args.target else None),

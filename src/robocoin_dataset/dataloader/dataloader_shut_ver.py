@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import and_, or_
+from websockets.legacy.server import WebSocketServerProtocol
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, TaskStatus
@@ -295,7 +296,12 @@ def _sync_dataloader_detection_tasks(
     )
 
     items = query.all()
+
+    # Debug: Always log what we're doing
+    _logger.debug(f"🔍 Sync found {len(items)} items matching criteria")
+
     if not items:
+        _logger.debug("🔍 No items need syncing")
         return
 
     # Separate NULL status records and warn about them
@@ -324,12 +330,13 @@ def _sync_dataloader_detection_tasks(
             )
 
     if valid_items:
-        _logger.info(f"Marked {len(valid_items)} dataset(s) as PENDING for dataloader detection")
+        _logger.info(f"✅ Marked {len(valid_items)} dataset(s) as PENDING for dataloader detection")
 
     session.commit()
+    _logger.debug(f"🔍 Sync committed {len(items)} items as PENDING")
 
 
-def _gen_one_dataloader_detection_task(session: Session) -> tuple[str | None, str | None]:
+def _gen_one_dataloader_detection_task(session: Session, logger: logging.Logger | None = None) -> tuple[str | None, str | None]:
     """Claim one pending dataset and transition it to PROCESSING.
 
     ##############################################################################
@@ -338,17 +345,22 @@ def _gen_one_dataloader_detection_task(session: Session) -> tuple[str | None, st
 
     Returns (dataset_uuid, convert_path) or (None, None) if no task available.
     """
+    _logger = logger or logging.getLogger(__name__)
+
     item = (
         session.query(DatasetDB)
         .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
         .first()
     )
     if not item:
+        _logger.debug("🔍 _gen_one: No PENDING items found")
         return None, None
 
+    _logger.debug(f"🔍 _gen_one: Found PENDING item {item.dataset_uuid}, claiming it")
     item.data_loader_detection_status = TaskStatus.PROCESSING
     item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1 # Increment version when claiming the task
     session.commit()
+    _logger.debug(f"🔍 _gen_one: Committed {item.dataset_uuid} as PROCESSING")
     return item.dataset_uuid, item.convert_path
 
 
@@ -751,7 +763,7 @@ def run_local_batch_detection(
         # Sync and claim one task
         with db.with_session() as session:
             _sync_dataloader_detection_tasks(session, logger=_logger)
-            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
+            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session, logger=_logger)
 
         if not dataset_uuid or not convert_path:
             break  # No more tasks
@@ -832,7 +844,7 @@ class DataloaderDbProcess:
         # 1) Sync tasks (queue pending/stale)
         with self.db.with_session() as session:
             _sync_dataloader_detection_tasks(session, logger=self.logger)
-            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
+            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session, logger=self.logger)
 
         if not dataset_uuid or not convert_path:
             self.logger.info("No dataloader detection task to process")
@@ -900,21 +912,105 @@ class DataloaderDbServer(TaskServer):
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
+            # Debug: Count PENDING tasks before sync
+            pending_before = session.query(DatasetDB).filter(
+                DatasetDB.data_loader_detection_status == TaskStatus.PENDING
+            ).count()
+            self.logger.debug(f"🔍 PENDING tasks before sync: {pending_before}")
+
             # pre-sync queue
             _sync_dataloader_detection_tasks(session, logger=self.logger)
 
+            # Debug: Count PENDING tasks after sync
+            pending_after = session.query(DatasetDB).filter(
+                DatasetDB.data_loader_detection_status == TaskStatus.PENDING
+            ).count()
+            self.logger.debug(f"🔍 PENDING tasks after sync: {pending_after}")
+
             # claim one
-            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
+            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session, logger=self.logger)
             if dataset_uuid is None:
+                # Debug: Show what statuses exist
+                from collections import Counter
+                all_statuses = session.query(DatasetDB.data_loader_detection_status).all()
+                status_counts = Counter(s[0] for s in all_statuses if s[0] is not None)
+                self.logger.info(f"🔍 No PENDING tasks found. Status distribution: {dict(status_counts)}")
+                # No tasks available - return None to trigger shutdown
                 return None
 
+            self.logger.info(f"✅ Assigned task: {dataset_uuid}")
             return {
                 DATASET_UUID: dataset_uuid,
                 LEFORMAT_PATH: convert_path,
             }
 
+    async def send_task_to_client(self, websocket: WebSocketServerProtocol) -> None:
+        """Override to send explicit shutdown message when no tasks available."""
+        import json
+
+        from robocoin_dataset.distribution_computation.constant import TASK
+
+        info = self.client_info.get(websocket)
+        if not info:
+            return
+
+        task_content = await asyncio.to_thread(self.generate_task_content)
+        if not task_content:
+            # Send explicit shutdown signal instead of NO_TASK
+            shutdown_msg = {
+                "shutdown": True,
+                "reason": "no_tasks_available",
+            }
+
+            # Generate task_id for proper tracking
+            async with self._lock:
+                task_id = self.current_task_id
+                self._current_task_idx += 1
+
+            msg = json.dumps({
+                MSG_TYPE: TASK,
+                MSG_CONTENT: shutdown_msg,
+                TASK_ID: task_id,
+                CLIENT_ID: info[CLIENT_ID],
+            })
+
+            # Store for acknowledgment handling
+            self._task_content_dict[task_id] = shutdown_msg
+
+            await websocket.send(msg)
+            self.logger.info(f"🛑 No pending tasks, sent shutdown signal to client {info[CLIENT_ID]}")
+            return
+
+        # Normal task assignment (same as base class)
+        async with self._lock:
+            task_id = self.current_task_id
+            self._current_task_idx += 1
+
+        task_content[TASK_ID] = task_id
+
+        msg = json.dumps({
+            MSG_TYPE: TASK,
+            MSG_CONTENT: task_content,
+            TASK_ID: task_id,
+            CLIENT_ID: info[CLIENT_ID],
+        })
+
+        self._task_content_dict[task_id] = task_content
+        await websocket.send(msg)
+        self.logger.info(f"Assigned task {task_id} to client {info[CLIENT_ID]}")
+
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
+        # Check if this is a shutdown acknowledgment
+        result_content = task_result_content.get(TASK_RESULT_CONTENT, {})
+        if result_content.get("shutdown") and result_content.get("acknowledged"):
+            self.logger.info("Received shutdown acknowledgment from client")
+            return
+
         ds_uuid = task_content.get(DATASET_UUID)
+        if not ds_uuid:
+            self.logger.warning("Received task result without dataset_uuid, ignoring")
+            return
+
         # Client execution state: did the client process crash/throw exception?
         client_execution_status = task_result_content.get(TASK_RESULT_STATUS)
 
@@ -973,7 +1069,18 @@ class DataloaderDbClient(TaskClient):
         return {}
 
     def _sync_process_task(self, task_content: dict) -> dict:
+        # Safety check: if this is a shutdown signal, return immediately
+        # (This should be caught earlier in run_client_async, but defense in depth)
+        if task_content.get("shutdown"):
+            return {
+                "success": True,
+                "shutdown": True,
+                "acknowledged": True,
+            }
+
         repo_path = task_content.get(LEFORMAT_PATH)
+        if not repo_path:
+            raise ValueError("Task content missing LEFORMAT_PATH")
 
         # Get configurable parameters (with defaults)
         episodes = task_content.get("episodes", "all")
@@ -1047,6 +1154,27 @@ async def run_client_async(server_uri: str, heartbeat_interval: float, logger: l
             if task is None:
                 if logger:
                     logger.info("📭 No task from server, client exiting")
+                break
+
+            # Check if server sent shutdown signal
+            # Note: task IS the msg_content (request_task returns msg_content directly)
+            if task.get("shutdown"):
+                shutdown_reason = task.get("reason", "unknown")
+                if logger:
+                    logger.info(f"🛑 Server requested shutdown: {shutdown_reason}")
+                # Acknowledge the shutdown message (using proper constants)
+                result = {
+                    MSG_TYPE: TASK_RESULT,
+                    MSG_CONTENT: {
+                        TASK_RESULT_STATUS: TASK_SUCCESS,
+                        TASK_RESULT_CONTENT: {"acknowledged": True, "shutdown": True},
+                    },
+                    TASK_ID: task.get(TASK_ID),
+                    CLIENT_ID: client.client_id,
+                }
+                await client.submit_result(result)
+                if logger:
+                    logger.info("✅ Shutdown acknowledged, client exiting gracefully")
                 break
 
             if logger:

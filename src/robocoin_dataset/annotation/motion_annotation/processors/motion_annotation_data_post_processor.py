@@ -34,7 +34,7 @@ class MotionAnnotationDataPostProcessorConfig:
     eef_acc_mag_annotation_dict: dict[str, int] = {
         "constant": 0,
         "accelerating": 1,
-        "deaccelerating": 2,
+        "decelerating": 2,
     }
     acc_mag_threshold: float = 0.1
     gripper_mode_annotation_dict: dict[str, int] = {

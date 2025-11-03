@@ -112,6 +112,7 @@ class SceneAnnotationLocal:
                 dataset_name = dataset_folder.name
                 self.logger.info(f"检查数据集 {dataset_name} 的完成状态...")
                 with self.db.with_session() as session:
+                    
                     # 数据集名查找dataset_uuid
                     dataset_record = (
                         session.query(DatasetDB)
@@ -126,43 +127,50 @@ class SceneAnnotationLocal:
                     if dataset_record.scene_annotation_status == TaskStatus.COMPLETED:
                         self.logger.info(f"数据集 {dataset_name} 的场景注释已经完成，跳过")
                         continue
+                    try:
+                        json_pattern = str(dataset_folder / "episode_*.json")
+                        json_files = glob.glob(json_pattern)
 
-                    json_pattern = str(dataset_folder / "episode_*.json")
-                    json_files = glob.glob(json_pattern)
+                        if not json_files:
+                            self.logger.error(f"数据集 {dataset_name} 中没有找到JSON文件，跳过")
+                            failed_count += 1
+                            raise FileNotFoundError("No JSON files found")
 
-                    if not json_files:
-                        self.logger.warning(f"数据集 {dataset_name} 中没有找到JSON文件，跳过")
-                        failed_count += 1
-                        continue
+                        descriptions = []
+                        for json_file in json_files:
+                            with open(json_file, encoding="utf-8") as f:
+                                data = json.load(f)
+                                if "description" in data:
+                                    descriptions.append(data["description"])
 
-                    descriptions = []
-                    for json_file in json_files:
-                        with open(json_file, encoding="utf-8") as f:
-                            data = json.load(f)
-                            if "description" in data:
-                                descriptions.append(data["description"])
+                        if not descriptions:
+                            self.logger.warning(
+                                f"数据集 {dataset_name} 中没有找到有效的description，跳过"
+                            )
+                            failed_count += 1
+                            continue
 
-                    if not descriptions:
-                        self.logger.warning(
-                            f"数据集 {dataset_name} 中没有找到有效的description，跳过"
+                        # 调用场景注释嵌入
+                        scene_embedding = SceneAnnotationEmbedding(self.db_file_path)
+                        scene_embedding.dataset_scene_embedding(
+                            dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions
                         )
-                        failed_count += 1
+
+                        # 更新状态为完成
+                        dataset_record.scene_annotation_status = TaskStatus.COMPLETED
+                        session.commit()
+
+                        self.logger.info(f"数据集 {dataset_name} 场景注释处理完成")
+                        success_count += 1
+                    except Exception as e:
+                        self.logger.error(f"处理数据集文件夹 {dataset_folder} 时发生错误: {e}")
+                        dataset_record.scene_annotation_status = TaskStatus.FAILED
+                        dataset_record.scene_annotation_err_msg = str(e)
+                        session.commit()
                         continue
-
-                    # 调用场景注释嵌入
-                    scene_embedding = SceneAnnotationEmbedding(self.db_file_path)
-                    scene_embedding.dataset_scene_embedding(
-                        dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions
-                    )
-
-                    # 更新状态为完成
-                    dataset_record.scene_annotation_status = TaskStatus.COMPLETED
-                    session.commit()
-
-                    self.logger.info(f"数据集 {dataset_name} 场景注释处理完成")
-                    success_count += 1
-
-            self.logger.info(f"\n处理完成！成功: {success_count}, 失败: {failed_count}")
+                        
+                self.logger.info(f"\n处理完成！成功: {success_count}, 失败: {failed_count}")
+                
 
         except Exception as e:
             self.logger.error(f"处理文件夹 {folder} 时发生错误: {e}")
