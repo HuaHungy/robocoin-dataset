@@ -17,8 +17,9 @@ from robocoin_dataset.database.models import DatasetDB, TaskStatus
 from robocoin_dataset.distribution_computation.constant import (
     DATASET_UUID,
     ERR_MSG,
+    TASK_FAILED,
+    TASK_RESULT_CONTENT,
     TASK_RESULT_STATUS,
-    TASK_SUCCESS,
 )
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.distribution_computation.task_server import TaskServer
@@ -700,26 +701,42 @@ class DataloaderDbServer(TaskServer):
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         ds_uuid = task_content.get(DATASET_UUID)
-        task_status = task_result_content.get(TASK_RESULT_STATUS)
-        task_status_msg = task_result_content.get(ERR_MSG)
+        # Client execution state: did the client process crash/throw exception?
+        client_execution_status = task_result_content.get(TASK_RESULT_STATUS)
 
-        status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+        # Level 1: Check if client crashed (process-level failure)
+        if client_execution_status == TASK_FAILED:
+            db_status = TaskStatus.FAILED
+            db_error_message = task_result_content.get(ERR_MSG, "Client execution failed")
+        else:
+            # Level 2: Client executed successfully, check dataset validation result (business-level)
+            dataset_validation_result = task_result_content.get(TASK_RESULT_CONTENT, {})
+            dataset_validation_passed = dataset_validation_result.get("success", False)
+
+            if dataset_validation_passed:
+                db_status = TaskStatus.COMPLETED
+                db_error_message = None
+            else:
+                db_status = TaskStatus.FAILED
+                db_error_message = dataset_validation_result.get("error_summary", "Dataset validation failed")
+
         with self.db.with_session() as session:
             item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
             if item is None:
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
                 return
 
-            item.data_loader_detection_status = status
-            if status == TaskStatus.COMPLETED:
+            item.data_loader_detection_status = db_status
+            if db_status == TaskStatus.COMPLETED:
                 # Increment version ONLY after successful detection
                 item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
-            elif status == TaskStatus.FAILED:
-                item.data_loader_detection_err_msg = task_status_msg
+                item.data_loader_detection_err_msg = None
+            elif db_status == TaskStatus.FAILED:
+                item.data_loader_detection_err_msg = db_error_message
                 # Do NOT increment version on failure
             session.commit()
             self.logger.info(
-                f"Upsert {item.convert_path} dataloader detection status to {status}, update_message: {task_status_msg}"
+                f"Upsert {item.convert_path} dataloader detection status to {db_status}, update_message: {db_error_message}"
             )
 
 
