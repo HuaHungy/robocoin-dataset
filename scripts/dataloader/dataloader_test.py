@@ -187,18 +187,26 @@ def _find_all_datasets_with_convert_path(db: DatasetDatabase) -> list[tuple[str,
         return result
 
 
-def _update_detection_status(db: DatasetDatabase, ds_uuid: str, ok: bool, err_msg: str | None) -> None:
+def _update_detection_status(
+    db: DatasetDatabase, ds_uuid: str, ok: bool, err_msg: str | None
+) -> None:
     with db.with_session() as session:
         values = {
-            DatasetDB.data_loader_detection_status: TaskStatus.COMPLETED if ok else TaskStatus.FAILED,
-            DatasetDB.data_loader_detection_version: func.coalesce(DatasetDB.data_loader_detection_version, 0)
+            DatasetDB.data_loader_detection_status: TaskStatus.COMPLETED
+            if ok
+            else TaskStatus.FAILED,
+            DatasetDB.data_loader_detection_version: func.coalesce(
+                DatasetDB.data_loader_detection_version, 0
+            )
             + 1,
             # set PS to current data_merge_version as requested
             DatasetDB.data_loader_detection_version_ps: DatasetDB.data_merge_version,
         }
         if not ok and err_msg:
             values[DatasetDB.data_loader_detection_err_msg] = err_msg
-        session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).update(values, synchronize_session=False)
+        session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).update(
+            values, synchronize_session=False
+        )
         session.commit()
 
 
@@ -311,7 +319,12 @@ def run_local(
 
 
 async def run_server_async(
-    db_file: Path, host: str, port: int, heartbeat_interval: float, timeout: float, logger: logging.Logger
+    db_file: Path,
+    host: str,
+    port: int,
+    heartbeat_interval: float,
+    timeout: float,
+    logger: logging.Logger,
 ) -> int:
     server = DataloaderDbServer(
         db_file_path=db_file,
@@ -344,22 +357,43 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
 
     # execution mode (choose one)
-    parser.add_argument("--local", action="store_true", help="Run locally: symlink + load + DB update")
+    parser.add_argument(
+        "--local", action="store_true", help="Run locally: symlink + load + DB update"
+    )
     parser.add_argument("--server", action="store_true", help="Run dataloader detection server")
     parser.add_argument("--client", action="store_true", help="Run dataloader detection client")
     parser.add_argument("--cliet", action="store_true", help="Alias of --client")
 
     # network args (context-dependent: server bind address OR client connect address)
-    parser.add_argument("--host", type=str, default=None, help="Host address (Server: bind to; Client: connect to)")
+    parser.add_argument(
+        "--host", type=str, default=None, help="Host address (Server: bind to; Client: connect to)"
+    )
     parser.add_argument("--port", type=int, default=8771, help="Port number (default: 8771)")
-    parser.add_argument("--heartbeat-interval", type=float, default=30.0, help="Heartbeat interval in seconds")
-    parser.add_argument("--timeout", type=float, default=15.0, help="Server: heartbeat timeout in seconds")
-    parser.add_argument("--log-dir", type=Path, default=Path("/logs/dataloader"), help="Log directory (default: /logs/dataloader)")
+    parser.add_argument(
+        "--heartbeat-interval", type=float, default=30.0, help="Heartbeat interval in seconds"
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=15.0, help="Server: heartbeat timeout in seconds"
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path("./logs/dataloader"),
+        help="Log directory (default: /logs/dataloader)",
+    )
 
     # local symlink args
-    parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for symlinked dataset")
-    parser.add_argument("--absolute", action="store_true", help="Create absolute symlinks (default: relative)")
-    parser.add_argument("--symlink-skip-missing", action="store_true", help="Skip missing source files during symlink creation")
+    parser.add_argument(
+        "-t", "--target", type=Path, default=None, help="Target directory for symlinked dataset"
+    )
+    parser.add_argument(
+        "--absolute", action="store_true", help="Create absolute symlinks (default: relative)"
+    )
+    parser.add_argument(
+        "--symlink-skip-missing",
+        action="store_true",
+        help="Skip missing source files during symlink creation",
+    )
 
     # dataloader validation args
     parser.add_argument(
@@ -411,7 +445,7 @@ def main(argv: list[str]) -> int:
     )
 
     # Validation: reject --num-clients with --server
-    num_clients = getattr(args, 'num_clients', 1)
+    num_clients = getattr(args, "num_clients", 1)
     if args.server and num_clients > 1:
         print("ERROR: --num-clients is not supported with --server mode", file=sys.stderr)
         print("       Use --num-clients with --client or --local mode only", file=sys.stderr)
@@ -500,7 +534,9 @@ def main(argv: list[str]) -> int:
         stats = asyncio.run(
             run_client_async(
                 server_uri=server_uri,
-                heartbeat_interval=args.heartbeat_interval if hasattr(args, "heartbeat_interval") else 10.0,
+                heartbeat_interval=args.heartbeat_interval
+                if hasattr(args, "heartbeat_interval")
+                else 10.0,
                 logger=logger,
             )
         )
