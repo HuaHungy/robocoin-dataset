@@ -65,7 +65,7 @@ class SceneAnnotationEmbedding:
             if dataset is None:
                 raise ValueError(f"dataset_uuid: {dataset_uuid} not found")
             # get dataset path
-            dataset_path = dataset.dataset_path
+            dataset_path = dataset.convert_path
             dataset_path = Path(dataset_path)
             if dataset_path is None:
                 raise ValueError(f"dataset_uuid: {dataset_uuid} dataset_path is None")
