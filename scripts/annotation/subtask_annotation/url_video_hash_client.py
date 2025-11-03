@@ -133,5 +133,5 @@ python scripts/annotation/subtask_annotation/url_video_hash_client.py \
     --port=8769 \
     --heartbeat-interval=10.0 \
     --log_dir=./logs \
-    --num-clients=12
+    --num-clients=8
 """
