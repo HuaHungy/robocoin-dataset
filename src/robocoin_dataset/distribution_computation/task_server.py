@@ -184,7 +184,7 @@ class TaskServer(ABC):
                     # ✅ 详细的错误日志，包含完整堆栈
                     self.logger.error(
                         f"❌ Error handling task result for {task_id}: {e}",
-                        exc_info=True  # 打印完整堆栈跟踪
+                        exc_info=True,  # 打印完整堆栈跟踪
                     )
 
             elif msg_type == PONG:
@@ -307,7 +307,7 @@ class TaskServer(ABC):
             await self.unregister_client(websocket)
 
     async def start(self) -> None:
-        async with serve(self.handler, self.host, self.port):
+        async with serve(self.handler, self.host, self.port, max_size=2**28):
             self.logger.info(f"Task server started successfully: ws://{self.host}:{self.port}")
             await asyncio.Future()  # Run forever
 

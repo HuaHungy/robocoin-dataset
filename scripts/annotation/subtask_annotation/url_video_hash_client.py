@@ -128,7 +128,6 @@ if __name__ == "__main__":
 
 
 """Usage:
-# 用于正式运行，用于数据集转换测试
 python scripts/annotation/subtask_annotation/url_video_hash_client.py \
     --host=127.0.0.1 \
     --port=8769 \
