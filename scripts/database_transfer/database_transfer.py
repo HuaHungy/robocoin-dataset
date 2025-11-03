@@ -15,8 +15,10 @@ have proper default values:
 2. Initialize ALL *_status fields to "PENDING" and ALL *_version/*_version_ps fields to 0
 3. Enrich with actual values from specified auxiliary tables (e.g., lerobot_format_convert)
    - Actual non-None values overwrite the defaults
-4. Upsert into destination database (update existing records, insert new ones)
-5. Verify transfer accuracy by comparing source and destination data
+4. Apply optimization: when convert_status is COMPLETED but convert_test_status is still
+   PENDING (no test entry), automatically propagate COMPLETED to convert_test_status
+5. Upsert into destination database (update existing records, insert new ones)
+6. Verify transfer accuracy by comparing source and destination data
 
 This ensures no NULL values in status/version fields, with real data taking precedence.
 
@@ -591,6 +593,42 @@ def _fill_missing_defaults(
                 r[col] = 0
 
 
+def _propagate_convert_completion_to_test(
+    rows: list[dict[str, object]],
+) -> int:
+    """Propagate COMPLETED status from convert to test when test has no entry.
+
+    Optimization: When convert_status is COMPLETED but convert_test_status is still
+    at the default PENDING (indicating no entry existed in the test table), automatically
+    set convert_test_status to COMPLETED.
+
+    This assumes that if conversion completed successfully, the test phase can be
+    considered complete as well when no explicit test entry exists.
+
+    Modifies rows in-place.
+
+    Args:
+        rows: List of row dictionaries to modify in-place
+
+    Returns:
+        Number of rows where test status was propagated from convert status.
+    """
+    if not rows:
+        return 0
+
+    propagated_count = 0
+    for row in rows:
+        convert_status = row.get("convert_status")
+        convert_test_status = row.get("convert_test_status")
+
+        # Only propagate if convert is COMPLETED and test is still PENDING (default)
+        if convert_status == "COMPLETED" and convert_test_status == "PENDING":
+            row["convert_test_status"] = "COMPLETED"
+            propagated_count += 1
+
+    return propagated_count
+
+
 def _verify_transfer_accuracy(
     dest_engine: Engine,
     table_name: str,
@@ -598,6 +636,10 @@ def _verify_transfer_accuracy(
     default_initialized_fields: set[str],
 ) -> dict[str, object]:
     """Verify transfer accuracy by comparing expected vs actual destination data.
+
+    Implements merge-aware comparison logic: When expected value is None but actual
+    destination value is non-null, this is treated as acceptable "merge preservation"
+    rather than an error (aligns with upsert behavior that skips None values).
 
     Args:
         dest_engine: SQLAlchemy engine for the destination database
@@ -608,12 +650,14 @@ def _verify_transfer_accuracy(
 
     Returns:
         Dictionary containing verification results with keys:
-        - 'success': bool indicating if verification passed
+        - 'success': bool indicating if verification passed (true if no mismatches/missing/extra UUIDs)
         - 'total_expected': int number of expected rows
         - 'total_actual': int number of actual rows in destination
-        - 'mismatches': list of dicts describing any discrepancies
+        - 'mismatches': list of dicts describing any discrepancies (real errors)
         - 'missing_uuids': list of dataset_uuids that were expected but not found
         - 'extra_uuids': list of dataset_uuids found in destination but not expected
+        - 'merge_preservations': list of dicts for fields where None + non-null → non-null
+                                 (these are logged as warnings but don't fail verification)
     """
     if not expected_rows:
         return {
@@ -623,6 +667,7 @@ def _verify_transfer_accuracy(
             "mismatches": [],
             "missing_uuids": [],
             "extra_uuids": [],
+            "merge_preservations": [],
         }
 
     # Build lookup of expected rows by dataset_uuid
@@ -648,11 +693,14 @@ def _verify_transfer_accuracy(
 
     # Compare matching rows field by field
     mismatches: list[dict[str, object]] = []
+    merge_preservations: list[dict[str, object]] = []
+
     for uuid in expected_uuids & actual_uuids:
         expected_row = expected_by_uuid[uuid]
         actual_row = actual_by_uuid[uuid]
 
         field_mismatches: list[dict[str, object]] = []
+        field_preservations: list[dict[str, object]] = []
 
         # Get all fields to compare (union of both row keys, excluding 'id')
         all_fields = (set(expected_row.keys()) | set(actual_row.keys())) - {"id"}
@@ -672,6 +720,18 @@ def _verify_transfer_accuracy(
                     if abs(float(expected_val) - float(actual_val)) < 1e-9:
                         continue
 
+                # MERGE PRESERVATION LOGIC: If expected is None but actual is non-null,
+                # this is acceptable - it means we preserved existing destination data
+                # instead of overwriting with None (as per upsert logic at line 273)
+                if expected_val is None and actual_val is not None:
+                    field_preservations.append({
+                        "field": field,
+                        "preserved_value": actual_val,
+                    })
+                    continue
+
+                # If actual is None but expected is non-null, this is a real mismatch
+                # (data was lost or not written correctly)
                 field_mismatches.append({
                     "field": field,
                     "expected": expected_val,
@@ -684,6 +744,12 @@ def _verify_transfer_accuracy(
                 "field_mismatches": field_mismatches,
             })
 
+        if field_preservations:
+            merge_preservations.append({
+                "dataset_uuid": uuid,
+                "field_preservations": field_preservations,
+            })
+
     success = len(mismatches) == 0 and len(missing_uuids) == 0 and len(extra_uuids) == 0
 
     return {
@@ -693,6 +759,7 @@ def _verify_transfer_accuracy(
         "mismatches": mismatches,
         "missing_uuids": missing_uuids,
         "extra_uuids": extra_uuids,
+        "merge_preservations": merge_preservations,
     }
 
 
@@ -702,11 +769,48 @@ def _log_verification_results(results: dict[str, object]) -> None:
     Args:
         results: Verification results dictionary from _verify_transfer_accuracy
     """
+    # Check for merge preservations (None + non-null → non-null)
+    merge_preservations = results.get("merge_preservations", [])
+
     if results["success"]:
         LOGGER.info(
             "[VERIFY] ✓ Transfer verification PASSED: %d rows accurately transferred",
             results["total_expected"],
         )
+
+        # Log merge preservation warnings even when verification passes
+        if merge_preservations:
+            total_preserved_fields = sum(
+                len(p["field_preservations"]) for p in merge_preservations
+            )
+            LOGGER.warning(
+                "[VERIFY] ⚠ Merge preservation applied: %d rows with %d preserved fields",
+                len(merge_preservations),
+                total_preserved_fields,
+            )
+            LOGGER.warning(
+                "[VERIFY] ⚠ These fields had None in source but non-null in destination; "
+                "destination values were preserved (not overwritten with None)"
+            )
+            # Show details for first few preservation cases
+            for i, preservation in enumerate(merge_preservations[:3]):
+                uuid = preservation["dataset_uuid"]
+                preserved_fields = preservation["field_preservations"]
+                field_names = [p["field"] for p in preserved_fields[:5]]
+                LOGGER.warning(
+                    "[VERIFY]   Row %d (uuid=%s): preserved %d fields: %s%s",
+                    i + 1,
+                    uuid,
+                    len(preserved_fields),
+                    ", ".join(field_names),
+                    "..." if len(preserved_fields) > 5 else "",
+                )
+            if len(merge_preservations) > 3:
+                LOGGER.warning(
+                    "[VERIFY]   ... and %d more rows with preserved fields",
+                    len(merge_preservations) - 3,
+                )
+
         return
 
     LOGGER.warning("[VERIFY] ✗ Transfer verification FAILED")
@@ -752,6 +856,20 @@ def _log_verification_results(results: dict[str, object]) -> None:
         if len(mismatches) > 3:
             LOGGER.warning("[VERIFY]   ... and %d more rows with mismatches", len(mismatches) - 3)
 
+    # Log merge preservation warnings in failure case too
+    if merge_preservations:
+        total_preserved_fields = sum(
+            len(p["field_preservations"]) for p in merge_preservations
+        )
+        LOGGER.warning(
+            "[VERIFY] ⚠ Merge preservation applied: %d rows with %d preserved fields",
+            len(merge_preservations),
+            total_preserved_fields,
+        )
+        LOGGER.warning(
+            "[VERIFY] ⚠ (Note: These are NOT errors - destination values were correctly preserved)"
+        )
+
 
 def transfer_tables(
     source_db_path: Path,
@@ -766,8 +884,10 @@ def transfer_tables(
     1. Reads the 'datasets' table from source
     2. Initializes ALL status fields to "PENDING" and version fields to 0 (baseline defaults)
     3. Enriches with actual values from specified auxiliary tables (overwrites defaults)
-    4. Upserts into destination 'datasets' table (update by dataset_uuid, or insert)
-    5. Verifies transfer accuracy by comparing source and destination data
+    4. Applies optimization: propagates COMPLETED from convert_status to convert_test_status
+       when test status is still PENDING (indicating no test table entry existed)
+    5. Upserts into destination 'datasets' table (update by dataset_uuid, or insert)
+    6. Verifies transfer accuracy by comparing source and destination data
 
     This ensures that no status/version fields are ever NULL, with actual values from
     the source tables taking precedence over defaults.
@@ -823,6 +943,14 @@ def transfer_tables(
 
     # Now enrich from auxiliary tables - actual values will overwrite the defaults
     _enrich_datasets_from_tables(source_engine, datasets_rows, tables)
+
+    # Apply optimization: propagate COMPLETED status from convert to test when appropriate
+    propagated = _propagate_convert_completion_to_test(datasets_rows)
+    if propagated > 0:
+        LOGGER.info(
+            "[OPTIMIZE] Propagated COMPLETED status from convert_status to convert_test_status for %d rows",
+            propagated
+        )
 
     # Perform upsert: update existing records by dataset_uuid, insert new ones
     LOGGER.info("[MERGE] Upserting rows into destination 'datasets' using dataset_uuid where available")

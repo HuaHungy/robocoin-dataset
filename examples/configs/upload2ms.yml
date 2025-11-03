@@ -16,10 +16,22 @@ hub_name: modelscope
 # NOTICE: must match the def in DatasetsHubEnum, in @dataclass -> class LocalDsUploadConfig(LocalDsConfig):
 
 # token for authentication with the hub.
-token: NULL
+token: NULL  # Configuring this parameter is not recommended; manual specification is preferred.
 
 # output path where the history info of dataset uploading should be saved.
 output_path: ./examples/datasets/outputs/upload_history
+
+# Database file path for dataset tracking (leave empty for traditional directory-based upload).
+db_file_path: ""
+
+# Number of datasets to upload in each batch (for database-driven uploads).
+batch_size: 5
+
+# Skip datasets with missing paths instead of aborting (for database-driven uploads).
+skip_missing: false
+
+# Name of the unified repository for batch uploads (for database-driven uploads).
+unified_repo_name: "robocoin-dataset"
 
 # ---------------------------------------------------------------------------
 # refer to
