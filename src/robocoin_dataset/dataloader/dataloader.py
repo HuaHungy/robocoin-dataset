@@ -428,6 +428,8 @@ def _run_dataloader_detection(
                 "message": error_msg,
             })
             result["error_summary"] = error_msg
+            # Print error to terminal for debugging
+            print(f"\n❌ ERROR: {error_msg}", file=sys.stderr)
             if strict_mode:
                 raise ValueError(error_msg) from e
             return result
@@ -536,9 +538,18 @@ def _run_dataloader_detection(
                 result["episodes_failed"].append(ep_idx)
                 result["frames_per_episode"][ep_idx] = 0
 
-                # Log error to progress bar
+                # Print error to terminal with full traceback for debugging
                 if overall_progress is not None:
                     overall_progress.write(f"❌ Episode {ep_idx} failed: {episode_error}")
+                else:
+                    print(f"\n❌ Episode {ep_idx} failed: {episode_error}", file=sys.stderr)
+
+                # Print full traceback to stderr for debugging (even in non-strict mode)
+                print(f"\n{'='*70}", file=sys.stderr)
+                print(f"ERROR in Episode {ep_idx}:", file=sys.stderr)
+                print(f"{'-'*70}", file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                print(f"{'='*70}\n", file=sys.stderr)
 
                 if strict_mode:
                     if overall_progress is not None:
@@ -572,6 +583,13 @@ def _run_dataloader_detection(
         })
         result["error_summary"] = f"Fatal error: {error_msg}"
         result["success"] = False
+
+        # Print fatal error to terminal for debugging
+        print(f"\n{'='*70}", file=sys.stderr)
+        print("FATAL ERROR:", file=sys.stderr)
+        print(f"{'-'*70}", file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
+        print(f"{'='*70}\n", file=sys.stderr)
 
         if strict_mode:
             raise
