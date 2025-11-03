@@ -81,8 +81,8 @@ async def main() -> None:
     processor_server = StateActionDataPostProcessServer(
         db_file_path=db_file_path,
         state_action_dpp_classes_config_path=state_action_data_post_process_factory_config_path,
-        host="0.0.0.0",
-        port=8767,
+        host=args.host,
+        port=args.port,
         heartbeat_interval=30.0,
         device_model=device_model,
         device_model_version=device_model_version,

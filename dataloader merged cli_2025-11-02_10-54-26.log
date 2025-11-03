@@ -1,2 +1,0 @@
-2025-11-02 10:54:26 | INFO     | dataloader merged cli | The log system has been started, log file: /home/rogerspyke/projects/robocoin-dataset/dataloader merged cli_2025-11-02_10-54-26.log
-2025-11-02 10:54:26 | ERROR    | dataloader merged cli | Local dataloader detection failed: 'shape'

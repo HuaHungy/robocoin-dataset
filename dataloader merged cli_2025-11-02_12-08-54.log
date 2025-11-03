@@ -1,5 +1,0 @@
-2025-11-02 12:08:54 | INFO     | dataloader merged cli | The log system has been started, log file: /home/rogerspyke/projects/robocoin-dataset/dataloader merged cli_2025-11-02_12-08-54.log
-2025-11-02 12:08:54 | INFO     | dataloader merged cli | Task server started successfully: ws://0.0.0.0:8771
-2025-11-02 12:09:14 | INFO     | dataloader merged cli | Client registered successfully | ID: dataloader_detection_0 | IP: 172.16.13.94 | Current connections: 1
-2025-11-02 12:09:14 | INFO     | dataloader merged cli | No task available for client dataloader_detection_0
-2025-11-02 12:09:29 | INFO     | dataloader merged cli | Client disconnected | ID: dataloader_detection_0

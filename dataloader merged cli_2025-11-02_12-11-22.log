@@ -1,9 +1,0 @@
-2025-11-02 12:11:22 | INFO     | dataloader merged cli | The log system has been started, log file: /home/rogerspyke/projects/robocoin-dataset/dataloader merged cli_2025-11-02_12-11-22.log
-2025-11-02 12:11:22 | INFO     | dataloader merged cli | Found 2 dataset(s) to process
-2025-11-02 12:11:22 | INFO     | dataloader merged cli | Processing dataset 1/2: 37660001-1f3f-444f-817b-17e418bf4c74
-2025-11-02 12:11:32 | INFO     | dataloader merged cli | Dataset 37660001-1f3f-444f-817b-17e418bf4c74: dataloader detection completed
-2025-11-02 12:11:32 | INFO     | dataloader merged cli | Processing dataset 2/2: 8cba04b2-e5ea-4686-a6f3-5701663826ba
-2025-11-02 12:12:27 | INFO     | dataloader merged cli | Dataset 8cba04b2-e5ea-4686-a6f3-5701663826ba: dataloader detection completed
-2025-11-02 12:12:27 | INFO     | dataloader merged cli | ============================================================
-2025-11-02 12:12:27 | INFO     | dataloader merged cli | Processing complete: 2 succeeded, 0 failed
-2025-11-02 12:12:27 | INFO     | dataloader merged cli | Succeeded: ['37660001-1f3f-444f-817b-17e418bf4c74', '8cba04b2-e5ea-4686-a6f3-5701663826ba']

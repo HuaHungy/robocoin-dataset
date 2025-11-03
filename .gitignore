@@ -1,4 +1,17 @@
+*
+!*/
+!src/
+!scripts/
+!.python-version
+!.pre-commit-config.yaml
+!.gitsubmodules
+!.gitignore
+!pyproject.toml
+!README.md
+!LICENSE
+!examples/
 # Byte-compiled / optimized / DLL files
+
 __pycache__/
 datas/
 *.pyc

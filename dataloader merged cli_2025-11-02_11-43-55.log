@@ -1,8 +1,0 @@
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | The log system has been started, log file: /home/rogerspyke/projects/robocoin-dataset/dataloader merged cli_2025-11-02_11-43-55.log
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | ✅ Successfully connected to the server: ws://localhost:8771
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | 📤 Registration request sent | IP: 172.16.13.94
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | 🏷️ Client registered, server assigned ID: dataloader_detection_1 | IP: 172.16.13.94
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | ✅ Client dataloader_detection_1 is ready, starting task loop
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | 📤 Task request sent
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | 📥 Task received: {'msg_type': 'task', 'msg_content': {'dataset_uuid': '88e35314-80f0-4a2b-a92e-5b0e769483ae', 'leformat_path': '/mnt/nas/synnas/docker2/robocoin-datasets-test/realman_rmc_aidal_only_test', 'task_id': 'dataloader_detection_0'}, 'task_id': 'dataloader_detection_0', 'client_id': 'dataloader_detection_1'}
-2025-11-02 11:43:55 | INFO     | dataloader merged cli | 🚀 Starting to process task: dataloader_detection_0
