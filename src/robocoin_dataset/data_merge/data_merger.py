@@ -421,6 +421,7 @@ class DataMerger:
         self.data_merge_config = data_merge_config
 
     def _merge_data(self, convert_path: str) -> None:
+        self.logger.info(f"merge_data: {convert_path}")
         merge_dataset_data(
             convert_path,
             self.data_merge_config.patch_features,
@@ -545,6 +546,7 @@ class DataMergerClient(TaskClient):
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
             repo_path = task_content.get(LEFORMAT_PATH)
+            self.logger.info(f"merge_data: {repo_path}")
             merge_dataset_data(
                 repo_path,
                 patch_features=self.data_merge_config.patch_features,

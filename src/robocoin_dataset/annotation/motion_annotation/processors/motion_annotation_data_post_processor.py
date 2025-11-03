@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -107,8 +108,93 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
         # 创建 simulator（使用父类已经设置的 self.convert_path）
         self.simulator = LerobotSimReplayer(self.sim_replay_config, self.convert_path)
 
+    # }
     def prepare_processing(self) -> None:
-        pass
+        eef_direction_annotation_jsonl_path = (
+            self.convert_path / "annotations" / "eef_direction_annotation.jsonl"
+        )
+        eef_velocity_annotation_jsonl_path = (
+            self.convert_path / "annotations" / "eef_velocity_annotation.jsonl"
+        )
+        eef_acc_mag_annotation_jsonl_path = (
+            self.convert_path / "annotations" / "eef_acc_mag_annotation.jsonl"
+        )
+        gripper_mode_annotation_jsonl_path = (
+            self.convert_path / "annotations" / "gripper_mode_annotation.jsonl"
+        )
+        gripper_activity_annotation_jsonl_path = (
+            self.convert_path / "annotations" / "gripper_activity_annotation.jsonl"
+        )
+
+        eef_direction_annotation_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        sorted_entries = sorted(
+            self.motion_annotation_config.eef_direction_annotation_dict.items(),
+            key=lambda item: item[1],
+        )
+        with open(eef_direction_annotation_jsonl_path, "w") as f:
+            for direction, idx in sorted_entries:
+                json_data = {
+                    "eef_direction_index": idx,
+                    "eef_direction": direction,
+                }
+                json.dump(json_data, f)
+                f.write("\n")
+
+        eef_velocity_annotation_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        sorted_entries = sorted(
+            self.motion_annotation_config.eef_velocity_annotation_dict.items(),
+            key=lambda item: item[1],
+        )
+        with open(eef_velocity_annotation_jsonl_path, "w") as f:
+            for velocity, idx in sorted_entries:
+                json_data = {
+                    "eef_velocity_index": idx,
+                    "eef_velocity": velocity,
+                }
+                json.dump(json_data, f)
+                f.write("\n")
+
+        eef_acc_mag_annotation_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        sorted_entries = sorted(
+            self.motion_annotation_config.eef_acc_mag_annotation_dict.items(),
+            key=lambda item: item[1],
+        )
+        with open(eef_acc_mag_annotation_jsonl_path, "w") as f:
+            for acc_mag, idx in sorted_entries:
+                json_data = {
+                    "eef_acc_mag_index": idx,
+                    "eef_acc_mag": acc_mag,
+                }
+                json.dump(json_data, f)
+                f.write("\n")
+
+        gripper_mode_annotation_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        sorted_entries = sorted(
+            self.motion_annotation_config.gripper_mode_annotation_dict.items(),
+            key=lambda item: item[1],
+        )
+        with open(gripper_mode_annotation_jsonl_path, "w") as f:
+            for mode, idx in sorted_entries:
+                json_data = {
+                    "gripper_mode_index": idx,
+                    "gripper_mode": mode,
+                }
+                json.dump(json_data, f)
+                f.write("\n")
+
+        gripper_activity_annotation_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        sorted_entries = sorted(
+            self.motion_annotation_config.gripper_activity_annotation_dict.items(),
+            key=lambda item: item[1],
+        )
+        with open(gripper_activity_annotation_jsonl_path, "w") as f:
+            for activity, idx in sorted_entries:
+                json_data = {
+                    "gripper_activity_index": idx,
+                    "gripper_activity": activity,
+                }
+                json.dump(json_data, f)
+                f.write("\n")
 
     def _compute_eef_gripper_sim_data(
         self, ori_data: dict[str, np.ndarray]
@@ -425,9 +511,9 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
             "left_eef_direction",
             "right_eef_direction",
         ]
-        eef_movement_names = [
-            "left_eef_movement",
-            "right_eef_movement",
+        eef_velocity_names = [
+            "left_eef_velocity",
+            "right_eef_velocity",
         ]
         eef_acc_mag_names = [
             "left_eef_acc_mag",
@@ -450,12 +536,12 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
             "eef_sim_pose_action": eef_sim_pose_names,
             "eef_direction_state": eef_direction_names,
             "eef_direction_action": eef_direction_names,
-            "eef_movement_state": eef_movement_names,
-            "eef_movement_action": eef_movement_names,
-            "eef_accleration_state": eef_acc_mag_names,
-            "eef_accleration_action": eef_acc_mag_names,
-            "girper_open_scale_state": gripper_open_scale_names,
-            "girper_open_scale_action": gripper_open_scale_names,
+            "eef_velocity_state": eef_velocity_names,
+            "eef_velocity_action": eef_velocity_names,
+            "eef_acc_mag_state": eef_acc_mag_names,
+            "eef_acc_mag_action": eef_acc_mag_names,
+            "gripper_open_scale_state": gripper_open_scale_names,
+            "gripper_open_scale_action": gripper_open_scale_names,
             "gripper_mode_state": gripper_mode_names,
             "gripper_mode_action": gripper_mode_names,
             "gripper_activity_state": gripper_activity_names,
