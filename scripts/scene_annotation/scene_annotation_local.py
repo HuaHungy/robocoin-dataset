@@ -40,7 +40,7 @@ if __name__ == "__main__":
     logger = setup_logger(
         name="scene_annotation",
         log_dir=Path(args.log_dir),
-        level=logging.ERROR,
+        level=logging.INFO,
     )
 
     scene_annotation = SceneAnnotationLocal(db_file_path, logger=logger)
