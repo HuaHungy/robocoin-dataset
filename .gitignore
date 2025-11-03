@@ -1,7 +1,8 @@
 *
 !*/
-!src/
-!scripts/
+!/src/**
+!/scripts/**
+!/examples/**
 !.python-version
 !.pre-commit-config.yaml
 !.gitsubmodules
