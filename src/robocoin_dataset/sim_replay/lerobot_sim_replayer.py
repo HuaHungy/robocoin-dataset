@@ -432,5 +432,7 @@ class LerobotSimReplayer:
 
     def close_viewer(self) -> None:
         if self.mjcf_viewer is not None:
+            # print("[界面] 正在关闭 MuJoCo 界面...")
             self.mjcf_viewer.close()
+            # print("[界面] MuJoCo 界面已关闭")
         self.mjcf_viewer = None

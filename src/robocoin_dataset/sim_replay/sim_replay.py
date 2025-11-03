@@ -206,6 +206,7 @@ def _sim_replay_dataset(
     simulator = LerobotSimReplayer(sim_replay_config, repo_path)
 
     def gripper_plot_callback(gripper_history, ax, lines) -> None:
+        import matplotlib.pyplot as plt
         import numpy as np
 
         arr = np.array(gripper_history)
@@ -352,23 +353,65 @@ def _sim_replay_dataset(
         fps_from_meta = None
 
     try:
-        # 启动界面
+        # 启动界面（MuJoCo窗口）
         simulator.start_viewer()
         print(f"[数据集回放] 开始回放数据集数据，数据集地址为: {repo_path}")
+        print(f"[数据集回放] MuJoCo 窗口已启动")
+        
+        # 预创建图表窗口（读取第一帧数据来初始化窗口）
+        print("[数据集回放] 正在初始化可视化图表窗口...")
+        try:
+            # 读取第一个 parquet 文件来获取 gripper 数据的维度
+            import pandas as pd
+            first_parquet = Path(repo_path) / "state_action_data" / "chunk-000" / "episode_000000.parquet"
+            print(f"[数据集回放] 读取数据文件: {first_parquet}")
+            if first_parquet.exists():
+                df = pd.read_parquet(str(first_parquet))
+                print(f"[数据集回放] 数据文件包含 {len(df)} 帧")
+                print(f"[数据集回放] Gripper ID 数量: {len(simulator.state_gripper_lerobot_ids)}")
+                if len(df) > 0 and len(simulator.state_gripper_lerobot_ids) > 0:
+                    # 使用第一帧数据初始化图表窗口
+                    first_state = df["observation.state"].iloc[0]
+                    first_gripper_data = first_state[simulator.state_gripper_lerobot_ids]
+                    print(f"[数据集回放] Gripper 数据维度: {len(first_gripper_data)}")
+                    # 调用callback创建窗口（传入单帧数据）
+                    ax_dummy = None
+                    lines_dummy = []
+                    gripper_plot_callback([list(first_gripper_data)], ax_dummy, lines_dummy)
+                    print("[数据集回放] 图表窗口已创建")
+                    # 启用交互模式，让图表窗口保持响应
+                    plt.ion()
+                    # 强制刷新显示
+                    plt.pause(0.1)
+                else:
+                    print("[数据集回放] 无gripper数据，跳过图表窗口创建")
+            else:
+                print(f"[数据集回放] 数据文件不存在: {first_parquet}")
+        except Exception as e:
+            print(f"[数据集回放] 初始化图表窗口时出现警告: {e}")
+            import traceback
+            traceback.print_exc()
+        
         print("[数据集回放] 正在准备 replay...，请在mujoco中调整好观察视角")
         input("[数据集回放] 请按回车键开始 state replay...")
 
         # State replay 循环
         while True:
-            print("[State Replay] 开始播放状态数据...")
-            simulator.replay_episode(
-                0,
-                is_state=True,
-                enable_gripper_plot=True,
-                gripper_plot_callback=gripper_plot_callback,
-                target_fps=int(fps_from_meta) if fps_from_meta else 30,
-            )
-            print("[State Replay] 状态数据播放完成")
+            try:
+                print("[State Replay] 开始播放状态数据...")
+                simulator.replay_episode(
+                    0,
+                    is_state=True,
+                    enable_gripper_plot=True,
+                    gripper_plot_callback=gripper_plot_callback,
+                    target_fps=int(fps_from_meta) if fps_from_meta else 30,
+                )
+                print("[State Replay] 状态数据播放完成")
+            except Exception as e:
+                print(f"[State Replay] 播放过程中发生错误: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
 
             choice = (
                 input(
@@ -397,15 +440,21 @@ def _sim_replay_dataset(
 
         # Action replay 循环
         while True:
-            print("[Action Replay] 开始播放动作数据...")
-            simulator.replay_episode(
-                0,
-                is_state=False,
-                enable_gripper_plot=True,
-                gripper_plot_callback=gripper_plot_callback,
-                target_fps=int(fps_from_meta) if fps_from_meta else 30,
-            )
-            print("[Action Replay] 动作数据播放完成")
+            try:
+                print("[Action Replay] 开始播放动作数据...")
+                simulator.replay_episode(
+                    0,
+                    is_state=False,
+                    enable_gripper_plot=True,
+                    gripper_plot_callback=gripper_plot_callback,
+                    target_fps=int(fps_from_meta) if fps_from_meta else 30,
+                )
+                print("[Action Replay] 动作数据播放完成")
+            except Exception as e:
+                print(f"[Action Replay] 播放过程中发生错误: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
 
             choice = (
                 input(
@@ -435,9 +484,31 @@ def _sim_replay_dataset(
         print("[数据集回放] 所有回放完成")
 
     finally:
-        # 确保界面被关闭
+        # 确保界面被关闭（同时关闭MuJoCo窗口和图表窗口）
+        print("[数据集回放] 正在关闭所有界面...")
+        
+        # 关闭matplotlib图表窗口
+        try:
+            import matplotlib.pyplot as plt
+            plt.ioff()
+            plt.close("all")
+            # 清理gripper_plot_callback中的状态
+            if hasattr(gripper_plot_callback, "figs"):
+                delattr(gripper_plot_callback, "figs")
+            if hasattr(gripper_plot_callback, "axes"):
+                delattr(gripper_plot_callback, "axes")
+            if hasattr(gripper_plot_callback, "lines"):
+                delattr(gripper_plot_callback, "lines")
+            if hasattr(gripper_plot_callback, "ylims"):
+                delattr(gripper_plot_callback, "ylims")
+            print("[数据集回放] 图表窗口已关闭")
+        except Exception as e:
+            print(f"[数据集回放] 关闭图表窗口时出现错误: {e}")
+        
+        # 关闭MuJoCo窗口
         simulator.close_viewer()
-        print("[数据集回放] 界面已关闭")
+        print("[数据集回放] MuJoCo界面已关闭")
+        print("[数据集回放] 所有界面已关闭")
 
 
 class SimReplay:
@@ -662,6 +733,7 @@ class SimReplayClient(TaskClient):
                 repo_path=repo_path,
                 sim_replay_config=sim_replay_config_class(),
             )
+            print(f"sim replay dataset {repo_path} succeeded")
 
             return {}
         except Exception as e:
