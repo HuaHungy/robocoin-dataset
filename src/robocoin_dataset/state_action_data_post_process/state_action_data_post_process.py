@@ -302,7 +302,7 @@ class StateActionDataPostProcessServer(TaskServer):
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
-        convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+        sa_dpp_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
         # 🆕 合并为单个session，保证原子性
         with self.db.with_session() as session:
@@ -312,11 +312,11 @@ class StateActionDataPostProcessServer(TaskServer):
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
 
             # 在同一个session中更新转换状态
-            item.sa_dpp_status = convert_status
-            item.convert_err_msg = task_status_msg
+            item.sa_dpp_status = sa_dpp_status
+            item.sa_dpp_err_msg = task_status_msg
             session.commit()
             self.logger.info(
-                f"Upsert {item.convert_path} state action data post process status to {convert_status}, "
+                f"Upsert {item.convert_path} state action data post process status to {sa_dpp_status}, "
                 f"update_message: {task_status_msg}"
             )
 
