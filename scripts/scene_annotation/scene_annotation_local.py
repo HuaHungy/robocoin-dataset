@@ -32,7 +32,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
-    mode = args.mode
 
     if not db_file_path.exists():
         print(f"{db_file_path} does not exist")
@@ -53,6 +52,6 @@ if __name__ == "__main__":
 # local
 python scripts/scene_annotation/scene_annotation_local.py \
     --db_file_path ./db/datasets_new.db \
-    --folder_path ./scene_annotation \
-    --log_dir ./logs/sim_replay
+    --folder_path /mnt/nas/synnas/docker2/scene_annotation \
+    --log_dir ./logs/scene_annotation/
 """
