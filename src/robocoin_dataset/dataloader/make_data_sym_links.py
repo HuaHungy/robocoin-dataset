@@ -186,8 +186,8 @@ Examples:
   # Create symlinks with absolute paths instead of relative
   %(prog)s -s /path/to/source/data --absolute
 
-  # Skip missing source files instead of raising errors
-  %(prog)s -s /path/to/source/data --skip-missing
+  # Skip missing source files during symlink creation instead of raising errors
+  %(prog)s -s /path/to/source/data --symlink-skip-missing
         """
     )
 
@@ -215,9 +215,9 @@ Examples:
     )
 
     parser.add_argument(
-        "--skip-missing",
+        "--symlink-skip-missing",
         action="store_true",
-        help="Skip missing source files instead of raising errors"
+        help="Skip missing source files during symlink creation instead of raising errors"
     )
 
     args = parser.parse_args()
@@ -247,7 +247,7 @@ Examples:
             source_dir=source_dir,
             target_dir=target_dir,
             relative=not args.absolute,
-            skip_missing=args.skip_missing
+            skip_missing=args.symlink_skip_missing
         )
     except Exception as e:
         print(f"\n❌ Error: {e}")

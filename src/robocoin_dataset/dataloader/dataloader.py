@@ -1,6 +1,9 @@
+import asyncio
 import logging
+import multiprocessing as mp
 import os
 import sys
+import time
 import traceback
 from collections.abc import Iterator
 from contextlib import redirect_stdout
@@ -243,75 +246,337 @@ def _gen_one_dataloader_detection_task(session: Session) -> tuple[str | None, st
 
     item.data_loader_detection_status = TaskStatus.PROCESSING
     item.data_loader_detection_version_ps = item.convert_version
-    item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
+    # Version is NOT incremented here - only increment after successful detection
     session.commit()
     return item.dataset_uuid, item.convert_path
 
 
-def _run_dataloader_detection(repo_path: str | Path) -> dict:
-    """Build a dataset at repo_path and iterate episode 0 to validate decoding.
+def _parse_episode_specification(
+    episode_spec: str | int | list[int] | None,
+    total_episodes: int,
+) -> list[int]:
+    """Parse episode specification into list of episode indices.
 
-    Returns basic metrics for logging/inspection.
+    Args:
+        episode_spec: Episode specification in various formats:
+            - None or "all": all episodes [0, 1, ..., total_episodes-1]
+            - int: single episode (e.g., 0)
+            - list[int]: specific episodes (e.g., [0, 1, 2])
+            - str "0": single episode 0
+            - str "0,1,2": comma-separated episodes
+            - str "0-5": range (inclusive) [0, 1, 2, 3, 4, 5]
+            - str "0-5,10,15-17": mixed notation
+        total_episodes: Total number of episodes in dataset
+
+    Returns:
+        Sorted list of unique episode indices
+
+    Raises:
+        ValueError: If specification is invalid or episodes out of range
     """
-    ds = create_lerobot_dataset(repo_id=str(repo_path))
+    if episode_spec is None or (isinstance(episode_spec, str) and episode_spec.lower() == "all"):
+        return list(range(total_episodes))
 
-    # Default to episode 0 if indexable; otherwise probe first sample
-    result: dict[str, int | str] = {}
+    if isinstance(episode_spec, int):
+        if episode_spec < 0 or episode_spec >= total_episodes:
+            raise ValueError(f"Episode {episode_spec} out of range [0, {total_episodes-1}]")
+        return [episode_spec]
+
+    if isinstance(episode_spec, list):
+        for ep in episode_spec:
+            if not isinstance(ep, int) or ep < 0 or ep >= total_episodes:
+                raise ValueError(f"Episode {ep} out of range [0, {total_episodes-1}]")
+        return sorted(set(episode_spec))
+
+    if isinstance(episode_spec, str):
+        # Parse string specification
+        episodes = []
+        parts = episode_spec.split(",")
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part and not part.startswith("-"):
+                # Range notation: "0-5"
+                try:
+                    start_str, end_str = part.split("-", 1)
+                    start = int(start_str.strip())
+                    end = int(end_str.strip())
+                    if start > end:
+                        raise ValueError(f"Invalid range: {part} (start > end)")
+                    episodes.extend(range(start, end + 1))
+                except ValueError as e:
+                    raise ValueError(f"Invalid range specification: {part}") from e
+            else:
+                # Single episode
+                try:
+                    episodes.append(int(part))
+                except ValueError as e:
+                    raise ValueError(f"Invalid episode number: {part}") from e
+
+        # Validate range
+        for ep in episodes:
+            if ep < 0 or ep >= total_episodes:
+                raise ValueError(f"Episode {ep} out of range [0, {total_episodes-1}]")
+
+        return sorted(set(episodes))
+
+    raise ValueError(f"Invalid episode specification type: {type(episode_spec)}")
+
+
+def _run_dataloader_detection(
+    repo_path: str | Path,
+    episode_indices: str | int | list[int] | None = "all",
+    strict_mode: bool = False,
+    batch_size: int = 32,
+    num_workers: int = 0,
+) -> dict:
+    """Validate LeRobot dataset by loading and decoding specified episodes.
+
+    This function performs comprehensive validation of a LeRobot dataset:
+    1. Loads the dataset and verifies metadata
+    2. Validates ALL video keys are present and decodable
+    3. Iterates through ALL frames of specified episodes
+    4. Collects detailed statistics and error information
+
+    Args:
+        repo_path: Path to LeRobot dataset directory
+        episode_indices: Episodes to test (default: "all")
+            - None or "all": test all episodes
+            - int: single episode (e.g., 0)
+            - list[int]: specific episodes (e.g., [0, 1, 2])
+            - str: "0", "0,1,2", "0-5", "0-5,10,15-17"
+        strict_mode: If True, fail immediately on first error.
+                    If False (default), collect all errors and continue.
+        batch_size: Batch size for dataloader (default: 32)
+        num_workers: Number of dataloader workers (default: 0)
+
+    Returns:
+        Comprehensive validation result dictionary:
+        {
+            "success": bool,  # Overall success (all episodes passed)
+            "dataset_path": str,
+            "total_episodes_in_dataset": int,
+            "episodes_tested": list[int],
+            "episodes_succeeded": list[int],
+            "episodes_failed": list[int],
+            "frames_per_episode": {episode_idx: frame_count},
+            "total_frames_validated": int,
+            "video_keys": list[str],
+            "non_video_keys": list[str],
+            "backend": str,
+            "backend_reason": str,
+            "errors": list[dict],  # List of error details
+            "error_summary": str | None,  # Human-readable error summary
+        }
+
+    Raises:
+        Exception: If strict_mode=True and any validation fails
+    """
+
+    # Import tqdm for progress bars
     try:
-        dl = create_episode_dataloader(ds, episode_index=0, batch_size=32, num_workers=0)
-        num_batches = 0
-        num_frames = 0
-
-        # Optional tqdm progress bar; fallback to no bar if not installed
-        try:
-            from tqdm import tqdm  # type: ignore
-        except Exception:  # pragma: no cover
-            tqdm = None  # type: ignore
-
-        # Estimate total frames for episode 0 if available
-        total_frames = None
-        try:
-            from_idx = ds.episode_data_index["from"][0].item()
-            to_idx = ds.episode_data_index["to"][0].item()
-            total_frames = int(to_idx - from_idx)
-        except Exception:
-            total_frames = None
-
-        progress = None
-        if tqdm is not None:
-            progress = tqdm(total=total_frames, desc="Decoding", unit="frame", file=sys.stderr)
-
-        # Suppress noisy prints from underlying libs while iterating
-        with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
-            for batch in dl:
-                batch_size_actual = (
-                    len(batch["index"]) if isinstance(batch, dict) and "index" in batch else 1
-                )
-                num_batches += 1
-                num_frames += batch_size_actual
-                if progress is not None:
-                    progress.update(batch_size_actual)
-
-        if progress is not None:
-            progress.close()
-
-        result = {
-            "num_batches": num_batches,
-            "num_frames": num_frames,
-            "backend": getattr(ds, "robocoin_video_backend", "unknown"),
-            "backend_reason": getattr(ds, "robocoin_video_backend_reason", ""),
-        }
+        from tqdm import tqdm  # type: ignore
     except Exception:
-        # Fallback: probe one item to trigger decode path for non-episodic datasets
-        _ = ds[0]  # may raise
-        result = {
-            "num_batches": 1,
-            "num_frames": 1,
-            "backend": getattr(ds, "robocoin_video_backend", "unknown"),
-            "backend_reason": getattr(ds, "robocoin_video_backend_reason", ""),
-        }
+        tqdm = None  # type: ignore
 
-    return result
+    repo_path = Path(repo_path)
+
+    # Initialize result structure
+    result = {
+        "success": False,
+        "dataset_path": str(repo_path),
+        "total_episodes_in_dataset": 0,
+        "episodes_tested": [],
+        "episodes_succeeded": [],
+        "episodes_failed": [],
+        "frames_per_episode": {},
+        "total_frames_validated": 0,
+        "video_keys": [],
+        "non_video_keys": [],
+        "backend": "unknown",
+        "backend_reason": "",
+        "errors": [],
+        "error_summary": None,
+    }
+
+    try:
+        # Load dataset
+        ds = create_lerobot_dataset(repo_id=str(repo_path))
+        result["backend"] = getattr(ds, "robocoin_video_backend", "unknown")
+        result["backend_reason"] = getattr(ds, "robocoin_video_backend_reason", "")
+
+        # Get dataset metadata
+        total_episodes = len(ds.episode_data_index["from"])
+        result["total_episodes_in_dataset"] = total_episodes
+
+        # Collect video and non-video keys
+        video_keys = list(ds.meta.video_keys) if hasattr(ds.meta, "video_keys") else []
+        all_keys = set(ds.meta.get_features().keys()) if hasattr(ds.meta, "get_features") else set()
+        non_video_keys = sorted(all_keys - set(video_keys))
+
+        result["video_keys"] = video_keys
+        result["non_video_keys"] = non_video_keys
+
+        # Parse episode specification
+        try:
+            episodes_to_test = _parse_episode_specification(episode_indices, total_episodes)
+        except ValueError as e:
+            error_msg = f"Invalid episode specification: {e}"
+            result["errors"].append({
+                "type": "episode_specification_error",
+                "message": error_msg,
+            })
+            result["error_summary"] = error_msg
+            if strict_mode:
+                raise ValueError(error_msg) from e
+            return result
+
+        result["episodes_tested"] = episodes_to_test
+
+        if not episodes_to_test:
+            result["success"] = True  # No episodes to test = success
+            return result
+
+        # Progress tracking
+        total_frames_to_test = 0
+        try:
+            for ep_idx in episodes_to_test:
+                from_idx = ds.episode_data_index["from"][ep_idx].item()
+                to_idx = ds.episode_data_index["to"][ep_idx].item()
+                total_frames_to_test += int(to_idx - from_idx)
+        except Exception:
+            pass
+
+        # Create overall progress bar
+        overall_progress = None
+        if tqdm is not None:
+            overall_progress = tqdm(
+                total=total_frames_to_test,
+                desc="🔍 Validating dataset",
+                unit="frame",
+                file=sys.stderr,
+                position=0,
+            )
+
+        # Test each episode
+        for ep_idx in episodes_to_test:
+            episode_error = None
+            episode_frames = 0
+
+            try:
+                # Get episode frame range
+                from_idx = ds.episode_data_index["from"][ep_idx].item()
+                to_idx = ds.episode_data_index["to"][ep_idx].item()
+                episode_frames = int(to_idx - from_idx)
+
+                # Create episode dataloader
+                dl = create_episode_dataloader(
+                    ds,
+                    episode_index=ep_idx,
+                    batch_size=batch_size,
+                    num_workers=num_workers,
+                )
+
+                # Episode-specific progress bar
+                ep_progress = None
+                if tqdm is not None:
+                    ep_progress = tqdm(
+                        total=episode_frames,
+                        desc=f"  📹 Episode {ep_idx}",
+                        unit="frame",
+                        file=sys.stderr,
+                        position=1,
+                        leave=False,
+                    )
+
+                # Iterate through all frames
+                frames_validated = 0
+                with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
+                    for batch in dl:
+                        # Verify batch structure
+                        if not isinstance(batch, dict):
+                            raise ValueError(f"Batch is not a dict: {type(batch)}")
+
+                        # Verify all video keys present
+                        for vkey in video_keys:
+                            if vkey not in batch:
+                                raise ValueError(f"Video key '{vkey}' missing from batch")
+
+                        # Count frames in batch
+                        batch_size_actual = (
+                            len(batch["index"]) if "index" in batch else 1
+                        )
+                        frames_validated += batch_size_actual
+
+                        # Update progress bars
+                        if ep_progress is not None:
+                            ep_progress.update(batch_size_actual)
+                        if overall_progress is not None:
+                            overall_progress.update(batch_size_actual)
+
+                # Close episode progress bar
+                if ep_progress is not None:
+                    ep_progress.close()
+
+                # Record success
+                result["episodes_succeeded"].append(ep_idx)
+                result["frames_per_episode"][ep_idx] = frames_validated
+                result["total_frames_validated"] += frames_validated
+
+            except Exception as e:
+                episode_error = str(e)
+                error_detail = {
+                    "type": "episode_validation_error",
+                    "episode_idx": ep_idx,
+                    "message": episode_error,
+                    "traceback": traceback.format_exc(),
+                }
+                result["errors"].append(error_detail)
+                result["episodes_failed"].append(ep_idx)
+                result["frames_per_episode"][ep_idx] = 0
+
+                # Log error to progress bar
+                if overall_progress is not None:
+                    overall_progress.write(f"❌ Episode {ep_idx} failed: {episode_error}")
+
+                if strict_mode:
+                    if overall_progress is not None:
+                        overall_progress.close()
+                    raise RuntimeError(f"Episode {ep_idx} validation failed: {episode_error}") from e
+
+        # Close overall progress bar
+        if overall_progress is not None:
+            overall_progress.close()
+
+        # Determine overall success
+        result["success"] = len(result["episodes_failed"]) == 0
+
+        # Generate error summary
+        if result["errors"]:
+            failed_eps = result["episodes_failed"]
+            result["error_summary"] = (
+                f"{len(failed_eps)} episode(s) failed validation: {failed_eps}. "
+                f"See 'errors' field for details."
+            )
+
+        return result
+
+    except Exception as e:
+        # Fatal error (dataset loading, etc.)
+        error_msg = str(e)
+        result["errors"].append({
+            "type": "fatal_error",
+            "message": error_msg,
+            "traceback": traceback.format_exc(),
+        })
+        result["error_summary"] = f"Fatal error: {error_msg}"
+        result["success"] = False
+
+        if strict_mode:
+            raise
+
+        return result
 
 
 class DataloaderDbProcess:
@@ -330,34 +595,41 @@ class DataloaderDbProcess:
             self.logger.info("No dataloader detection task to process")
             return
 
-        # 2) Run detection and update status
-        try:
-            _run_dataloader_detection(convert_path)
-            with self.db.with_session() as session:
-                item = (
-                    session.query(DatasetDB)
-                    .filter(DatasetDB.dataset_uuid == dataset_uuid)
-                    .first()
-                )
-                if item is None:
-                    raise ValueError(f"Dataset {dataset_uuid} not found")
-                item.data_loader_detection_status = TaskStatus.COMPLETED
-                session.commit()
-        except Exception:
-            with self.db.with_session() as session:
-                item = (
-                    session.query(DatasetDB)
-                    .filter(DatasetDB.dataset_uuid == dataset_uuid)
-                    .first()
-                )
-                if item is None:
-                    raise ValueError(f"Dataset {dataset_uuid} not found")
-                item.data_loader_detection_status = TaskStatus.FAILED
-                item.data_loader_detection_err_msg = str(traceback.format_exc())
-                session.commit()
-            self.logger.error(
-                f"Dataloader detection failed for {convert_path}: {traceback.format_exc()}"
+        # 2) Run detection and update status (default: test all episodes, non-strict mode)
+        result = _run_dataloader_detection(
+            convert_path,
+            episode_indices="all",
+            strict_mode=False,
+        )
+
+        # Update database based on result
+        with self.db.with_session() as session:
+            item = (
+                session.query(DatasetDB)
+                .filter(DatasetDB.dataset_uuid == dataset_uuid)
+                .first()
             )
+            if item is None:
+                raise ValueError(f"Dataset {dataset_uuid} not found")
+
+            if result["success"]:
+                item.data_loader_detection_status = TaskStatus.COMPLETED
+                item.data_loader_detection_err_msg = None
+                # Increment version ONLY after successful detection
+                item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
+                self.logger.info(
+                    f"Dataset {dataset_uuid} validation completed: "
+                    f"{result['total_frames_validated']} frames in {len(result['episodes_tested'])} episodes"
+                )
+            else:
+                item.data_loader_detection_status = TaskStatus.FAILED
+                item.data_loader_detection_err_msg = result.get("error_summary", "Unknown error")
+                # Do NOT increment version on failure
+                self.logger.error(
+                    f"Dataset {dataset_uuid} validation failed: {result.get('error_summary', 'Unknown error')}"
+                )
+
+            session.commit()
 
 
 class DataloaderDbServer(TaskServer):
@@ -399,7 +671,7 @@ class DataloaderDbServer(TaskServer):
                 return None
 
             item.data_loader_detection_status = TaskStatus.PROCESSING
-            item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
+            # Version is NOT incremented here - only increment after successful detection
             item.data_loader_detection_version_ps = item.convert_version
             session.commit()
 
@@ -421,8 +693,12 @@ class DataloaderDbServer(TaskServer):
                 return
 
             item.data_loader_detection_status = status
-            if status == TaskStatus.FAILED:
+            if status == TaskStatus.COMPLETED:
+                # Increment version ONLY after successful detection
+                item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
+            elif status == TaskStatus.FAILED:
                 item.data_loader_detection_err_msg = task_status_msg
+                # Do NOT increment version on failure
             session.commit()
             self.logger.info(
                 f"Upsert {item.convert_path} dataloader detection status to {status}, update_message: {task_status_msg}"
@@ -450,5 +726,550 @@ class DataloaderDbClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         repo_path = task_content.get(LEFORMAT_PATH)
-        # Run detection; propagate exceptions for the framework to mark FAILED
-        return _run_dataloader_detection(repo_path)
+        # Run detection with all episodes, non-strict mode (collect all errors)
+        return _run_dataloader_detection(
+            repo_path,
+            episode_indices="all",
+            strict_mode=False,
+        )
+
+
+# =============================
+# Multi-process support for client and local modes
+# =============================
+
+
+async def run_client_async(server_uri: str, heartbeat_interval: float, logger: logging.Logger) -> dict:
+    """Run a single client that connects to server and processes tasks until none remain.
+
+    Returns:
+        Statistics dictionary with keys: tasks_processed, tasks_succeeded, tasks_failed
+    """
+    client = DataloaderDbClient(server_uri=server_uri, heartbeat_interval=heartbeat_interval, logger=logger)
+
+    # Track task counts
+    tasks_processed = 0
+    tasks_succeeded = 0
+    tasks_failed = 0
+
+    # Connect to server
+    try:
+        if not client.connected:
+            await client.connect_to_server()
+            client._receiver_task = asyncio.create_task(client._message_receiver())
+            await client.register()
+            if not client.client_id:
+                if logger:
+                    logger.error("❌ Registration failed, exiting")
+                return {
+                    "tasks_processed": 0,
+                    "tasks_succeeded": 0,
+                    "tasks_failed": 0,
+                }
+            await client._start_heartbeat()
+            if logger:
+                logger.info(f"✅ Client {client.client_id} is ready, starting task loop")
+
+        # Process tasks until none remain
+        while True:
+            task = await client.request_task()
+            if task is None:
+                if logger:
+                    logger.info("📭 No task from server, client exiting")
+                break
+
+            if logger:
+                logger.info(f"🚀 Starting to process task: {task.get('task_id')}")
+
+            result_content = await client.process_task(task)
+            tasks_processed += 1
+
+            # Check if task succeeded or failed
+            if result_content.get("task_result_status") == "task_success":
+                tasks_succeeded += 1
+            else:
+                tasks_failed += 1
+
+            result = {
+                "msg_type": "task_result",
+                "msg_content": result_content,
+            }
+            result["task_id"] = task.get("task_id")
+            result["client_id"] = client.client_id
+            await client.submit_result(result)
+            if logger:
+                logger.info("📤 Task result submitted, preparing to request next task...")
+
+    except Exception as e:
+        if logger:
+            logger.error(f"Client runtime exception: {e}")
+    finally:
+        await client._cleanup()
+
+    return {
+        "tasks_processed": tasks_processed,
+        "tasks_succeeded": tasks_succeeded,
+        "tasks_failed": tasks_failed,
+    }
+
+
+def client_process_main(
+    server_uri: str,
+    heartbeat_interval: float,
+    log_dir: str | Path,
+    log_level: str,
+    process_id: int,
+    stats_queue: "mp.Queue | None" = None,
+) -> int:
+    """Entry point for each client process in multi-client mode."""
+    from robocoin_dataset.utils.logger import setup_logger
+
+    # Create per-process logger
+    logger = setup_logger(
+        name=f"dataloader_client_{process_id}",
+        log_dir=Path(log_dir),
+        level=getattr(logging, log_level, logging.INFO),
+    )
+
+    logger.info(f"Client process {process_id} started, connecting to {server_uri}")
+
+    # Run async client
+    try:
+        stats = asyncio.run(
+            run_client_async(
+                server_uri=server_uri,
+                heartbeat_interval=heartbeat_interval,
+                logger=logger,
+            )
+        )
+        # Send statistics back to parent process
+        if stats_queue is not None:
+            stats_queue.put({"process_id": process_id, **stats})
+        return 0 if stats["tasks_failed"] == 0 else 1
+    except Exception as e:
+        logger.error(f"Client process {process_id} failed: {e}")
+        if stats_queue is not None:
+            stats_queue.put({
+                "process_id": process_id,
+                "tasks_processed": 0,
+                "tasks_succeeded": 0,
+                "tasks_failed": 0,
+            })
+        return 1
+
+
+def local_process_main(
+    db_file: str | Path,
+    target_dir: str | Path | None,
+    absolute_symlinks: bool,
+    skip_missing: bool,
+    log_dir: str | Path,
+    log_level: str,
+    process_id: int,
+    stats_queue: "mp.Queue | None" = None,
+) -> int:
+    """Entry point for each local process in multi-local mode.
+
+    This function claims datasets atomically from the database to avoid
+    race conditions when multiple processes are running concurrently.
+    """
+    from sqlalchemy import func
+
+    from robocoin_dataset.dataloader.make_data_sym_links import create_lerobot_symlink_structure
+    from robocoin_dataset.utils.logger import setup_logger
+
+    # Create per-process logger
+    logger = setup_logger(
+        name=f"dataloader_local_{process_id}",
+        log_dir=Path(log_dir),
+        level=getattr(logging, log_level, logging.INFO),
+    )
+
+    logger.info(f"Local process {process_id} started")
+
+    db_file_path = Path(db_file)
+    db = DatasetDatabase(db_file_path)
+
+    processed_count = 0
+    success_count = 0
+    fail_count = 0
+
+    while True:
+        # Atomically claim one dataset to process (prevents race conditions)
+        ds_uuid = None
+        convert_path = None
+
+        with db.with_session() as session:
+            # Sync tasks first
+            _sync_dataloader_detection_tasks(session, logger=logger)
+
+            # Claim one pending task atomically
+            item = (
+                session.query(DatasetDB)
+                .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
+                .first()
+            )
+
+            if not item:
+                logger.info(f"Process {process_id}: No more datasets to process")
+                break
+
+            # Transition to PROCESSING to claim it
+            item.data_loader_detection_status = TaskStatus.PROCESSING
+            # Version is NOT incremented here - only increment after successful detection
+            item.data_loader_detection_version_ps = item.convert_version
+            session.commit()
+
+            ds_uuid = item.dataset_uuid
+            convert_path = item.convert_path
+
+        if not ds_uuid or not convert_path:
+            break
+
+        source_dir = Path(convert_path)
+        logger.info(f"Process {process_id}: Processing dataset {ds_uuid}")
+
+        tgt_dir = Path(target_dir) if target_dir else source_dir.parent / f"{source_dir.name}_symlink"
+
+        # Try symlink creation and dataloader detection
+        ok = True
+        err: str | None = None
+        try:
+            create_lerobot_symlink_structure(
+                source_dir=source_dir,
+                target_dir=tgt_dir,
+                relative=not absolute_symlinks,
+                skip_missing=skip_missing,
+            )
+            # Run comprehensive validation (all episodes, non-strict)
+            result = _run_dataloader_detection(
+                tgt_dir,
+                episode_indices="all",
+                strict_mode=False,
+            )
+
+            if result["success"]:
+                logger.info(
+                    f"Process {process_id}: Dataset {ds_uuid} completed - "
+                    f"{result['total_frames_validated']} frames in {len(result['episodes_tested'])} episodes"
+                )
+                success_count += 1
+            else:
+                ok = False
+                err = result.get("error_summary", "Validation failed")
+                logger.error(f"Process {process_id}: Dataset {ds_uuid} failed: {err}")
+                fail_count += 1
+        except Exception as e:
+            ok = False
+            err = str(e)
+            logger.error(f"Process {process_id}: Dataset {ds_uuid} failed: {err}")
+            fail_count += 1
+
+        # Update status
+        with db.with_session() as session:
+            values = {
+                DatasetDB.data_loader_detection_status: TaskStatus.COMPLETED if ok else TaskStatus.FAILED,
+                DatasetDB.data_loader_detection_version_ps: DatasetDB.data_merge_version,
+            }
+            # Increment version ONLY after successful detection
+            if ok:
+                values[DatasetDB.data_loader_detection_version] = func.coalesce(DatasetDB.data_loader_detection_version, 0) + 1
+            # Do NOT increment version on failure
+            if not ok and err:
+                values[DatasetDB.data_loader_detection_err_msg] = err
+            session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).update(
+                values, synchronize_session=False
+            )
+            session.commit()
+
+        processed_count += 1
+
+    logger.info(
+        f"Process {process_id} completed: {processed_count} total, "
+        f"{success_count} succeeded, {fail_count} failed"
+    )
+
+    # Send statistics back to parent process
+    if stats_queue is not None:
+        stats_queue.put({
+            "process_id": process_id,
+            "tasks_processed": processed_count,
+            "tasks_succeeded": success_count,
+            "tasks_failed": fail_count,
+        })
+
+    return 0 if fail_count == 0 else 1
+
+
+def run_multi_client(
+    server_uri: str,
+    num_clients: int,
+    heartbeat_interval: float,
+    log_dir: str | Path,
+    log_level: str,
+) -> int:
+    """Spawn multiple client processes.
+
+    Args:
+        server_uri: WebSocket URI of the server (e.g. ws://localhost:8771)
+        num_clients: Number of client processes to spawn
+        heartbeat_interval: Heartbeat interval in seconds
+        log_dir: Directory for log files
+        log_level: Logging level string (e.g. "INFO", "DEBUG")
+
+    Returns:
+        Exit code: 0 if all processes succeeded, 1 otherwise
+    """
+    print(f"🚀 Starting {num_clients} client process(es)...")
+    print(f"   Server: {server_uri}")
+    print(f"   Heartbeat: {heartbeat_interval}s")
+    print(f"   Log dir: {log_dir}")
+    print()
+
+    # Create queue for collecting statistics from child processes
+    stats_queue = mp.Queue()
+
+    processes = []
+    start_time = time.time()
+
+    for i in range(num_clients):
+        proc = mp.Process(
+            target=client_process_main,
+            kwargs=dict(
+                server_uri=server_uri,
+                heartbeat_interval=heartbeat_interval,
+                log_dir=log_dir,
+                log_level=log_level,
+                process_id=i,
+                stats_queue=stats_queue,
+            ),
+        )
+        proc.start()
+        processes.append(proc)
+        print(f"   ✓ Client process {i} spawned (PID: {proc.pid})")
+
+        # Add startup delay to avoid thundering herd
+        if i < num_clients - 1:
+            time.sleep(0.1)
+
+    print(f"\n⏳ Waiting for {num_clients} client(s) to complete...")
+    print("   Press Ctrl+C to interrupt\n")
+
+    exit_codes = {}
+
+    try:
+        # Wait for all processes to complete
+        for i, proc in enumerate(processes):
+            proc.join()
+            exit_codes[i] = proc.exitcode
+
+    except KeyboardInterrupt:
+        print("\n\n⚠️  KeyboardInterrupt received, shutting down clients...")
+        for i, proc in enumerate(processes):
+            if proc.is_alive():
+                print(f"   Terminating process {i} (PID: {proc.pid})")
+                proc.terminate()
+                proc.join(timeout=5.0)
+                if proc.is_alive():
+                    print(f"   Force-killing process {i} (PID: {proc.pid})")
+                    proc.kill()
+                    proc.join()
+                exit_codes[i] = -2  # Mark as interrupted
+
+    elapsed = time.time() - start_time
+
+    # Collect statistics from queue
+    process_stats = {}
+    try:
+        while not stats_queue.empty():
+            stats = stats_queue.get_nowait()
+            process_stats[stats["process_id"]] = stats
+    except Exception:
+        pass
+
+    # Calculate aggregated task statistics
+    total_tasks_processed = sum(s.get("tasks_processed", 0) for s in process_stats.values())
+    total_tasks_succeeded = sum(s.get("tasks_succeeded", 0) for s in process_stats.values())
+    total_tasks_failed = sum(s.get("tasks_failed", 0) for s in process_stats.values())
+
+    # Summary
+    print("\n" + "=" * 70)
+    print("📊 MULTI-CLIENT SUMMARY")
+    print("=" * 70)
+    print(f"Total clients: {num_clients}")
+    print(f"Elapsed time: {elapsed:.1f}s")
+    print()
+
+    # Display TASK statistics (not process statistics)
+    print(f"📦 Tasks processed: {total_tasks_processed}")
+    print(f"✅ Tasks succeeded: {total_tasks_succeeded}")
+    print(f"❌ Tasks failed: {total_tasks_failed}")
+    print()
+
+    # Display process-level information
+    process_success_count = sum(1 for code in exit_codes.values() if code == 0)
+    process_fail_count = sum(1 for code in exit_codes.values() if code not in (0, None) and code is not None)
+
+    print(f"🔧 Process completions: {process_success_count} successful, {process_fail_count} failed")
+
+    if exit_codes:
+        print("\nPer-process details:")
+        for proc_id in sorted(exit_codes.keys()):
+            code = exit_codes[proc_id]
+            stats = process_stats.get(proc_id, {})
+            tasks_processed = stats.get("tasks_processed", 0)
+
+            if code == 0:
+                status = "✅ SUCCESS"
+            elif code == -2:
+                status = "⚠️  INTERRUPTED"
+            elif code is None:
+                status = "❓ UNKNOWN"
+            else:
+                status = f"❌ FAILED (exit {code})"
+            print(f"   Process {proc_id}: {status} ({tasks_processed} tasks)")
+
+    print("=" * 70 + "\n")
+
+    return 0 if total_tasks_failed == 0 else 1
+
+
+def run_multi_local(
+    db_file: str | Path,
+    num_processes: int,
+    target_dir: str | Path | None,
+    absolute_symlinks: bool,
+    skip_missing: bool,
+    log_dir: str | Path,
+    log_level: str,
+) -> int:
+    """Spawn multiple local processing processes.
+
+    Args:
+        db_file: Path to SQLite database
+        num_processes: Number of local processes to spawn
+        target_dir: Target directory for symlinks (None = auto)
+        absolute_symlinks: Use absolute symlinks instead of relative
+        skip_missing: Skip missing source files
+        log_dir: Directory for log files
+        log_level: Logging level string (e.g. "INFO", "DEBUG")
+
+    Returns:
+        Exit code: 0 if all processes succeeded, 1 otherwise
+    """
+    print(f"🚀 Starting {num_processes} local process(es)...")
+    print(f"   Database: {db_file}")
+    print(f"   Target dir: {target_dir or 'auto (source_symlink)'}")
+    print(f"   Absolute symlinks: {absolute_symlinks}")
+    print(f"   Symlink skip missing: {skip_missing}")
+    print(f"   Log dir: {log_dir}")
+    print()
+
+    # Create queue for collecting statistics from child processes
+    stats_queue = mp.Queue()
+
+    processes = []
+    start_time = time.time()
+
+    for i in range(num_processes):
+        proc = mp.Process(
+            target=local_process_main,
+            kwargs=dict(
+                db_file=db_file,
+                target_dir=target_dir,
+                absolute_symlinks=absolute_symlinks,
+                skip_missing=skip_missing,
+                log_dir=log_dir,
+                log_level=log_level,
+                process_id=i,
+                stats_queue=stats_queue,
+            ),
+        )
+        proc.start()
+        processes.append(proc)
+        print(f"   ✓ Local process {i} spawned (PID: {proc.pid})")
+
+        # Add startup delay to avoid thundering herd
+        if i < num_processes - 1:
+            time.sleep(0.1)
+
+    print(f"\n⏳ Waiting for {num_processes} process(es) to complete...")
+    print("   Press Ctrl+C to interrupt\n")
+
+    exit_codes = {}
+
+    try:
+        # Wait for all processes to complete
+        for i, proc in enumerate(processes):
+            proc.join()
+            exit_codes[i] = proc.exitcode
+
+    except KeyboardInterrupt:
+        print("\n\n⚠️  KeyboardInterrupt received, shutting down processes...")
+        for i, proc in enumerate(processes):
+            if proc.is_alive():
+                print(f"   Terminating process {i} (PID: {proc.pid})")
+                proc.terminate()
+                proc.join(timeout=5.0)
+                if proc.is_alive():
+                    print(f"   Force-killing process {i} (PID: {proc.pid})")
+                    proc.kill()
+                    proc.join()
+                exit_codes[i] = -2  # Mark as interrupted
+
+    elapsed = time.time() - start_time
+
+    # Collect statistics from queue
+    process_stats = {}
+    try:
+        while not stats_queue.empty():
+            stats = stats_queue.get_nowait()
+            process_stats[stats["process_id"]] = stats
+    except Exception:
+        pass
+
+    # Calculate aggregated task statistics
+    total_tasks_processed = sum(s.get("tasks_processed", 0) for s in process_stats.values())
+    total_tasks_succeeded = sum(s.get("tasks_succeeded", 0) for s in process_stats.values())
+    total_tasks_failed = sum(s.get("tasks_failed", 0) for s in process_stats.values())
+
+    # Summary
+    print("\n" + "=" * 70)
+    print("📊 MULTI-LOCAL SUMMARY")
+    print("=" * 70)
+    print(f"Total processes: {num_processes}")
+    print(f"Elapsed time: {elapsed:.1f}s")
+    print()
+
+    # Display TASK statistics (not process statistics)
+    print(f"📦 Tasks processed: {total_tasks_processed}")
+    print(f"✅ Tasks succeeded: {total_tasks_succeeded}")
+    print(f"❌ Tasks failed: {total_tasks_failed}")
+    print()
+
+    # Display process-level information
+    process_success_count = sum(1 for code in exit_codes.values() if code == 0)
+    process_fail_count = sum(1 for code in exit_codes.values() if code not in (0, None) and code is not None)
+
+    print(f"🔧 Process completions: {process_success_count} successful, {process_fail_count} failed")
+
+    if exit_codes:
+        print("\nPer-process details:")
+        for proc_id in sorted(exit_codes.keys()):
+            code = exit_codes[proc_id]
+            stats = process_stats.get(proc_id, {})
+            tasks_processed = stats.get("tasks_processed", 0)
+
+            if code == 0:
+                status = "✅ SUCCESS"
+            elif code == -2:
+                status = "⚠️  INTERRUPTED"
+            elif code is None:
+                status = "❓ UNKNOWN"
+            else:
+                status = f"❌ FAILED (exit {code})"
+            print(f"   Process {proc_id}: {status} ({tasks_processed} tasks)")
+
+    print("=" * 70 + "\n")
+
+    return 0 if total_tasks_failed == 0 else 1
