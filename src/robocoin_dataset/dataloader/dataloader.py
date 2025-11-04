@@ -155,7 +155,7 @@ def _prepare_symlinks(
     Raises:
         Exception: If symlink creation fails
     """
-    from robocoin_dataset.dataloader.make_data_sym_links import (
+    from robocoin_dataset.dataloader.make_symlink import (
         create_lerobot_symlink_structure,
     )
 

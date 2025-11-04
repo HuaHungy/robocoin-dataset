@@ -78,7 +78,7 @@ from sqlalchemy import text
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import TaskStatus
-from robocoin_dataset.dataloader.make_data_sym_links import create_lerobot_symlink_structure
+from robocoin_dataset.dataloader.make_symlink import create_lerobot_symlink_structure
 
 # Try to import pandas and pyarrow for parquet file generation
 try:
@@ -803,7 +803,7 @@ def print_actual_structure_tree(output_dir: Path) -> None:
                     print(f"             {prefix} {camera_name}/ ({video_count} videos)")
 
     print("\n🔗 Next step: Run the symlink script on this directory:")
-    print(f"   python scripts/dataloader/make_data_sym_links.py --source {output_dir}")
+    print(f"   python scripts/dataloader/make_symlink.py --source {output_dir}")
 
 
 def generate_fake_pipeline_data(

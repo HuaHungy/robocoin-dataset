@@ -7,12 +7,12 @@ the actual data files from your production pipeline.
 
 USAGE:
   # Use default target (creates '<source_name>_symlink' next to source):
-  python make_data_sym_links.py --source /path/to/your/pipeline/data
-  python make_data_sym_links.py -s /path/to/your/pipeline/data
+  python make_symlink.py --source /path/to/your/pipeline/data
+  python make_symlink.py -s /path/to/your/pipeline/data
 
   # Specify custom target directory:
-  python make_data_sym_links.py --source /path/to/your/pipeline/data --target /path/to/lerobot/dataset
-  python make_data_sym_links.py -s /path/to/your/pipeline/data -t /path/to/lerobot/dataset
+  python make_symlink.py --source /path/to/your/pipeline/data --target /path/to/lerobot/dataset
+  python make_symlink.py -s /path/to/your/pipeline/data -t /path/to/lerobot/dataset
 """
 
 import argparse
