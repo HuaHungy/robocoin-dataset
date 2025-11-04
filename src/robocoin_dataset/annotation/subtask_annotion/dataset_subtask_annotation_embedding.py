@@ -194,7 +194,6 @@ class DatasetSubtaskAnnotationEmbedding:
                 episode_frame_nums[ep_item.ep_idx] = ep_item.frame_num
 
         try:
-            print(f"episode_frame_nums: {episode_frame_nums}")
             annotation_datas = annotations_to_frame_array(
                 annotations=annotations,
                 annotation_num=len(optimized_subtask_annotations_dict),

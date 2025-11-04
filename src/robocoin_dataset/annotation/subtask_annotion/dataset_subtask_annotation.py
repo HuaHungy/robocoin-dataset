@@ -66,6 +66,7 @@ class DatasetSubtaskAnnotation:
                 return None
 
             item.video_ori_subtask_annotation_status = TaskStatus.PROCESSING
+            session.commit()
             return item.dataset_uuid
 
     def _annotate_subtask(self, dataset_uuid: str) -> None:
@@ -77,6 +78,13 @@ class DatasetSubtaskAnnotation:
                 session.query(VideoMatchDB).filter(VideoMatchDB.dataset_uuid == dataset_uuid).all()
             )
             if not items:
+                session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).update(
+                    {
+                        DatasetDB.video_ori_subtask_annotation_status: TaskStatus.FAILED,
+                        DatasetDB.video_ori_subtask_annotation_err_msg: "No video match result found",
+                    }
+                )
+                session.commit()
                 return
             try:
                 for item in items:
@@ -108,6 +116,7 @@ class DatasetSubtaskAnnotation:
                         DatasetDB.video_ori_subtask_annotation_err_msg: traceback.format_exc(),
                     }
                 )
+                session.commit()
 
     def annotate_subtask(self) -> None:
         self.sync_dataset_subtask_annotation_status()
@@ -126,6 +135,7 @@ class DatasetSubtaskAnnotation:
         pbar = tqdm.tqdm(total=task_num, desc="Annotate subtask for datasets", unit="dataset")
         while True:
             dataset_uuid = self.gen_one_dataset_subtask_annotation_task()
+
             if dataset_uuid is None:
                 break
             self._annotate_subtask(dataset_uuid=dataset_uuid)
