@@ -41,6 +41,8 @@ class LocalDsUploadConfig(LocalDsConfig):
       hub_name (DatasetsHubEnum): Target hub platform for uploading datasets.
           Defaults to DatasetsHubEnum.HUGGINGFACE.
       token (str): Authentication token for the target hub platform. Defaults to empty string.
+      namespace (str): Username/namespace on the target hub platform. If empty, uses DS_PLATFORM_NAME constant.
+          Defaults to empty string.
       output_path (str): Path to the output directory for commit history files. Defaults to empty string.
       db_file_path (str): Path to the database file for dataset tracking. Defaults to empty string.
       batch_size (int): Number of datasets to upload in each batch. Defaults to 5.
@@ -50,6 +52,7 @@ class LocalDsUploadConfig(LocalDsConfig):
 
   hub_name: DatasetsHubEnum = DatasetsHubEnum.huggingface
   token: str = ""
+  namespace: str = ""
   output_path: str = ""
   db_file_path: str = ""
   batch_size: int = 5
@@ -82,6 +85,9 @@ class LocalDsUploadUtil(LocalDsUtil):
     """
     super().__init__(config)
     self.config = config
+
+    # Determine namespace: use config.namespace if provided, otherwise fall back to DS_PLATFORM_NAME
+    self.namespace = config.namespace if config.namespace else DS_PLATFORM_NAME
 
     if config.hub_name == DatasetsHubEnum.modelscope:
       from ..hubs.ms_hub import ModelscopeUploadHub
@@ -258,7 +264,7 @@ class LocalDsUploadUtil(LocalDsUtil):
     if not ds_path.exists():
       raise FileNotFoundError(f"dataset path {ds_path} does not exist")
 
-    repo_id = f"{DS_PLATFORM_NAME}/{ds_name}"
+    repo_id = f"{self.namespace}/{ds_name}"
 
     try:
       if not self.hub.repo_exists(repo_id=repo_id):
@@ -312,7 +318,7 @@ class LocalDsUploadUtil(LocalDsUtil):
     if datasets_to_update:
       for ds_name, commit_msg in tqdm(
         datasets_to_update.items(),
-        desc=f"Upload {DS_PLATFORM_NAME} datasets",
+        desc=f"Upload {self.namespace} datasets",
         bar_format="\033[32m{l_bar}{bar}\033[0m{r_bar}",
       ):
         self._upload_dataset(ds_name=ds_name, commit_msg=commit_msg)
@@ -512,7 +518,7 @@ class LocalDsUploadUtil(LocalDsUtil):
       commit_msg += ")"
 
       # Repository ID
-      repo_id = f"{DS_PLATFORM_NAME}/{self.config.unified_repo_name}"
+      repo_id = f"{self.namespace}/{self.config.unified_repo_name}"
 
       self.logger.info(f"\n{'='*70}")
       self.logger.info(f"Uploading batch {batch_num}/{total_batches} to {repo_id}")
@@ -582,7 +588,8 @@ class LocalDsUploadUtil(LocalDsUtil):
     self.logger.info(f"{'='*70}")
     self.logger.info(f"Database: {db_path}")
     self.logger.info(f"Target Hub: {self.config.hub_name}")
-    self.logger.info(f"Unified Repo: {DS_PLATFORM_NAME}/{self.config.unified_repo_name}")
+    self.logger.info(f"Namespace: {self.namespace}")
+    self.logger.info(f"Unified Repo: {self.namespace}/{self.config.unified_repo_name}")
     self.logger.info(f"Batch Size: {self.config.batch_size}")
     self.logger.info(f"Skip Missing: {self.config.skip_missing}")
     self.logger.info(f"{'='*70}\n")

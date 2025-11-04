@@ -26,16 +26,28 @@ from robocoin_dataset.hub_upload.lerobot.hub_upload_util import (
 )
 
 
-def prompt_for_token(config: LocalDsUploadConfig) -> str:
+def prompt_for_token(config: LocalDsUploadConfig, token_from_cli: bool) -> str:
   """
   Prompt user to input authentication token with security warnings.
 
   Args:
       config: The parsed configuration object
+      token_from_cli: Whether token was provided via command line argument
 
   Returns:
-      str: The authentication token (from user input or config file)
+      str: The authentication token (from CLI argument, user input, or config file)
   """
+  # Check if token was provided via command line argument (--token)
+  config_token = config.token
+  if config_token and config_token.upper() not in ["NULL", "NONE", ""] and token_from_cli:
+    print("\n" + "=" * 70)
+    print("AUTHENTICATION TOKEN DETECTED")
+    print("=" * 70)
+    print(f"Target Hub: {config.hub_name}")
+    print("✓ Token received from command line argument (--token)")
+    print(f"   Token: {'*' * min(len(config_token), 8)}... (hidden for security)\n")
+    return config_token
+
   print("\n" + "=" * 70)
   print("AUTHENTICATION TOKEN REQUIRED")
   print("=" * 70)
@@ -55,10 +67,9 @@ def prompt_for_token(config: LocalDsUploadConfig) -> str:
   print("WARNING: No token provided via prompt")
   print("!" * 70)
   print("\n⚠️  Token is a REQUIRED parameter for uploading datasets.")
-  print("⚠️  It is STRONGLY RECOMMENDED to provide the token via prompt.\n")
+  print("⚠️  It is STRONGLY RECOMMENDED to provide the token via prompt or --token argument.\n")
 
   # Check if token exists in config file
-  config_token = config.token
   if config_token and config_token.upper() not in ["NULL", "NONE", ""]:
     print("🔍 Searching for token in configuration file...")
     print("   Location: Configuration field 'token'")
@@ -74,7 +85,7 @@ def prompt_for_token(config: LocalDsUploadConfig) -> str:
     print("\n⚠️  ACTION REQUIRED:")
     print("   → Remove the token from your configuration file immediately")
     print("   → Ensure all commits do not contain the token value")
-    print("   → Use the prompt method for token input in the future\n")
+    print("   → Use the --token argument or prompt method for token input in the future\n")
 
     # Ask for confirmation
     response = input("Continue with token from config file? (yes/no): ").strip().lower()
@@ -86,7 +97,7 @@ def prompt_for_token(config: LocalDsUploadConfig) -> str:
   else:
     print("✗ No valid token found in configuration file.")
     print("✗ Cannot proceed without authentication token.")
-    print("\nPlease run the script again and provide your token when prompted.")
+    print("\nPlease run the script again and provide your token via --token argument or prompt.")
     sys.exit(1)
 
 
@@ -99,12 +110,23 @@ if __name__ == "__main__":
 
   If db_file_path is provided, uses database-driven batch upload to unified repository.
   Otherwise, uses traditional directory-based upload.
+
+  Supports three methods for providing authentication token:
+  1. Command line argument: --token YOUR_TOKEN (recommended)
+  2. Interactive prompt: Enter token when prompted
+  3. Config file: token field in YAML (not recommended for security)
   """
-  # Parse configuration from YAML file
+  # Parse configuration from YAML file and command line arguments
   config = draccus.parse(LocalDsUploadConfig)
 
-  # Prompt user for token with security warnings
-  token = prompt_for_token(config)
+  # Detect if token was provided via command line argument
+  # If token is not NULL/NONE/empty and we have CLI args, it likely came from --token
+  token_from_cli = False
+  if "--token" in sys.argv:
+    token_from_cli = True
+
+  # Get or prompt for token with security warnings
+  token = prompt_for_token(config, token_from_cli)
 
   # Override config token with the obtained token
   config.token = token

@@ -7,6 +7,7 @@
 # class LocalDsUploadConfig(LocalDsConfig):
 #     hub_name: DatasetsHubEnum = DatasetsHubEnum.HUGGINGFACE
 #     token: str = ""
+#     namespace: str = ""
 #     output_path: str = ""
 
 # Path to the directory containing task tags YAML files.
@@ -17,6 +18,12 @@ hub_name: huggingface
 
 # token for authentication with the hub.
 token: NULL  # Configuring this parameter is not recommended; manual specification is preferred.
+
+# namespace (username) on the hub platform.
+# IMPORTANT: This must match your HuggingFace username exactly (case-sensitive).
+# Example: If your profile is https://huggingface.co/YourUsername, use "YourUsername"
+# If left empty, defaults to DS_PLATFORM_NAME constant in code.
+namespace: "RogersPyke"  # CHANGE THIS to your actual HuggingFace username
 
 # output path where the history info of dataset uploading should be saved.
 output_path: ./examples/datasets/outputs/upload_history
@@ -43,7 +50,8 @@ unified_repo_name: "robocoin-dataset"
 #     log_config: LogConfig = field(default_factory=LogConfig)
 
 # Path to the root directory of the datasets, which contains all datasets.
-root_path: ./examples/example_datas/ # SHOULD BE CHANGED TO THE REAL DATASET PATH WHEN FORMAL USING
+root_path: /mnt/nas/synnas/docker2/robocoin-datasets-test/_upload_test/
+# SHOULD BE CHANGED TO THE REAL DATASET PATH WHEN FORMAL USING
 
 # process_all is set to true by default,
 # it means all subdirectories will be processed,
