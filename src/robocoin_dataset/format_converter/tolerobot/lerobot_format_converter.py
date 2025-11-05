@@ -1231,6 +1231,10 @@ class LerobotFormatConverter(ABC):
                         "skipped_frames": skipped_frames,
                     }
                     
+                    # 🆕 清理episode缓存（MCAP等大文件格式需要释放内存）
+                    if hasattr(self, '_clear_episode_cache'):
+                        self._clear_episode_cache()
+                    
                     # 检查失败率（在严格阶段结束时）
                     if global_ep_idx == self.strict_episodes - 1:
                         self._check_failure_rate_threshold(task_stats)
