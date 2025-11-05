@@ -18,6 +18,8 @@ from typing import Optional, Union
 import numpy as np
 import logging
 
+from .exceptions import CriticalDataError
+
 
 class LazyVideoReader:
     """
@@ -227,17 +229,45 @@ class LazyVideoReader:
                     ret, frame = self._cap.read()
                     
                     if not ret or frame is None:
-                        raise RuntimeError(
-                            f"Failed to read frame {frame_idx} even after re-encoding"
+                        raise CriticalDataError(
+                            f"❌ 视频帧读取失败（重编码后仍然失败）\n"
+                            f"   📹 视频文件: {self.original_video_path}\n"
+                            f"   🎞️  帧索引: {frame_idx}\n"
+                            f"   💡 可能原因:\n"
+                            f"      1. 视频文件已损坏\n"
+                            f"      2. 重编码失败\n"
+                            f"      3. OpenCV无法解码该格式\n"
+                            f"   🔧 建议: 检查原始视频文件完整性\n"
+                            f"   (entire episode will be skipped)"
                         )
                     self.logger.info(f"✅ Successfully read frame {frame_idx} from re-encoded video")
                 else:
-                    raise RuntimeError(
-                        f"Failed to read frame {frame_idx} from {self.original_video_path}"
+                    raise CriticalDataError(
+                        f"❌ 视频帧读取失败（重编码失败）\n"
+                        f"   📹 视频文件: {self.original_video_path}\n"
+                        f"   🎞️  帧索引: {frame_idx}\n"
+                        f"   💡 可能原因:\n"
+                        f"      1. 视频编码格式不兼容（如AV1）\n"
+                        f"      2. 重编码过程失败\n"
+                        f"      3. ffmpeg未安装或版本不兼容\n"
+                        f"   🔧 建议: 检查ffmpeg可用性和视频格式\n"
+                        f"   (entire episode will be skipped)"
                     )
             else:
-                raise RuntimeError(
-                    f"Failed to read frame {frame_idx} from {self.video_path}"
+                raise CriticalDataError(
+                    f"❌ 视频帧读取失败\n"
+                    f"   📹 视频文件: {self.video_path}\n"
+                    f"   🎞️  帧索引: {frame_idx}\n"
+                    f"   📊 视频总帧数: {self._total_frames}\n"
+                    f"   💡 可能原因:\n"
+                    f"      1. 视频文件损坏\n"
+                    f"      2. 视频编码格式不兼容\n"
+                    f"      3. NAS网络连接问题\n"
+                    f"   🔧 建议:\n"
+                    f"      1. 检查视频文件是否完整\n"
+                    f"      2. 尝试启用 auto_reencode=True\n"
+                    f"      3. 检查NAS连接稳定性\n"
+                    f"   (entire episode will be skipped)"
                 )
         
         # 转换BGR到RGB（如果需要）

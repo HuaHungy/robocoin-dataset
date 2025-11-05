@@ -3,11 +3,13 @@ import json
 import logging
 from pathlib import Path
 
+import numpy as np
 import tqdm
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from robocoin_dataset.annotation.scene_annotation.dataset_scene_annotation_embedding import (
+    SceneAnnotationDataPostProcessor,
     SceneAnnotationEmbedding,
 )
 from robocoin_dataset.database.database import DatasetDatabase
@@ -43,8 +45,8 @@ def _sync_scene_annotation_status(session: Session) -> None:
     if not items:
         return
     for item in items:
-        item.scene_annotation_status = TaskStatus.PENDING
-        item.scene_annotation_version = item.scene_annotation_version + 1
+        item.scene_annotation_status = TaskStatus.PENDING # type: ignore
+        item.scene_annotation_version = item.scene_annotation_version + 1 # type: ignore
         item.scene_annotation_version_ps = item.convert_version
 
     session.commit()
@@ -76,12 +78,12 @@ def _gen_one_scene_annotation_task(session: Session) -> tuple[str | None, str | 
     item = query.first()
     if not item:
         return None, None
-    item.scene_annotation_status = TaskStatus.PROCESSING
+    item.scene_annotation_status = TaskStatus.PROCESSING # type: ignore
     session.commit()
     return (
         item.dataset_uuid,
         item.convert_path,
-    )
+    ) # type: ignore
 
 
 # local converter
@@ -124,7 +126,7 @@ class SceneAnnotationLocal:
                         self.logger.warning(f"未找到数据集 {dataset_name} 的记录，跳过")
                         failed_count += 1
                         continue
-                    if dataset_record.scene_annotation_status == TaskStatus.COMPLETED:
+                    if dataset_record.scene_annotation_status == TaskStatus.COMPLETED: # type: ignore
                         self.logger.info(f"数据集 {dataset_name} 的场景注释已经完成，跳过")
                         continue
                     try:
@@ -153,19 +155,32 @@ class SceneAnnotationLocal:
                         # 调用场景注释嵌入
                         scene_embedding = SceneAnnotationEmbedding(self.db_file_path)
                         scene_embedding.dataset_scene_embedding(
+<<<<<<< HEAD
                             dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions
                         )
 
                         # 更新状态为完成
                         dataset_record.scene_annotation_status = TaskStatus.COMPLETED
+=======
+                            dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions # type: ignore
+                        )
+
+                        # 更新状态为完成
+                        dataset_record.scene_annotation_status = TaskStatus.COMPLETED # type: ignore
+>>>>>>> 0760af6 (n)
                         session.commit()
 
                         self.logger.info(f"数据集 {dataset_name} 场景注释处理完成")
                         success_count += 1
                     except Exception as e:
                         self.logger.error(f"处理数据集文件夹 {dataset_folder} 时发生错误: {e}")
+<<<<<<< HEAD
                         dataset_record.scene_annotation_status = TaskStatus.FAILED
                         dataset_record.scene_annotation_err_msg = str(e)
+=======
+                        dataset_record.scene_annotation_status = TaskStatus.FAILED # type: ignore
+                        dataset_record.scene_annotation_err_msg = str(e) # type: ignore
+>>>>>>> 0760af6 (n)
                         session.commit()
                         continue
                         
@@ -189,7 +204,7 @@ class SceneAnnotationLocal:
 
 class SceneAnnotationServer(TaskServer):
     def __init__(self, db_file_path: str | Path, **kwargs: dict) -> None:
-        super().__init__(**kwargs)
+        super().__init__(**kwargs) # type: ignore
         self.db = DatasetDatabase(Path(db_file_path).expanduser().absolute())
 
     def get_task_category(self) -> str:
@@ -228,8 +243,8 @@ class SceneAnnotationServer(TaskServer):
                                 DatasetDB.scene_annotation_status
                                 == DatasetDB.scene_annotation_status
                             )
-                            .count(),
-                        )
+                            .count(), # type: ignore
+                        ) # type: ignore
                         .group_by(DatasetDB.scene_annotation_status)
                         .all()
                     )
@@ -261,28 +276,94 @@ class SceneAnnotationServer(TaskServer):
             return None
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
-        """处理任务结果"""
-        task_result_content = task_result_content.get("task_result_content")
-        ds_uuid = task_content.get("dataset_uuid")
-        task_status = task_result_content.get(TASK_RESULT_STATUS)
-        print(task_result_content)
-        print(task_status)
-        status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
-
-        with self.db.with_session() as session:
-            update_data = {DatasetDB.scene_annotation_status: status}
-            if status == TaskStatus.FAILED:
-                update_data[DatasetDB.scene_annotation_err_msg] = task_result_content.get("task_result_content").get("error")
-
-            updated_rows = (
-                session.query(DatasetDB)
-                .filter(DatasetDB.dataset_uuid == ds_uuid)
-                .update(update_data)
-            )
-
-            if updated_rows == 0:
-                raise ValueError(f"Dataset {ds_uuid} not found")
-            session.commit()
+        """处理任务结果，并生成场景注释的parquet文件"""
+        try:
+            task_content_detail = task_result_content.get("task_result_content", {})
+            dataset_uuid = task_content.get("dataset_uuid")
+            task_status = task_content_detail.get(TASK_RESULT_STATUS)
+            
+            print(f"处理任务结果: {task_content_detail}")
+            
+            with self.db.with_session() as session:
+                # 查询数据集记录
+                dataset = (
+                    session.query(DatasetDB)
+                    .filter(DatasetDB.dataset_uuid == dataset_uuid)
+                    .first()
+                )
+                
+                if not dataset:
+                    raise ValueError(f"Dataset {dataset_uuid} not found")
+                
+                # 如果任务成功完成
+                if task_status == TASK_SUCCESS and task_content_detail.get("processed"):
+                    try:
+                        descriptions = task_content_detail.get("descriptions", [])
+                        if not descriptions:
+                            raise ValueError("No scene descriptions available")
+                            
+                        # 获取数据集路径
+                        dataset_path = Path(dataset.convert_path) # type: ignore
+                        
+                        # 读取meta/episodes.jsonl获取episode信息
+                        meta_path = dataset_path / "meta"
+                        episodes_jsonl_path = meta_path / "episodes.jsonl"
+                        
+                        if not episodes_jsonl_path.exists():
+                            raise FileNotFoundError(f"Episodes file not found: {episodes_jsonl_path}")
+                            
+                        # 读取episodes.jsonl构建episode_scene_indices
+                        annotation = []
+                        with open(episodes_jsonl_path, "r") as f:
+                            for line in f:
+                                line = line.strip()
+                                if line:
+                                    episode = json.loads(line)
+                                    episode_index = episode["episode_index"]
+                                    length = episode["length"]
+                                    
+                                    while len(annotation) <= episode_index:
+                                        annotation.append(None)
+                                        
+                                    annotation[episode_index] = np.full(
+                                        (length, 1), 
+                                        episode_index, 
+                                        dtype=np.int32
+                                    )
+                        
+                        # 使用SceneAnnotationDataPostProcessor处理数据
+                        processor = SceneAnnotationDataPostProcessor(
+                            convert_path=dataset_path,
+                            scene_annotations=descriptions,
+                            episode_scene_indices=annotation,
+                        )
+                        
+                        # 处理并生成parquet文件
+                        processor.process()
+                        
+                        # 更新数据库状态
+                        dataset.scene_annotation_status = TaskStatus.COMPLETED # type: ignore
+                        dataset.scene_annotation_err_msg = None # type: ignore
+                        print(f"成功处理数据集 {dataset_uuid} 的场景注释")
+                        
+                    except Exception as e:
+                        print(f"处理场景注释时发生错误: {e}")
+                        dataset.scene_annotation_status = TaskStatus.FAILED # type: ignore
+                        dataset.scene_annotation_err_msg = f"Error processing scene annotations: {str(e)}" # type: ignore
+                else:
+                    # 任务失败
+                    error_msg = task_content_detail.get("error", "Unknown error")
+                    dataset.scene_annotation_status = TaskStatus.FAILED # type: ignore
+                    dataset.scene_annotation_err_msg = error_msg # type: ignore
+                    print(f"任务失败: {error_msg}")
+                
+                session.commit()
+                
+        except Exception as e:
+            print(f"处理任务结果时发生错误: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
 class SceneAnnotationClient(TaskClient):
@@ -335,7 +416,7 @@ class SceneAnnotationClient(TaskClient):
                             descriptions.append(description)
 
             if not descriptions:
-                self.logger.warning(f"No scene descriptions found for dataset {dataset_uuid}")
+                self.logger.warning(f"No scene descriptions found for dataset {dataset_uuid}") # type: ignore
                 return {"scene_annotations_processed": 0}
 
             # 处理场景标注嵌入

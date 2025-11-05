@@ -56,9 +56,9 @@ async def main() -> None:
         db_file_path=db_file_path,
         host=args.host,
         port=args.port,
-        heartbeat_interval=30.0,
-        timeout=15.0,
-        logger=logger,
+        heartbeat_interval=30.0, # type: ignore
+        timeout=15.0, # type: ignore
+        logger=logger, # type: ignore
     )
 
     await sim_replay_server.start()
@@ -68,10 +68,10 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 """usage:
-# realman_rmc_aidal
+# server
 python scripts/scene_annotation/scene_annotation_server.py \
-    --db_file_path ./db/datasets_new.db \
+    --db_file_path ~/下载/datasets_n.db \
     --host 0.0.0.0 \
-    --port 8766 \
+    --port 8769 \
     --log_dir ./logs/
 """
