@@ -114,10 +114,30 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         
         # Process each subtask directory
         for subtask_dir in subtask_dirs:
+            # 🔧 修复：先检查这个目录是否本身就是episode（扁平结构）
+            # 如果是episode，就不需要local_task_info.yaml
+            metadata_file_direct = subtask_dir / "metadata.json"
+            h5_file_direct = subtask_dir / "proprio_stats" / "proprio_stats.hdf5"
+            
+            if metadata_file_direct.exists() and h5_file_direct.exists():
+                # 扁平结构：这个目录本身就是episode
+                # 尝试从metadata.json中读取task，如果失败则使用第一个task作为默认值
+                try:
+                    with open(metadata_file_direct) as f:
+                        metadata = json.load(f)
+                        task = metadata.get("task", self.tasks[0] if self.tasks else "default_task")
+                except Exception:
+                    task = self.tasks[0] if self.tasks else "default_task"
+                
+                task_paths_dict[subtask_dir] = task
+                self.logger.debug(f"✅ Found episode '{subtask_dir.name}' for task '{task}' (flat structure)")
+                continue
+            
+            # 如果不是episode，尝试读取local_task_info.yaml（两层结构）
             local_task_info_path = subtask_dir / "local_task_info.yaml"
             
             if not local_task_info_path.exists():
-                self.logger.warning(f"⚠️  Skipping {subtask_dir.name}: no local_task_info.yaml found")
+                self.logger.warning(f"⚠️  Skipping {subtask_dir.name}: not an episode and no local_task_info.yaml found")
                 continue
             
             # Read task info from subtask directory
@@ -141,65 +161,54 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                 )
                 continue
             
-            # 🆕 支持两种结构：
-            # 1. 扁平结构：subtask_dir本身就是episode
-            # 2. 嵌套结构：subtask_dir/episode_*/...
+            # 🔍 搜索subtask_dir下的episode目录（嵌套结构）
+            # 注意：扁平结构已经在上面处理了，这里只处理subtask/episode的两层结构
             episode_count = 0
             
-            # 先检查subtask_dir本身是否是episode（扁平结构）
-            metadata_file = subtask_dir / "metadata.json"
-            h5_file = subtask_dir / "proprio_stats" / "proprio_stats.hdf5"
+            # 递归搜索episode目录（无深度限制）
+            from collections import deque
+            queue = deque([(subtask_dir, 0)])
+            max_depth = 100  # 防止无限循环
+            visited = set()
             
-            if metadata_file.exists() and h5_file.exists():
-                # 扁平结构：subtask_dir本身就是episode
-                task_paths_dict[subtask_dir] = task
-                episode_count = 1
-                self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episode (flat structure) for task '{task}'")
-            else:
-                # 嵌套结构：递归搜索episode目录（无深度限制）
-                from collections import deque
-                queue = deque([(subtask_dir, 0)])
-                max_depth = 100  # 防止无限循环
-                visited = set()
+            while queue:
+                current_dir, depth = queue.popleft()
                 
-                while queue:
-                    current_dir, depth = queue.popleft()
-                    
-                    if depth >= max_depth:
+                if depth >= max_depth:
+                    continue
+                
+                # 防止重复访问
+                try:
+                    real_path = current_dir.resolve()
+                    if real_path in visited:
                         continue
-                    
-                    # 防止重复访问
-                    try:
-                        real_path = current_dir.resolve()
-                        if real_path in visited:
+                    visited.add(real_path)
+                except (OSError, RuntimeError):
+                    continue
+                
+                try:
+                    for item in current_dir.iterdir():
+                        if not item.is_dir():
                             continue
-                        visited.add(real_path)
-                    except (OSError, RuntimeError):
-                        continue
-                    
-                    try:
-                        for item in current_dir.iterdir():
-                            if not item.is_dir():
-                                continue
-                            
-                            # 跳过隐藏和特殊目录
-                            if item.name.startswith('.') or item.name.startswith('@'):
-                                continue
-                            
-                            # 检查是否是episode目录
-                            metadata_file = item / "metadata.json"
-                            h5_file = item / "proprio_stats" / "proprio_stats.hdf5"
-                            
-                            if metadata_file.exists() and h5_file.exists():
-                                task_paths_dict[item] = task
-                                episode_count += 1
-                            else:
-                                # 继续搜索子目录
-                                queue.append((item, depth + 1))
-                    except (PermissionError, OSError):
-                        continue
-                
-                self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}' (recursive search)")
+                        
+                        # 跳过隐藏和特殊目录
+                        if item.name.startswith('.') or item.name.startswith('@'):
+                            continue
+                        
+                        # 检查是否是episode目录
+                        metadata_file = item / "metadata.json"
+                        h5_file = item / "proprio_stats" / "proprio_stats.hdf5"
+                        
+                        if metadata_file.exists() and h5_file.exists():
+                            task_paths_dict[item] = task
+                            episode_count += 1
+                        else:
+                            # 继续搜索子目录
+                            queue.append((item, depth + 1))
+                except (PermissionError, OSError):
+                    continue
+            
+            self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}' (recursive search)")
         
         if not task_paths_dict:
             # List all subtask directories to help diagnose
