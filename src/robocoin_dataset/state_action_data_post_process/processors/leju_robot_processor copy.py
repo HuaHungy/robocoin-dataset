@@ -5,7 +5,7 @@ import numpy as np
 from .state_action_data_processor_base import StateActionDataPostProcessorBase
 
 
-class YinheProcessor(StateActionDataPostProcessorBase):
+class LejuRobotProcessor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
 
@@ -20,12 +20,6 @@ class YinheProcessor(StateActionDataPostProcessorBase):
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
         new_state_data = ori_state_data.copy()
         return new_state_data
-    
-    def get_modified_state_feature_names(self)-> list[str]:
-        return []
-    
-    def get_modified_action_feature_names(self)-> list[str]:
-        return []
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
@@ -33,6 +27,12 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         return new_action_data
     def get_modified_feature_names(self):
         return super().get_modified_feature_names()
+
+    def get_modified_state_feature_names(self)-> list[str]:
+        return []
+    
+    def get_modified_action_feature_names(self)-> list[str]:
+        return []
 
     def get_modified_info_state_names(self) -> dict[str, str]:
         return {}

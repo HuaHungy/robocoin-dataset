@@ -144,6 +144,12 @@ class DatasetDB(Base):
     data_loader_detection_version = Column(Integer, nullable=True, default=0)
     data_loader_detection_err_msg = Column(Text, nullable=True)
 
+    # 人工检测相关
+    visualize_check_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True)
+    visualize_check_version_ps = Column(Integer, nullable=True, default=0)
+    visualize_check_version = Column(Integer, nullable=True, default=0)
+    visualize_check_err_msg = Column(Text, nullable=True)
+
     # 数据集上传相关
     ## modelscope
     ms_upload_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True)

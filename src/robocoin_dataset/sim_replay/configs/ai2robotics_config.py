@@ -37,40 +37,40 @@ class Ai2roboticsLerobotSimReplayConfig(LerobotSimReplayConfig):
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
         # left arm
-        "left_arm_joint_0",
-        "left_arm_joint_1",
-        "left_arm_joint_2",
-        "left_arm_joint_3",
-        "left_arm_joint_4",
-        "left_arm_joint_5",
-        "left_arm_joint_6",
+        "left_arm_joint_0_rad",
+        "left_arm_joint_1_rad",
+        "left_arm_joint_2_rad",
+        "left_arm_joint_3_rad",
+        "left_arm_joint_4_rad",
+        "left_arm_joint_5_rad",
+        "left_arm_joint_6_rad",
         # right arm
-        "right_arm_joint_0",
-        "right_arm_joint_1",
-        "right_arm_joint_2",
-        "right_arm_joint_3",
-        "right_arm_joint_4",
-        "right_arm_joint_5",
-        "right_arm_joint_6",
+        "right_arm_joint_0_rad",
+        "right_arm_joint_1_rad",
+        "right_arm_joint_2_rad",
+        "right_arm_joint_3_rad",
+        "right_arm_joint_4_rad",
+        "right_arm_joint_5_rad",
+        "right_arm_joint_6_rad",
     ]
 
     action_arm_joint_lerobot_names: list[str] = [
         # left arm
-        "left_arm_joint_0",
-        "left_arm_joint_1",
-        "left_arm_joint_2",
-        "left_arm_joint_3",
-        "left_arm_joint_4",
-        "left_arm_joint_5",
-        "left_arm_joint_6",
+        "left_arm_joint_0_rad",
+        "left_arm_joint_1_rad",
+        "left_arm_joint_2_rad",
+        "left_arm_joint_3_rad",
+        "left_arm_joint_4_rad",
+        "left_arm_joint_5_rad",
+        "left_arm_joint_6_rad",
         # right arm
-        "right_arm_joint_0",
-        "right_arm_joint_1",
-        "right_arm_joint_2",
-        "right_arm_joint_3",
-        "right_arm_joint_4",
-        "right_arm_joint_5",
-        "right_arm_joint_6",
+        "right_arm_joint_0_rad",
+        "right_arm_joint_1_rad",
+        "right_arm_joint_2_rad",
+        "right_arm_joint_3_rad",
+        "right_arm_joint_4_rad",
+        "right_arm_joint_5_rad",
+        "right_arm_joint_6_rad",
     ]
 
  # gripper names allow not 1v1 assignment
@@ -82,10 +82,10 @@ class Ai2roboticsLerobotSimReplayConfig(LerobotSimReplayConfig):
     has_gripper = False
 
 
-    state_gripper_lerobot_names: list[str] = ["left_effector_position", "right_effector_position"]
+    state_gripper_lerobot_names: list[str] = ["left_gripper_open", "right_gripper_open"]
     action_gripper_lerobot_names: list[str] = [
-        "left_effector_position",
-        "right_effector_position",
+        "left_gripper_open",
+        "right_gripper_open",
     ]
     def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
         return []

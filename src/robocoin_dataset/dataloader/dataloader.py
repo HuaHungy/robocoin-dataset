@@ -84,20 +84,20 @@ def _worker_init_suppress_output(worker_id: int) -> None:
     import sys
 
     # Close existing file objects if they exist
-    if hasattr(sys.stdout, 'close') and sys.stdout not in (sys.__stdout__,):
+    if hasattr(sys.stdout, "close") and sys.stdout not in (sys.__stdout__,):
         try:
             sys.stdout.close()
         except Exception:
             pass
-    if hasattr(sys.stderr, 'close') and sys.stderr not in (sys.__stderr__,):
+    if hasattr(sys.stderr, "close") and sys.stderr not in (sys.__stderr__,):
         try:
             sys.stderr.close()
         except Exception:
             pass
 
     # Open new file handles
-    devnull_out = open(os.devnull, 'w')
-    devnull_err = open(os.devnull, 'w')
+    devnull_out = open(os.devnull, "w")
+    devnull_err = open(os.devnull, "w")
 
     sys.stdout = devnull_out
     sys.stderr = devnull_err
@@ -251,7 +251,9 @@ TASK_CATEGORY = "dataloader_detection"
 try:
     _here = Path(__file__).resolve()
     _repo_root = _here.parents[3]
-    DEFAULT_DB_FILE = (_repo_root / "examples" / "dataloader_test" / "datasets_new.db").expanduser().absolute()
+    DEFAULT_DB_FILE = (
+        (_repo_root / "examples" / "dataloader_test" / "datasets_new.db").expanduser().absolute()
+    )
 except Exception:
     DEFAULT_DB_FILE = Path("examples/dataloader_test/datasets_new.db").expanduser().absolute()
 
@@ -340,6 +342,7 @@ def _gen_one_dataloader_detection_task(session: Session) -> tuple[str | None, st
     """
     item = (
         session.query(DatasetDB)
+        .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
         .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
         .first()
     )
@@ -347,7 +350,9 @@ def _gen_one_dataloader_detection_task(session: Session) -> tuple[str | None, st
         return None, None
 
     item.data_loader_detection_status = TaskStatus.PROCESSING
-    item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1 # Increment version when claiming the task
+    item.data_loader_detection_version = (
+        item.data_loader_detection_version or 0
+    ) + 1  # Increment version when claiming the task
     session.commit()
     return item.dataset_uuid, item.convert_path
 
@@ -380,13 +385,13 @@ def _parse_episode_specification(
 
     if isinstance(episode_spec, int):
         if episode_spec < 0 or episode_spec >= total_episodes:
-            raise ValueError(f"Episode {episode_spec} out of range [0, {total_episodes-1}]")
+            raise ValueError(f"Episode {episode_spec} out of range [0, {total_episodes - 1}]")
         return [episode_spec]
 
     if isinstance(episode_spec, list):
         for ep in episode_spec:
             if not isinstance(ep, int) or ep < 0 or ep >= total_episodes:
-                raise ValueError(f"Episode {ep} out of range [0, {total_episodes-1}]")
+                raise ValueError(f"Episode {ep} out of range [0, {total_episodes - 1}]")
         return sorted(set(episode_spec))
 
     if isinstance(episode_spec, str):
@@ -418,7 +423,7 @@ def _parse_episode_specification(
         # Validate range
         for ep in episodes:
             if ep < 0 or ep >= total_episodes:
-                raise ValueError(f"Episode {ep} out of range [0, {total_episodes-1}]")
+                raise ValueError(f"Episode {ep} out of range [0, {total_episodes - 1}]")
 
         return sorted(set(episodes))
 
@@ -524,10 +529,12 @@ def _run_dataloader_detection(
             episodes_to_test = _parse_episode_specification(episode_indices, total_episodes)
         except ValueError as e:
             error_msg = f"Invalid episode specification: {e}"
-            result["errors"].append({
-                "type": "episode_specification_error",
-                "message": error_msg,
-            })
+            result["errors"].append(
+                {
+                    "type": "episode_specification_error",
+                    "message": error_msg,
+                }
+            )
             result["error_summary"] = error_msg
             # Print error to terminal for debugging
             print(f"\n❌ ERROR: {error_msg}", file=sys.stderr)
@@ -607,9 +614,7 @@ def _run_dataloader_detection(
                                 raise ValueError(f"Video key '{vkey}' missing from batch")
 
                         # Count frames in batch
-                        batch_size_actual = (
-                            len(batch["index"]) if "index" in batch else 1
-                        )
+                        batch_size_actual = len(batch["index"]) if "index" in batch else 1
                         frames_validated += batch_size_actual
 
                         # Update progress bars
@@ -646,16 +651,18 @@ def _run_dataloader_detection(
                     print(f"\n❌ Episode {ep_idx} failed: {episode_error}", file=sys.stderr)
 
                 # Print full traceback to stderr for debugging (even in non-strict mode)
-                print(f"\n{'='*70}", file=sys.stderr)
+                print(f"\n{'=' * 70}", file=sys.stderr)
                 print(f"ERROR in Episode {ep_idx}:", file=sys.stderr)
-                print(f"{'-'*70}", file=sys.stderr)
+                print(f"{'-' * 70}", file=sys.stderr)
                 print(traceback.format_exc(), file=sys.stderr)
-                print(f"{'='*70}\n", file=sys.stderr)
+                print(f"{'=' * 70}\n", file=sys.stderr)
 
                 if strict_mode:
                     if overall_progress is not None:
                         overall_progress.close()
-                    raise RuntimeError(f"Episode {ep_idx} validation failed: {episode_error}") from e
+                    raise RuntimeError(
+                        f"Episode {ep_idx} validation failed: {episode_error}"
+                    ) from e
 
         # Close overall progress bar
         if overall_progress is not None:
@@ -677,20 +684,22 @@ def _run_dataloader_detection(
     except Exception as e:
         # Fatal error (dataset loading, etc.)
         error_msg = str(e)
-        result["errors"].append({
-            "type": "fatal_error",
-            "message": error_msg,
-            "traceback": traceback.format_exc(),
-        })
+        result["errors"].append(
+            {
+                "type": "fatal_error",
+                "message": error_msg,
+                "traceback": traceback.format_exc(),
+            }
+        )
         result["error_summary"] = f"Fatal error: {error_msg}"
         result["success"] = False
 
         # Print fatal error to terminal for debugging
-        print(f"\n{'='*70}", file=sys.stderr)
+        print(f"\n{'=' * 70}", file=sys.stderr)
         print("FATAL ERROR:", file=sys.stderr)
-        print(f"{'-'*70}", file=sys.stderr)
+        print(f"{'-' * 70}", file=sys.stderr)
         print(traceback.format_exc(), file=sys.stderr)
-        print(f"{'='*70}\n", file=sys.stderr)
+        print(f"{'=' * 70}\n", file=sys.stderr)
 
         if strict_mode:
             raise
@@ -778,7 +787,9 @@ def run_local_batch_detection(
 
             # Update DB to FAILED
             with db.with_session() as session:
-                item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+                item = (
+                    session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+                )
                 if item:
                     item.data_loader_detection_status = TaskStatus.FAILED
                     item.data_loader_detection_err_msg = err_msg
@@ -808,7 +819,9 @@ def run_local_batch_detection(
                     succeeded.append(dataset_uuid)
                 else:
                     item.data_loader_detection_status = TaskStatus.FAILED
-                    item.data_loader_detection_err_msg = result.get("error_summary", "Unknown error")
+                    item.data_loader_detection_err_msg = result.get(
+                        "error_summary", "Unknown error"
+                    )
                     _logger.error(f"  ❌ Validation failed: {item.data_loader_detection_err_msg}")
                     failed.append((dataset_uuid, item.data_loader_detection_err_msg))
                 session.commit()
@@ -823,8 +836,14 @@ def run_local_batch_detection(
 
 
 class DataloaderDbProcess:
-    def __init__(self, db_file_path: str | Path | None = None, logger: logging.Logger | None = None) -> None:
-        self.db_file_path: Path = Path(db_file_path if db_file_path is not None else DEFAULT_DB_FILE).expanduser().absolute()
+    def __init__(
+        self, db_file_path: str | Path | None = None, logger: logging.Logger | None = None
+    ) -> None:
+        self.db_file_path: Path = (
+            Path(db_file_path if db_file_path is not None else DEFAULT_DB_FILE)
+            .expanduser()
+            .absolute()
+        )
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
@@ -847,11 +866,7 @@ class DataloaderDbProcess:
 
         # Update database based on result
         with self.db.with_session() as session:
-            item = (
-                session.query(DatasetDB)
-                .filter(DatasetDB.dataset_uuid == dataset_uuid)
-                .first()
-            )
+            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
             if item is None:
                 raise ValueError(f"Dataset {dataset_uuid} not found")
 
@@ -891,7 +906,11 @@ class DataloaderDbServer(TaskServer):
             heartbeat_interval=heartbeat_interval,
             timeout=timeout,
         )
-        self.db_file_path: Path = Path(db_file_path if db_file_path is not None else DEFAULT_DB_FILE).expanduser().absolute()
+        self.db_file_path: Path = (
+            Path(db_file_path if db_file_path is not None else DEFAULT_DB_FILE)
+            .expanduser()
+            .absolute()
+        )
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
@@ -932,7 +951,9 @@ class DataloaderDbServer(TaskServer):
                 db_error_message = None
             else:
                 db_status = TaskStatus.FAILED
-                db_error_message = dataset_validation_result.get("error_summary", "Dataset validation failed")
+                db_error_message = dataset_validation_result.get(
+                    "error_summary", "Dataset validation failed"
+                )
 
         with self.db.with_session() as session:
             item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
@@ -1010,13 +1031,17 @@ class DataloaderDbClient(TaskClient):
 # =============================
 
 
-async def run_client_async(server_uri: str, heartbeat_interval: float, logger: logging.Logger) -> dict:
+async def run_client_async(
+    server_uri: str, heartbeat_interval: float, logger: logging.Logger
+) -> dict:
     """Run a single client that connects to server and processes tasks until none remain.
 
     Returns:
         Statistics dictionary with keys: tasks_processed, tasks_succeeded, tasks_failed
     """
-    client = DataloaderDbClient(server_uri=server_uri, heartbeat_interval=heartbeat_interval, logger=logger)
+    client = DataloaderDbClient(
+        server_uri=server_uri, heartbeat_interval=heartbeat_interval, logger=logger
+    )
 
     # Track task counts
     tasks_processed = 0
@@ -1120,12 +1145,14 @@ def client_process_main(
     except Exception as e:
         logger.error(f"Client process {process_id} failed: {e}")
         if stats_queue is not None:
-            stats_queue.put({
-                "process_id": process_id,
-                "tasks_processed": 0,
-                "tasks_succeeded": 0,
-                "tasks_failed": 0,
-            })
+            stats_queue.put(
+                {
+                    "process_id": process_id,
+                    "tasks_processed": 0,
+                    "tasks_succeeded": 0,
+                    "tasks_failed": 0,
+                }
+            )
         return 1
 
 
@@ -1236,9 +1263,13 @@ def run_multi_client(
 
     # Display process-level information
     process_success_count = sum(1 for code in exit_codes.values() if code == 0)
-    process_fail_count = sum(1 for code in exit_codes.values() if code not in (0, None) and code is not None)
+    process_fail_count = sum(
+        1 for code in exit_codes.values() if code not in (0, None) and code is not None
+    )
 
-    print(f"🔧 Process completions: {process_success_count} successful, {process_fail_count} failed")
+    print(
+        f"🔧 Process completions: {process_success_count} successful, {process_fail_count} failed"
+    )
 
     if exit_codes:
         print("\nPer-process details:")
