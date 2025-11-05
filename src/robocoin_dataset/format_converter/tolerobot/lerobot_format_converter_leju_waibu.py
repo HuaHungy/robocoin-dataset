@@ -27,6 +27,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     ARGS_KEY,
     CAM_NAME_KEY,
 )
+from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
@@ -637,7 +638,8 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                         if self.logger:
                             self.logger.error(error_msg)
                         
-                        raise KeyError(error_msg)
+                        # 🔧 修复：H5路径不存在应该跳过episode，而不是ConfigError
+                        raise CriticalDataError(error_msg + "\n   (entire episode will be skipped)")
         
         return states_buffer
 
@@ -699,7 +701,8 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                         if self.logger:
                             self.logger.error(error_msg)
                         
-                        raise KeyError(error_msg)
+                        # 🔧 修复：H5路径不存在应该跳过episode，而不是ConfigError
+                        raise CriticalDataError(error_msg + "\n   (entire episode will be skipped)")
         
         return actions_buffer
 
