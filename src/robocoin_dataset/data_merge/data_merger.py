@@ -4,6 +4,7 @@ import traceback
 from pathlib import Path
 
 import pandas as pd
+import tqdm
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import and_, or_
 
@@ -110,7 +111,9 @@ def _merge_parquet_files(
                 f"parquet_files length {len(parquet_files)} != merge_parquet_files length {len(merged_parquet_files)}"
             )
 
-    for ep_idx in range(len(merged_parquet_files)):
+    for ep_idx in tqdm.tqdm(
+        range(len(merged_parquet_files)), desc="Merging Parquet Files", unit="episode"
+    ):
         feature_patch_parquet_files = [
             parquet_files[ep_idx] for parquet_files in patch_parquet_files
         ]
