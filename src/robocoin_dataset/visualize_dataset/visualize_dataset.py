@@ -1,69 +1,5 @@
-#!/usr/bin/env python
-
-# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-""" Visualize data of **all** frames of any episode of a dataset of type LeRobotDataset.
-
-Note: The last frame of the episode doesn't always correspond to a final state.
-That's because our datasets are composed of transition from state to state up to
-the antepenultimate state associated to the ultimate action to arrive in the final state.
-However, there might not be a transition from a final state to another state.
-
-Note: This script aims to visualize the data used to train the neural networks.
-~What you see is what you get~. When visualizing image modality, it is often expected to observe
-lossy compression artifacts since these images have been decoded from compressed mp4 videos to
-save disk space. The compression factor applied has been tuned to not affect success rate.
-
-Examples:
-
-- Visualize data stored on a local machine:
-```
-local$ python -m lerobot.scripts.visualize_dataset \
-    --repo-id lerobot/pusht \
-    --episode-index 0
-```
-
-- Visualize data stored on a distant machine with a local viewer:
-```
-distant$ python -m lerobot.scripts.visualize_dataset \
-    --repo-id lerobot/pusht \
-    --episode-index 0 \
-    --save 1 \
-    --output-dir path/to/directory
-
-local$ scp distant:path/to/directory/lerobot_pusht_episode_0.rrd .
-local$ rerun lerobot_pusht_episode_0.rrd
-```
-
-- Visualize data stored on a distant machine through streaming:
-(You need to forward the websocket port to the distant machine, with
-`ssh -L 9087:localhost:9087 username@remote-host`)
-```
-distant$ python -m lerobot.scripts.visualize_dataset \
-    --repo-id lerobot/pusht \
-    --episode-index 0 \
-    --mode distant \
-    --ws-port 9087
-
-local$ rerun ws://localhost:9087
-```
-
-"""
-
 import gc
 import logging
-import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -73,6 +9,21 @@ import torch
 import torch.utils.data
 import tqdm
 from lerobot.datasets.lerobot_dataset import LeRobotDataset  # type: ignore
+from sqlalchemy.sql import and_, or_
+
+from robocoin_dataset.database.database import DatasetDatabase
+from robocoin_dataset.database.models import DatasetDB, TaskStatus
+from robocoin_dataset.distribution_computation.constant import (
+    DATASET_UUID,
+    ERR_MSG,
+    TASK_RESULT_STATUS,
+    TASK_SUCCESS,
+)
+from robocoin_dataset.distribution_computation.task_client import TaskClient
+from robocoin_dataset.distribution_computation.task_server import TaskServer
+from robocoin_dataset.format_converter.tolerobot.constant import (
+    LEFORMAT_PATH,
+)
 
 
 class EpisodeSampler(torch.utils.data.Sampler):
@@ -100,14 +51,19 @@ def get_annotation_text(batch: dict, idx: int) -> str:
     annotation_text = ""
     # tasks
     if "tasks" in batch:
-        annotation_text += f"Tasks: {batch['tasks'][idx]};"
+        annotation_text += f"Tasks: {batch['tasks'][idx]};\n"
     # subtasks
+
     if "subtasks" in batch:
-        print(batch["subtasks"])
-        print(type(batch["subtasks"][0]))
-        annotation_text += f"Subtasks: {batch['subtasks'][idx]};"
+        annotation_text += f"Subtasks: {batch['subtasks'][idx]}\n;"
+
+    if "scene" in batch:
+        annotation_text += f"Scene Annotation: {batch['scene'][idx]}\n"
     # left arm state annotations
     # EEF acceleration magnitude
+    annotation_text += "\n"
+    annotation_text += "motion annotations:\n"
+    annotation_text += "\n"
     if "left_eef_acc_mag_state" in batch:
         annotation_text += f"Left EEF acc mag state: {batch['left_eef_acc_mag_state'][idx]}\n"
     # EEF direction
@@ -179,47 +135,56 @@ def get_annotation_text(batch: dict, idx: int) -> str:
 
 
 def visualize_dataset(
-    dataset: LeRobotDataset,
-    episode_index: int,
+    repo_path: str | Path,
+    episode_index: int = 0,
     batch_size: int = 32,
-    num_workers: int = 0,
-    mode: str = "local",
-    web_port: int = 9090,
-    ws_port: int = 9087,
+    num_workers: int = 4,
     save: bool = False,
     output_dir: Path | None = None,
-) -> Path | None:
+) -> None:
     if save:
         assert output_dir is not None, (
             "Set an output directory where to write .rrd files with `--output-dir path/to/directory`."
         )
 
-    repo_id = dataset.repo_id
-
-    logging.info("Loading dataloader")
+    repo_path = Path(repo_path).expanduser().absolute()
+    dataset = LeRobotDataset("test/visualize_dataset", repo_path)
     episode_sampler = EpisodeSampler(dataset, episode_index)
+    _visualize_episode(
+        dataset, episode_sampler, repo_path, num_workers=num_workers, batch_size=batch_size
+    )
+    user_input = input("输入e后回车，提交错误信息；输入c后回车，确认数据无误并提交结果")
+    while True:
+        if user_input == "e":
+            err_msg = input("请输入错误信息后按回车")
+            raise RuntimeError(f"人工检查发现错误: {err_msg}")
+        if user_input == "c":
+            break
+        user_input = input("输入错误，请重新输入")
+
+
+def _visualize_episode(
+    dataset: LeRobotDataset,
+    sampler: EpisodeSampler,
+    repo_path: str | Path,
+    num_workers: int = 4,
+    batch_size: int = 32,
+) -> None:
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers=num_workers,
         batch_size=batch_size,
-        sampler=episode_sampler,
+        sampler=sampler,
     )
 
     logging.info("Starting Rerun")
 
-    if mode not in ["local", "distant"]:
-        raise ValueError(mode)
-
-    spawn_local_viewer = mode == "local" and not save
-    rr.init(f"{repo_id}/episode_{episode_index}", spawn=spawn_local_viewer)
+    rr.init(f"{str(repo_path)}", spawn=True)
 
     # Manually call python garbage collector after `rr.init` to avoid hanging in a blocking flush
     # when iterating on a dataloader with `num_workers` > 0
     # TODO(rcadene): remove `gc.collect` when rerun version 0.16 is out, which includes a fix
     gc.collect()
-
-    if mode == "distant":
-        rr.serve(open_browser=False, web_port=web_port, ws_port=ws_port)
 
     logging.info("Logging to Rerun")
 
@@ -257,21 +222,133 @@ def visualize_dataset(
             if annotation_text:
                 rr.log("annotations", rr.TextLog(annotation_text))
 
-    if mode == "local" and save:
-        # save .rrd locally
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        repo_id_str = repo_id.replace("/", "_")
-        rrd_path = output_dir / f"{repo_id_str}_episode_{episode_index}.rrd"
-        rr.save(rrd_path)
-        return rrd_path
+    return
 
-    if mode == "distant":
-        # stop the process from exiting since it is serving the websocket connection
+
+class DatasetVisualizerServer(TaskServer):
+    def __init__(
+        self,
+        db_file_path: str | Path,
+        host: str = "0.0.0.0",
+        port: int = 2110,
+        heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
+        device_model: str = "",
+        device_model_version: str = "",
+        timeout: float = 15.0,  # 等待 pong 超过15秒则断开
+        logger: logging.Logger | None = None,
+    ) -> None:
+        super().__init__(
+            logger=logger,
+            host=host,
+            port=port,
+            heartbeat_interval=heartbeat_interval,
+            timeout=timeout,
+        )
+        db_file_path = Path(db_file_path).expanduser().absolute()
+        self.device_model = device_model
+        self.device_model_version = device_model_version
+
+        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
+        self.db = DatasetDatabase(self.db_file_path)
+        self.logger = logger or logging.getLogger(__name__)
+
+    def get_task_category(self) -> str:
+        return "visualize_dataset"
+
+    def generate_task_content(self) -> dict | None:
+        with self.db.with_session() as session:
+            query = session.query(DatasetDB).filter(
+                and_(
+                    # 必要前提：convert必须成功
+                    DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
+                    # 两个触发分支
+                    or_(
+                        # 分支1: 正在排队
+                        DatasetDB.visualize_check_status == TaskStatus.PENDING,
+                        # 分支2: 已完成但版本过期
+                        and_(
+                            DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
+                            DatasetDB.visualize_check_version_ps
+                            < DatasetDB.data_loader_detection_version,
+                        ),
+                    ),
+                )
+            )
+            if self.device_model is not None:
+                query = query.filter(
+                    DatasetDB.device_model == self.device_model,
+                )
+
+            if self.device_model_version is not None:
+                query = query.filter(DatasetDB.device_model_version == self.device_model_version)
+
+            item = query.first()
+
+            if not item:
+                return None
+
+            item.visualize_check_status = TaskStatus.PROCESSING
+            item.visualize_check_version = item.visualize_check_version + 1
+            item.visualize_check_version_ps = item.data_loader_detection_version
+
+            session.commit()
+
+            return {
+                DATASET_UUID: item.dataset_uuid,
+                LEFORMAT_PATH: item.convert_path,
+            }
+
+    def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
+        ds_uuid = task_content.get(DATASET_UUID)
+
+        task_status = task_result_content.get(TASK_RESULT_STATUS)
+        task_status_msg = task_result_content.get(ERR_MSG)
+
+        convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
+
+        with self.db.with_session() as session:
+            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
+            if item is None:
+                self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+
+            item.visualize_check_status = convert_status
+            item.visualize_check_err_msg = task_status_msg
+            session.commit()
+            self.logger.info(
+                f"Upsert {item.convert_path} visualize checke status to {convert_status}, "
+                f"update_message: {task_status_msg}"
+            )
+
+
+class DatasetVisualizerClient(TaskClient):
+    def __init__(
+        self,
+        server_uri: str = "ws://localhost:2110",
+        heartbeat_interval: float = 10.0,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        super().__init__(
+            server_uri=server_uri,
+            heartbeat_interval=heartbeat_interval,
+            logger=logger,
+        )
+
+    def get_task_category(self) -> str:
+        return "visualize_dataset"
+
+    def generate_task_request_desc(self) -> dict:
+        """客户端可自定义任务请求参数"""
+        return {}
+
+    def _sync_process_task(self, task_content: dict) -> dict:
         try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("Ctrl-C received. Exiting.")
+            repo_path = task_content.get(LEFORMAT_PATH)
+            repo_path = task_content.get(LEFORMAT_PATH)
 
-    return None
+            visualize_dataset(
+                repo_path=repo_path,
+            )
+
+            return {}
+        except Exception as e:
+            raise RuntimeError(f"visualize ataset{repo_path} found error") from e
