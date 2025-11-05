@@ -183,7 +183,10 @@ class LerobotFormatConverterRealmanRmcAidalMcap(LerobotFormatConverter):
         self._register_custom_msg_types()
         
         # 添加episode数据缓存
+        # ⚠️ 警告：MCAP缓存仅用于小文件（<100MB），大文件直接解析不缓存
+        # 每个episode完成后会清理缓存，避免内存泄漏
         self._episode_data_cache = {}
+        self._current_episode_cache_key = None  # 🆕 跟踪当前episode的缓存key
         
         # Test 模式标志（用于限制帧数）
         self._is_test_mode = False
@@ -718,8 +721,40 @@ int32 lift_pos
         # 小文件使用缓存
         if cache_key not in self._episode_data_cache:
             self._episode_data_cache[cache_key] = self._parse_mcap_episode(mcap_file)
+        
+        # 🆕 记录当前episode的缓存key（用于后续清理）
+        self._current_episode_cache_key = cache_key
+        
         return self._episode_data_cache[cache_key]
 
+    def _clear_episode_cache(self) -> None:
+        """清理当前episode的缓存，释放内存
+        
+        🔧 内存管理：每个episode转换完成后调用此方法
+        避免内存累积导致OOM
+        """
+        if self._current_episode_cache_key and self._current_episode_cache_key in self._episode_data_cache:
+            # 获取缓存大小（估算）
+            cached_data = self._episode_data_cache[self._current_episode_cache_key]
+            if self.logger:
+                # 简单估算内存占用（图像数量 * 相机数 * 分辨率）
+                if 'images' in cached_data:
+                    num_cameras = len(cached_data['images'])
+                    num_frames = len(next(iter(cached_data['images'].values()))) if cached_data['images'] else 0
+                    estimated_mb = num_cameras * num_frames * 0.5  # 假设每帧约0.5MB
+                    self.logger.debug(
+                        f"🧹 清理episode缓存: {self._current_episode_cache_key} "
+                        f"(约 {estimated_mb:.1f} MB)"
+                    )
+            
+            # 删除缓存
+            del self._episode_data_cache[self._current_episode_cache_key]
+            self._current_episode_cache_key = None
+            
+            # 强制垃圾回收（对于大对象很重要）
+            import gc
+            gc.collect()
+    
     def _get_episode_data_minimal(self, task_path: Path, ep_idx: int, max_frames: int = 10) -> dict:
         """Test 模式专用：只解析前 N 帧数据，用于快速验证
         
