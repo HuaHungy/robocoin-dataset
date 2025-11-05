@@ -94,6 +94,7 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
         "right_gripper_open",
     ]
 
+    has_gripper = True
     gripper_position_max = 100
     gripper_position_min = 0
     gripper_mjcf_joint_max = 0.05
@@ -210,10 +211,15 @@ class GalaxeaR1LiteH5Mp4LerobotSimReplayConfig(LerobotSimReplayConfig):
         "right_gripper_open",
     ]
 
+    has_gripper = True
     gripper_position_max = 1.75
     gripper_position_min = 0
     gripper_mjcf_joint_max = 0.05
     gripper_mjcf_joint_min = 0
+
+    gripper_value_open = gripper_position_max
+    gripper_value_close = gripper_position_min
+
 
     def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
         lflj_joint_data = (
