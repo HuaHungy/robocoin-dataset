@@ -34,6 +34,90 @@ class RuantongA2dProcessor(StateActionDataPostProcessorBase):
     # 该方法返回处理后的action数据名称
     def get_modified_info_action_names(self) -> dict[str, str]:
         return {}
+    
+    def get_modified_state_feature_names(self) -> list[str]:
+        return [
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_arm_joint_7_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_arm_joint_7_rad",
+                "left_end_pos_x_m",
+                "left_end_pos_y_m",
+                "left_end_pos_z_m",
+                "left_end_quat_x",
+                "left_end_quat_y",
+                "left_end_quat_z",
+                "left_end_quat_w",
+                "right_end_pos_x_m",
+                "right_end_pos_y_m",
+                "right_end_pos_z_m",
+                "right_end_quat_x",
+                "right_end_quat_y",
+                "right_end_quat_z",
+                "right_end_quat_w",
+                "waist_yaw_rad",
+                "waist_pitch_rad",
+                "head_yaw_rad",
+                "head_pitch_rad",
+                "left_gripper_open",
+                "right_gripper_open",
+                "robot_pos_x_m",
+                "robot_pos_y_m",
+                "robot_pos_z_m",
+                "robot_quat_x",
+                "robot_quat_y",
+                "robot_quat_z",
+                "robot_quat_w"
+            ]
+
+    def get_modified_action_feature_names(self) -> list[str]:
+        return [
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_arm_joint_7_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_arm_joint_7_rad",
+                "left_end_pos_x_m",
+                "left_end_pos_y_m",
+                "left_end_pos_z_m",
+                "left_end_quat_x",
+                "left_end_quat_y",
+                "left_end_quat_z",
+                "left_end_quat_w",
+                "right_end_pos_x_m",
+                "right_end_pos_y_m",
+                "right_end_pos_z_m",
+                "right_end_quat_x",
+                "right_end_quat_y",
+                "right_end_quat_z",
+                "right_end_quat_w",
+                "waist_yaw_rad",
+                "waist_pitch_rad",
+                "head_yaw_rad",
+                "head_pitch_rad",
+                "left_gripper_open",
+                "right_gripper_open"
+            ]
+
 
 class RuantongA2dGt02Processor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:

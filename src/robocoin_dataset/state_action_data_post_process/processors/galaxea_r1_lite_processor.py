@@ -56,23 +56,6 @@ class GalaxeaR1LiteProcessor(StateActionDataPostProcessorBase):
                 "right_arm_joint_7_rad",
                 "left_gripper_open",
                 "right_gripper_open",
-                # "torso_joint_1",
-                # "torso_joint_2",
-                # "chassis_wheel_1",
-                # "chassis_wheel_2",
-                # "chassis_wheel_3",
-                # "chassis_imu_accel_x",
-                # "chassis_imu_accel_y",
-                # "chassis_imu_accel_z",
-                # "chassis_imu_gyro_x",
-                # "chassis_imu_gyro_y",
-                # "chassis_imu_gyro_z",
-                # "torso_imu_accel_x",
-                # "torso_imu_accel_y",
-                # "torso_imu_accel_z",
-                # "torso_imu_gyro_x",
-                # "torso_imu_gyro_y",
-                # "torso_imu_gyro_z"
         ]
     
     def get_modified_action_feature_names(self) -> list[str]:
@@ -93,18 +76,6 @@ class GalaxeaR1LiteProcessor(StateActionDataPostProcessorBase):
                 "right_arm_joint_7_rad",
                 "left_gripper_open",
                 "right_gripper_open",
-                # "chassis_target_vel_linear_x",
-                # "chassis_target_vel_linear_y",
-                # "chassis_target_vel_linear_z",
-                # "chassis_target_vel_angular_x",
-                # "chassis_target_vel_angular_y",
-                # "chassis_target_vel_angular_z",
-                # # "torso_target_vel_linear_x",
-                # # "torso_target_vel_linear_y",
-                # # "torso_target_vel_linear_z",
-                # # "torso_target_vel_angular_x",
-                # # "torso_target_vel_angular_y",
-                # # "torso_target_vel_angular_z"
         ]
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
@@ -113,33 +84,58 @@ class GalaxeaR1LiteProcessor(StateActionDataPostProcessorBase):
         # 删除 torso 相关的 state 数据列
         new_state_data = self._remove_torso_state_data(new_state_data)
         
-        # left_gripper_data = ori_state_data[:, self.left_gripper_open_state_data_idx]
-        # right_gripper_data = ori_state_data[:, self.right_gripper_open_state_data_idx]
-
-        # new_left_gripper_data = self._smooth_gripper_open_data(left_gripper_data)
-        # new_right_gripper_data = self._smooth_gripper_open_data(right_gripper_data)
-
-        # new_state_data[:, self.left_gripper_open_state_data_idx] = new_left_gripper_data
-        # new_state_data[:, self.right_gripper_open_state_data_idx] = new_right_gripper_data
-
         return new_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
-    def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
+    def process_episode_action_data(self, ori_action_data: np.ndarray, ori_state_data: np.ndarray = None) -> np.ndarray:
         new_action_data = ori_action_data.copy()
         # 删除 torso 相关的 action 数据列
         new_action_data = self._remove_torso_action_data(new_action_data)
         
-        # left_gripper_data = ori_action_data[:, self.left_gripper_open_action_data_idx]
-        # right_gripper_data = ori_action_data[:, self.right_gripper_open_action_data_idx]
-
-        # new_left_gripper_data = self._smooth_gripper_open_data(left_gripper_data)
-        # new_right_gripper_data = self._smooth_gripper_open_data(right_gripper_data)
-
-        # new_action_data[:, self.left_gripper_open_action_data_idx] = new_left_gripper_data
-        # new_action_data[:, self.right_gripper_open_action_data_idx] = new_right_gripper_data
-
+        # action 数据缺少 left_arm_joint_7 和 right_arm_joint_7
+        # 从对应的 state 数据中复制这两个关节的值
+        if ori_state_data is not None:
+            # 先处理 state 数据以获取正确的索引
+            processed_state = self._remove_torso_state_data(ori_state_data)
+            
+            # 从 state 数据中提取 joint_7 的值
+            # processed_state 布局: 0-6: left_arm_1~7, 7-13: right_arm_1~7, 14-15: grippers
+            left_joint_7 = processed_state[:, 6:7]  # left_arm_joint_7
+            right_joint_7 = processed_state[:, 13:14]  # right_arm_joint_7
+        else:
+            # 如果没有 state 数据，则复制 joint_6 的值作为 fallback
+            left_joint_7 = new_action_data[:, 5:6]
+            right_joint_7 = new_action_data[:, 12:13]
+        
+        # 原始 action 数据布局（删除torso后14个字段）:
+        # 0-5: left_arm_joint_1~6
+        # 6: left_gripper
+        # 7-12: right_arm_joint_1~6  
+        # 13: right_gripper
+        
+        # 目标布局（16个字段）:
+        # 0-6: left_arm_joint_1~7
+        # 7-13: right_arm_joint_1~7
+        # 14: left_gripper
+        # 15: right_gripper
+        
+        # 在索引6处插入一列（从state复制的left_arm_joint_7）
+        new_action_data = np.insert(new_action_data, 6, left_joint_7.squeeze(), axis=1)
+        
+        # 在索引13处插入一列（从state复制的right_arm_joint_7，注意前面插入后索引+1）
+        new_action_data = np.insert(new_action_data, 13, right_joint_7.squeeze(), axis=1)
+        
         return new_action_data
+    
+    def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """重写此方法以便在处理 action 时访问 state 数据"""
+        state_data = ori_data["observation.state"]
+        action_data = ori_data["action"]
+        
+        return {
+            "observation.state": self.process_episode_state_data(state_data),
+            "action": self.process_episode_action_data(action_data, state_data),
+        }
 
     # 该方法返回处理后的state数据名称
     def get_modified_feature_names(self):
