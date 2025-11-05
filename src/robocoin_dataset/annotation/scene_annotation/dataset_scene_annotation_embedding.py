@@ -46,7 +46,7 @@ class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
         scene_jsonl_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(scene_jsonl_file_path, "w") as f:
             for i, annotation in enumerate(self.scene_annotations):
-                f.write(f'{{"scene_index": {i}, "scene": {annotation}}}\n')
+                f.write(f'"scene_index": {i}, "scene": "{annotation}"\n')
 
 
 class SceneAnnotationEmbedding:
@@ -79,7 +79,7 @@ class SceneAnnotationEmbedding:
                 raise ValueError(
                     f"dataset_uuid: {dataset_uuid} episodes_jsonl_path: {episodes_jsonl_path} not exists"
                 )
-            with open(episodes_jsonl_path, "r") as f:
+            with open(episodes_jsonl_path) as f:
                 for line in f:
                     line = line.strip()
                     if line == "":
