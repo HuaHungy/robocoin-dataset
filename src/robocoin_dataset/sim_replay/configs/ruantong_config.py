@@ -61,9 +61,9 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
 
     state_gripper_lerobot_names: list[str] = [
         # left_hand
-        "left_effector_open_deg",
+        "left_gripper_open",
         # right hand
-        "right_effector_open_deg",
+        "right_gripper_open",
     ]
     action_gripper_lerobot_names = state_gripper_lerobot_names
 

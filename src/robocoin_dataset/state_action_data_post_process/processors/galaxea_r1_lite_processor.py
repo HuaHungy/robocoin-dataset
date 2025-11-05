@@ -15,59 +15,58 @@ class GalaxeaR1LiteProcessor(StateActionDataPostProcessorBase):
 
     def _remove_torso_state_data(self, data: np.ndarray) -> np.ndarray:
         """
-        删除 state 数据中的 torso 相关列
+        只保留前16个字段（双臂关节和夹爪）
         原始索引:
-        - 16-17: torso_joint_1, torso_joint_2
-        - 24-29: torso_imu_accel_x/y/z, torso_imu_gyro_x/y/z
+        - 0-15: 双臂关节和夹爪数据
+        - 16+: torso、chassis等其他数据（删除）
         """
-        # 删除索引 16-17 (torso_joint_1, torso_joint_2)
-        modified_data = np.delete(data, [16, 17], axis=1)
-        # 删除索引 24-29 (torso_imu，注意删除前面的列后索引变化，所以是22-27)
-        modified_data = np.delete(modified_data, [22, 23, 24, 25, 26, 27], axis=1)
+        # 只保留前16列
+        modified_data = data[:, :16]
         
         return modified_data
     
     def _remove_torso_action_data(self, data: np.ndarray) -> np.ndarray:
         """
-        删除 action 数据中的 torso 相关列
+        只保留前16个字段（双臂关节和夹爪目标值）
         原始索引:
-        - 20-25: torso_target_vel_linear_x/y/z, torso_target_vel_angular_x/y/z
+        - 0-15: 双臂关节和夹爪目标数据
+        - 16+: chassis、torso等其他数据（删除）
         """
-        # 删除索引 20-25 (torso_target_vel)
-        modified_data = np.delete(data, [20, 21, 22, 23, 24, 25], axis=1)
+        # 只保留前16列
+        modified_data = data[:, :16]
         
         return modified_data
     
         
     def get_modified_state_feature_names(self)-> list[str]:
         return [
-                "left_arm_joint_1",
-                "left_arm_joint_2",
-                "left_arm_joint_3",
-                "left_arm_joint_4",
-                "left_arm_joint_5",
-                "left_arm_joint_6",
-                "left_arm_joint_7",
-                "right_arm_joint_1",
-                "right_arm_joint_2",
-                "right_arm_joint_3",
-                "right_arm_joint_4",
-                "right_arm_joint_5",
-                "right_arm_joint_6",
-                "right_arm_joint_7",
-                "left_gripper_position",
-                "right_gripper_position",
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_arm_joint_7_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_arm_joint_7_rad",
+                "left_gripper_open",
+                "right_gripper_open",
                 # "torso_joint_1",
                 # "torso_joint_2",
-                "chassis_wheel_1",
-                "chassis_wheel_2",
-                "chassis_wheel_3",
-                "chassis_imu_accel_x",
-                "chassis_imu_accel_y",
-                "chassis_imu_accel_z",
-                "chassis_imu_gyro_x",
-                "chassis_imu_gyro_y",
-                "chassis_imu_gyro_z",
+                # "chassis_wheel_1",
+                # "chassis_wheel_2",
+                # "chassis_wheel_3",
+                # "chassis_imu_accel_x",
+                # "chassis_imu_accel_y",
+                # "chassis_imu_accel_z",
+                # "chassis_imu_gyro_x",
+                # "chassis_imu_gyro_y",
+                # "chassis_imu_gyro_z",
                 # "torso_imu_accel_x",
                 # "torso_imu_accel_y",
                 # "torso_imu_accel_z",
@@ -78,32 +77,34 @@ class GalaxeaR1LiteProcessor(StateActionDataPostProcessorBase):
     
     def get_modified_action_feature_names(self) -> list[str]:
         return [
-                "left_arm_target_joint_1",
-                "left_arm_target_joint_2",
-                "left_arm_target_joint_3",
-                "left_arm_target_joint_4",
-                "left_arm_target_joint_5",
-                "left_arm_target_joint_6",
-                "right_arm_target_joint_1",
-                "right_arm_target_joint_2",
-                "right_arm_target_joint_3",
-                "right_arm_target_joint_4",
-                "right_arm_target_joint_5",
-                "right_arm_target_joint_6",
-                "left_gripper_target_position",
-                "right_gripper_target_position",
-                "chassis_target_vel_linear_x",
-                "chassis_target_vel_linear_y",
-                "chassis_target_vel_linear_z",
-                "chassis_target_vel_angular_x",
-                "chassis_target_vel_angular_y",
-                "chassis_target_vel_angular_z",
-                # "torso_target_vel_linear_x",
-                # "torso_target_vel_linear_y",
-                # "torso_target_vel_linear_z",
-                # "torso_target_vel_angular_x",
-                # "torso_target_vel_angular_y",
-                # "torso_target_vel_angular_z"
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_arm_joint_7_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_arm_joint_7_rad",
+                "left_gripper_open",
+                "right_gripper_open",
+                # "chassis_target_vel_linear_x",
+                # "chassis_target_vel_linear_y",
+                # "chassis_target_vel_linear_z",
+                # "chassis_target_vel_angular_x",
+                # "chassis_target_vel_angular_y",
+                # "chassis_target_vel_angular_z",
+                # # "torso_target_vel_linear_x",
+                # # "torso_target_vel_linear_y",
+                # # "torso_target_vel_linear_z",
+                # # "torso_target_vel_angular_x",
+                # # "torso_target_vel_angular_y",
+                # # "torso_target_vel_angular_z"
         ]
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
@@ -166,38 +167,38 @@ class GalaxeaR1LiteH5Mp4Processor(StateActionDataPostProcessorBase):
 
     def get_modified_state_feature_names(self) -> list[str]:
         return [
-                "left_arm_joint_1",
-                "left_arm_joint_2",
-                "left_arm_joint_3",
-                "left_arm_joint_4",
-                "left_arm_joint_5",
-                "left_arm_joint_6",
-                "left_gripper_position",
-                "right_arm_joint_1",
-                "right_arm_joint_2",
-                "right_arm_joint_3",
-                "right_arm_joint_4",
-                "right_arm_joint_5",
-                "right_arm_joint_6",
-                "right_gripper_position"
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_gripper_open",
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "right_gripper_open",
                 ]
 
     def get_modified_action_feature_names(self) -> list[str]:
         return [
-                "left_arm_target_joint_1",
-                "left_arm_target_joint_2",
-                "left_arm_target_joint_3",
-                "left_arm_target_joint_4",
-                "left_arm_target_joint_5",
-                "left_arm_target_joint_6",
-                "left_gripper_target_position",
-                "right_arm_target_joint_1",
-                "right_arm_target_joint_2",
-                "right_arm_target_joint_3",
-                "right_arm_target_joint_4",
-                "right_arm_target_joint_5",
-                "right_arm_target_joint_6",
-                "right_gripper_target_position"
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_gripper_open",
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "right_gripper_open",
                 ]
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据

@@ -79,8 +79,8 @@ class RuantongA2dGt02Processor(StateActionDataPostProcessorBase):
                 "right_arm_joint_5_rad",
                 "right_arm_joint_6_rad",
                 "right_arm_joint_7_rad",
-                "left_effector_open_deg",
-                "right_effector_open_deg"
+                "left_gripper_open",
+                "right_gripper_open"
                 ]
 
     def get_modified_action_feature_names(self) -> list[str]:
@@ -100,7 +100,7 @@ class RuantongA2dGt02Processor(StateActionDataPostProcessorBase):
                 "right_arm_joint_5_rad",
                 "right_arm_joint_6_rad",
                 "right_arm_joint_7_rad",
-                "left_effector_open_deg",
-                "right_effector_open_deg"
+                "left_gripper_open",
+                "right_gripper_open"
                 ]
 
