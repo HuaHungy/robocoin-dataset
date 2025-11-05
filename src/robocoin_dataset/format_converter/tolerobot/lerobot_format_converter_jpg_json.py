@@ -17,6 +17,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     IMAGE_KEY,
     OBSERVATION_KEY,
 )
+from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
@@ -246,8 +247,8 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             episode_names = [ep.name for ep in episodes[:10]]  # 只显示前10个
-            raise IndexError(
-                f"❌ Episode index out of range.\n"
+            raise CriticalDataError(
+                f"❌ Episode index out of range (entire episode will be skipped).\n"
                 f"   🎯 Requested episode: {ep_idx}\n"
                 f"   📂 Task path: {task_path}\n"
                 f"   📊 Total episodes: {len(episodes)}\n"
@@ -602,8 +603,8 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         
         if frame_idx >= len(images_buffer[matched_cam]):
             max_frames = len(images_buffer[matched_cam])
-            raise IndexError(
-                f"❌ Frame index out of range.\n"
+            raise CriticalDataError(
+                f"❌ Frame index out of range (entire episode will be skipped).\n"
                 f"   🎯 Requested frame: {frame_idx}\n"
                 f"   📹 Camera: {matched_cam} (matched from: {cam_name})\n"
                 f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
