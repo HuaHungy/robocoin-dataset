@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, TaskStatus
+from robocoin_dataset.hub_upload.hardlink.make_hardlink import create_lerobot_hardlink_structure
 
 from .constant import (
   COMMIT_MESSAGE_FILE,
@@ -251,18 +252,22 @@ class LocalDsUploadUtil(LocalDsUtil):
       }
       json.dump(json_data, f, indent=2, ensure_ascii=False)
 
-  def _upload_dataset(self, ds_name: str, commit_msg: str) -> bool:
+  def _upload_dataset(self, ds_name: str, commit_msg: str, use_hardlink: bool = True) -> bool:
     """
     Upload a single dataset to the remote hub.
 
     Args:
-        ds_name (str): Name of the dataset to upload.
+        ds_name (str): Name of the dataset directory to upload (the actual folder name).
         commit_msg (str): Commit message for the upload.
+        use_hardlink (bool): If True, use hardlink folder for upload. Defaults to True.
 
     Returns:
         bool: True if upload was successful, False otherwise.
     """
-    log_prefix = f"dataset {ds_name}:"
+    # Remove "_hardlink" suffix from ds_name for clean repository name
+    repo_name = ds_name.removesuffix("_hardlink")
+
+    log_prefix = f"dataset {repo_name}:"
     try:
       self.check_dataset_dir_valid(
         ds_name=ds_name, additional_check_list=UPLOAD_DATASET_ADDITIONAL_CHECK_STRUCTURE
@@ -275,7 +280,19 @@ class LocalDsUploadUtil(LocalDsUtil):
     if not ds_path.exists():
       raise FileNotFoundError(f"dataset path {ds_path} does not exist")
 
-    repo_id = f"{self.namespace}/{ds_name}"
+    # Ensure hardlink exists if use_hardlink is True
+    upload_path = ds_path
+    if use_hardlink:
+      try:
+        hardlink_path = self._ensure_hardlink_exists(ds_path, repo_name)
+        upload_path = hardlink_path
+        self.logger.info(f"{log_prefix} Using hardlink folder: {hardlink_path}")
+      except FileNotFoundError as e:
+        self.logger.error(f"{log_prefix} {e}")
+        return False
+
+    # Repository ID uses clean name (without _hardlink suffix)
+    repo_id = f"{self.namespace}/{repo_name}"
 
     try:
       if not self.hub.repo_exists(repo_id=repo_id):
@@ -284,12 +301,13 @@ class LocalDsUploadUtil(LocalDsUtil):
         )
         self.hub.create_repo(repo_id=repo_id)
 
-      commit_url: str = self.hub.upload_repo(ds_path, repo_id, commit_msg)
+      commit_url: str = self.hub.upload_repo(upload_path, repo_id, commit_msg)
       remote_commit_uuid = commit_url.split("/")[-1]
       self.logger.info(
         f"{log_prefix} repo {repo_id} has been uploaded successfully, commit_url is: {commit_url}"
       )
 
+      # Use ds_name (actual directory name) for commit history, not repo_name
       self._update_commit_history_msg(ds_name, remote_commit_uuid)
       return True
 
@@ -382,7 +400,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         setattr(item, upload_status_field, TaskStatus.PENDING)
         current_version = getattr(item, upload_version_field, 0) or 0
         setattr(item, upload_version_field, current_version + 1)
-        setattr(item, upload_version_ps_field, item.visualize_check_status)
+        setattr(item, upload_version_ps_field, item.visualize_check_version)
       session.commit()
 
       # items = query.all()
@@ -425,6 +443,7 @@ class LocalDsUploadUtil(LocalDsUtil):
   def _validate_dataset_paths(self, datasets: list[DatasetDB], db: DatasetDatabase) -> tuple[list[DatasetDB], list[DatasetDB]]:
     """
     Validate that convert_path and convert_path_hardlink exist and are valid for each dataset.
+    Auto-generates hardlink if it doesn't exist or is invalid.
 
     Args:
         datasets: List of datasets to validate.
@@ -453,39 +472,17 @@ class LocalDsUploadUtil(LocalDsUtil):
         self._mark_upload_failed(item.dataset_uuid, error_msg, db)
         continue
 
-      # Check if <convert_path>_hardlink exists
-      hardlink_path = Path(f"{item.convert_path}_hardlink").expanduser().absolute()
-      if not hardlink_path.exists():
-        invalid.append(item)
-        error_msg = f"hardlink path does not exist: {hardlink_path}"
-        self.logger.warning(f"⚠️  Dataset {item.dataset_uuid}: {error_msg}")
-        self._mark_upload_failed(item.dataset_uuid, error_msg, db)
-        continue
-
-      if not hardlink_path.is_dir():
-        invalid.append(item)
-        error_msg = f"hardlink path is not a directory: {hardlink_path}"
-        self.logger.warning(f"⚠️  Dataset {item.dataset_uuid}: {error_msg}")
-        self._mark_upload_failed(item.dataset_uuid, error_msg, db)
-        continue
-
-      # Check if hardlink directory is valid (not empty)
+      # Ensure hardlink exists (detect, validate, auto-generate if needed)
       try:
-        if not any(hardlink_path.iterdir()):
-          invalid.append(item)
-          error_msg = f"hardlink path is empty: {hardlink_path}"
-          self.logger.warning(f"⚠️  Dataset {item.dataset_uuid}: {error_msg}")
-          self._mark_upload_failed(item.dataset_uuid, error_msg, db)
-          continue
-      except PermissionError as e:
+        hardlink_path = self._ensure_hardlink_exists(convert_path, item.dataset_name)
+        self.logger.info(f"✓ Dataset {item.dataset_uuid}: Hardlink validated at {hardlink_path}")
+        valid.append(item)
+      except FileNotFoundError as e:
         invalid.append(item)
-        error_msg = f"cannot access hardlink path: {hardlink_path} - {e}"
-        self.logger.warning(f"⚠️  Dataset {item.dataset_uuid}: {error_msg}")
+        error_msg = str(e)
+        self.logger.error(f"❌ Dataset {item.dataset_uuid}: {error_msg}")
         self._mark_upload_failed(item.dataset_uuid, error_msg, db)
         continue
-
-      # All checks passed
-      valid.append(item)
 
     return valid, invalid
 
@@ -525,6 +522,131 @@ class LocalDsUploadUtil(LocalDsUtil):
       if item:
         setattr(item, upload_status_field, TaskStatus.COMPLETED)
         session.commit()
+
+  def _validate_hardlink_folder(self, hardlink_path: Path) -> bool:
+    """
+    Validate if hardlink folder exists and has valid structure.
+
+    Args:
+        hardlink_path: Path to the hardlink folder.
+
+    Returns:
+        True if hardlink folder exists and is valid, False otherwise.
+    """
+    if not hardlink_path.exists():
+      return False
+
+    if not hardlink_path.is_dir():
+      self.logger.warning(f"⚠️  Hardlink path exists but is not a directory: {hardlink_path}")
+      return False
+
+    # Check for expected LeRobot structure
+    required_dirs = ["data", "meta", "videos"]
+    required_files = ["meta/info.json", "meta/episodes.jsonl"]
+
+    for dir_name in required_dirs:
+      dir_path = hardlink_path / dir_name
+      if not dir_path.exists():
+        self.logger.warning(f"⚠️  Hardlink folder missing required directory: {dir_name}")
+        return False
+      if not dir_path.is_dir():
+        self.logger.warning(f"⚠️  Hardlink path '{dir_name}' is not a directory")
+        return False
+
+    for file_path_str in required_files:
+      file_path = hardlink_path / file_path_str
+      if not file_path.exists():
+        self.logger.warning(f"⚠️  Hardlink folder missing required file: {file_path_str}")
+        return False
+      if not file_path.is_file():
+        self.logger.warning(f"⚠️  Hardlink path '{file_path_str}' is not a file")
+        return False
+
+    return True
+
+  def _auto_generate_hardlink(self, source_path: Path, hardlink_path: Path) -> bool:
+    """
+    Auto-generate hardlink folder from source dataset.
+
+    Args:
+        source_path: Path to the source dataset.
+        hardlink_path: Path where hardlink folder should be created.
+
+    Returns:
+        True if hardlink generation succeeded, False otherwise.
+    """
+    try:
+      self.logger.info("🔗 Auto-generating hardlink folder...")
+      self.logger.info(f"   Source: {source_path}")
+      self.logger.info(f"   Target: {hardlink_path}")
+
+      # Remove existing invalid hardlink if it exists
+      if hardlink_path.exists():
+        self.logger.info(f"   Removing existing invalid hardlink: {hardlink_path}")
+        import shutil
+        if hardlink_path.is_dir():
+          shutil.rmtree(hardlink_path)
+        else:
+          hardlink_path.unlink()
+
+      # Create hardlink structure
+      create_lerobot_hardlink_structure(
+        source_dir=source_path,
+        target_dir=hardlink_path,
+        relative=True,
+        skip_missing=False
+      )
+
+      # Validate the created hardlink
+      if self._validate_hardlink_folder(hardlink_path):
+        self.logger.info("✓ Hardlink folder created and validated successfully")
+        return True
+      self.logger.error("❌ Hardlink folder created but validation failed")
+      return False
+
+    except Exception as e:
+      self.logger.error(f"❌ Failed to auto-generate hardlink: {e}")
+      return False
+
+  def _ensure_hardlink_exists(self, source_path: Path, dataset_name: str) -> Path:
+    """
+    Ensure hardlink folder exists. Detect, validate, and auto-generate if needed.
+
+    Args:
+        source_path: Path to the source dataset.
+        dataset_name: Name of the dataset (for logging).
+
+    Returns:
+        Path to the valid hardlink folder.
+
+    Raises:
+        FileNotFoundError: If hardlink cannot be created or validated.
+    """
+    hardlink_path = Path(f"{source_path}_hardlink")
+
+    self.logger.info(f"📁 Checking hardlink folder for {dataset_name}...")
+
+    # Step 1: Detect if hardlink exists
+    if hardlink_path.exists():
+      self.logger.info(f"   Found existing hardlink: {hardlink_path}")
+
+      # Step 2: Validate existing hardlink
+      if self._validate_hardlink_folder(hardlink_path):
+        self.logger.info("✓ Hardlink folder is valid")
+        return hardlink_path
+      self.logger.warning("⚠️  Existing hardlink folder is invalid")
+    else:
+      self.logger.warning(f"⚠️  Hardlink folder does not exist: {hardlink_path}")
+
+    # Step 3: Auto-generate hardlink
+    self.logger.warning("⚠️  Attempting to auto-generate hardlink folder...")
+
+    if not self._auto_generate_hardlink(source_path, hardlink_path):
+      error_msg = f"Failed to auto-generate hardlink folder for {dataset_name}"
+      self.logger.error(f"❌ {error_msg}")
+      raise FileNotFoundError(error_msg)
+
+    return hardlink_path
 
   def _check_repo_conflict(self, repo_id: str) -> bool:
     """
@@ -665,8 +787,15 @@ class LocalDsUploadUtil(LocalDsUtil):
           # Temporarily set root_path to the parent of the hardlink directory
           self.root_path = hardlink_path.parent
 
-          # Use the hardlink directory name for upload
-          success = self._upload_dataset(ds_name=hardlink_path.name, commit_msg=commit_msg)
+          # Upload from the already-validated hardlink folder
+          # Pass the actual hardlink folder name (with _hardlink suffix)
+          # _upload_dataset will automatically strip _hardlink for repo_id
+          # use_hardlink=False because hardlink already exists and is validated
+          success = self._upload_dataset(
+            ds_name=hardlink_path.name,  # e.g., "realman_rmc_aidal_only_test_fix_hardlink"
+            commit_msg=commit_msg,
+            use_hardlink=False
+          )
 
           if success:
             self._mark_upload_completed(item.dataset_uuid, self.db)
