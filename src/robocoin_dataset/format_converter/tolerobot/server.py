@@ -20,6 +20,7 @@ from robocoin_dataset.distribution_computation.constant import (
     DATASET_UUID,
     DEVICE_MODEL,
     ERR_MSG,
+    TASK_RESULT_CONTENT,
     TASK_RESULT_STATUS,
     TASK_SUCCESS,
 )
@@ -240,10 +241,13 @@ class LeFormatConverterTaskServer(TaskServer):
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
-        # 🆕 提取转换统计信息（从Client返回）
-        total_episodes = task_result_content.get("total_episodes")
-        converted_episodes = task_result_content.get("converted_episodes")
-        skipped_episodes = task_result_content.get("skipped_episodes")
+        # 🔧 修复：先获取TASK_RESULT_CONTENT，实际数据在这里面
+        actual_result = task_result_content.get(TASK_RESULT_CONTENT, {})
+        
+        # 🆕 提取转换统计信息（从actual_result中获取）
+        total_episodes = actual_result.get("total_episodes")
+        converted_episodes = actual_result.get("converted_episodes")
+        skipped_episodes = actual_result.get("skipped_episodes")
 
         convert_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
@@ -252,7 +256,8 @@ class LeFormatConverterTaskServer(TaskServer):
             # 查询 device_model_version
             item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
             if item is None:
-                self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+                self.logger.error(f"❌ Dataset {ds_uuid} not found in dataset DB, cannot update status!")
+                return  # 🔧 修复：找不到数据集时直接返回，避免后续错误
 
             # 在同一个session中更新转换状态
             item.convert_err_msg = task_status_msg
