@@ -551,13 +551,13 @@ class LocalDsUploadUtil(LocalDsUtil):
     response = input(f"Proceed with upload to {repo_id}? (y/n): ").strip().lower()
     return response in ["y", "yes"]
 
-  def upload_datasets_db(self) -> None:
+  def upload_datasets_from_db(self) -> None:
     """
     Upload datasets from database in batches.
 
     This method uses _sync_datasets_upload_status, _gen_one_dataset_upload_task,
     _validate_dataset_paths, _mark_upload_failed, _mark_upload_completed, and
-    _check_repo_conflict functions, and calls upload_datasets as its core implementation.
+    _check_repo_conflict functions, and calls _upload_dataset as its core implementation.
     """
     # Validate database path
     if not self.config.db_file_path:
