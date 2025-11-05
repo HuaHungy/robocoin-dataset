@@ -53,17 +53,17 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
     action_arm_joint_lerobot_names = state_arm_joint_lerobot_names
 
     # eef_sim 配置
-    has_gripper = False
+    has_gripper = True
+    gripper_position_max = 1000
+    gripper_position_min = 0
 
     # gripper names allow not 1v1 assignment
     state_gripper_joint_mjcf_names: list[str] = []
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
     state_gripper_lerobot_names: list[str] = [
-        # left_hand
-        "left_effector_open_deg",
-        # right hand
-        "right_effector_open_deg",
+        "left_gripper_open",
+        "right_gripper_open",
     ]
     action_gripper_lerobot_names = state_gripper_lerobot_names
 

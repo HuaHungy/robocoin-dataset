@@ -44,39 +44,39 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
         # left arm
-        "left_arm_joint_1",
-        "left_arm_joint_2",
-        "left_arm_joint_3",
-        "left_arm_joint_4",
-        "left_arm_joint_5",
-        "left_arm_joint_6",
+        "left_arm_joint_1_rad",
+        "left_arm_joint_2_rad",
+        "left_arm_joint_3_rad",
+        "left_arm_joint_4_rad",
+        "left_arm_joint_5_rad",
+        "left_arm_joint_6_rad",
         # right arm
-        "right_arm_joint_1",
-        "right_arm_joint_2",
-        "right_arm_joint_3",
-        "right_arm_joint_4",
-        "right_arm_joint_5",
-        "right_arm_joint_6",
+        "right_arm_joint_1_rad",
+        "right_arm_joint_2_rad",
+        "right_arm_joint_3_rad",
+        "right_arm_joint_4_rad",
+        "right_arm_joint_5_rad",
+        "right_arm_joint_6_rad",
         # torso
-        # "torso_joint_1",
-        # "torso_joint_2",
+        # "torso_joint_1_rad",
+        # "torso_joint_2_rad",
     ]
 
     action_arm_joint_lerobot_names: list[str] = [
         # left arm
-        "left_arm_target_joint_1",
-        "left_arm_target_joint_2",
-        "left_arm_target_joint_3",
-        "left_arm_target_joint_4",
-        "left_arm_target_joint_5",
-        "left_arm_target_joint_6",
+        "left_arm_joint_1_rad",
+        "left_arm_joint_2_rad",
+        "left_arm_joint_3_rad",
+        "left_arm_joint_4_rad",
+        "left_arm_joint_5_rad",
+        "left_arm_joint_6_rad",
         # right arm
-        "right_arm_target_joint_1",
-        "right_arm_target_joint_2",
-        "right_arm_target_joint_3",
-        "right_arm_target_joint_4",
-        "right_arm_target_joint_5",
-        "right_arm_target_joint_6",
+        "right_arm_joint_1_rad",
+        "right_arm_joint_2_rad",
+        "right_arm_joint_3_rad",
+        "right_arm_joint_4_rad",
+        "right_arm_joint_5_rad",
+        "right_arm_joint_6_rad",
     ]
 
     # gripper names allow not 1v1 assignment
@@ -88,10 +88,10 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
     ]
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
-    state_gripper_lerobot_names: list[str] = ["left_gripper_position", "right_gripper_position"]
+    state_gripper_lerobot_names: list[str] = ["left_gripper_open", "right_gripper_open"]
     action_gripper_lerobot_names: list[str] = [
-        "left_gripper_target_position",
-        "right_gripper_target_position",
+        "left_gripper_open",
+        "right_gripper_open",
     ]
 
     gripper_position_max = 100
@@ -160,19 +160,19 @@ class GalaxeaR1LiteH5Mp4LerobotSimReplayConfig(LerobotSimReplayConfig):
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
         # left arm
-        "left_arm_joint_1",
-        "left_arm_joint_2",
-        "left_arm_joint_3",
-        "left_arm_joint_4",
-        "left_arm_joint_5",
-        "left_arm_joint_6",
+        "left_arm_joint_1_rad",
+        "left_arm_joint_2_rad",
+        "left_arm_joint_3_rad",
+        "left_arm_joint_4_rad",
+        "left_arm_joint_5_rad",
+        "left_arm_joint_6_rad",
         # right arm
-        "right_arm_joint_1",
-        "right_arm_joint_2",
-        "right_arm_joint_3",
-        "right_arm_joint_4",
-        "right_arm_joint_5",
-        "right_arm_joint_6",
+        "right_arm_joint_1_rad",
+        "right_arm_joint_2_rad",
+        "right_arm_joint_3_rad",
+        "right_arm_joint_4_rad",
+        "right_arm_joint_5_rad",
+        "right_arm_joint_6_rad",
         # torso
         # "torso_joint_1",
         # "torso_joint_2",
@@ -180,19 +180,19 @@ class GalaxeaR1LiteH5Mp4LerobotSimReplayConfig(LerobotSimReplayConfig):
 
     action_arm_joint_lerobot_names: list[str] = [
         # left arm
-        "left_arm_target_joint_1",
-        "left_arm_target_joint_2",
-        "left_arm_target_joint_3",
-        "left_arm_target_joint_4",
-        "left_arm_target_joint_5",
-        "left_arm_target_joint_6",
+        "left_arm_joint_1_rad",
+        "left_arm_joint_2_rad",
+        "left_arm_joint_3_rad",
+        "left_arm_joint_4_rad",
+        "left_arm_joint_5_rad",
+        "left_arm_joint_6_rad",
         # right arm
-        "right_arm_target_joint_1",
-        "right_arm_target_joint_2",
-        "right_arm_target_joint_3",
-        "right_arm_target_joint_4",
-        "right_arm_target_joint_5",
-        "right_arm_target_joint_6",
+        "right_arm_joint_1_rad",
+        "right_arm_joint_2_rad",
+        "right_arm_joint_3_rad",
+        "right_arm_joint_4_rad",
+        "right_arm_joint_5_rad",
+        "right_arm_joint_6_rad",
     ]
 
     # gripper names allow not 1v1 assignment
@@ -204,10 +204,10 @@ class GalaxeaR1LiteH5Mp4LerobotSimReplayConfig(LerobotSimReplayConfig):
     ]
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
-    state_gripper_lerobot_names: list[str] = ["left_gripper_position", "right_gripper_position"]
+    state_gripper_lerobot_names: list[str] = ["left_gripper_open", "right_gripper_open"]
     action_gripper_lerobot_names: list[str] = [
-        "left_gripper_target_position",
-        "right_gripper_target_position",
+        "left_gripper_open",
+        "right_gripper_open",
     ]
 
     gripper_position_max = 1.75

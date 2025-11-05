@@ -360,33 +360,52 @@ def _sim_replay_dataset(
         
         # 预创建图表窗口（读取第一帧数据来初始化窗口）
         print("[数据集回放] 正在初始化可视化图表窗口...")
+        
+        # 检查配置中是否启用了gripper
+        has_gripper_attr = getattr(sim_replay_config, "has_gripper", None)
+        if has_gripper_attr is None:
+            cfg_has_gripper = bool(getattr(sim_replay_config, "state_gripper_joint_mjcf_names", None))
+        else:
+            cfg_has_gripper = bool(has_gripper_attr)
+        
+        # 进一步检查mjcf配置中的gripper关节名称是否非空
+        mjcf_gripper_names = getattr(sim_replay_config, "state_gripper_joint_mjcf_names", [])
+        cfg_has_gripper = cfg_has_gripper and len(mjcf_gripper_names) > 0
+        
+        if cfg_has_gripper:
+            print(f"[数据集回放] 配置中启用了gripper，MJCF gripper关节数量: {len(mjcf_gripper_names)}")
+        else:
+            print("[数据集回放] 配置中未启用gripper或gripper关节为空，跳过图表窗口创建")
+        
         try:
-            # 读取第一个 parquet 文件来获取 gripper 数据的维度
-            import pandas as pd
-            first_parquet = Path(repo_path) / "state_action_data" / "chunk-000" / "episode_000000.parquet"
-            print(f"[数据集回放] 读取数据文件: {first_parquet}")
-            if first_parquet.exists():
-                df = pd.read_parquet(str(first_parquet))
-                print(f"[数据集回放] 数据文件包含 {len(df)} 帧")
-                print(f"[数据集回放] Gripper ID 数量: {len(simulator.state_gripper_lerobot_ids)}")
-                if len(df) > 0 and len(simulator.state_gripper_lerobot_ids) > 0:
-                    # 使用第一帧数据初始化图表窗口
-                    first_state = df["observation.state"].iloc[0]
-                    first_gripper_data = first_state[simulator.state_gripper_lerobot_ids]
-                    print(f"[数据集回放] Gripper 数据维度: {len(first_gripper_data)}")
-                    # 调用callback创建窗口（传入单帧数据）
-                    ax_dummy = None
-                    lines_dummy = []
-                    gripper_plot_callback([list(first_gripper_data)], ax_dummy, lines_dummy)
-                    print("[数据集回放] 图表窗口已创建")
-                    # 启用交互模式，让图表窗口保持响应
-                    plt.ion()
-                    # 强制刷新显示
-                    plt.pause(0.1)
+            # 只有当配置启用了gripper时才尝试创建图表
+            if cfg_has_gripper:
+                # 读取第一个 parquet 文件来获取 gripper 数据的维度
+                import pandas as pd
+                first_parquet = Path(repo_path) / "state_action_data" / "chunk-000" / "episode_000000.parquet"
+                print(f"[数据集回放] 读取数据文件: {first_parquet}")
+                if first_parquet.exists():
+                    df = pd.read_parquet(str(first_parquet))
+                    print(f"[数据集回放] 数据文件包含 {len(df)} 帧")
+                    print(f"[数据集回放] Gripper ID 数量: {len(simulator.state_gripper_lerobot_ids)}")
+                    if len(df) > 0 and len(simulator.state_gripper_lerobot_ids) > 0:
+                        # 使用第一帧数据初始化图表窗口
+                        first_state = df["observation.state"].iloc[0]
+                        first_gripper_data = first_state[simulator.state_gripper_lerobot_ids]
+                        print(f"[数据集回放] Gripper 数据维度: {len(first_gripper_data)}")
+                        # 调用callback创建窗口（传入单帧数据）
+                        ax_dummy = None
+                        lines_dummy = []
+                        gripper_plot_callback([list(first_gripper_data)], ax_dummy, lines_dummy)
+                        print("[数据集回放] 图表窗口已创建")
+                        # 启用交互模式，让图表窗口保持响应
+                        plt.ion()
+                        # 强制刷新显示
+                        plt.pause(0.1)
+                    else:
+                        print("[数据集回放] 数据文件为空或无gripper数据")
                 else:
-                    print("[数据集回放] 无gripper数据，跳过图表窗口创建")
-            else:
-                print(f"[数据集回放] 数据文件不存在: {first_parquet}")
+                    print(f"[数据集回放] 数据文件不存在: {first_parquet}")
         except Exception as e:
             print(f"[数据集回放] 初始化图表窗口时出现警告: {e}")
             import traceback
@@ -402,8 +421,8 @@ def _sim_replay_dataset(
                 simulator.replay_episode(
                     0,
                     is_state=True,
-                    enable_gripper_plot=True,
-                    gripper_plot_callback=gripper_plot_callback,
+                    enable_gripper_plot=cfg_has_gripper,
+                    gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
                     target_fps=int(fps_from_meta) if fps_from_meta else 30,
                 )
                 print("[State Replay] 状态数据播放完成")
@@ -445,8 +464,8 @@ def _sim_replay_dataset(
                 simulator.replay_episode(
                     0,
                     is_state=False,
-                    enable_gripper_plot=True,
-                    gripper_plot_callback=gripper_plot_callback,
+                    enable_gripper_plot=cfg_has_gripper,
+                    gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
                     target_fps=int(fps_from_meta) if fps_from_meta else 30,
                 )
                 print("[Action Replay] 动作数据播放完成")
