@@ -6,7 +6,7 @@ agilex_cobot_decoupled_magic:
 
 - version: realsense_version
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotRealsenseSimReplayConfig
 
 - version: depthhead_version
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
