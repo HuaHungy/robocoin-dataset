@@ -68,10 +68,10 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 """usage:
-# realman_rmc_aidal
+# server
 python scripts/scene_annotation/scene_annotation_server.py \
-    --db_file_path ./db/datasets_new.db \
+    --db_file_path ~/下载/datasets_n.db \
     --host 0.0.0.0 \
-    --port 8766 \
+    --port 8769 \
     --log_dir ./logs/
 """
