@@ -19,7 +19,7 @@ class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
         super().__init__(
             convert_path=convert_path,
             data_post_process_type=self.feature_key,
-            data_feature_keys=[self.feature_key],
+            data_feature_keys=[self.feature_key], # type: ignore
         )
 
         self.scene_annotations = scene_annotations
@@ -31,15 +31,15 @@ class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
     def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         ep_idx = self.episode_idx
 
-        if ep_idx >= len(self.episode_scene_indices):
+        if ep_idx >= len(self.episode_scene_indices): # type: ignore
             raise ValueError(
                 f"ep_idx: {ep_idx} >= len(self.episode_scene_indices): {len(self.episode_scene_indices)}"
             )
 
-        return {self.feature_key: self.episode_scene_indices[ep_idx]}
+        return {self.feature_key: self.episode_scene_indices[ep_idx]} # type: ignore
 
     def get_modified_feature_names(self) -> dict[str, list[str]]:
-        return {self.feature_key: None}
+        return {self.feature_key: None} # type: ignore
 
     def write_scene_jsonl_file(self) -> None:
         scene_jsonl_file_path = self.convert_path / "annotations/scene_annotations.jsonl"
@@ -55,7 +55,7 @@ class SceneAnnotationEmbedding:
         database_file: str | Path,
     ) -> None:
         self.database_file = database_file
-        self.database = DatasetDatabase(database_file)
+        self.database = DatasetDatabase(database_file) # type: ignore
 
     def dataset_scene_embedding(self, dataset_uuid: str, scene_annotations: list[str]) -> None:
         with self.database.with_session() as session:
@@ -66,7 +66,7 @@ class SceneAnnotationEmbedding:
                 raise ValueError(f"dataset_uuid: {dataset_uuid} not found")
             # get dataset path
             dataset_path = dataset.convert_path
-            dataset_path = Path(dataset_path)
+            dataset_path = Path(dataset_path) # type: ignore
             if dataset_path is None:
                 raise ValueError(f"dataset_uuid: {dataset_uuid} dataset_path is None")
             # 找到meta文件夹下的episodes.jsonl，annotation[episode_index]值为length行episode_index

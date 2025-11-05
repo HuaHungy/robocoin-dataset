@@ -56,9 +56,9 @@ async def main() -> None:
         db_file_path=db_file_path,
         host=args.host,
         port=args.port,
-        heartbeat_interval=30.0,
-        timeout=15.0,
-        logger=logger,
+        heartbeat_interval=30.0, # type: ignore
+        timeout=15.0, # type: ignore
+        logger=logger, # type: ignore
     )
 
     await sim_replay_server.start()
