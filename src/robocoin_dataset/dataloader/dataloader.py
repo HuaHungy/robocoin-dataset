@@ -207,6 +207,12 @@ def create_lerobot_dataset(
             batch_encoding_size=batch_encoding_size,
         )
 
+    print(
+        f"====================================repo path is: {root}===================================="
+    )
+    print(
+        f"====================================repo id is: {repo_id}===================================="
+    )
     if video_backend != "auto":
         ds = _build(video_backend)
         # Attach chosen backend metadata for downstream UIs/CLIs

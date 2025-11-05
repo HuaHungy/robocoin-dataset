@@ -1,6 +1,5 @@
 import argparse
 import json
-import logging
 import re
 import shutil
 from logging import Logger
@@ -281,6 +280,7 @@ def enter_url_video_st_annotation_json_files(
                     )
             except Exception as e:
                 logger.error(f"处理标注文件 {file} 失败: {e}")
+    input("所有标注文件处理完成，按回车键退出...")
 
 
 if __name__ == "__main__":
@@ -328,7 +328,7 @@ if __name__ == "__main__":
         passed_json_dst_dir=args.passed_json_dst_dir,
         impassed_json_dst_dir=args.impassed_json_dst_dir,
         download_dir=args.download_dir,
-        logger=logging.getLogger(__name__),
+        logger=logger,
     )
 """Usage:
 python scripts/annotation/subtask_annotation/enter_url_video_st_annotation.py \

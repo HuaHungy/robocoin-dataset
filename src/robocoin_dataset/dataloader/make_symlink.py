@@ -34,6 +34,7 @@ def create_symlink(target_path: Path, source_path: Path, relative: bool = True) 
         print(f"  Removing existing: {target_path}")
         if target_path.is_dir() and not target_path.is_symlink():
             import shutil
+
             shutil.rmtree(target_path)
         else:
             target_path.unlink()
@@ -57,10 +58,7 @@ def create_symlink(target_path: Path, source_path: Path, relative: bool = True) 
 
 
 def create_lerobot_symlink_structure(
-    source_dir: Path,
-    target_dir: Path,
-    relative: bool = True,
-    skip_missing: bool = False
+    source_dir: Path, target_dir: Path, relative: bool = True, skip_missing: bool = False
 ) -> None:
     """
     Create LeRobot-compatible directory structure with symbolic links.
@@ -130,11 +128,18 @@ def create_lerobot_symlink_structure(
         ("annotations", "annotations", True),
         ("data", "merged_data", True),  # LeRobot 'data/' -> pipeline 'merged_data/'
         ("videos", "videos", True),
-
         # File-level symlinks in meta/
         ("meta/episodes.jsonl", "meta/episodes.jsonl", False),
-        ("meta/episodes_stats.jsonl", "meta/merged_episodes_stats.jsonl", False),  # LeRobot standard name
-        ("meta/info.json", "meta/merged_info.json", False),  # LeRobot 'info.json' -> pipeline 'merged_info.json'
+        (
+            "meta/episodes_stats.jsonl",
+            "meta/merged_episodes_stats.jsonl",
+            False,
+        ),  # LeRobot standard name
+        (
+            "meta/info.json",
+            "meta/merged_info.json",
+            False,
+        ),  # LeRobot 'info.json' -> pipeline 'merged_info.json'
         ("meta/tasks.jsonl", "meta/tasks.jsonl", False),
     ]
 
@@ -166,7 +171,9 @@ def create_lerobot_symlink_structure(
     print("\n📋 Summary:")
     print(f"   Source (your pipeline data): {source_dir}")
     print(f"   Target (LeRobot structure):  {target_dir}")
-    print("   The target directory now has the LeRobot standard structure with symlinks to your data.")
+    print(
+        "   The target directory now has the LeRobot standard structure with symlinks to your data."
+    )
 
 
 def main() -> int:
@@ -188,36 +195,38 @@ Examples:
 
   # Skip missing source files during symlink creation instead of raising errors
   %(prog)s -s /path/to/source/data --symlink-skip-missing
-        """
+        """,
     )
 
     parser.add_argument(
-        "-s", "--source",
+        "-s",
+        "--source",
         dest="source_dir",
         type=Path,
         required=True,
-        help="Source directory containing your actual data pipeline files"
+        help="Source directory containing your actual data pipeline files",
     )
 
     parser.add_argument(
-        "-t", "--target",
+        "-t",
+        "--target",
         dest="target_dir",
         type=Path,
         default=None,
         help="Target directory where LeRobot-compatible structure will be created. "
-             "If not specified, creates 'symlinked_<source_dir_name>' in the same parent directory as source_dir"
+        "If not specified, creates 'symlinked_<source_dir_name>' in the same parent directory as source_dir",
     )
 
     parser.add_argument(
         "--absolute",
         action="store_true",
-        help="Create absolute symlinks instead of relative ones (default: relative)"
+        help="Create absolute symlinks instead of relative ones (default: relative)",
     )
 
     parser.add_argument(
         "--symlink-skip-missing",
         action="store_true",
-        help="Skip missing source files during symlink creation instead of raising errors"
+        help="Skip missing source files during symlink creation instead of raising errors",
     )
 
     args = parser.parse_args()
@@ -243,11 +252,12 @@ Examples:
 
     # Create the symlink structure
     try:
+        print(f"\nCreating LeRobot dataset structure at: {target_dir}")
         create_lerobot_symlink_structure(
             source_dir=source_dir,
             target_dir=target_dir,
             relative=not args.absolute,
-            skip_missing=args.symlink_skip_missing
+            skip_missing=args.symlink_skip_missing,
         )
     except Exception as e:
         print(f"\n❌ Error: {e}")
@@ -258,3 +268,4 @@ Examples:
 
 if __name__ == "__main__":
     exit(main())
+
