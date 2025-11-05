@@ -60,6 +60,42 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
         )
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
 
+    def _get_tasks(self) -> list[str]:
+        """Override parent method to make local_dataset_info.yaml optional.
+        
+        🔧 修复：对于某些乐聚数据集，local_dataset_info.yaml 可能不存在
+        此时从 metadata.json 中动态收集 tasks
+        
+        Returns:
+            list of task names
+        """
+        import yaml
+        from robocoin_dataset.format_converter.tolerobot.constant import (
+            LOCAL_DATASET_INFO_FILE,
+            TASK_DESCRIPTIONS_KEY,
+        )
+        
+        dataset_info_file_path = self.dataset_path / LOCAL_DATASET_INFO_FILE
+        
+        if dataset_info_file_path.exists():
+            # 标准情况：读取 local_dataset_info.yaml
+            try:
+                with open(dataset_info_file_path) as file:
+                    ds_info_dict = yaml.safe_load(file)
+                    if ds_info_dict and TASK_DESCRIPTIONS_KEY in ds_info_dict:
+                        return ds_info_dict[TASK_DESCRIPTIONS_KEY]
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"⚠️  Failed to read {LOCAL_DATASET_INFO_FILE}: {e}")
+        
+        # 🆕 备选方案：如果文件不存在或读取失败，返回默认 task
+        if self.logger:
+            self.logger.warning(
+                f"⚠️  {LOCAL_DATASET_INFO_FILE} not found or invalid, "
+                f"using default task 'default_task'"
+            )
+        return ["default_task"]
+
     def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志
         
@@ -112,16 +148,40 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                 f"   💡 Check if dataset has been extracted correctly"
             )
         
-        # Process each subtask directory
-        for subtask_dir in subtask_dirs:
+        # 🔧 修复：使用队列进行广度优先搜索，支持任意深度的目录嵌套
+        # 处理更复杂的目录结构，例如：dataset/level1/level2/subtask/episode/
+        from collections import deque
+        
+        queue = deque(subtask_dirs)  # 初始化队列
+        visited = set()  # 防止循环引用
+        max_depth = 10  # 最大搜索深度（从dataset_path开始算）
+        
+        while queue:
+            current_dir = queue.popleft()
+            
+            # 防止重复访问
+            try:
+                real_path = current_dir.resolve()
+                if real_path in visited:
+                    continue
+                visited.add(real_path)
+            except (OSError, RuntimeError):
+                continue
+            
+            # 检查深度（避免无限递归）
+            try:
+                depth = len(current_dir.relative_to(self.dataset_path).parts)
+                if depth > max_depth:
+                    continue
+            except ValueError:
+                continue
+            
             # 🔧 修复：先检查这个目录是否本身就是episode（扁平结构）
-            # 如果是episode，就不需要local_task_info.yaml
-            metadata_file_direct = subtask_dir / "metadata.json"
-            h5_file_direct = subtask_dir / "proprio_stats" / "proprio_stats.hdf5"
+            metadata_file_direct = current_dir / "metadata.json"
+            h5_file_direct = current_dir / "proprio_stats" / "proprio_stats.hdf5"
             
             if metadata_file_direct.exists() and h5_file_direct.exists():
                 # 扁平结构：这个目录本身就是episode
-                # 尝试从metadata.json中读取task，如果失败则使用第一个task作为默认值
                 try:
                     with open(metadata_file_direct) as f:
                         metadata = json.load(f)
@@ -129,15 +189,26 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                 except Exception:
                     task = self.tasks[0] if self.tasks else "default_task"
                 
-                task_paths_dict[subtask_dir] = task
-                self.logger.debug(f"✅ Found episode '{subtask_dir.name}' for task '{task}' (flat structure)")
+                task_paths_dict[current_dir] = task
+                self.logger.debug(f"✅ Found episode '{current_dir.name}' for task '{task}' (flat structure)")
                 continue
             
             # 如果不是episode，尝试读取local_task_info.yaml（两层结构）
-            local_task_info_path = subtask_dir / "local_task_info.yaml"
+            local_task_info_path = current_dir / "local_task_info.yaml"
             
             if not local_task_info_path.exists():
-                self.logger.warning(f"⚠️  Skipping {subtask_dir.name}: not an episode and no local_task_info.yaml found")
+                # 🆕 既不是episode，也没有local_task_info.yaml
+                # 继续递归搜索其子目录
+                try:
+                    subdirs = [d for d in current_dir.iterdir() 
+                              if d.is_dir() and not d.name.startswith('.') and not d.name.startswith('@')]
+                    if subdirs:
+                        self.logger.debug(f"🔍 Searching subdirectories of {current_dir.name}...")
+                        queue.extend(subdirs)
+                    else:
+                        self.logger.debug(f"⚠️  Skipping {current_dir.name}: not an episode, no local_task_info.yaml, and no subdirectories")
+                except (PermissionError, OSError):
+                    pass
                 continue
             
             # Read task info from subtask directory
@@ -148,46 +219,46 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                     task = self.tasks[task_index]
             except KeyError as e:
                 self.logger.warning(
-                    f"⚠️  Skipping {subtask_dir.name}: Invalid task info format.\n"
+                    f"⚠️  Skipping {current_dir.name}: Invalid task info format.\n"
                     f"   📄 File: {local_task_info_path}\n"
                     f"   ❌ Missing key: {e!s}"
                 )
                 continue
             except Exception as e:
                 self.logger.warning(
-                    f"⚠️  Skipping {subtask_dir.name}: Failed to read task info.\n"
+                    f"⚠️  Skipping {current_dir.name}: Failed to read task info.\n"
                     f"   📄 File: {local_task_info_path}\n"
                     f"   ❌ Error: {e!s}"
                 )
                 continue
             
-            # 🔍 搜索subtask_dir下的episode目录（嵌套结构）
-            # 注意：扁平结构已经在上面处理了，这里只处理subtask/episode的两层结构
+            # 🔍 搜索 current_dir 下的 episode 目录（有 local_task_info.yaml 的情况）
             episode_count = 0
+            inner_queue = deque([current_dir])
+            inner_visited = set()
+            inner_max_depth = 10
             
-            # 递归搜索episode目录（无深度限制）
-            from collections import deque
-            queue = deque([(subtask_dir, 0)])
-            max_depth = 100  # 防止无限循环
-            visited = set()
-            
-            while queue:
-                current_dir, depth = queue.popleft()
+            while inner_queue:
+                search_dir = inner_queue.popleft()
                 
-                if depth >= max_depth:
-                    continue
-                
-                # 防止重复访问
                 try:
-                    real_path = current_dir.resolve()
-                    if real_path in visited:
+                    real_path = search_dir.resolve()
+                    if real_path in inner_visited:
                         continue
-                    visited.add(real_path)
+                    inner_visited.add(real_path)
                 except (OSError, RuntimeError):
                     continue
                 
+                # 检查深度
                 try:
-                    for item in current_dir.iterdir():
+                    inner_depth = len(search_dir.relative_to(current_dir).parts)
+                    if inner_depth > inner_max_depth:
+                        continue
+                except ValueError:
+                    continue
+                
+                try:
+                    for item in search_dir.iterdir():
                         if not item.is_dir():
                             continue
                         
@@ -204,11 +275,12 @@ class LerobotFormatConverterLejuWaibu(LerobotFormatConverter):
                             episode_count += 1
                         else:
                             # 继续搜索子目录
-                            queue.append((item, depth + 1))
+                            inner_queue.append(item)
                 except (PermissionError, OSError):
                     continue
             
-            self.logger.info(f"✅ Subtask '{subtask_dir.name}': Found {episode_count} episodes for task '{task}' (recursive search)")
+            if episode_count > 0:
+                self.logger.info(f"✅ Subtask '{current_dir.name}': Found {episode_count} episodes for task '{task}' (with local_task_info.yaml)")
         
         if not task_paths_dict:
             # List all subtask directories to help diagnose
