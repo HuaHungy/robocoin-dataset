@@ -1,116 +1,6 @@
 """
 Dataloader Test CLI - validates LeRobot datasets with local/server/client modes.
 
-================================================================================
-BASIC USAGE
-================================================================================
-
-LOCAL MODE (Single Machine Testing):
-    # Test all datasets in default database (tests ALL episodes by default)
-    python scripts/dataloader/dataloader_test.py --local
-
-    # Test with custom database
-    python scripts/dataloader/dataloader_test.py --local --db /path/to/your.db
-
-    # Test only specific episodes (e.g., episode 0 only)
-    python scripts/dataloader/dataloader_test.py --local --episodes 0
-
-    # Test episode range (e.g., episodes 0-5)
-    python scripts/dataloader/dataloader_test.py --local --episodes 0-5
-
-    # Test specific episodes (e.g., 0, 1, and 5)
-    python scripts/dataloader/dataloader_test.py --local --episodes "0,1,5"
-
-    # Test with strict mode (fail immediately on first error)
-    python scripts/dataloader/dataloader_test.py --local --strict
-
-    # Test with custom batch size and workers
-    python scripts/dataloader/dataloader_test.py --local --batch-size 64 --num-workers 4
-
-    # Test with custom symlink target directory
-    python scripts/dataloader/dataloader_test.py --local -t /tmp/test_symlinks
-
-    # Test with absolute symlinks and skip missing files during symlink creation
-    python scripts/dataloader/dataloader_test.py --local --absolute --symlink-skip-missing
-
-SERVER MODE (Distribute Tasks):
-    # Start server (binds to all interfaces, uses default database)
-    python scripts/dataloader/dataloader_test.py --server
-
-    # Start server with custom database
-    python scripts/dataloader/dataloader_test.py --server --db /path/to/your.db
-
-    # Start server on specific port
-    python scripts/dataloader/dataloader_test.py --server --port 9000
-
-    # Start server with debug logging
-    python scripts/dataloader/dataloader_test.py --server --log-level DEBUG
-
-CLIENT MODE (Connect and Process):
-    # Connect to local server
-    python scripts/dataloader/dataloader_test.py --client
-
-    # Connect to remote server by IP
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-    # Connect to remote server with custom port
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --port 9000
-
-    # Connect with custom heartbeat interval
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --heartbeat-interval 20.0
-
-MULTI-CLIENT MODE (Spawn Multiple Client Processes on Single Machine):
-    # Spawn 12 client processes on one machine
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --num-clients 12
-
-    # Note: --num-clients is ONLY supported with --client mode
-    # Multi-local mode has been abandoned
-
-DISTRIBUTED WORKFLOW (Server + Multiple Clients):
-    # On Server Machine (192.168.1.100)
-    python scripts/dataloader/dataloader_test.py --server --host 0.0.0.0 --db /path/to/datasets.db
-
-    # On Worker Machine 1
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-    # On Worker Machine 2
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-    # On Worker Machine N...
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-================================================================================
-MODES
-================================================================================
-    --local    Run locally with symlink creation and dataloader validation
-    --server   Start WebSocket server to distribute tasks
-    --client   Connect to server and process tasks
-
-COMMON OPTIONS:
-    --db PATH               Database file (default: examples/dataloader_test/datasets_new.db)
-    --host HOST             Server IP (server: bind address, client: connect address)
-    --port PORT             Port number (default: 8771)
-    --log-level LEVEL       Logging verbosity (default: INFO)
-    --num-clients N         Number of parallel client processes (default: 1, max: 32)
-                            ⚠️  Only supported with --client mode
-
-VALIDATION OPTIONS:
-    --episodes SPEC         Episodes to test: "all" (default), "0", "0,1,2", "0-5"
-    --strict                Fail immediately on first error (default: False)
-    --batch-size N          Batch size for dataloader (default: 32)
-    --num-workers N         Number of dataloader workers (default: 0)
-
-DATABASE REQUIREMENTS:
-    Records must have:
-    - data_merge_status = COMPLETED
-    - convert_status = COMPLETED
-    - convert_path populated and valid
-
-    ⚠️ WARNING: Records with NULL data_loader_detection_status are ILLEGAL but
-               will be treated as PENDING for robustness (with warnings logged)
-
-For detailed usage, examples, and troubleshooting guide, see:
-    scripts/dataloader/DATALOADER_TEST_USAGE.md
 """
 
 import argparse
@@ -134,7 +24,7 @@ DEFAULT_DB = Path("examples/dataloader_test/datasets_new.db").absolute()
 def run_local(
     db_file: Path,
     target_dir: Path | None,
-    absolute_symlinks: bool,
+    absolute_hardlinks: bool,
     skip_missing: bool,
     episodes: str,
     strict_mode: bool,
@@ -150,10 +40,10 @@ def run_local(
         strict_mode=strict_mode,
         batch_size=batch_size,
         num_workers=num_workers,
-        create_symlinks=True,
-        symlink_target_dir=target_dir,
-        symlink_relative=not absolute_symlinks,
-        symlink_skip_missing=skip_missing,
+        create_hardlinks=True,
+        hardlink_target_dir=target_dir,
+        hardlink_relative=not absolute_hardlinks,
+        hardlink_skip_missing=skip_missing,
         logger=logger,
     )
 
@@ -215,7 +105,7 @@ async def run_server_async(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Merged CLI: local symlink test, server, client",
+        description="Merged CLI: local hardlink test, server, client",
     )
     parser.add_argument(
         "--db",
@@ -232,7 +122,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
 
     # execution mode (choose one)
-    parser.add_argument("--local", action="store_true", help="Run locally: symlink + load + DB update")
+    parser.add_argument("--local", action="store_true", help="Run locally: hardlink + load + DB update")
     parser.add_argument("--server", action="store_true", help="Run dataloader detection server")
     parser.add_argument("--client", action="store_true", help="Run dataloader detection client")
     parser.add_argument("--cliet", action="store_true", help="Alias of --client")
@@ -244,10 +134,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=15.0, help="Server: heartbeat timeout in seconds")
     parser.add_argument("--log-dir", type=Path, default=Path("logs/dataloader"), help="Log directory relative to current directory (default: logs/dataloader)")
 
-    # local symlink args
-    parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for symlinked dataset")
-    parser.add_argument("--absolute", action="store_true", help="Create absolute symlinks (default: relative)")
-    parser.add_argument("--symlink-skip-missing", action="store_true", help="Skip missing source files during symlink creation")
+    # local hardlink args
+    parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for hardlinked dataset")
+    parser.add_argument("--absolute", action="store_true", help="Create absolute hardlinks (default: relative)")
+    parser.add_argument("--hardlink-skip-missing", action="store_true", help="Skip missing source files during hardlink creation")
 
     # dataloader validation args
     parser.add_argument(
@@ -340,8 +230,8 @@ def main(argv: list[str]) -> int:
         return run_local(
             db_file=db_file,
             target_dir=(args.target.expanduser().absolute() if args.target else None),
-            absolute_symlinks=bool(args.absolute),
-            skip_missing=bool(args.symlink_skip_missing),
+            absolute_hardlinks=bool(args.absolute),
+            skip_missing=bool(args.hardlink_skip_missing),
             episodes=args.episodes,
             strict_mode=bool(args.strict),
             batch_size=args.batch_size,

@@ -21,6 +21,7 @@ USAGE:
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -90,11 +91,86 @@ def hardlink_directory_recursive(source_dir: Path, target_dir: Path) -> None:
             print(f"    Hard linked file: {target_item}")
 
 
+def load_hardlink_config(config_path: Path | None = None) -> list[dict]:
+    """
+    Load hardlink configuration from JSON file.
+
+    Args:
+        config_path: Path to the configuration JSON file. If None, uses default config
+                    file located next to this script.
+
+    Returns:
+        List of dictionaries with keys: 'target', 'source', 'type', 'is_folder', 'description'
+        Example:
+        [
+            {
+                'target': 'data',
+                'source': 'merged_data',
+                'type': 'folder',
+                'is_folder': True,
+                'description': 'LeRobot data directory'
+            },
+            ...
+        ]
+    """
+    if config_path is None:
+        # Default to config file in the same directory as this script
+        script_dir = Path(__file__).parent
+        config_path = script_dir / "hardlink_config.json"
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Configuration file not found: {config_path}\n"
+            f"Please create a hardlink_config.json file or specify a custom config path."
+        )
+
+    print(f"   Reading configuration from: {config_path}")
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    mappings = []
+    for idx, item in enumerate(config.get("mappings", []), 1):
+        target = item.get("target")
+        source = item.get("source")
+        mapping_type = item.get("type")
+        description = item.get("description", "")
+
+        # Validate required fields
+        if not target or not source or not mapping_type:
+            raise ValueError(
+                f"Invalid mapping entry #{idx}: {item}\n"
+                f"Each mapping must have 'target', 'source', and 'type' fields."
+            )
+
+        # Validate mapping type
+        if mapping_type.lower() not in ["folder", "file"]:
+            raise ValueError(
+                f"Invalid type '{mapping_type}' in mapping #{idx}\n"
+                f"Type must be either 'folder' or 'file'."
+            )
+
+        is_folder = mapping_type.lower() == "folder"
+
+        # Create mapping dictionary
+        mapping = {
+            "target": target,
+            "source": source,
+            "type": mapping_type,
+            "is_folder": is_folder,
+            "description": description
+        }
+        mappings.append(mapping)
+
+    return mappings
+
+
 def create_lerobot_hardlink_structure(
     source_dir: Path,
     target_dir: Path,
     relative: bool = True,
-    skip_missing: bool = False
+    skip_missing: bool = False,
+    config_path: Path | None = None
 ) -> None:
     """
     Create LeRobot-compatible directory structure with hard links.
@@ -150,6 +226,7 @@ def create_lerobot_hardlink_structure(
         target_dir: Directory where LeRobot-compatible structure will be created
         relative: Unused for hard links (kept for compatibility)
         skip_missing: If True, skip missing source files; otherwise raise error
+        config_path: Path to custom configuration JSON file. If None, uses default config.
     """
     print(f"\nCreating LeRobot dataset structure at: {target_dir}")
     print(f"Source data directory: {source_dir}\n")
@@ -157,49 +234,57 @@ def create_lerobot_hardlink_structure(
     # Ensure target directory exists
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Define hardlink mappings: (target_path_in_lerobot_structure, source_path_in_pipeline, is_folder)
-    # Target uses LeRobot standard names, Source uses your pipeline names
-    hardlink_mappings = [
-        # Folder-level hardlinks (will recursively hardlink all files)
-        ("annotations", "annotations", True),
-        ("data", "merged_data", True),  # LeRobot 'data/' -> pipeline 'merged_data/'
-        ("videos", "videos", True),
-
-        # File-level hardlinks in meta/
-        ("meta/episodes.jsonl", "meta/episodes.jsonl", False),
-        ("meta/episodes_stats.jsonl", "meta/merged_episodes_stats.jsonl", False),  # LeRobot standard name
-        ("meta/info.json", "meta/merged_info.json", False),  # LeRobot 'info.json' -> pipeline 'merged_info.json'
-        ("meta/tasks.jsonl", "meta/tasks.jsonl", False),
-    ]
+    # Load hardlink mappings from configuration file
+    print("📋 Loading hardlink configuration...")
+    hardlink_mappings = load_hardlink_config(config_path)
+    print(f"   Found {len(hardlink_mappings)} mapping(s) in configuration\n")
 
     # Create meta directory (without hardlinking the entire folder)
     print(f"📁 Creating meta directory: {target_dir / 'meta'}")
     (target_dir / "meta").mkdir(exist_ok=True)
 
-    # Create hardlinks
-    for target_rel, source_rel, is_folder in hardlink_mappings:
+    # Create hardlinks using configuration
+    for idx, mapping in enumerate(hardlink_mappings, 1):
+        target_rel = mapping["target"]
+        source_rel = mapping["source"]
+        is_folder = mapping["is_folder"]
+        description = mapping.get("description", "")
+
         target_path = target_dir / target_rel
         source_path = source_dir / source_rel
+
+        # Display mapping info
+        mapping_type_emoji = "📁" if is_folder else "📄"
+        print(f"\n{mapping_type_emoji} Mapping #{idx}: {target_rel}")
+        print(f"   Source: {source_rel}")
+        if description:
+            print(f"   Info: {description}")
 
         # Check if source exists
         if not source_path.exists():
             if skip_missing:
-                print(f"⚠️  Skipping (source not found): {source_rel}")
+                print(f"   ⚠️  Skipping (source not found): {source_path}")
                 continue
-            raise FileNotFoundError(f"Source path not found: {source_path}")
+            raise FileNotFoundError(
+                f"Source path not found for mapping #{idx}:\n"
+                f"  Expected: {source_path}\n"
+                f"  Mapping: {target_rel} -> {source_rel}"
+            )
 
         # Handle directories vs files differently for hard links
         if is_folder:
             if not source_path.is_dir():
-                print(f"⚠️  Warning: Expected folder but found file: {source_path}")
+                print(f"   ⚠️  Warning: Expected folder but found file: {source_path}")
             else:
                 # Recursively create directory structure and hardlink all files
+                print("   Creating directory structure and linking files...")
                 hardlink_directory_recursive(source_path, target_path)
         else:
             if not source_path.is_file():
-                print(f"⚠️  Warning: Expected file but found folder: {source_path}")
+                print(f"   ⚠️  Warning: Expected file but found folder: {source_path}")
             else:
                 # Create hard link for single file
+                print("   Creating file hardlink...")
                 create_hardlink(target_path, source_path, relative)
 
     print("\n✅ Hard link structure created successfully!")
@@ -226,8 +311,12 @@ Examples:
   # Skip missing source files during hardlink creation instead of raising errors
   %(prog)s -s /path/to/source/data --hardlink-skip-missing
 
+  # Use a custom configuration file
+  %(prog)s -s /path/to/source/data -c /path/to/custom_config.json
+
 Note: Hard links require source and target to be on the same filesystem.
       Hard links cannot be created for directories (files within directories are hard linked instead).
+      The default configuration file is 'hardlink_config.json' located next to this script.
         """
     )
 
@@ -254,6 +343,15 @@ Note: Hard links require source and target to be on the same filesystem.
         help="Skip missing source files during hardlink creation instead of raising errors"
     )
 
+    parser.add_argument(
+        "-c", "--config",
+        dest="config_path",
+        type=Path,
+        default=None,
+        help="Path to custom hardlink configuration JSON file. "
+             "If not specified, uses 'hardlink_config.json' in the same directory as this script"
+    )
+
     args = parser.parse_args()
 
     # Validate source directory exists
@@ -275,13 +373,22 @@ Note: Hard links require source and target to be on the same filesystem.
     else:
         target_dir = args.target_dir.resolve()
 
+    # Validate config file if specified
+    if args.config_path is not None:
+        if not args.config_path.exists():
+            parser.error(f"Configuration file does not exist: {args.config_path}")
+        config_path = args.config_path.resolve()
+    else:
+        config_path = None
+
     # Create the hardlink structure
     try:
         create_lerobot_hardlink_structure(
             source_dir=source_dir,
             target_dir=target_dir,
             relative=True,  # Unused for hard links, kept for compatibility
-            skip_missing=args.hardlink_skip_missing
+            skip_missing=args.hardlink_skip_missing,
+            config_path=config_path
         )
     except Exception as e:
         print(f"\n❌ Error: {e}")
