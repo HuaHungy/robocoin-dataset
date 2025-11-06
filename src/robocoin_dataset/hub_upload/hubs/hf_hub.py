@@ -42,7 +42,11 @@ class HuggingfaceUploadHub(AbstractUploadHub):
         Returns:
             bool: True if repository exists, False otherwise.
         """
-        return self.hub.repo_exists(repo_id=repo_id, token=self.token, repo_type="dataset")
+        try:
+            return self.hub.repo_exists(repo_id=repo_id, token=self.token, repo_type="dataset")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not check if repo {repo_id} exists: {e}")
+            return False
 
     def create_repo(self, repo_id: str) -> None:
         """
