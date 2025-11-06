@@ -30,7 +30,7 @@ agilex_cobot_decoupled_magic:
 
 - version: mult_sensor
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.agilex_cobot_magic_config
-  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotSimReplayConfig
+  mujoco_sim_replay_config_class: AgilexCobotMagicLerobotMultSenerSimReplayConfig
 
 # discover_robotics_aitbot_mmk2
 discover_robotics_aitbot_mmk2:

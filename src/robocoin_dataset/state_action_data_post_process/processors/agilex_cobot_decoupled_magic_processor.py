@@ -18,12 +18,29 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
+        # 交换前 13 维和后 13 维
         new_state_data = ori_state_data.copy()
+        # if new_state_data.ndim != 2 or new_state_data.shape[1] < 26:
+        #     # 如果维度不满足，返回拷贝以保持稳健
+        #     return new_state_data
+
+        left = new_state_data[:, :13].copy()
+        right = new_state_data[:, 13:26].copy()
+        new_state_data[:, :13] = right
+        new_state_data[:, 13:26] = left
         return new_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
+        # 对 action 同样交换前 13 维和后 13 维（如果形状满足）
         new_action_data = ori_action_data.copy()
+        # if new_action_data.ndim != 2 or new_action_data.shape[1] < 26:
+        #     return new_action_data
+
+        left = new_action_data[:, :13].copy()
+        right = new_action_data[:, 13:26].copy()
+        new_action_data[:, :13] = right
+        new_action_data[:, 13:26] = left
         return new_action_data
     def get_modified_feature_names(self):
         return super().get_modified_feature_names()
