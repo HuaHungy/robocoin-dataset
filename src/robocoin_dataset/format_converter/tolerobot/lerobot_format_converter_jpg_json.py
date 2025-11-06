@@ -313,10 +313,14 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         return sorted(camera_dir.glob("*.jpg")) + sorted(camera_dir.glob("*.png"))
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """获取episode的帧数"""
+        """获取episode的帧数
+        
+        ⚠️ 关键修复：返回所有数据源（图像+JSON）的最小帧数
+        这避免了因图像和JSON数据不同步导致的IndexError
+        """
         ep_dir = self._get_episode_dir(task_path, ep_idx)
         
-        # 从第一个可用的相机获取帧数
+        # 1️⃣ 获取所有相机的图像帧数
         camera_dir = ep_dir / "camera" / "color"
         if not camera_dir.exists():
             ep_subdirs = [d.name for d in ep_dir.iterdir() if d.is_dir()] if ep_dir.exists() else []
@@ -334,37 +338,63 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
                 f"      3. Dataset was extracted properly"
             )
         
-        # 尝试从每个相机文件夹获取图像
+        # 收集所有相机的图像数量
         camera_folders = [d for d in camera_dir.iterdir() if d.is_dir()]
-        camera_info = {}
+        camera_frame_counts = {}
         
         for cam_folder in camera_folders:
             images = list(cam_folder.glob("*.jpg")) + list(cam_folder.glob("*.png"))
-            camera_info[cam_folder.name] = len(images)
             if images:
-                frame_count = len(images)
-                
-                # 🧪 Test模式：限制帧数
-                if self._is_test_mode:
-                    frame_count = min(10, frame_count)
-                    if self.logger:
-                        self.logger.debug(f"🧪 Test mode: limiting episode {ep_idx} to {frame_count} frames")
-                
-                return frame_count
+                camera_frame_counts[cam_folder.name] = len(images)
         
-        # 如果没有找到任何图像，提供详细的诊断信息
-        raise ValueError(
-            f"❌ No images found in episode.\n"
-            f"   📂 Episode directory: {ep_dir}\n"
-            f"   📂 Camera color path: {camera_dir}\n"
-            f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
-            f"   📋 Camera folders found: {list(camera_info.keys()) if camera_info else 'None'}\n"
-            f"   📊 Images per camera: {camera_info if camera_info else 'No cameras with images'}\n"
-            f"   💡 Check if:\n"
-            f"      1. Image files exist (.jpg or .png)\n"
-            f"      2. Camera directories contain images\n"
-            f"      3. Episode was recorded successfully"
-        )
+        if not camera_frame_counts:
+            raise ValueError(
+                f"❌ No images found in episode.\n"
+                f"   📂 Episode directory: {ep_dir}\n"
+                f"   📂 Camera color path: {camera_dir}\n"
+                f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"
+                f"   📋 Camera folders found: {[cam_folder.name for cam_folder in camera_folders]}\n"
+                f"   💡 Check if:\n"
+                f"      1. Image files exist (.jpg or .png)\n"
+                f"      2. Camera directories contain images\n"
+                f"      3. Episode was recorded successfully"
+            )
+        
+        # 2️⃣ 获取JSON数据的帧数（如果存在）
+        json_frame_counts = {}
+        joint_state_dir = ep_dir / "arm" / "jointState"
+        if joint_state_dir.exists():
+            for joint_type_dir in joint_state_dir.iterdir():
+                if joint_type_dir.is_dir():
+                    json_files = list(joint_type_dir.glob("*.json"))
+                    if json_files:
+                        json_frame_counts[joint_type_dir.name] = len(json_files)
+        
+        # 3️⃣ 🔥 关键修复：取所有数据源的最小值
+        all_frame_counts = list(camera_frame_counts.values()) + list(json_frame_counts.values())
+        min_frame_count = min(all_frame_counts)
+        max_frame_count = max(all_frame_counts)
+        
+        # 如果帧数不一致，记录警告
+        if min_frame_count != max_frame_count and self.logger:
+            self.logger.warning(
+                f"⚠️  Episode {ep_idx} has inconsistent frame counts:\n"
+                f"   📸 Camera frames: {camera_frame_counts}\n"
+                f"   📋 JSON frames: {json_frame_counts}\n"
+                f"   📊 Min: {min_frame_count}, Max: {max_frame_count}\n"
+                f"   🔧 Using minimum ({min_frame_count}) to avoid index errors\n"
+                f"   💡 This is likely due to incomplete data recording"
+            )
+        
+        frame_count = min_frame_count
+        
+        # 🧪 Test模式：限制帧数
+        if self._is_test_mode:
+            frame_count = min(10, frame_count)
+            if self.logger:
+                self.logger.debug(f"🧪 Test mode: limiting episode {ep_idx} to {frame_count} frames")
+        
+        return frame_count
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         """获取任务的episode数量"""
