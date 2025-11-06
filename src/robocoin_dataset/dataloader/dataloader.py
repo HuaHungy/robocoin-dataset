@@ -24,11 +24,11 @@ from robocoin_dataset.database.models import DatasetDB, TaskStatus
 from robocoin_dataset.dataloader.utils import (
     EpisodeSampler,
     LeRobotDataset,
-    _prepare_hardlinks,
     _run_comprehensive_detection,
     _run_detection,
     create_episode_dataloader,
     create_lerobot_dataset,
+    prepare_hardlink_db,
     run_local_batch_detection,
 )
 from robocoin_dataset.distribution_computation.constant import (
@@ -52,15 +52,6 @@ from robocoin_dataset.format_converter.tolerobot.constant import LEFORMAT_PATH
 # =============================
 
 TASK_CATEGORY = "dataloader_detection"
-
-try:
-    _here = Path(__file__).resolve()
-    _repo_root = _here.parents[3]
-    DEFAULT_DB_FILE = (
-        (_repo_root / "examples" / "dataloader_test" / "datasets_new.db").expanduser().absolute()
-    )
-except Exception:
-    DEFAULT_DB_FILE = Path("examples/dataloader_test/datasets_new.db").expanduser().absolute()
 
 
 def _sync_dataloader_detection_tasks(
@@ -237,18 +228,32 @@ class DataloaderDbProcess:
     """Single-dataset processor for dataloader detection."""
 
     def __init__(
-        self, db_file_path: str | Path | None = None, logger: logging.Logger | None = None
+        self, db_file_path: str | Path, logger: logging.Logger | None = None
     ) -> None:
-        self.db_file_path: Path = (
-            Path(db_file_path if db_file_path is not None else DEFAULT_DB_FILE)
-            .expanduser()
-            .absolute()
-        )
+        if not db_file_path:
+            raise ValueError("db_file_path is required and cannot be None or empty")
+
+        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
+
+        if not self.db_file_path.exists():
+            raise FileNotFoundError(f"Database file not found: {self.db_file_path}")
+        if not self.db_file_path.is_file():
+            raise ValueError(f"Database path is not a file: {self.db_file_path}")
+
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
-    def process_one_dataset(self) -> None:
-        """Process one dataset from the queue."""
+    def process_one_dataset(
+        self,
+        create_hardlinks: bool = False,
+        hardlink_target_dir: Path | None = None,
+    ) -> None:
+        """Process one dataset from the queue.
+
+        Args:
+            create_hardlinks: Whether to use hardlinks (default: False)
+            hardlink_target_dir: Target directory for hardlinks (default: None = auto)
+        """
         # 1) Sync tasks (queue pending/stale)
         with self.db.with_session() as session:
             _sync_dataloader_detection_tasks(session, logger=self.logger)
@@ -258,9 +263,33 @@ class DataloaderDbProcess:
             self.logger.info("No dataloader detection task to process")
             return
 
-        # 2) Run detection and update status (default: fast detection)
+        # 2) Prepare path (with optional hardlinks using database integration)
+        if create_hardlinks:
+            try:
+                with self.db.with_session() as session:
+                    test_path = prepare_hardlink_db(
+                        source_path=convert_path,
+                        dataset_uuid=dataset_uuid,
+                        target_dir=hardlink_target_dir,
+                        db_session=session,
+                    )
+                self.logger.info(f"Using hardlinks: {test_path}")
+            except Exception as e:
+                err_msg = f"Hardlink preparation failed: {e}"
+                self.logger.error(err_msg)
+                with self.db.with_session() as session:
+                    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+                    if item:
+                        item.data_loader_detection_status = TaskStatus.FAILED
+                        item.data_loader_detection_err_msg = err_msg
+                        session.commit()
+                return
+        else:
+            test_path = Path(convert_path)
+
+        # 3) Run detection and update status (default: fast detection)
         result = _run_detection(
-            convert_path,
+            test_path,
             episode_indices="all",
             sample_ratio=0.1,
         )
@@ -275,16 +304,20 @@ class DataloaderDbProcess:
                 item.data_loader_detection_status = TaskStatus.COMPLETED
                 item.data_loader_detection_err_msg = None
                 # Version was already incremented when task was claimed
+                # Handle different result structures (fast vs comprehensive)
+                frames_count = result.get('total_frames_validated') or result.get('total_frames_sampled', 0)
                 self.logger.info(
                     f"Dataset {dataset_uuid} validation completed: "
-                    f"{result['total_frames_validated']} frames in {len(result['episodes_tested'])} episodes"
+                    f"{frames_count} frames in {len(result['episodes_tested'])} episodes"
                 )
             else:
                 item.data_loader_detection_status = TaskStatus.FAILED
-                item.data_loader_detection_err_msg = result.get("error_summary", "Unknown error")
+                # Handle different result structures (fast vs comprehensive)
+                error_msg = result.get("error_summary") or result.get("error_message", "Unknown error")
+                item.data_loader_detection_err_msg = error_msg
                 # Version was already incremented when task was claimed (not rolled back on failure)
                 self.logger.error(
-                    f"Dataset {dataset_uuid} validation failed: {result.get('error_summary', 'Unknown error')}"
+                    f"Dataset {dataset_uuid} validation failed: {error_msg}"
                 )
 
             session.commit()
@@ -295,7 +328,7 @@ class DataloaderDbServer(TaskServer):
 
     def __init__(
         self,
-        db_file_path: str | Path | None = None,
+        db_file_path: str | Path,
         host: str = "0.0.0.0",
         port: int = 8771,
         heartbeat_interval: float = 30.0,
@@ -309,11 +342,17 @@ class DataloaderDbServer(TaskServer):
             heartbeat_interval=heartbeat_interval,
             timeout=timeout,
         )
-        self.db_file_path: Path = (
-            Path(db_file_path if db_file_path is not None else DEFAULT_DB_FILE)
-            .expanduser()
-            .absolute()
-        )
+
+        if not db_file_path:
+            raise ValueError("db_file_path is required and cannot be None or empty")
+
+        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
+
+        if not self.db_file_path.exists():
+            raise FileNotFoundError(f"Database file not found: {self.db_file_path}")
+        if not self.db_file_path.is_file():
+            raise ValueError(f"Database path is not a file: {self.db_file_path}")
+
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
@@ -321,7 +360,15 @@ class DataloaderDbServer(TaskServer):
         return TASK_CATEGORY
 
     def generate_task_content(self) -> dict | None:
-        """Generate task content from the database queue."""
+        """Generate task content from the database queue.
+
+        Server prepares hardlinks with database integration and sends the
+        hardlink path to client. This ensures:
+        1. Database query for existing hardlinks
+        2. Validation and reuse of valid hardlinks
+        3. Creation of new hardlinks if needed
+        4. Database update with hardlink path
+        """
         with self.db.with_session() as session:
             # pre-sync queue
             _sync_dataloader_detection_tasks(session, logger=self.logger)
@@ -331,9 +378,29 @@ class DataloaderDbServer(TaskServer):
             if dataset_uuid is None:
                 return None
 
+            # Server prepares hardlinks with database access
+            try:
+                test_path = prepare_hardlink_db(
+                    source_path=convert_path,
+                    dataset_uuid=dataset_uuid,
+                    target_dir=None,  # Auto: {source}_hardlink
+                    db_session=session,
+                )
+                self.logger.info(f"Prepared dataset path for client: {test_path}")
+            except Exception as e:
+                # If hardlink preparation fails, mark as failed and return None
+                err_msg = f"Hardlink preparation failed: {e}"
+                self.logger.error(err_msg)
+                item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+                if item:
+                    item.data_loader_detection_status = TaskStatus.FAILED
+                    item.data_loader_detection_err_msg = err_msg
+                    session.commit()
+                return None
+
             return {
                 DATASET_UUID: dataset_uuid,
-                LEFORMAT_PATH: convert_path,
+                LEFORMAT_PATH: str(test_path),  # Send hardlink path to client
             }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -406,8 +473,13 @@ class DataloaderDbClient(TaskClient):
         return {}
 
     def _sync_process_task(self, task_content: dict) -> dict:
-        """Process a single task synchronously."""
-        repo_path = task_content.get(LEFORMAT_PATH)
+        """Process a single task synchronously.
+
+        Client receives the dataset path from server (already prepared with hardlinks).
+        Client just runs detection on the provided path.
+        """
+        # Server provides the dataset path (already prepared with hardlinks)
+        test_path = task_content.get(LEFORMAT_PATH)
 
         # Get configurable parameters (with defaults)
         episodes = task_content.get("episodes", "all")
@@ -417,20 +489,7 @@ class DataloaderDbClient(TaskClient):
         batch_size = task_content.get("batch_size", 32)
         num_workers = task_content.get("num_workers", 0)
 
-        # Hardlink parameters (optional, default: no hardlinks in distributed mode)
-        create_hardlinks = task_content.get("create_hardlinks", False)
-
-        # Prepare path (with optional hardlinks)
-        if create_hardlinks:
-            hardlink_relative = task_content.get("hardlink_relative", True)
-            hardlink_skip_missing = task_content.get("hardlink_skip_missing", False)
-            test_path = _prepare_hardlinks(
-                source_path=repo_path,
-                relative=hardlink_relative,
-                skip_missing=hardlink_skip_missing,
-            )
-        else:
-            test_path = repo_path
+        self.logger.info(f"Processing dataset: {test_path}")
 
         # Run detection
         if comprehensive:
@@ -724,13 +783,14 @@ __all__ = [
     "EpisodeSampler",
     "create_lerobot_dataset",
     "create_episode_dataloader",
+    # Hardlink utilities (from utils module)
+    "prepare_hardlink_db",
     # Detection and validation (from utils module)
     "_run_detection",  # Fast detection (default)
     "_run_comprehensive_detection",  # Comprehensive validation
     "run_local_batch_detection",
     # Task management
     "TASK_CATEGORY",
-    "DEFAULT_DB_FILE",
     "_sync_dataloader_detection_tasks",
     "_gen_one_dataloader_detection_task",
     "_parse_episode_specification",

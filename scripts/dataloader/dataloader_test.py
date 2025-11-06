@@ -1,6 +1,15 @@
-"""
-Dataloader Test CLI - validates LeRobot datasets with local/server/client modes.
+"""Dataloader Test CLI - simple entry point for dataset validation.
 
+Modes:
+  --local   : Process datasets locally with database integration
+  --server  : Run task distribution server
+  --client  : Connect to server and process tasks (supports --num-clients for multi-process)
+
+The hardlink functionality is automatically integrated with the database:
+  1. Query existing hardlinks from database
+  2. Validate if they're still valid
+  3. Reuse valid hardlinks or create new ones
+  4. Save to database for future reuse
 """
 
 import argparse
@@ -18,14 +27,10 @@ from robocoin_dataset.dataloader.dataloader import (
 )
 from robocoin_dataset.utils.logger import setup_logger
 
-DEFAULT_DB = Path("examples/dataloader_test/datasets_new.db").absolute()
-
 
 def run_local(
     db_file: Path,
     target_dir: Path | None,
-    absolute_hardlinks: bool,
-    skip_missing: bool,
     episodes: str,
     comprehensive: bool,
     sample_ratio: float,
@@ -34,7 +39,14 @@ def run_local(
     num_workers: int,
     logger: logging.Logger,
 ) -> int:
-    """Local mode: thin wrapper that calls core logic in dataloader.py"""
+    """Local mode: simple wrapper calling run_local_batch_detection.
+
+    Hardlinks are automatically managed:
+    - Queries database for existing hardlinks
+    - Validates and reuses if valid
+    - Creates new ones if invalid or missing
+    - Saves to database for next time
+    """
 
     result = run_local_batch_detection(
         db_file=db_file,
@@ -46,8 +58,6 @@ def run_local(
         num_workers=num_workers,
         create_hardlinks=True,
         hardlink_target_dir=target_dir,
-        hardlink_relative=not absolute_hardlinks,
-        hardlink_skip_missing=skip_missing,
         logger=logger,
     )
 
@@ -114,8 +124,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--db",
         type=Path,
-        default=DEFAULT_DB,
-        help="Path to SQLite database (default: examples/dataloader_test/datasets_new.db)",
+        default=None,
+        help="Path to SQLite database (required for --server and --local modes, not needed for --client)",
     )
     parser.add_argument(
         "--log-level",
@@ -139,9 +149,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--log-dir", type=Path, default=Path("logs/dataloader"), help="Log directory relative to current directory (default: logs/dataloader)")
 
     # local hardlink args
-    parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for hardlinked dataset")
-    parser.add_argument("--absolute", action="store_true", help="Create absolute hardlinks (default: relative)")
-    parser.add_argument("--hardlink-skip-missing", action="store_true", help="Skip missing source files during hardlink creation")
+    parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for hardlinked dataset (default: {source}_hardlink)")
 
     # dataloader validation args
     parser.add_argument(
@@ -226,16 +234,28 @@ def main(argv: list[str]) -> int:
         print("         Using minimum of 1 client", file=sys.stderr)
         num_clients = 1
 
-    db_file = args.db.expanduser().absolute()
+    # Validate database path (required for server and local modes, not for client)
+    is_client_mode = args.client or args.cliet
 
-    # Validate database exists before spawning processes (except for server mode)
-    if not args.server:
+    if not is_client_mode:
+        # Server and local modes REQUIRE --db
+        if args.db is None:
+            print("ERROR: --db is required for --server and --local modes", file=sys.stderr)
+            print("       Please provide database path: --db /path/to/database.db", file=sys.stderr)
+            return 2
+
+        db_file = args.db.expanduser().absolute()
+
         if not db_file.exists():
             print(f"ERROR: Database file not found: {db_file}", file=sys.stderr)
+            print("       Please provide a valid database path using --db option", file=sys.stderr)
             return 2
         if not db_file.is_file():
             print(f"ERROR: Database path is not a file: {db_file}", file=sys.stderr)
             return 2
+    else:
+        # Client mode doesn't need database (it connects to server)
+        db_file = None
 
     # default to --local if no mode specified
     run_local_mode = bool(args.local or (not args.server and not (args.client or args.cliet)))
@@ -245,8 +265,6 @@ def main(argv: list[str]) -> int:
         return run_local(
             db_file=db_file,
             target_dir=(args.target.expanduser().absolute() if args.target else None),
-            absolute_hardlinks=bool(args.absolute),
-            skip_missing=bool(args.hardlink_skip_missing),
             episodes=args.episodes,
             comprehensive=bool(args.comprehensive),
             sample_ratio=args.sample_ratio,

@@ -17,8 +17,16 @@ import traceback
 from collections.abc import Iterator
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+# Suppress noisy INFO logs from httpx (used by HuggingFace datasets)
+# These logs show 404s when checking for optional files - doesn't affect functionality
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Best-effort: auto-add vendored lerobot path for local runs without PYTHONPATH
 try:
@@ -148,42 +156,95 @@ def create_episode_dataloader(
     )
 
 
-def _prepare_hardlinks(
+def prepare_hardlink_db(
     source_path: str | Path,
+    dataset_uuid: str,
     target_dir: Path | None = None,
+    db_session: "Session | None" = None,
 ) -> Path:
-    """Create hardlink structure for dataset and return the path to test.
+    """Prepare hardlinks with database integration.
 
-    This function wraps create_lerobot_hardlink_structure and can be used by both
-    local mode and distributed client mode.
+    Queries DB for existing hardlink path, validates/creates hardlinks, saves to DB.
 
     Args:
-        source_path: Source dataset directory (convert_path)
-        target_dir: Target directory for hardlinks (default: {source}_hardlink)
-        relative: Unused for hard links (kept for compatibility)
-        skip_missing: Skip missing files during hardlink creation (default: False)
+        source_path: Source dataset directory
+        dataset_uuid: Dataset UUID for database lookup
+        target_dir: Target directory for hardlinks (optional)
+        db_session: SQLAlchemy session for database operations (optional)
 
     Returns:
-        Path to the hardlink directory (the path to test with dataloader)
+        Path to the hardlink directory
+    """
+    from robocoin_dataset.database.models import DatasetHardLinkDB
 
-    Raises:
-        Exception: If hardlink creation fails
+    src = Path(source_path)
+
+    # Query hardlink path from database
+    existing_path = None
+    if db_session:
+        record = (
+            db_session.query(DatasetHardLinkDB)
+            .filter(DatasetHardLinkDB.dataset_uuid == dataset_uuid)
+            .first()
+        )
+        if record and record.hard_link_path:
+            existing_path = Path(record.hard_link_path)
+
+    # Determine target path
+    dst = existing_path or target_dir or src.parent / f"{src.name}_hardlink"
+
+    # Validate and create hardlinks (local operation)
+    result_path = _prepare_hardlinks(src, dst)
+
+    # Save hardlink path to database
+    if db_session:
+        if record:
+            record.hard_link_path = str(result_path.absolute())
+        else:
+            record = DatasetHardLinkDB(
+                dataset_uuid=dataset_uuid,
+                hard_link_path=str(result_path.absolute()),
+            )
+            db_session.add(record)
+        db_session.commit()
+
+    return result_path
+
+
+def _prepare_hardlinks(src: Path, dst: Path) -> Path:
+    """Local function: validate existing hardlinks or create new ones.
+
+    Args:
+        src: Source dataset directory
+        dst: Destination hardlink directory
+
+    Returns:
+        Path to the hardlink directory
     """
     from robocoin_dataset.hardlink.make_hardlink import (
         RepoHardLinkCorresp,
         create_hardlinks_from_correspondence,
     )
+    from robocoin_dataset.hardlink.validate_hardlink import validate_hardlink
 
-    source = Path(source_path)
-    target = target_dir if target_dir is not None else source.parent / f"{source.name}_hardlink"
+    logger = logging.getLogger(__name__)
+    hardlink_corresp = RepoHardLinkCorresp()
 
-    create_hardlinks_from_correspondence(
-        src_root=source,
-        dst_root=target,
-        hard_link_corresp=RepoHardLinkCorresp(),
-    )
+    # Validate -> Create if needed
+    if dst.exists():
+        try:
+            if validate_hardlink(src, dst, hardlink_corresp):
+                logger.info(f"Reusing existing hardlinks: {dst}")
+                return dst
+        except Exception:
+            pass
 
-    return target
+    # Create hardlinks
+    logger.info(f"Creating hardlinks: {src} → {dst}")
+    create_hardlinks_from_correspondence(src, dst, hardlink_corresp)
+    logger.info(f"Hardlinks created successfully: {dst}")
+
+    return dst
 
 def _validate_single_episode(
     ds: "LeRobotDataset",
@@ -279,8 +340,6 @@ def run_local_batch_detection(
     num_workers: int = 0,
     create_hardlinks: bool = True,
     hardlink_target_dir: Path | None = None,
-    hardlink_relative: bool = True,
-    hardlink_skip_missing: bool = False,
     logger: logging.Logger | None = None,
 ) -> dict:
     """Process all pending dataloader detection tasks in batch (local mode).
@@ -289,7 +348,7 @@ def run_local_batch_detection(
     1. Sync tasks (_sync_dataloader_detection_tasks)
     2. Loop until no tasks:
        a. Claim one task (_gen_one_dataloader_detection_task) → PROCESSING
-       b. Optionally create hardlinks (_prepare_hardlinks)
+       b. Optionally prepare hardlinks (prepare_hardlink_db) with database integration
        c. Run detection (_run_detection by default, or _run_comprehensive_detection if comprehensive=True)
        d. Update status to COMPLETED/FAILED
 
@@ -301,10 +360,8 @@ def run_local_batch_detection(
         strict_mode: Fail immediately on first error (default: False). Only used in comprehensive mode
         batch_size: Batch size for dataloader (default: 32)
         num_workers: Number of dataloader workers (default: 0)
-        create_hardlinks: Whether to create hardlinks (default: True)
+        create_hardlinks: Whether to use hardlinks (default: True)
         hardlink_target_dir: Target directory for hardlinks (default: None = auto)
-        hardlink_relative: Use relative hardlinks (default: True)
-        hardlink_skip_missing: Skip missing files in hardlinks (default: False)
         logger: Logger instance (default: None)
 
     Returns:
@@ -341,20 +398,21 @@ def run_local_batch_detection(
         datasets_processed += 1
         _logger.info(f"Processing dataset {datasets_processed}: {dataset_uuid}")
 
-        # Prepare path (with optional hardlinks)
+        # Prepare path (with optional hardlinks using database integration)
         try:
             if create_hardlinks:
-                test_path = _prepare_hardlinks(
-                    source_path=convert_path,
-                    target_dir=hardlink_target_dir,
-                    relative=hardlink_relative,
-                    skip_missing=hardlink_skip_missing,
-                )
-                _logger.info(f"Created hardlinks: {test_path}")
+                with db.with_session() as session:
+                    test_path = prepare_hardlink_db(
+                        source_path=convert_path,
+                        dataset_uuid=dataset_uuid,
+                        target_dir=hardlink_target_dir,
+                        db_session=session,
+                    )
+                _logger.info(f"Using hardlinks: {test_path}")
             else:
                 test_path = Path(convert_path)
         except Exception as e:
-            err_msg = f"Path preparation failed: {e}"
+            err_msg = f"Hardlink preparation failed: {e}"
             _logger.error(err_msg)
             failed.append((dataset_uuid, err_msg))
 
@@ -396,15 +454,17 @@ def run_local_batch_detection(
                 if result["success"]:
                     item.data_loader_detection_status = TaskStatus.COMPLETED
                     item.data_loader_detection_err_msg = None
+                    # Handle different result structures (fast vs comprehensive)
+                    frames_count = result.get('total_frames_validated') or result.get('total_frames_sampled', 0)
                     _logger.info(
-                        f"✅ {result['total_frames_validated']} frames in "
+                        f"✅ {frames_count} frames in "
                         f"{len(result['episodes_tested'])} episodes"
                     )
                     succeeded.append(dataset_uuid)
                 else:
                     item.data_loader_detection_status = TaskStatus.FAILED
                     item.data_loader_detection_err_msg = result.get(
-                        "error_summary", "Unknown error"
+                        "error_summary", result.get("error_message", "Unknown error")
                     )
                     _logger.error(f"❌ {item.data_loader_detection_err_msg}")
                     failed.append((dataset_uuid, item.data_loader_detection_err_msg))
@@ -811,8 +871,10 @@ def _run_detection(
             )
 
             # Iterate through batches (simple test - no validation)
-            for batch in dl:
-                result["total_frames_sampled"] += len(batch["index"]) if "index" in batch else 1
+            # Suppress stdout to hide verbose output from third-party libraries (e.g., lerobot video decoding)
+            with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
+                for batch in dl:
+                    result["total_frames_sampled"] += len(batch["index"]) if "index" in batch else 1
 
             if progress is not None:
                 progress.update(1)
