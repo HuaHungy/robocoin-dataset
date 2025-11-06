@@ -49,6 +49,7 @@ CLASS_KEY = "class"
 FLOAT32 = "float32"
 
 LEFORMAT_PATH = "leformat_path"
+HARD_LINK_PATH = "hard_link_path"
 
 CONVERTER_FACTORY_CONFIG = "converter_factory_config"
 
