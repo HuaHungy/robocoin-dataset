@@ -441,11 +441,15 @@ def run_multi_client(
     Returns:
         Exit code: 0 if all processes succeeded, 1 otherwise
     """
-    print(f"🚀 Starting {num_clients} client process(es)...")
-    print(f"   Server: {server_uri}")
-    print(f"   Heartbeat: {heartbeat_interval}s")
-    print(f"   Log dir: {log_dir}")
-    print()
+    print("\n" + "=" * 80)
+    print("🚀 STARTING MULTI-CLIENT EXECUTION".center(80))
+    print("=" * 80)
+    print(f"\n{'CONFIGURATION'}")
+    print(f"  Clients            : {num_clients}")
+    print(f"  Server URI         : {server_uri}")
+    print(f"  Heartbeat interval : {heartbeat_interval}s")
+    print(f"  Log directory      : {log_dir}")
+    print(f"\n{'SPAWNING PROCESSES'}")
 
     # Create queue for collecting statistics from child processes
     stats_queue = mp.Queue()
@@ -467,14 +471,16 @@ def run_multi_client(
         )
         proc.start()
         processes.append(proc)
-        print(f"   ✓ Client process {i} spawned (PID: {proc.pid})")
+        print(f"  ✓ Process {i:>2} spawned (PID: {proc.pid})")
 
         # Add startup delay to avoid thundering herd
         if i < num_clients - 1:
             time.sleep(0.1)
 
-    print(f"\n⏳ Waiting for {num_clients} client(s) to complete...")
-    print("   Press Ctrl+C to interrupt\n")
+    print(f"\n{'EXECUTION'}")
+    print(f"  ⏳ Waiting for {num_clients} client(s) to complete...")
+    print("  💡 Press Ctrl+C to interrupt")
+    print()
 
     exit_codes = {}
 
@@ -485,14 +491,16 @@ def run_multi_client(
             exit_codes[i] = proc.exitcode
 
     except KeyboardInterrupt:
-        print("\n\n⚠️  KeyboardInterrupt received, shutting down clients...")
+        print("\n\n" + "=" * 80)
+        print("⚠️  INTERRUPTION DETECTED - SHUTTING DOWN".center(80))
+        print("=" * 80 + "\n")
         for i, proc in enumerate(processes):
             if proc.is_alive():
-                print(f"   Terminating process {i} (PID: {proc.pid})")
+                print(f"  ⏹  Terminating process {i:>2} (PID: {proc.pid})")
                 proc.terminate()
                 proc.join(timeout=5.0)
                 if proc.is_alive():
-                    print(f"   Force-killing process {i} (PID: {proc.pid})")
+                    print(f"  ⚠️  Force-killing process {i:>2} (PID: {proc.pid})")
                     proc.kill()
                     proc.join()
                 exit_codes[i] = -2  # Mark as interrupted
@@ -513,32 +521,51 @@ def run_multi_client(
     total_tasks_succeeded = sum(s.get("tasks_succeeded", 0) for s in process_stats.values())
     total_tasks_failed = sum(s.get("tasks_failed", 0) for s in process_stats.values())
 
-    # Summary
-    print("\n" + "=" * 70)
-    print("📊 MULTI-CLIENT SUMMARY")
-    print("=" * 70)
-    print(f"Total clients: {num_clients}")
-    print(f"Elapsed time: {elapsed:.1f}s")
-    print()
-
-    # Display TASK statistics (not process statistics)
-    print(f"📦 Tasks processed: {total_tasks_processed}")
-    print(f"✅ Tasks succeeded: {total_tasks_succeeded}")
-    print(f"❌ Tasks failed: {total_tasks_failed}")
-    print()
-
-    # Display process-level information
+    # Calculate process statistics
     process_success_count = sum(1 for code in exit_codes.values() if code == 0)
     process_fail_count = sum(
         1 for code in exit_codes.values() if code not in (0, None) and code is not None
     )
 
-    print(
-        f"🔧 Process completions: {process_success_count} successful, {process_fail_count} failed"
-    )
+    # Format elapsed time
+    if elapsed < 60:
+        time_str = f"{elapsed:.1f}s"
+    elif elapsed < 3600:
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+        time_str = f"{minutes}m {seconds}s"
+    else:
+        hours = int(elapsed // 3600)
+        minutes = int((elapsed % 3600) // 60)
+        time_str = f"{hours}h {minutes}m"
 
+    # Summary header
+    print("\n" + "=" * 80)
+    print("📊 MULTI-CLIENT EXECUTION SUMMARY".center(80))
+    print("=" * 80)
+
+    # Configuration section
+    print(f"\n{'CONFIGURATION'}")
+    print(f"  Clients spawned    : {num_clients}")
+    print(f"  Elapsed time       : {time_str}")
+
+    # Task results section
+    print(f"\n{'TASK RESULTS'}")
+    print(f"  Total processed    : {total_tasks_processed}")
+    print(f"  ✅ Succeeded       : {total_tasks_succeeded}")
+    print(f"  ❌ Failed          : {total_tasks_failed}")
+
+    # Process status section
+    print(f"\n{'PROCESS STATUS'}")
+    print(f"  ✅ Completed       : {process_success_count}")
+    print(f"  ❌ Failed          : {process_fail_count}")
+
+    # Per-process details table
     if exit_codes:
-        print("\nPer-process details:")
+        print(f"\n{'PROCESS DETAILS'}")
+        print(f"  {'ID':<6} {'Status':<18} {'Tasks':<10}")
+        print(f"  {'-'*6} {'-'*18} {'-'*10}")
+
         for proc_id in sorted(exit_codes.keys()):
             code = exit_codes[proc_id]
             stats = process_stats.get(proc_id, {})
@@ -552,9 +579,10 @@ def run_multi_client(
                 status = "❓ UNKNOWN"
             else:
                 status = f"❌ FAILED (exit {code})"
-            print(f"   Process {proc_id}: {status} ({tasks_processed} tasks)")
 
-    print("=" * 70 + "\n")
+            print(f"  {proc_id:<6} {status:<18} {tasks_processed:<10}")
+
+    print("\n" + "=" * 80 + "\n")
 
     return 0 if total_tasks_failed == 0 else 1
 

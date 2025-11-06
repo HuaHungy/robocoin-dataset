@@ -58,9 +58,7 @@ def run_local(
     db_file: Path,
     target_dir: Path | None,
     episodes: str,
-    comprehensive: bool,
     sample_ratio: float,
-    strict_mode: bool,
     batch_size: int,
     num_workers: int,
     logger: logging.Logger,
@@ -69,12 +67,9 @@ def run_local(
     result = run_local_batch_detection(
         db_file=db_file,
         episodes=episodes,
-        comprehensive=comprehensive,
         sample_ratio=sample_ratio,
-        strict_mode=strict_mode,
         batch_size=batch_size,
         num_workers=num_workers,
-        create_hardlinks=True,
         hardlink_target_dir=target_dir,
         logger=logger,
     )
@@ -145,20 +140,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help='Episodes to test: "all" (default), "0", "0,1,2", or "0-5"',
     )
     parser.add_argument(
-        "--comprehensive",
-        action="store_true",
-        help="Use comprehensive detection (test all frames with validation). Default: fast detection with 10%% sampling",
-    )
-    parser.add_argument(
         "--sample-ratio",
         type=float,
         default=0.1,
-        help="Sample ratio for fast detection (0.0-1.0, default: 0.1 = 10%%). Ignored if --comprehensive is used",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Strict mode: fail immediately on first error (default: False, collect all errors)",
+        help="Sample ratio for fast detection (0.0-1.0, default: 0.1 = 10%%)",
     )
     parser.add_argument(
         "--batch-size",
@@ -284,9 +269,7 @@ def main(argv: list[str]) -> int:
         db_file=db_file,
         target_dir=(args.target.expanduser().absolute() if args.target else None),
         episodes=args.episodes,
-        comprehensive=bool(args.comprehensive),
         sample_ratio=args.sample_ratio,
-        strict_mode=bool(args.strict),
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         logger=logger,

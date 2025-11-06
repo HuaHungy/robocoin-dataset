@@ -606,9 +606,6 @@ def _parse_episode_specification(
     raise ValueError(f"Invalid episode specification type: {type(episode_spec)}")
 
 
-
-
-
 def _run_detection(
     repo_path: str | Path,
     episode_indices: str | int | list[int] | None = "all",
@@ -623,7 +620,6 @@ def _run_detection(
     No detailed validation or error tracking - just checks if frames can be loaded.
 
     Use this for quick smoke tests or performance benchmarking.
-    For comprehensive validation, use _run_comprehensive_detection instead.
     """
     from robocoin_dataset.dataloader.dataloader import _parse_episode_specification
 
@@ -665,16 +661,33 @@ def _run_detection(
             result["success"] = True
             return result
 
-        # Progress bar
+        # Calculate total frames to be sampled for progress bar
+        total_frames_to_sample = 0
+        for ep_idx in episodes_to_test:
+            from_idx = ds.episode_data_index["from"][ep_idx].item()
+            to_idx = ds.episode_data_index["to"][ep_idx].item()
+            total_frames = to_idx - from_idx
+            num_samples = max(1, int(total_frames * sample_ratio))
+            total_frames_to_sample += num_samples
+
+        # Progress bars
+        episode_progress = None
+        frame_progress = None
         if tqdm is not None:
-            progress = tqdm(
+            episode_progress = tqdm(
                 total=len(episodes_to_test),
                 desc="🚀 Fast detection",
                 unit="episode",
                 file=sys.stderr,
+                position=0,
             )
-        else:
-            progress = None
+            frame_progress = tqdm(
+                total=total_frames_to_sample,
+                desc="📹 Frames",
+                unit="frame",
+                file=sys.stderr,
+                position=1,
+            )
 
         # Test each episode with downsampling
         for ep_idx in episodes_to_test:
@@ -691,13 +704,18 @@ def _run_detection(
             # Suppress stdout to hide verbose output from third-party libraries (e.g., lerobot video decoding)
             with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
                 for batch in dl:
-                    result["total_frames_sampled"] += len(batch["index"]) if "index" in batch else 1
+                    batch_frames = len(batch["index"]) if "index" in batch else 1
+                    result["total_frames_sampled"] += batch_frames
+                    if frame_progress is not None:
+                        frame_progress.update(batch_frames)
 
-            if progress is not None:
-                progress.update(1)
+            if episode_progress is not None:
+                episode_progress.update(1)
 
-        if progress is not None:
-            progress.close()
+        if episode_progress is not None:
+            episode_progress.close()
+        if frame_progress is not None:
+            frame_progress.close()
 
         result["success"] = True
         return result
