@@ -1232,7 +1232,10 @@ class LerobotFormatConverter(ABC):
                     }
                     
                     # 🆕 清理episode缓存（MCAP等大文件格式需要释放内存）
-                    if hasattr(self, '_clear_episode_cache'):
+                    # 优先调用更全面的资源清理方法（MCAP converter实现）
+                    if hasattr(self, '_cleanup_episode_resources'):
+                        self._cleanup_episode_resources()
+                    elif hasattr(self, '_clear_episode_cache'):
                         self._clear_episode_cache()
                     
                     # 检查失败率（在严格阶段结束时）
@@ -1276,16 +1279,31 @@ class LerobotFormatConverter(ABC):
                         f"⏭️ 跳过 episode {original_ep_idx} "
                         f"(task: {task}, task_ep: {task_ep_idx}): {e}"
                     )
+                    
+                    # 🔥 清理内存（尤其对MCAP大文件很重要）
+                    if hasattr(self, '_cleanup_episode_resources'):
+                        self._cleanup_episode_resources()
+                    elif hasattr(self, '_clear_episode_cache'):
+                        self._clear_episode_cache()
+                    
                     original_ep_idx += 1  # 🆕 original_ep_idx继续递增
                     continue
                     
                 except ConfigError:
-                    # 配置错误：立即停止
+                    # 配置错误：立即停止（仍然需要清理资源）
+                    if hasattr(self, '_cleanup_episode_resources'):
+                        self._cleanup_episode_resources()
+                    elif hasattr(self, '_clear_episode_cache'):
+                        self._clear_episode_cache()
                     self.logger.error("检测到配置错误，停止转换")
                     raise
                     
                 except Exception as e:
-                    # 其他未处理的异常
+                    # 其他未处理的异常（清理资源后抛出）
+                    if hasattr(self, '_cleanup_episode_resources'):
+                        self._cleanup_episode_resources()
+                    elif hasattr(self, '_clear_episode_cache'):
+                        self._clear_episode_cache()
                     self.logger.error(
                         f"处理episode时发生未预期的错误: "
                         f"task={task}, task_ep={task_ep_idx}, global_ep={global_ep_idx}. "
