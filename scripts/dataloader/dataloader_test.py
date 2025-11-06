@@ -1,116 +1,15 @@
-"""
-Dataloader Test CLI - validates LeRobot datasets with local/server/client modes.
+"""Dataloader Test CLI - simple entry point for dataset validation.
 
-================================================================================
-BASIC USAGE
-================================================================================
+Modes:
+  --local   : Process datasets locally with database integration
+  --server  : Run task distribution server
+  --client  : Connect to server and process tasks (supports --num-clients for multi-process)
 
-LOCAL MODE (Single Machine Testing):
-    # Test all datasets in default database (tests ALL episodes by default)
-    python scripts/dataloader/dataloader_test.py --local
-
-    # Test with custom database
-    python scripts/dataloader/dataloader_test.py --local --db /path/to/your.db
-
-    # Test only specific episodes (e.g., episode 0 only)
-    python scripts/dataloader/dataloader_test.py --local --episodes 0
-
-    # Test episode range (e.g., episodes 0-5)
-    python scripts/dataloader/dataloader_test.py --local --episodes 0-5
-
-    # Test specific episodes (e.g., 0, 1, and 5)
-    python scripts/dataloader/dataloader_test.py --local --episodes "0,1,5"
-
-    # Test with strict mode (fail immediately on first error)
-    python scripts/dataloader/dataloader_test.py --local --strict
-
-    # Test with custom batch size and workers
-    python scripts/dataloader/dataloader_test.py --local --batch-size 64 --num-workers 4
-
-    # Test with custom symlink target directory
-    python scripts/dataloader/dataloader_test.py --local -t /tmp/test_symlinks
-
-    # Test with absolute symlinks and skip missing files during symlink creation
-    python scripts/dataloader/dataloader_test.py --local --absolute --symlink-skip-missing
-
-SERVER MODE (Distribute Tasks):
-    # Start server (binds to all interfaces, uses default database)
-    python scripts/dataloader/dataloader_test.py --server
-
-    # Start server with custom database
-    python scripts/dataloader/dataloader_test.py --server --db /path/to/your.db
-
-    # Start server on specific port
-    python scripts/dataloader/dataloader_test.py --server --port 9000
-
-    # Start server with debug logging
-    python scripts/dataloader/dataloader_test.py --server --log-level DEBUG
-
-CLIENT MODE (Connect and Process):
-    # Connect to local server
-    python scripts/dataloader/dataloader_test.py --client
-
-    # Connect to remote server by IP
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-    # Connect to remote server with custom port
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --port 9000
-
-    # Connect with custom heartbeat interval
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --heartbeat-interval 20.0
-
-MULTI-CLIENT MODE (Spawn Multiple Client Processes on Single Machine):
-    # Spawn 12 client processes on one machine
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100 --num-clients 12
-
-    # Note: --num-clients is ONLY supported with --client mode
-    # Multi-local mode has been abandoned
-
-DISTRIBUTED WORKFLOW (Server + Multiple Clients):
-    # On Server Machine (192.168.1.100)
-    python scripts/dataloader/dataloader_test.py --server --host 0.0.0.0 --db /path/to/datasets.db
-
-    # On Worker Machine 1
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-    # On Worker Machine 2
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-    # On Worker Machine N...
-    python scripts/dataloader/dataloader_test.py --client --host 192.168.1.100
-
-================================================================================
-MODES
-================================================================================
-    --local    Run locally with symlink creation and dataloader validation
-    --server   Start WebSocket server to distribute tasks
-    --client   Connect to server and process tasks
-
-COMMON OPTIONS:
-    --db PATH               Database file (default: examples/dataloader_test/datasets_new.db)
-    --host HOST             Server IP (server: bind address, client: connect address)
-    --port PORT             Port number (default: 8771)
-    --log-level LEVEL       Logging verbosity (default: INFO)
-    --num-clients N         Number of parallel client processes (default: 1, max: 32)
-                            ⚠️  Only supported with --client mode
-
-VALIDATION OPTIONS:
-    --episodes SPEC         Episodes to test: "all" (default), "0", "0,1,2", "0-5"
-    --strict                Fail immediately on first error (default: False)
-    --batch-size N          Batch size for dataloader (default: 32)
-    --num-workers N         Number of dataloader workers (default: 0)
-
-DATABASE REQUIREMENTS:
-    Records must have:
-    - data_merge_status = COMPLETED
-    - convert_status = COMPLETED
-    - convert_path populated and valid
-
-    ⚠️ WARNING: Records with NULL data_loader_detection_status are ILLEGAL but
-               will be treated as PENDING for robustness (with warnings logged)
-
-For detailed usage, examples, and troubleshooting guide, see:
-    scripts/dataloader/DATALOADER_TEST_USAGE.md
+The hardlink functionality is automatically integrated with the database:
+  1. Query existing hardlinks from database
+  2. Validate if they're still valid
+  3. Reuse valid hardlinks or create new ones
+  4. Save to database for future reuse
 """
 
 import argparse
@@ -128,32 +27,37 @@ from robocoin_dataset.dataloader.dataloader import (
 )
 from robocoin_dataset.utils.logger import setup_logger
 
-DEFAULT_DB = Path("examples/dataloader_test/datasets_new.db").absolute()
-
 
 def run_local(
     db_file: Path,
     target_dir: Path | None,
-    absolute_symlinks: bool,
-    skip_missing: bool,
     episodes: str,
+    comprehensive: bool,
+    sample_ratio: float,
     strict_mode: bool,
     batch_size: int,
     num_workers: int,
     logger: logging.Logger,
 ) -> int:
-    """Local mode: thin wrapper that calls core logic in dataloader.py"""
+    """Local mode: simple wrapper calling run_local_batch_detection.
+
+    Hardlinks are automatically managed:
+    - Queries database for existing hardlinks
+    - Validates and reuses if valid
+    - Creates new ones if invalid or missing
+    - Saves to database for next time
+    """
 
     result = run_local_batch_detection(
         db_file=db_file,
         episodes=episodes,
+        comprehensive=comprehensive,
+        sample_ratio=sample_ratio,
         strict_mode=strict_mode,
         batch_size=batch_size,
         num_workers=num_workers,
-        create_symlinks=True,
-        symlink_target_dir=target_dir,
-        symlink_relative=not absolute_symlinks,
-        symlink_skip_missing=skip_missing,
+        create_hardlinks=True,
+        hardlink_target_dir=target_dir,
         logger=logger,
     )
 
@@ -215,13 +119,13 @@ async def run_server_async(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Merged CLI: local symlink test, server, client",
+        description="Merged CLI: local hardlink test, server, client",
     )
     parser.add_argument(
         "--db",
         type=Path,
-        default=DEFAULT_DB,
-        help="Path to SQLite database (default: examples/dataloader_test/datasets_new.db)",
+        default=None,
+        help="Path to SQLite database (required for --server and --local modes, not needed for --client)",
     )
     parser.add_argument(
         "--log-level",
@@ -232,7 +136,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
 
     # execution mode (choose one)
-    parser.add_argument("--local", action="store_true", help="Run locally: symlink + load + DB update")
+    parser.add_argument("--local", action="store_true", help="Run locally: hardlink + load + DB update")
     parser.add_argument("--server", action="store_true", help="Run dataloader detection server")
     parser.add_argument("--client", action="store_true", help="Run dataloader detection client")
     parser.add_argument("--cliet", action="store_true", help="Alias of --client")
@@ -244,10 +148,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=15.0, help="Server: heartbeat timeout in seconds")
     parser.add_argument("--log-dir", type=Path, default=Path("logs/dataloader"), help="Log directory relative to current directory (default: logs/dataloader)")
 
-    # local symlink args
-    parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for symlinked dataset")
-    parser.add_argument("--absolute", action="store_true", help="Create absolute symlinks (default: relative)")
-    parser.add_argument("--symlink-skip-missing", action="store_true", help="Skip missing source files during symlink creation")
+    # local hardlink args
+    parser.add_argument("-t", "--target", type=Path, default=None, help="Target directory for hardlinked dataset (default: {source}_hardlink)")
 
     # dataloader validation args
     parser.add_argument(
@@ -255,6 +157,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=str,
         default="all",
         help='Episodes to test: "all" (default), "0", "0,1,2", or "0-5"',
+    )
+    parser.add_argument(
+        "--comprehensive",
+        action="store_true",
+        help="Use comprehensive detection (test all frames with validation). Default: fast detection with 10%% sampling",
+    )
+    parser.add_argument(
+        "--sample-ratio",
+        type=float,
+        default=0.1,
+        help="Sample ratio for fast detection (0.0-1.0, default: 0.1 = 10%%). Ignored if --comprehensive is used",
     )
     parser.add_argument(
         "--strict",
@@ -321,16 +234,28 @@ def main(argv: list[str]) -> int:
         print("         Using minimum of 1 client", file=sys.stderr)
         num_clients = 1
 
-    db_file = args.db.expanduser().absolute()
+    # Validate database path (required for server and local modes, not for client)
+    is_client_mode = args.client or args.cliet
 
-    # Validate database exists before spawning processes (except for server mode)
-    if not args.server:
+    if not is_client_mode:
+        # Server and local modes REQUIRE --db
+        if args.db is None:
+            print("ERROR: --db is required for --server and --local modes", file=sys.stderr)
+            print("       Please provide database path: --db /path/to/database.db", file=sys.stderr)
+            return 2
+
+        db_file = args.db.expanduser().absolute()
+
         if not db_file.exists():
             print(f"ERROR: Database file not found: {db_file}", file=sys.stderr)
+            print("       Please provide a valid database path using --db option", file=sys.stderr)
             return 2
         if not db_file.is_file():
             print(f"ERROR: Database path is not a file: {db_file}", file=sys.stderr)
             return 2
+    else:
+        # Client mode doesn't need database (it connects to server)
+        db_file = None
 
     # default to --local if no mode specified
     run_local_mode = bool(args.local or (not args.server and not (args.client or args.cliet)))
@@ -340,9 +265,9 @@ def main(argv: list[str]) -> int:
         return run_local(
             db_file=db_file,
             target_dir=(args.target.expanduser().absolute() if args.target else None),
-            absolute_symlinks=bool(args.absolute),
-            skip_missing=bool(args.symlink_skip_missing),
             episodes=args.episodes,
+            comprehensive=bool(args.comprehensive),
+            sample_ratio=args.sample_ratio,
             strict_mode=bool(args.strict),
             batch_size=args.batch_size,
             num_workers=args.num_workers,

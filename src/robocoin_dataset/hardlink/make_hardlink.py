@@ -1,6 +1,9 @@
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -72,7 +75,7 @@ def create_hardlinks_from_correspondence(
 
         try:
             os.link(src_path, dst_path)
-            print(f"✅ 创建硬链接: {src_path} → {dst_path}")
+            logger.debug(f"Created hardlink: {src_path} → {dst_path}")
         except OSError as e:
             if e.errno == 18:
                 raise OSError(
@@ -125,7 +128,7 @@ def create_hardlinks_from_correspondence(
 
                 try:
                     os.link(src_file, dst_path)
-                    print(f"✅ 创建硬链接: {src_path} → {dst_path}")
+                    logger.debug(f"Created hardlink: {src_file} → {dst_path}")
                 except OSError as e:
                     if e.errno == 18:
                         raise OSError(

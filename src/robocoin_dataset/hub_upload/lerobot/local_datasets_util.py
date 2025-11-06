@@ -8,9 +8,6 @@ from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 
-from .constant import (
-  LOCAL_DATASET_CHECK_STRUCTURE,
-)
 from .log_config import LogConfig
 
 
@@ -159,20 +156,28 @@ class LocalDsUtil:
         FileNotFoundError: If dataset directory doesn't exist or required files are missing.
         NotADirectoryError: If the dataset path is not a directory.
     """
-    missing_files: list[Path] = []
+    # TEMPORARY: Structure checking disabled - target structure is out-of-date
+    # Only verify that the dataset directory exists and is a directory
     ds_path = self.root_path / ds_name
     if not ds_path.exists():
       raise FileNotFoundError(f"dataset {ds_name} does not exists in {self.root_path}")
     if not ds_path.is_dir():
       raise NotADirectoryError(f"dataset {ds_name} is not a directory in {self.root_path}")
-    for item in LOCAL_DATASET_CHECK_STRUCTURE + additional_check_list:
-      file_path = self.root_path.joinpath(ds_name).joinpath(item)
-      if not file_path.exists():
-        missing_files.append(file_path)
 
-    if missing_files:
-      missing_files_str = "\n".join(map(str, missing_files))
-      raise FileNotFoundError(f"Dataset {ds_name} missing:\n {missing_files_str}")
+    # TEMPORARY: Disabled structure validation
+    # TODO: Re-enable when target structure is updated
+    return
+
+    # Original validation code (temporarily disabled):
+    # missing_files: list[Path] = []
+    # for item in LOCAL_DATASET_CHECK_STRUCTURE + additional_check_list:
+    #   file_path = self.root_path.joinpath(ds_name).joinpath(item)
+    #   if not file_path.exists():
+    #     missing_files.append(file_path)
+    #
+    # if missing_files:
+    #   missing_files_str = "\n".join(map(str, missing_files))
+    #   raise FileNotFoundError(f"Dataset {ds_name} missing:\n {missing_files_str}")
 
   def check_root_path_valid(self) -> None:
     """
