@@ -17,6 +17,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     IMAGE_KEY,
     OBSERVATION_KEY,
 )
+from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
 from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import (
     LerobotFormatConverter,
 )
@@ -111,10 +112,12 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         """获取所有episode目录（使用BFS搜索，对命名鲁棒）
         
         策略：
-        1. 使用UnifiedEpisodeLocator进行BFS搜索
-        2. 通过子目录结构判断（不限制命名）
-        3. 支持任意深度嵌套
+        1. 检查 task_path 本身是否为 episode
+        2. 使用UnifiedEpisodeLocator进行BFS搜索子目录
+        3. 🆕 如果都没找到，检查同级目录（兄弟目录）
+        4. 支持任意深度嵌套
         """
+        # 策略1: BFS 搜索 task_path 及其子目录
         episodes = self._episode_locator.locate_episodes_bfs(
             dataset_path=task_path,
             is_episode_func=self._is_episode,
@@ -122,24 +125,55 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
             skip_dirs=[]  # JPG+JSON格式不需要额外排除目录（通过子目录结构判断）
         )
         
+        # 策略2: 🆕 如果没找到，尝试同级目录（兄弟目录）
+        if not episodes and task_path.parent.exists():
+            if self.logger:
+                self.logger.debug(f"🔍 No episodes found in {task_path}, searching sibling directories...")
+            
+            try:
+                for sibling in task_path.parent.iterdir():
+                    if sibling == task_path or not sibling.is_dir():
+                        continue
+                    if sibling.name.startswith('.') or sibling.name == '@eaDir':
+                        continue
+                    
+                    # 检查兄弟目录是否为 episode
+                    if self._is_episode(sibling):
+                        episodes.append(sibling)
+                        if self.logger:
+                            self.logger.debug(f"   ✅ Found sibling episode: {sibling.name}")
+            except Exception as e:
+                if self.logger:
+                    self.logger.debug(f"   ⚠️  Failed to search siblings: {e}")
+        
         if not episodes:
             # 收集诊断信息
             try:
                 all_dirs = [d.name for d in task_path.iterdir() if d.is_dir()]
             except Exception:
                 all_dirs = []
+            
+            # 🆕 显示兄弟目录
+            sibling_dirs = []
+            try:
+                sibling_dirs = [d.name for d in task_path.parent.iterdir() 
+                               if d.is_dir() and d != task_path][:10]
+            except Exception:
+                pass
+            
             raise FileNotFoundError(
                 f"❌ No JPG+JSON episode directories found.\n"
                 f"   📂 Task path: {task_path}\n"
                 f"   📋 Directories found: {all_dirs if all_dirs else 'None'}\n"
+                f"   👥 Sibling directories: {sibling_dirs if sibling_dirs else 'None'}\n"
                 f"   💡 Expected: directories containing 'arm/' and 'camera/' subdirectories\n"
                 f"   💡 Check if:\n"
                 f"      1. Episode directories have correct structure\n"
                 f"      2. arm/ and camera/ subdirectories exist\n"
-                f"      3. Path is correct"
+                f"      3. Path is correct (or check sibling directories)"
             )
         
-        return episodes
+        return sorted(episodes)
 
     def _prevalidate_files(self) -> None:
         """验证数据集文件完整性"""
@@ -246,8 +280,8 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         episodes = self._get_all_episode_dirs(task_path)
         if ep_idx >= len(episodes):
             episode_names = [ep.name for ep in episodes[:10]]  # 只显示前10个
-            raise IndexError(
-                f"❌ Episode index out of range.\n"
+            raise CriticalDataError(
+                f"❌ Episode index out of range (entire episode will be skipped).\n"
                 f"   🎯 Requested episode: {ep_idx}\n"
                 f"   📂 Task path: {task_path}\n"
                 f"   📊 Total episodes: {len(episodes)}\n"
@@ -602,8 +636,8 @@ class LerobotFormatConverterJpgJson(LerobotFormatConverter):
         
         if frame_idx >= len(images_buffer[matched_cam]):
             max_frames = len(images_buffer[matched_cam])
-            raise IndexError(
-                f"❌ Frame index out of range.\n"
+            raise CriticalDataError(
+                f"❌ Frame index out of range (entire episode will be skipped).\n"
                 f"   🎯 Requested frame: {frame_idx}\n"
                 f"   📹 Camera: {matched_cam} (matched from: {cam_name})\n"
                 f"   📁 Location: task={task_path.name}, ep_idx={ep_idx}\n"

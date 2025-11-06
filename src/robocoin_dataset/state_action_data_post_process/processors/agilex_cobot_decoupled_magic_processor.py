@@ -126,7 +126,7 @@ class AgilexCobotDecoupledRealsenseMagicProcessor(StateActionDataPostProcessorBa
                 "right_eef_rot_euler_z_rad"
             ]
 
-class AgilexCobotDecoupledMagicH5Mp4NewProcessor(StateActionDataPostProcessorBase):
+class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
 
@@ -161,6 +161,13 @@ class AgilexCobotDecoupledMagicH5Mp4NewProcessor(StateActionDataPostProcessorBas
         new_action_data[:, 0:self.left_gripper_open_state_data_idx + 1] = right_data
         new_action_data[:, self.left_gripper_open_state_data_idx + 1:self.right_gripper_open_state_data_idx + 1] =  left_data
         return new_action_data
+
+    # 忽略原始 action 数据，全部使用 state 数据覆盖
+    def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        processed_state = self.process_episode_state_data(ori_data["observation.state"])
+        # action 特征在本 processor 中与 state 特征长度一致，直接复制
+        processed_action = processed_state.copy()
+        return {"observation.state": processed_state, "action": processed_action}
 
     # 该方法返回处理后的state数据名称
     def get_modified_feature_names(self):

@@ -13,6 +13,8 @@ from typing import Dict, Optional, Union
 import logging
 from contextlib import contextmanager
 
+from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
+
 
 class H5FileCache:
     """
@@ -126,7 +128,17 @@ class H5FileCache:
             return h5_file
         
         except Exception as e:
-            raise ValueError(f"Failed to open H5 file {h5_path}: {e}") from e
+            # 🔧 修复：H5文件打开失败应该跳过episode而不是失败整个任务
+            raise CriticalDataError(
+                f"❌ Failed to open H5 file (entire episode will be skipped).\n"
+                f"   📁 File: {h5_path}\n"
+                f"   ❌ Error: {e}\n"
+                f"   💡 Possible causes:\n"
+                f"      1. File is corrupted\n"
+                f"      2. File is incomplete\n"
+                f"      3. File format is invalid\n"
+                f"      4. NAS connection issue"
+            ) from e
     
     def _evict_oldest(self):
         """淘汰最久未使用的文件（LRU）"""

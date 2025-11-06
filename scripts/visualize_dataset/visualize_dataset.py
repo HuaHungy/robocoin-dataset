@@ -1,28 +1,21 @@
 import argparse
-import logging
 from pathlib import Path
 
 from robocoin_dataset.visualize_dataset.visualize_dataset import visualize_dataset
-
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--repo-id",
-        type=str,
-        required=True,
-        help="Name of hugging face repository containing a LeRobotDataset dataset (e.g. `lerobot/pusht`).",
-    )
-    parser.add_argument(
         "--episode-index",
         type=int,
-        required=True,
+        required=False,
+        default=0,
         help="Episode to visualize.",
     )
     parser.add_argument(
-        "--root",
+        "--repo-path",
         type=Path,
         default=None,
         help="Root directory for the dataset stored locally (e.g. `--root data`). By default, the dataset will be loaded from hugging face cache folder, or downloaded from the hub if available.",
@@ -91,12 +84,10 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    kwargs = vars(args)
-    repo_id = kwargs.pop("repo_id")
-    root = kwargs.pop("root")
-    tolerance_s = kwargs.pop("tolerance_s")
 
-    visualize_dataset(repo_path)
+    visualize_dataset(
+        repo_path=args.repo_path,
+    )
 
 
 if __name__ == "__main__":

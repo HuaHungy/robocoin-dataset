@@ -39,12 +39,12 @@ agilex_cobot_decoupled_magic:
 
 - version: h5_mp4
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
-  post_processor_class: AgilexCobotDecoupledMagicProcessor
+  post_processor_class: AgilexCobotDecoupledMagicH5Mp4Processor
 
 - version: h5_mp4_new
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
-  post_processor_class: AgilexCobotDecoupledMagicH5Mp4NewProcessor
-
+  post_processor_class: AgilexCobotDecoupledMagicH5Mp4Processor
+  
 unitree_g1:
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
