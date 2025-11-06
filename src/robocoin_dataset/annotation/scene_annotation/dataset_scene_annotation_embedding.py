@@ -46,7 +46,8 @@ class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
         scene_jsonl_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(scene_jsonl_file_path, "w") as f:
             for i, annotation in enumerate(self.scene_annotations):
-                f.write(f'{{"scene_index": {i}, "scene": "{annotation.replace("\\n", "").replace("\n", "")}"}}\n')
+                annotation = annotation.replace('\r', ' ').replace('\n', ' ')
+                f.write(f'{{"scene_index": {i}, "scene": "{annotation}"}}\n')
 
 
 class SceneAnnotationEmbedding:
