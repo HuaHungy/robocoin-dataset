@@ -5,15 +5,12 @@ This module provides utilities for:
 - Episode sampling with downsampling support
 - Hardlink preparation for dataset structures
 - Worker initialization for DataLoader
-- Dataset detection and validation:
-  - _run_detection: Fast detection using EpisodeSampler with downsampling (default)
-  - _run_comprehensive_detection: Comprehensive validation of all episodes
+- Dataset detection and validation using EpisodeSampler with downsampling
 """
 
 import logging
 import os
 import sys
-import traceback
 from collections.abc import Iterator
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -152,12 +149,9 @@ def prepare_hardlink_db(
 def run_local_batch_detection(
     db_file: str | Path,
     episodes: str = "all",
-    comprehensive: bool = False,
     sample_ratio: float = 0.1,
-    strict_mode: bool = False,
     batch_size: int = 32,
     num_workers: int = 0,
-    create_hardlinks: bool = True,
     hardlink_target_dir: Path | None = None,
     logger: logging.Logger | None = None,
 ) -> dict:
@@ -165,19 +159,16 @@ def run_local_batch_detection(
 
     Workflow for each dataset:
     1. Sync tasks → Claim one task → PROCESSING
-    2. Prepare hardlinks (optional)
-    3. Run detection (fast or comprehensive)
+    2. Prepare hardlinks (find existing or create new)
+    3. Run detection (fast detection with sampling)
     4. Update status → COMPLETED/FAILED
 
     Args:
         db_file: Path to database
         episodes: Episodes to test (default: "all")
-        comprehensive: Use comprehensive detection (default: False, use fast detection)
-        sample_ratio: Sample ratio for fast detection (default: 0.1 = 10%). Ignored if comprehensive=True
-        strict_mode: Fail immediately on first error (default: False). Only used in comprehensive mode
+        sample_ratio: Sample ratio for detection (default: 0.1 = 10%)
         batch_size: Batch size for dataloader (default: 32)
         num_workers: Number of dataloader workers (default: 0)
-        create_hardlinks: Whether to use hardlinks (default: True)
         hardlink_target_dir: Target directory for hardlinks (default: None = auto)
         logger: Logger instance (default: None)
 
@@ -211,10 +202,10 @@ def run_local_batch_detection(
         datasets_processed += 1
         _logger.info(f"Processing dataset {datasets_processed}: {dataset_uuid}")
 
-        # Prepare path
+        # Prepare path with hardlinks (find existing or create new)
         try:
             test_path = _prepare_dataset_path(
-                db, dataset_uuid, convert_path, create_hardlinks, hardlink_target_dir, _logger
+                db, dataset_uuid, convert_path, hardlink_target_dir, _logger
             )
         except Exception as e:
             error_msg = f"Hardlink preparation failed: {e}"
@@ -224,16 +215,10 @@ def run_local_batch_detection(
             continue
 
         # Run detection
-        if comprehensive:
-            result = _run_comprehensive_detection(
-                test_path, episode_indices=episodes, strict_mode=strict_mode,
-                batch_size=batch_size, num_workers=num_workers,
-            )
-        else:
-            result = _run_detection(
-                test_path, episode_indices=episodes, sample_ratio=sample_ratio,
-                batch_size=batch_size, num_workers=num_workers,
-            )
+        result = _run_detection(
+            test_path, episode_indices=episodes, sample_ratio=sample_ratio,
+            batch_size=batch_size, num_workers=num_workers,
+        )
 
         # Update database
         success, error_msg = _update_task_status(db, dataset_uuid, result, _logger)
@@ -484,22 +469,19 @@ def _prepare_dataset_path(
     db: "object",
     dataset_uuid: str,
     convert_path: str,
-    create_hardlinks: bool,
     hardlink_target_dir: Path | None,
     logger: logging.Logger,
 ) -> Path:
-    """Prepare dataset path with optional hardlinks."""
-    if create_hardlinks:
-        with db.with_session() as session:
-            test_path = prepare_hardlink_db(
-                source_path=convert_path,
-                dataset_uuid=dataset_uuid,
-                target_dir=hardlink_target_dir,
-                db_session=session,
-            )
-        logger.info(f"Using hardlinks: {test_path}")
-        return test_path
-    return Path(convert_path)
+    """Prepare dataset path with hardlinks (find existing or create new)."""
+    with db.with_session() as session:
+        test_path = prepare_hardlink_db(
+            source_path=convert_path,
+            dataset_uuid=dataset_uuid,
+            target_dir=hardlink_target_dir,
+            db_session=session,
+        )
+    logger.info(f"Using hardlinks: {test_path}")
+    return test_path
 
 
 def _update_task_status(
@@ -642,30 +624,6 @@ def _run_detection(
 
     Use this for quick smoke tests or performance benchmarking.
     For comprehensive validation, use _run_comprehensive_detection instead.
-
-    Args:
-        repo_path: Path to LeRobot dataset directory
-        episode_indices: Episodes to test (default: "all")
-            - None or "all": test all episodes
-            - int: single episode (e.g., 0)
-            - list[int]: specific episodes (e.g., [0, 1, 2])
-            - str: "0", "0,1,2", "0-5", etc.
-        sample_ratio: Ratio of frames to sample per episode (default: 0.1 = 10%)
-        batch_size: Batch size for dataloader (default: 32)
-        num_workers: Number of dataloader workers (default: 0)
-
-    Returns:
-        Simple result dictionary:
-        {
-            "success": bool,
-            "dataset_path": str,
-            "total_episodes_in_dataset": int,
-            "episodes_tested": list[int],
-            "total_frames_sampled": int,
-            "sample_ratio": float,
-            "backend": str,
-            "error_message": str | None,
-        }
     """
     from robocoin_dataset.dataloader.dataloader import _parse_episode_specification
 
@@ -748,223 +706,4 @@ def _run_detection(
         result["error_message"] = str(e)
         result["success"] = False
         print(f"❌ Fast detection failed: {e}", file=sys.stderr)
-        return result
-
-
-def _run_comprehensive_detection(
-    repo_path: str | Path,
-    episode_indices: str | int | list[int] | None = "all",
-    strict_mode: bool = False,
-    batch_size: int = 32,
-    num_workers: int = 0,
-) -> dict:
-    """Comprehensive validation of LeRobot dataset by loading and decoding specified episodes.
-
-    This function performs comprehensive validation of a LeRobot dataset:
-    1. Loads the dataset and verifies metadata
-    2. Validates ALL video keys are present and decodable
-    3. Iterates through ALL frames of specified episodes
-    4. Collects detailed statistics and error information
-
-    Args:
-        repo_path: Path to LeRobot dataset directory
-        episode_indices: Episodes to test (default: "all")
-            - None or "all": test all episodes
-            - int: single episode (e.g., 0)
-            - list[int]: specific episodes (e.g., [0, 1, 2])
-            - str: "0", "0,1,2", "0-5", "0-5,10,15-17"
-        strict_mode: If True, fail immediately on first error.
-                    If False (default), collect all errors and continue.
-        batch_size: Batch size for dataloader (default: 32)
-        num_workers: Number of dataloader workers (default: 0)
-
-    Returns:
-        Comprehensive validation result dictionary:
-        {
-            "success": bool,  # Overall success (all episodes passed)
-            "dataset_path": str,
-            "total_episodes_in_dataset": int,
-            "episodes_tested": list[int],
-            "episodes_succeeded": list[int],
-            "episodes_failed": list[int],
-            "frames_per_episode": {episode_idx: frame_count},
-            "total_frames_validated": int,
-            "video_keys": list[str],
-            "non_video_keys": list[str],
-            "backend": str,
-            "backend_reason": str,
-            "errors": list[dict],  # List of error details
-            "error_summary": str | None,  # Human-readable error summary
-        }
-
-    Raises:
-        Exception: If strict_mode=True and any validation fails
-    """
-    from robocoin_dataset.dataloader.dataloader import _parse_episode_specification
-
-    # Import tqdm for progress bars
-    try:
-        from tqdm import tqdm  # type: ignore
-    except Exception:
-        tqdm = None  # type: ignore
-
-    repo_path = Path(repo_path)
-
-    # Initialize result structure
-    result = {
-        "success": False,
-        "dataset_path": str(repo_path),
-        "total_episodes_in_dataset": 0,
-        "episodes_tested": [],
-        "episodes_succeeded": [],
-        "episodes_failed": [],
-        "frames_per_episode": {},
-        "total_frames_validated": 0,
-        "video_keys": [],
-        "non_video_keys": [],
-        "backend": "unknown",
-        "backend_reason": "",
-        "errors": [],
-        "error_summary": None,
-    }
-
-    try:
-        # Load dataset
-        ds = create_lerobot_dataset(
-            repo_id=repo_path.name,
-            root=repo_path,
-        )
-        result["backend"] = getattr(ds, "robocoin_video_backend", "unknown")
-        result["backend_reason"] = getattr(ds, "robocoin_video_backend_reason", "")
-
-        # Get dataset metadata
-        total_episodes = len(ds.episode_data_index["from"])
-        result["total_episodes_in_dataset"] = total_episodes
-
-        # Collect video and non-video keys
-        video_keys = list(ds.meta.video_keys) if hasattr(ds.meta, "video_keys") else []
-        all_keys = set(ds.meta.get_features().keys()) if hasattr(ds.meta, "get_features") else set()
-        non_video_keys = sorted(all_keys - set(video_keys))
-
-        result["video_keys"] = video_keys
-        result["non_video_keys"] = non_video_keys
-
-        # Parse episode specification
-        try:
-            episodes_to_test = _parse_episode_specification(episode_indices, total_episodes)
-        except ValueError as e:
-            error_msg = f"Invalid episode specification: {e}"
-            result["errors"].append(
-                {
-                    "type": "episode_specification_error",
-                    "message": error_msg,
-                }
-            )
-            result["error_summary"] = error_msg
-            print(f"❌ {error_msg}", file=sys.stderr)
-            if strict_mode:
-                raise ValueError(error_msg) from e
-            return result
-
-        result["episodes_tested"] = episodes_to_test
-
-        if not episodes_to_test:
-            result["success"] = True
-            return result
-
-        # Progress tracking
-        total_frames_to_test = 0
-        try:
-            for ep_idx in episodes_to_test:
-                from_idx = ds.episode_data_index["from"][ep_idx].item()
-                to_idx = ds.episode_data_index["to"][ep_idx].item()
-                total_frames_to_test += int(to_idx - from_idx)
-        except Exception:
-            pass
-
-        # Create overall progress bar
-        overall_progress = None
-        if tqdm is not None:
-            overall_progress = tqdm(
-                total=total_frames_to_test,
-                desc="🔍 Validating dataset",
-                unit="frame",
-                file=sys.stderr,
-                position=0,
-            )
-
-        # Test each episode (thin loop - core logic extracted to helper)
-        for ep_idx in episodes_to_test:
-            success, frames_validated, error_message = _validate_single_episode(
-                ds=ds,
-                ep_idx=ep_idx,
-                video_keys=video_keys,
-                batch_size=batch_size,
-                num_workers=num_workers,
-                overall_progress=overall_progress,
-            )
-
-            if success:
-                # Record success
-                result["episodes_succeeded"].append(ep_idx)
-                result["frames_per_episode"][ep_idx] = frames_validated
-                result["total_frames_validated"] += frames_validated
-            else:
-                # Record failure
-                error_detail = {
-                    "type": "episode_validation_error",
-                    "episode_idx": ep_idx,
-                    "message": error_message,
-                    "traceback": traceback.format_exc(),
-                }
-                result["errors"].append(error_detail)
-                result["episodes_failed"].append(ep_idx)
-                result["frames_per_episode"][ep_idx] = 0
-
-                # Print concise error
-                if overall_progress is not None:
-                    overall_progress.write(f"❌ Episode {ep_idx}: {error_message}")
-                else:
-                    print(f"❌ Episode {ep_idx}: {error_message}", file=sys.stderr)
-
-                if strict_mode:
-                    if overall_progress is not None:
-                        overall_progress.close()
-                    raise RuntimeError(f"Episode {ep_idx} validation failed: {error_message}")
-
-        # Close overall progress bar
-        if overall_progress is not None:
-            overall_progress.close()
-
-        # Determine overall success
-        result["success"] = len(result["episodes_failed"]) == 0
-
-        # Generate error summary
-        if result["errors"]:
-            failed_eps = result["episodes_failed"]
-            result["error_summary"] = (
-                f"{len(failed_eps)} episode(s) failed validation: {failed_eps}. "
-                f"See 'errors' field for details."
-            )
-
-        return result
-
-    except Exception as e:
-        # Fatal error (dataset loading, etc.)
-        error_msg = str(e)
-        result["errors"].append(
-            {
-                "type": "fatal_error",
-                "message": error_msg,
-                "traceback": traceback.format_exc(),
-            }
-        )
-        result["error_summary"] = f"Fatal error: {error_msg}"
-        result["success"] = False
-
-        print(f"❌ FATAL ERROR: {error_msg}", file=sys.stderr)
-
-        if strict_mode:
-            raise
-
         return result

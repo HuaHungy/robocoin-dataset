@@ -27,7 +27,6 @@ from robocoin_dataset.dataloader.utils import (
     LeRobotDataset,
     _mark_task_failed,
     _parse_episode_specification,
-    _run_comprehensive_detection,
     _run_detection,
     _update_task_status,
     create_episode_dataloader,
@@ -83,13 +82,11 @@ class DataloaderDbProcess:
 
     def process_one_dataset(
         self,
-        create_hardlinks: bool = False,
         hardlink_target_dir: Path | None = None,
     ) -> None:
         """Process one dataset from the queue.
 
         Args:
-            create_hardlinks: Whether to use hardlinks (default: False)
             hardlink_target_dir: Target directory for hardlinks (default: None = auto)
         """
         # Sync tasks and claim one
@@ -101,19 +98,16 @@ class DataloaderDbProcess:
             self.logger.info("No dataloader detection task to process")
             return
 
-        # Prepare path (uses prepare_hardlink_db from utils.py)
+        # Prepare path with hardlinks (find existing or create new)
         try:
-            if create_hardlinks:
-                with self.db.with_session() as session:
-                    test_path = prepare_hardlink_db(
-                        source_path=convert_path,
-                        dataset_uuid=dataset_uuid,
-                        target_dir=hardlink_target_dir,
-                        db_session=session,
-                    )
-                self.logger.info(f"Using hardlinks: {test_path}")
-            else:
-                test_path = Path(convert_path)
+            with self.db.with_session() as session:
+                test_path = prepare_hardlink_db(
+                    source_path=convert_path,
+                    dataset_uuid=dataset_uuid,
+                    target_dir=hardlink_target_dir,
+                    db_session=session,
+                )
+            self.logger.info(f"Using hardlinks: {test_path}")
         except Exception as e:
             error_msg = f"Path preparation failed: {e}"
             self.logger.error(error_msg)
@@ -287,25 +281,13 @@ class DataloaderDbClient(TaskClient):
 
         # Get configurable parameters (with defaults)
         episodes = task_content.get("episodes", "all")
-        comprehensive = task_content.get("comprehensive", False)  # Default: fast detection
-        sample_ratio = task_content.get("sample_ratio", 0.1)  # Default: 10% sampling for fast detection
-        strict_mode = task_content.get("strict_mode", False)  # Only used in comprehensive mode
+        sample_ratio = task_content.get("sample_ratio", 0.1)  # Default: 10% sampling
         batch_size = task_content.get("batch_size", 32)
         num_workers = task_content.get("num_workers", 0)
 
         self.logger.info(f"Processing dataset: {test_path}")
 
-        # Run detection
-        if comprehensive:
-            # Comprehensive detection: test all frames with validation
-            return _run_comprehensive_detection(
-                test_path,
-                episode_indices=episodes,
-                strict_mode=strict_mode,
-                batch_size=batch_size,
-                num_workers=num_workers,
-            )
-        # Fast detection: test with downsampling
+        # Run detection with downsampling
         return _run_detection(
             test_path,
             episode_indices=episodes,
@@ -684,8 +666,7 @@ __all__ = [
     # Hardlink utilities (from utils module)
     "prepare_hardlink_db",
     # Detection and validation (from utils module)
-    "_run_detection",  # Fast detection (default)
-    "_run_comprehensive_detection",  # Comprehensive validation
+    "_run_detection",  # Fast detection with sampling
     "run_local_batch_detection",
     # Task management
     "TASK_CATEGORY",
