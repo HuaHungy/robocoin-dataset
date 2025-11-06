@@ -15,17 +15,21 @@ import logging
 import multiprocessing as mp
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from sqlalchemy.orm import Session
-from sqlalchemy.sql.expression import and_, or_
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, TaskStatus
 from robocoin_dataset.dataloader.utils import (
     EpisodeSampler,
     LeRobotDataset,
+    _mark_task_failed,
+    _parse_episode_specification,
     _run_comprehensive_detection,
     _run_detection,
+    _update_task_status,
     create_episode_dataloader,
     create_lerobot_dataset,
     prepare_hardlink_db,
@@ -48,176 +52,10 @@ from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import LEFORMAT_PATH
 
 # =============================
-# Task Management Constants and Functions
+# Task Management Constants
 # =============================
 
 TASK_CATEGORY = "dataloader_detection"
-
-
-def _sync_dataloader_detection_tasks(
-    session: Session,
-    logger: logging.Logger | None = None,
-) -> None:
-    """Mark datasets requiring dataloader detection as pending and align versions.
-
-    ##############################################################################
-    # HERE : version_ps = data_merge_version   version ++                        #
-    ##############################################################################
-
-    Trigger rules (STRICT REQUIREMENTS):
-      - data_merge_status must be COMPLETED
-      - convert_status must be COMPLETED
-      - data_loader_detection_status is NULL (never tested), PENDING, or COMPLETED but outdated
-
-    WARNING: NULL data_loader_detection_status is ILLEGAL but handled for robustness.
-    """
-    _logger = logger or logging.getLogger(__name__)
-
-    query = session.query(DatasetDB).filter(
-        and_(
-            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
-            or_(
-                # NEW: Match records that have never been tested (NULL status)
-                DatasetDB.data_loader_detection_status == None,  # noqa: E711
-                # Match records explicitly marked as PENDING
-                DatasetDB.data_loader_detection_status == TaskStatus.PENDING,
-                # Match records that were COMPLETED but are now outdated
-                and_(
-                    DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
-                    DatasetDB.data_loader_detection_version_ps < DatasetDB.data_merge_version,
-                    # FIXED: dlder_ps < data_merge_version not dlder_ps < convert_version.
-                ),
-            ),
-        )
-    )
-
-    items = query.all()
-    if not items:
-        return
-
-    # Separate NULL status records and warn about them
-    null_status_items = []
-    valid_items = []
-
-    for item in items:
-        if item.data_loader_detection_status is None:
-            null_status_items.append(item)
-        else:
-            valid_items.append(item)
-
-        item.data_loader_detection_status = TaskStatus.PENDING
-        item.data_loader_detection_version_ps = item.data_merge_version
-        item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
-
-    # Log warnings for NULL status records
-    if null_status_items:
-        _logger.warning(
-            f"⚠️  Found {len(null_status_items)} dataset(s) with NULL data_loader_detection_status. "
-            f"This is ILLEGAL - status should be initialized. Treating as PENDING for robustness."
-        )
-        for item in null_status_items:
-            _logger.warning(
-                f"   ⚠️  Dataset {item.dataset_uuid} has NULL data_loader_detection_status "
-                f"(convert_path: {item.convert_path})"
-            )
-
-    if valid_items:
-        _logger.info(f"Marked {len(valid_items)} dataset(s) as PENDING for dataloader detection")
-
-    session.commit()
-
-
-def _gen_one_dataloader_detection_task(session: Session) -> tuple[str | None, str | None]:
-    """Claim one pending dataset and transition it to PROCESSING.
-
-    Returns (dataset_uuid, convert_path) or (None, None) if no task available.
-    """
-    item = (
-        session.query(DatasetDB)
-        .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
-        .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
-        .first()
-    )
-    if not item:
-        return None, None
-
-    item.data_loader_detection_status = TaskStatus.PROCESSING
-    session.commit()
-    return item.dataset_uuid, item.convert_path
-
-
-def _parse_episode_specification(
-    episode_spec: str | int | list[int] | None,
-    total_episodes: int,
-) -> list[int]:
-    """Parse episode specification into list of episode indices.
-
-    Args:
-        episode_spec: Episode specification in various formats:
-            - None or "all": all episodes [0, 1, ..., total_episodes-1]
-            - int: single episode (e.g., 0)
-            - list[int]: specific episodes (e.g., [0, 1, 2])
-            - str "0": single episode 0
-            - str "0,1,2": comma-separated episodes
-            - str "0-5": range (inclusive) [0, 1, 2, 3, 4, 5]
-            - str "0-5,10,15-17": mixed notation
-        total_episodes: Total number of episodes in dataset
-
-    Returns:
-        Sorted list of unique episode indices
-
-    Raises:
-        ValueError: If specification is invalid or episodes out of range
-    """
-    if episode_spec is None or (isinstance(episode_spec, str) and episode_spec.lower() == "all"):
-        return list(range(total_episodes))
-
-    if isinstance(episode_spec, int):
-        if episode_spec < 0 or episode_spec >= total_episodes:
-            raise ValueError(f"Episode {episode_spec} out of range [0, {total_episodes - 1}]")
-        return [episode_spec]
-
-    if isinstance(episode_spec, list):
-        for ep in episode_spec:
-            if not isinstance(ep, int) or ep < 0 or ep >= total_episodes:
-                raise ValueError(f"Episode {ep} out of range [0, {total_episodes - 1}]")
-        return sorted(set(episode_spec))
-
-    if isinstance(episode_spec, str):
-        # Parse string specification
-        episodes = []
-        parts = episode_spec.split(",")
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-            if "-" in part and not part.startswith("-"):
-                # Range notation: "0-5"
-                try:
-                    start_str, end_str = part.split("-", 1)
-                    start = int(start_str.strip())
-                    end = int(end_str.strip())
-                    if start > end:
-                        raise ValueError(f"Invalid range: {part} (start > end)")
-                    episodes.extend(range(start, end + 1))
-                except ValueError as e:
-                    raise ValueError(f"Invalid range specification: {part}") from e
-            else:
-                # Single episode
-                try:
-                    episodes.append(int(part))
-                except ValueError as e:
-                    raise ValueError(f"Invalid episode number: {part}") from e
-
-        # Validate range
-        for ep in episodes:
-            if ep < 0 or ep >= total_episodes:
-                raise ValueError(f"Episode {ep} out of range [0, {total_episodes - 1}]")
-
-        return sorted(set(episodes))
-
-    raise ValueError(f"Invalid episode specification type: {type(episode_spec)}")
-
 
 # =============================
 # Server Components
@@ -254,7 +92,7 @@ class DataloaderDbProcess:
             create_hardlinks: Whether to use hardlinks (default: False)
             hardlink_target_dir: Target directory for hardlinks (default: None = auto)
         """
-        # 1) Sync tasks (queue pending/stale)
+        # Sync tasks and claim one
         with self.db.with_session() as session:
             _sync_dataloader_detection_tasks(session, logger=self.logger)
             dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
@@ -263,9 +101,9 @@ class DataloaderDbProcess:
             self.logger.info("No dataloader detection task to process")
             return
 
-        # 2) Prepare path (with optional hardlinks using database integration)
-        if create_hardlinks:
-            try:
+        # Prepare path (uses prepare_hardlink_db from utils.py)
+        try:
+            if create_hardlinks:
                 with self.db.with_session() as session:
                     test_path = prepare_hardlink_db(
                         source_path=convert_path,
@@ -274,53 +112,19 @@ class DataloaderDbProcess:
                         db_session=session,
                     )
                 self.logger.info(f"Using hardlinks: {test_path}")
-            except Exception as e:
-                err_msg = f"Hardlink preparation failed: {e}"
-                self.logger.error(err_msg)
-                with self.db.with_session() as session:
-                    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-                    if item:
-                        item.data_loader_detection_status = TaskStatus.FAILED
-                        item.data_loader_detection_err_msg = err_msg
-                        session.commit()
-                return
-        else:
-            test_path = Path(convert_path)
-
-        # 3) Run detection and update status (default: fast detection)
-        result = _run_detection(
-            test_path,
-            episode_indices="all",
-            sample_ratio=0.1,
-        )
-
-        # Update database based on result
-        with self.db.with_session() as session:
-            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-            if item is None:
-                raise ValueError(f"Dataset {dataset_uuid} not found")
-
-            if result["success"]:
-                item.data_loader_detection_status = TaskStatus.COMPLETED
-                item.data_loader_detection_err_msg = None
-                # Version was already incremented when task was claimed
-                # Handle different result structures (fast vs comprehensive)
-                frames_count = result.get('total_frames_validated') or result.get('total_frames_sampled', 0)
-                self.logger.info(
-                    f"Dataset {dataset_uuid} validation completed: "
-                    f"{frames_count} frames in {len(result['episodes_tested'])} episodes"
-                )
             else:
-                item.data_loader_detection_status = TaskStatus.FAILED
-                # Handle different result structures (fast vs comprehensive)
-                error_msg = result.get("error_summary") or result.get("error_message", "Unknown error")
-                item.data_loader_detection_err_msg = error_msg
-                # Version was already incremented when task was claimed (not rolled back on failure)
-                self.logger.error(
-                    f"Dataset {dataset_uuid} validation failed: {error_msg}"
-                )
+                test_path = Path(convert_path)
+        except Exception as e:
+            error_msg = f"Path preparation failed: {e}"
+            self.logger.error(error_msg)
+            _mark_task_failed(self.db, dataset_uuid, error_msg)
+            return
 
-            session.commit()
+        # Run detection
+        result = _run_detection(test_path, episode_indices="all", sample_ratio=0.1)
+
+        # Update database (uses helper from utils.py)
+        _update_task_status(self.db, dataset_uuid, result, self.logger)
 
 
 class DataloaderDbServer(TaskServer):
@@ -771,6 +575,100 @@ def run_multi_client(
     print("=" * 70 + "\n")
 
     return 0 if total_tasks_failed == 0 else 1
+
+
+# =============================
+# Task Management Functions
+# =============================
+
+
+def _sync_dataloader_detection_tasks(
+    session: "Session",
+    logger: logging.Logger | None = None,
+) -> None:
+    """Mark datasets requiring dataloader detection as pending and align versions.
+
+    Trigger rules (STRICT REQUIREMENTS):
+      - data_merge_status must be COMPLETED
+      - convert_status must be COMPLETED
+      - data_loader_detection_status is NULL (never tested), PENDING, or COMPLETED but outdated
+
+    WARNING: NULL data_loader_detection_status is ILLEGAL but handled for robustness.
+    """
+    from sqlalchemy.sql.expression import and_, or_
+
+    _logger = logger or logging.getLogger(__name__)
+
+    query = session.query(DatasetDB).filter(
+        and_(
+            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            or_(
+                # NEW: Match records that have never been tested (NULL status)
+                DatasetDB.data_loader_detection_status == None,  # noqa: E711
+                # Match records explicitly marked as PENDING
+                DatasetDB.data_loader_detection_status == TaskStatus.PENDING,
+                # Match records that were COMPLETED but are now outdated
+                and_(
+                    DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
+                    DatasetDB.data_loader_detection_version_ps < DatasetDB.data_merge_version,
+                ),
+            ),
+        )
+    )
+
+    items = query.all()
+    if not items:
+        return
+
+    # Separate NULL status records and warn about them
+    null_status_items = []
+    valid_items = []
+
+    for item in items:
+        if item.data_loader_detection_status is None:
+            null_status_items.append(item)
+        else:
+            valid_items.append(item)
+
+        item.data_loader_detection_status = TaskStatus.PENDING
+        item.data_loader_detection_version_ps = item.data_merge_version
+        item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
+
+    # Log warnings for NULL status records
+    if null_status_items:
+        _logger.warning(
+            f"⚠️  Found {len(null_status_items)} dataset(s) with NULL data_loader_detection_status. "
+            f"This is ILLEGAL - status should be initialized. Treating as PENDING for robustness."
+        )
+        for item in null_status_items:
+            _logger.warning(
+                f"   ⚠️  Dataset {item.dataset_uuid} has NULL data_loader_detection_status "
+                f"(convert_path: {item.convert_path})"
+            )
+
+    if valid_items:
+        _logger.info(f"Marked {len(valid_items)} dataset(s) as PENDING for dataloader detection")
+
+    session.commit()
+
+
+def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, str | None]:
+    """Claim one pending dataset and transition it to PROCESSING.
+
+    Returns (dataset_uuid, convert_path) or (None, None) if no task available.
+    """
+    item = (
+        session.query(DatasetDB)
+        .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
+        .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
+        .first()
+    )
+    if not item:
+        return None, None
+
+    item.data_loader_detection_status = TaskStatus.PROCESSING
+    session.commit()
+    return item.dataset_uuid, item.convert_path
 
 
 # =============================
