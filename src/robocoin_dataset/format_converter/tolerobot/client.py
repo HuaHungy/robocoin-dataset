@@ -50,6 +50,9 @@ class LeFormatConverterTaskClient(TaskClient):
         return {}
 
     def _sync_process_task(self, task_content: dict) -> dict:
+        # 🔧 修复：提前声明converter，避免finally块中的NameError
+        converter = None
+        
         try:
             # 去除路径字符串中的前导和尾随空格
             dataset_path_str = task_content.get(DATASET_PATH)
@@ -82,20 +85,40 @@ class LeFormatConverterTaskClient(TaskClient):
                 logging.INFO,
             )
 
-            converter: LerobotFormatConverter = LerobotFormatConverterFactory.create_converter(
-                dataset_path=dataset_path,
-                device_model=device_model,
-                output_path=output_path,
-                converter_config=converter_config,
-                converter_module_path=module_path,
-                converter_class_name=class_name,
-                repo_id=repo_id,
-                video_backend=video_backend,
-                image_writer_processes=image_writer_proecesses,
-                image_writer_threads=image_writer_threads,
-                logger=logger,
-                auto_reencode=auto_reencode,
-            )
+            # 🔧 修复：将converter创建放到try-except中，确保初始化失败时也能返回有意义的结果
+            try:
+                converter: LerobotFormatConverter = LerobotFormatConverterFactory.create_converter(
+                    dataset_path=dataset_path,
+                    device_model=device_model,
+                    output_path=output_path,
+                    converter_config=converter_config,
+                    converter_module_path=module_path,
+                    converter_class_name=class_name,
+                    repo_id=repo_id,
+                    video_backend=video_backend,
+                    image_writer_processes=image_writer_proecesses,
+                    image_writer_threads=image_writer_threads,
+                    logger=logger,
+                    auto_reencode=auto_reencode,
+                )
+            except Exception as e:
+                # 🆕 Converter创建失败（初始化阶段错误）
+                logger.error(f"❌ Failed to create converter for {dataset_path}")
+                logger.error(f"   Error: {type(e).__name__}: {e}")
+                logger.error(f"   This usually means:")
+                logger.error(f"   1. Dataset path is incorrect or inaccessible")
+                logger.error(f"   2. Dataset structure doesn't match expected format")
+                logger.error(f"   3. Required files (metadata, H5, etc.) are missing")
+                
+                # 抛出异常让外层捕获
+                raise RuntimeError(
+                    f"❌ Converter initialization failed for {dataset_path}.\n"
+                    f"   Error: {type(e).__name__}: {e}\n"
+                    f"   💡 Check:\n"
+                    f"      1. Dataset path exists and is accessible\n"
+                    f"      2. Dataset structure matches expected format\n"
+                    f"      3. All required files are present"
+                ) from e
 
             try:
                 self.logger.info(f"converter_log_dir: {converter_log_dir}")
@@ -161,12 +184,14 @@ class LeFormatConverterTaskClient(TaskClient):
                 }
             finally:
                 # 🔥 确保清理资源，防止semaphore泄漏
-                try:
-                    if hasattr(converter, 'lerobot_dataset') and converter.lerobot_dataset is not None:
-                        converter.lerobot_dataset.stop_image_writer()
-                        self.logger.debug("✅ 已清理image writer资源")
-                except Exception as e:
-                    self.logger.warning(f"⚠️  清理converter资源时出错: {e}")
+                # 🔧 修复：检查converter是否已创建
+                if converter is not None:
+                    try:
+                        if hasattr(converter, 'lerobot_dataset') and converter.lerobot_dataset is not None:
+                            converter.lerobot_dataset.stop_image_writer()
+                            self.logger.debug("✅ 已清理image writer资源")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️  清理converter资源时出错: {e}")
 
         except Exception as e:
             raise RuntimeError(f"convert dataset {dataset_path} failed") from e

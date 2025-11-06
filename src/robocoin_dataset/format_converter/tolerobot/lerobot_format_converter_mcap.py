@@ -187,6 +187,7 @@ class LerobotFormatConverterRealmanRmcAidalMcap(LerobotFormatConverter):
         # 每个episode完成后会清理缓存，避免内存泄漏
         self._episode_data_cache = {}
         self._current_episode_cache_key = None  # 🆕 跟踪当前episode的缓存key
+        self._current_episode_data = None  # 🆕 当前episode的完整数据（用于大文件的显式清理）
         
         # Test 模式标志（用于限制帧数）
         self._is_test_mode = False
@@ -784,6 +785,8 @@ int32 lift_pos
             episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
             return episode_data["images"]
         episode_data = self._get_episode_data(task_path, ep_idx)
+        # 🆕 将episode_data存储为实例变量，以便后续清理
+        self._current_episode_data = episode_data
         return episode_data["images"]
 
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
@@ -800,6 +803,8 @@ int32 lift_pos
             episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
             return episode_data["states"]
         episode_data = self._get_episode_data(task_path, ep_idx)
+        # 🆕 将episode_data存储为实例变量，以便后续清理
+        self._current_episode_data = episode_data
         return episode_data["states"]
 
     def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
@@ -816,7 +821,53 @@ int32 lift_pos
             episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
             return episode_data["actions"]
         episode_data = self._get_episode_data(task_path, ep_idx)
+        # 🆕 将episode_data存储为实例变量，以便后续清理
+        self._current_episode_data = episode_data
         return episode_data["actions"]
+    
+    def _cleanup_episode_resources(self) -> None:
+        """🔥 清理episode转换完成后的所有资源，释放内存
+        
+        这个方法应该在每个episode转换完成后被基类调用
+        """
+        # 清理episode数据
+        if hasattr(self, '_current_episode_data') and self._current_episode_data:
+            if self.logger:
+                # 估算内存占用
+                if 'images' in self._current_episode_data:
+                    num_cameras = len(self._current_episode_data['images'])
+                    num_frames = len(next(iter(self._current_episode_data['images'].values()))) if self._current_episode_data['images'] else 0
+                    estimated_mb = num_cameras * num_frames * 0.5
+                    self.logger.debug(
+                        f"🧹 清理episode数据: ~{estimated_mb:.1f} MB "
+                        f"({num_cameras} cameras × {num_frames} frames)"
+                    )
+            
+            # 显式删除所有大数据结构
+            if 'images' in self._current_episode_data:
+                for cam_images in self._current_episode_data['images'].values():
+                    cam_images.clear() if isinstance(cam_images, list) else None
+                self._current_episode_data['images'].clear()
+            
+            if 'states' in self._current_episode_data:
+                self._current_episode_data['states'].clear() if isinstance(self._current_episode_data['states'], list) else None
+            
+            if 'actions' in self._current_episode_data:
+                self._current_episode_data['actions'].clear() if isinstance(self._current_episode_data['actions'], list) else None
+            
+            # 删除整个dict
+            del self._current_episode_data
+            self._current_episode_data = None
+        
+        # 清理缓存
+        self._clear_episode_cache()
+        
+        # 🔥 强制垃圾回收（对于大数据非常重要）
+        import gc
+        gc.collect()
+        
+        if self.logger:
+            self.logger.debug("✅ Episode资源清理完成，已执行垃圾回收")
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
         """快速获取帧数，避免解析整个 MCAP 文件

@@ -370,3 +370,10 @@ class VideoOptStAnnotationDB(Base):
     start_frame_idx = Column(Integer, nullable=False, index=True)
     end_frame_idx = Column(Integer, nullable=False, index=True)
     annotation = Column(Text, nullable=False)
+
+
+class DatasetHardLinkDB(Base):
+    __tablename__ = "dataset_hard_link"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    hard_link_path = Column(String(255), index=True, nullable=True)

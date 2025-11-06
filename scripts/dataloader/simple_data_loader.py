@@ -27,7 +27,8 @@ parser.add_argument("repo_path", type=str, default="")
 parser.add_argument("--num-workers", type=int, default=8)
 args = parser.parse_args()
 dataset = LeRobotDataset(
-    repo_id=args.repo_path,
+    repo_id="test/dataloader_check",
+    root=args.repo_path,
 )
 
 sampler = EpisodeSampler(dataset)

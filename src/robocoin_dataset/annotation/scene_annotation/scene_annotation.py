@@ -155,32 +155,19 @@ class SceneAnnotationLocal:
                         # 调用场景注释嵌入
                         scene_embedding = SceneAnnotationEmbedding(self.db_file_path)
                         scene_embedding.dataset_scene_embedding(
-<<<<<<< HEAD
-                            dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions
-                        )
-
-                        # 更新状态为完成
-                        dataset_record.scene_annotation_status = TaskStatus.COMPLETED
-=======
                             dataset_uuid=dataset_record.dataset_uuid, scene_annotations=descriptions # type: ignore
                         )
 
                         # 更新状态为完成
                         dataset_record.scene_annotation_status = TaskStatus.COMPLETED # type: ignore
->>>>>>> 0760af6 (n)
                         session.commit()
 
                         self.logger.info(f"数据集 {dataset_name} 场景注释处理完成")
                         success_count += 1
                     except Exception as e:
                         self.logger.error(f"处理数据集文件夹 {dataset_folder} 时发生错误: {e}")
-<<<<<<< HEAD
-                        dataset_record.scene_annotation_status = TaskStatus.FAILED
-                        dataset_record.scene_annotation_err_msg = str(e)
-=======
                         dataset_record.scene_annotation_status = TaskStatus.FAILED # type: ignore
                         dataset_record.scene_annotation_err_msg = str(e) # type: ignore
->>>>>>> 0760af6 (n)
                         session.commit()
                         continue
                         

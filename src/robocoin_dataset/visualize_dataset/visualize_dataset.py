@@ -12,7 +12,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset  # type: ignore
 from sqlalchemy.sql import and_, or_
 
 from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import DatasetDB, TaskStatus
+from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB, TaskStatus
 from robocoin_dataset.distribution_computation.constant import (
     DATASET_UUID,
     ERR_MSG,
@@ -22,7 +22,7 @@ from robocoin_dataset.distribution_computation.constant import (
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import (
-    LEFORMAT_PATH,
+    HARD_LINK_PATH,
 )
 
 
@@ -50,20 +50,21 @@ def to_hwc_uint8_numpy(chw_float32_torch: torch.Tensor) -> np.ndarray:
 def get_annotation_text(batch: dict, idx: int) -> str:
     annotation_text = ""
     # tasks
-    if "tasks" in batch:
-        annotation_text += f"Tasks: {batch['tasks'][idx]};\n"
+    if "task" in batch:
+        annotation_text += f"Task:\n{batch['task'][idx]};\n"
+    annotation_text += "\n"
     # subtasks
 
     if "subtasks" in batch:
-        annotation_text += f"Subtasks: {batch['subtasks'][idx]}\n;"
+        annotation_text += f"Subtasks:\n{batch['subtasks'][idx]}\n"
+    annotation_text += "\n"
 
     if "scene" in batch:
-        annotation_text += f"Scene Annotation: {batch['scene'][idx]}\n"
+        annotation_text += f"Scene Annotation:\n{batch['scene'][idx]}\n"
     # left arm state annotations
     # EEF acceleration magnitude
     annotation_text += "\n"
-    annotation_text += "motion annotations:\n"
-    annotation_text += "\n"
+    annotation_text += "Motion Annotations:\n"
     if "left_eef_acc_mag_state" in batch:
         annotation_text += f"Left EEF acc mag state: {batch['left_eef_acc_mag_state'][idx]}\n"
     # EEF direction
@@ -181,9 +182,6 @@ def _visualize_episode(
 
     rr.init(f"{str(repo_path)}", spawn=True)
 
-    # Manually call python garbage collector after `rr.init` to avoid hanging in a blocking flush
-    # when iterating on a dataloader with `num_workers` > 0
-    # TODO(rcadene): remove `gc.collect` when rerun version 0.16 is out, which includes a fix
     gc.collect()
 
     logging.info("Logging to Rerun")
@@ -199,25 +197,6 @@ def _visualize_episode(
                 # TODO(rcadene): add `.compress()`? is it lossless?
                 rr.log(key, rr.Image(to_hwc_uint8_numpy(batch[key][i])))
 
-            # display each dimension of action space (e.g. actuators command)
-            if "action" in batch:
-                for dim_idx, val in enumerate(batch["action"][i]):
-                    rr.log(f"action/{dim_idx}", rr.Scalar(val.item()))
-
-            # display each dimension of observed state space (e.g. agent position in joint space)
-            if "observation.state" in batch:
-                for dim_idx, val in enumerate(batch["observation.state"][i]):
-                    rr.log(f"state/{dim_idx}", rr.Scalar(val.item()))
-
-            if "next.done" in batch:
-                rr.log("next.done", rr.Scalar(batch["next.done"][i].item()))
-
-            if "next.reward" in batch:
-                rr.log("next.reward", rr.Scalar(batch["next.reward"][i].item()))
-
-            if "next.success" in batch:
-                rr.log("next.success", rr.Scalar(batch["next.success"][i].item()))
-
             annotation_text = get_annotation_text(batch, i)
             if annotation_text:
                 rr.log("annotations", rr.TextLog(annotation_text))
@@ -232,8 +211,6 @@ class DatasetVisualizerServer(TaskServer):
         host: str = "0.0.0.0",
         port: int = 2110,
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
-        device_model: str = "",
-        device_model_version: str = "",
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
         logger: logging.Logger | None = None,
     ) -> None:
@@ -245,8 +222,6 @@ class DatasetVisualizerServer(TaskServer):
             timeout=timeout,
         )
         db_file_path = Path(db_file_path).expanduser().absolute()
-        self.device_model = device_model
-        self.device_model_version = device_model_version
 
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
@@ -274,17 +249,20 @@ class DatasetVisualizerServer(TaskServer):
                     ),
                 )
             )
-            if self.device_model is not None:
-                query = query.filter(
-                    DatasetDB.device_model == self.device_model,
-                )
-
-            if self.device_model_version is not None:
-                query = query.filter(DatasetDB.device_model_version == self.device_model_version)
 
             item = query.first()
 
             if not item:
+                return None
+
+            query = session.query(DatasetHardLinkDB).filter(
+                DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
+            )
+            hard_link_item = query.first()
+            if not hard_link_item:
+                return None
+
+            if not hard_link_item.hard_link_path:
                 return None
 
             item.visualize_check_status = TaskStatus.PROCESSING
@@ -295,7 +273,7 @@ class DatasetVisualizerServer(TaskServer):
 
             return {
                 DATASET_UUID: item.dataset_uuid,
-                LEFORMAT_PATH: item.convert_path,
+                HARD_LINK_PATH: hard_link_item.hard_link_path,
             }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -342,13 +320,12 @@ class DatasetVisualizerClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
-            repo_path = task_content.get(LEFORMAT_PATH)
-            repo_path = task_content.get(LEFORMAT_PATH)
+            hard_link_path = task_content.get(HARD_LINK_PATH)
 
             visualize_dataset(
-                repo_path=repo_path,
+                repo_path=hard_link_path,
             )
 
             return {}
         except Exception as e:
-            raise RuntimeError(f"visualize ataset{repo_path} found error") from e
+            raise RuntimeError(f"visualize dataset{hard_link_path} found error") from e
