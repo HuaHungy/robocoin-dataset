@@ -5,10 +5,12 @@ python -m robocoin.datasets.upload --config configs/upload.yaml
 """
 
 import random
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 from sqlalchemy.sql.expression import and_, or_
 from tqdm import tqdm
 
@@ -77,7 +79,8 @@ class LocalDsUploadUtil(LocalDsUtil):
     super().__init__(config)
     self.config = config
 
-    # Determine namespace: use config.namespace if provided, otherwise fall back to DS_PLATFORM_NAME
+    # Determine namespace: use config.namespace if provided,
+    # otherwise fall back to DS_PLATFORM_NAME
     self.namespace = config.namespace if config.namespace else DS_PLATFORM_NAME
 
     if config.hub_name == DatasetsHubEnum.modelscope:
@@ -129,10 +132,10 @@ class LocalDsUploadUtil(LocalDsUtil):
     Returns:
         bool: if seccessful.
     """
-    # Remove "_hardlink" suffix from ds_name for clean repository name
-    repo_name = hardlink.removesuffix("_hardlink")
 
+    repo_name = hardlink.removesuffix("_hardlink")
     log_prefix = f"dataset {repo_name}:"
+    # Remove "_hardlink" suffix from ds_name for clean repository name
     try:
       self.check_dataset_dir_valid(
         ds_name=hardlink, additional_check_list=UPLOAD_DATASET_ADDITIONAL_CHECK_STRUCTURE
@@ -144,10 +147,6 @@ class LocalDsUploadUtil(LocalDsUtil):
     hardlink_path = self.root_path.joinpath(hardlink)
     if not hardlink_path.exists():
       raise FileNotFoundError(f"dataset path {hardlink_path} does not exist")
-
-    # Ensure ds_name ends with "_hardlink"
-    if not hardlink.endswith("_hardlink"):
-      raise ValueError(f"{log_prefix} Dataset name must end with '_hardlink', got: {hardlink}")
 
     upload_path = hardlink_path
     self.logger.info(f"{log_prefix} Using hardlink folder: {upload_path}")
@@ -168,7 +167,8 @@ class LocalDsUploadUtil(LocalDsUtil):
         # Step 2: Create repo if it doesn't exist
         if not repo_exists:
           self.logger.info(
-            f"{log_prefix} repo {repo_id} does not exists in {self.config.hub_name}, creating repo {repo_id}"
+            f"{log_prefix} repo {repo_id} does not exists in {self.config.hub_name}",
+            f"creating repo {repo_id}"
           )
           self.hub.create_repo(repo_id=repo_id)
 
@@ -197,19 +197,55 @@ class LocalDsUploadUtil(LocalDsUtil):
 
     return False
 
-  def upload_datasets_from_db(self) -> None:
+  def _validate_and_resolve_db_path(self) -> Path:
     """
-    Upload datasets from database in batches.
+    Validate and resolve the database file path from config and CLI arguments.
+    Automatically reads from YAML config if not explicitly provided.
+
+    Returns:
+        Path: Resolved and validated database path.
     """
-    # if db input
-    if not self.config.db_file_path:
-      self.logger.error("❌ db_file_path is not configured")
-      raise ValueError("db_file_path must be specified in config or via --db_file_path")
-    # if db exist
+    # Handle "default" keyword or empty to read from YAML config
+    if self.config.db_file_path.lower() in ["default", "", "null", "none"]:
+      config_file = None
+      for i, arg in enumerate(sys.argv):
+        if arg in ["--config", "-c"] and i + 1 < len(sys.argv):
+          config_file = sys.argv[i + 1]
+          break
+
+      if config_file and Path(config_file).exists():
+        with open(config_file) as f:
+          yaml_config = yaml.safe_load(f)
+          yaml_db_path = yaml_config.get('db_file_path', '')
+          if yaml_db_path and yaml_db_path.lower() not in ["null", "none", ""]:
+            self.config.db_file_path = yaml_db_path
+            self.logger.info(f"📁 Using db_file_path from config: {yaml_db_path}")
+          else:
+            self.logger.error(
+              f"❌ No valid db_file_path in config. "
+              f"Please add 'db_file_path' to {config_file} or use --db_file_path"
+            )
+            raise ValueError("db_file_path not found in config")
+      else:
+        self.logger.error(
+          "❌ No config file found. Please provide --config or --db_file_path"
+        )
+        raise FileNotFoundError("Config file required for automatic db_file_path resolution")
+
+    # Validate path exists on filesystem
     db_path = Path(self.config.db_file_path).expanduser().absolute()
     if not db_path.exists():
       self.logger.error(f"❌ Database file not found: {db_path}")
       raise FileNotFoundError(f"Database file not found: {db_path}")
+
+    return db_path
+
+  def upload_datasets_from_db(self) -> None:
+    """
+    Upload datasets from database in batches.
+    """
+    # Validate and resolve database path
+    db_path = self._validate_and_resolve_db_path()
 
     # Print initial configuration
     self.logger.info(f"🚀 Starting upload: {self.config.hub_name.value}/{self.namespace} (DB: {db_path.name})")
