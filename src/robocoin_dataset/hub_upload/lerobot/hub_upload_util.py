@@ -167,7 +167,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         # Step 2: Create repo if it doesn't exist
         if not repo_exists:
           self.logger.info(
-            f"{log_prefix} repo {repo_id} does not exists in {self.config.hub_name}",
+            f"{log_prefix} repo {repo_id} does not exists in {self.config.hub_name}, "
             f"creating repo {repo_id}"
           )
           self.hub.create_repo(repo_id=repo_id)
@@ -184,13 +184,19 @@ class LocalDsUploadUtil(LocalDsUtil):
 
       except Exception as e:  # noqa: PERF203
         if attempt < max_retries:
-          # Random delay between 5-15 seconds before retry
-          delay = random.uniform(5, 15)
+          # Random delay before retry
+          delay = random.uniform(2, 10)
           self.logger.warning(
             f"{log_prefix} Upload interrupted (attempt {attempt}/{max_retries}): {e}. "
             f"Retrying in {delay:.1f} seconds..."
           )
-          time.sleep(delay)
+          # Countdown display
+          for remaining in range(int(delay), 0, -1):
+            print(f"\r  ⏳ Retrying in {remaining} seconds...   ", end="", flush=True)
+            time.sleep(1)
+          # Sleep remaining fractional seconds
+          time.sleep(delay - int(delay))
+          print("\r" + " " * 50 + "\r", end="", flush=True)  # Clear the countdown line
         else:
           self.logger.error(f"{log_prefix} Failed after {max_retries} attempts: {e}")
           return False
@@ -305,13 +311,13 @@ class LocalDsUploadUtil(LocalDsUtil):
             pbar.update(1)
             continue
 
-        dataset_name = item.dataset_name
-        pbar.set_description(f"📤 {dataset_name[:40]:40s}")
-
         # Prepare hardlink (validates convert_path, queries DB, creates if needed, updates DB)
         from robocoin_dataset.hardlink.prepare_hardlink import prepare_hardlink_db
 
         convert_path = Path(item.convert_path).expanduser().absolute()
+
+        dataset_name = convert_path.name.removesuffix("_hardlink")
+        pbar.set_description(f"📤 {dataset_name[:40]:40s}")
 
         try:
           with self.db.with_session() as session:

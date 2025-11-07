@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, TaskStatus
-from robocoin_dataset.dataloader.utils import (
+from robocoin_dataset.dataloader.dataloader_utils import (
     EpisodeSampler,
     LeRobotDataset,
     _mark_task_failed,
