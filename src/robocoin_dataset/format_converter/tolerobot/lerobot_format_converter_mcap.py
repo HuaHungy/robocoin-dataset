@@ -696,25 +696,111 @@ int32 lift_pos
             "frames": frames,
         }
 
+    def _parse_mcap_episode_chunked(self, mcap_file: Path, chunk_size: int = 1000) -> dict:
+        """分块解析MCAP episode（用于大文件）
+        
+        将episode分成多个块，每次只加载一个块到内存。
+        相比lazy loading（每帧扫描一次），chunked loading只需要扫描N/chunk_size次。
+        
+        Args:
+            mcap_file: MCAP 文件路径
+            chunk_size: 每块的帧数（默认1000帧）
+            
+        Returns:
+            包含 ChunkedMcapBuffer 对象的dict
+        """
+        from robocoin_dataset.format_converter.tolerobot.chunked_mcap_buffer import ChunkedMcapBuffer
+        
+        self.logger.info(
+            f"🚀 Using CHUNKED loading for large MCAP file: {mcap_file.name}\n"
+            f"   Chunk size: {chunk_size} frames"
+        )
+        
+        # 获取配置
+        image_topics = {img['args']['mcap_topic']: img['cam_name']
+                        for img in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]}
+        state_subs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][SUB_STATE_KEY]
+        action_subs = self.converter_config[FEATURES_KEY][ACTION_KEY][SUB_ACTION_KEY]
+        main_joint_topic = state_subs[0]['args']['mcap_topic']
+        
+        # 快速获取总帧数（只读取主topic的时间戳）
+        main_times = []
+        with open(mcap_file, "rb") as f:
+            reader = make_reader(f)
+            for schema, channel, message in reader.iter_messages(topics=[main_joint_topic]):
+                main_times.append(message.log_time)
+        
+        total_frames = len(main_times)
+        num_chunks = (total_frames + chunk_size - 1) // chunk_size
+        
+        self.logger.info(
+            f"✅ Chunked loading initialized:\n"
+            f"   Total frames: {total_frames}\n"
+            f"   Chunk size: {chunk_size}\n"
+            f"   Number of chunks: {num_chunks}\n"
+            f"   Cameras: {len(image_topics)}"
+        )
+        
+        # 创建ChunkedMcapBuffer对象
+        from robocoin_dataset.format_converter.tolerobot.chunked_mcap_buffer import (
+            ChunkedActionsBuffer,
+            ChunkedImagesBuffer,
+            ChunkedStatesBuffer,
+        )
+        
+        buffer = ChunkedMcapBuffer(
+            mcap_file=mcap_file,
+            main_times=main_times,
+            image_topics=image_topics,
+            state_subs=state_subs,
+            action_subs=action_subs,
+            typestore=self.typestore,
+            chunk_size=chunk_size,
+            logger=self.logger,
+        )
+        
+        # 返回三个专门的wrapper，让基类可以分别访问images/states/actions
+        return {
+            "images": ChunkedImagesBuffer(buffer),  # dict[str, list] interface
+            "states": ChunkedStatesBuffer(buffer),  # list[np.ndarray] interface
+            "actions": ChunkedActionsBuffer(buffer),  # list[np.ndarray] interface
+            "frames": total_frames,
+        }
+
     def _get_episode_data(self, task_path: Path, ep_idx: int) -> dict:
         """获取episode数据，使用缓存避免重复解析
         
-        ⚠️ 对于大文件（>1GB）禁用缓存以避免内存溢出
+        ⚠️ 对于大文件（>2GB）使用chunked loading（分块加载）
+        ⚠️ 对于中等文件（1-2GB）完全加载但不缓存
+        ⚠️ 对于小文件（<1GB）完全加载并缓存
         """
         cache_key = (str(task_path), ep_idx)
         mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
         
         # 检查文件大小
         file_size_gb = mcap_file.stat().st_size / (1024**3)
+        
+        # 🔥 新策略：大文件使用分块加载
+        if file_size_gb > 2.0:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  MCAP文件较大，启用CHUNKED LOADING模式\n"
+                    f"📄 文件: {mcap_file.name}\n"
+                    f"📊 大小: {file_size_gb:.2f} GB\n"
+                    f"💾 内存占用: ~2-3 GB per chunk (vs ~{file_size_gb * 2:.1f} GB if fully loaded)\n"
+                    f"⏱️  转换速度: 接近全速（分块解析）\n"
+                    f"💡 提示: 每次加载1000帧，完成后自动清理"
+                )
+            # 使用分块加载
+            return self._parse_mcap_episode_chunked(mcap_file, chunk_size=1000)
+        
         use_cache = file_size_gb < 1.0  # 只对小于1GB的文件使用缓存
         
         if not use_cache:
             if self.logger:
-                self.logger.warning(
-                    f"⚠️  MCAP文件较大，禁用缓存避免内存溢出\n"
-                    f"📄 文件: {mcap_file.name}\n"
-                    f"📊 大小: {file_size_gb:.2f} GB\n"
-                    f"💡 提示: 大文件转换可能需要较长时间"
+                self.logger.info(
+                    f"📄 Processing medium MCAP file: {mcap_file.name} ({file_size_gb:.2f} GB)\n"
+                    f"   Caching disabled to save memory"
                 )
             # 直接解析，不使用缓存
             return self._parse_mcap_episode(mcap_file)
