@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import yaml
 import importlib
+import pandas as pd
 from pathlib import Path
 
 from robocoin_dataset.sim_replay.lerobot_sim_replayer import LerobotSimReplayer
@@ -304,6 +305,11 @@ class AgilexCobotDecoupledRealsenseMagicProcessor(StateActionDataPostProcessorBa
 class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
+        self.episode_index = 0  # 默认值
+
+    def set_episode_index(self, episode_index: int):
+        """设置当前处理的 episode 索引"""
+        self.episode_index = episode_index
 
     def prepare_processing(self) -> None:
         self.left_gripper_open_state_data_idx = 6
@@ -312,9 +318,38 @@ class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
         # self.right_gripper_open_action_data_idx = self.right_gripper_open_state_data_idx
         pass
 
-    def _smooth_gripper_open_data(self, data: np.ndarray) -> np.ndarray:
-        smoothed = data.copy()
-        return smoothed
+    def _scale_columns(self, data: np.ndarray) -> np.ndarray:
+        """如果第7或第14列的最大值 > 0.8，则该列整体除以10; 如果 < 0.08, 则乘以10"""
+        scaled_data = data.copy()
+        # h5_mp4 state/action 特征只有14维
+        for col_idx in (6, 13):
+            try:
+                col_max = float(np.max(scaled_data[:, col_idx]))
+                if col_max > 0.8:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} max value is {col_max} > 0.8, scaling it by dividing by 10.")
+                    scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
+                elif col_max < 0.08:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} max value is {col_max} < 0.08, scaling it by multiplying by 10.")
+                    scaled_data[:, col_idx] = scaled_data[:, col_idx] * 10.0
+            except (IndexError, ValueError) as e:
+                logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
+                continue
+        return scaled_data
+
+    def _smooth_joint_data(self, data: np.ndarray, window_size: int = 12) -> np.ndarray:
+        """对所有关节数据应用平滑滤波"""
+        if data.ndim != 2 or data.shape[0] < window_size:
+            return data
+        
+        smoothed_data = data.copy()
+        # 对每一列（每个关节）应用移动平均滤波
+        for i in range(data.shape[1]):
+            # 使用 pandas 的 rolling mean 来处理，center=True 确保窗口居中
+            series = pd.Series(data[:, i])
+            smoothed_series = series.rolling(window=window_size, min_periods=1, center=True).mean()
+            smoothed_data[:, i] = smoothed_series.to_numpy()
+            
+        return smoothed_data
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
@@ -325,7 +360,9 @@ class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
         new_state_data[:, 0:self.left_gripper_open_state_data_idx + 1] = right_data
         new_state_data[:, self.left_gripper_open_state_data_idx + 1:self.right_gripper_open_state_data_idx + 1] = left_data
 
-        return new_state_data
+        scaled_data = self._scale_columns(new_state_data)
+        smoothed_data = self._smooth_joint_data(scaled_data)
+        return smoothed_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
@@ -335,13 +372,34 @@ class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
 
         new_action_data[:, 0:self.left_gripper_open_state_data_idx + 1] = right_data
         new_action_data[:, self.left_gripper_open_state_data_idx + 1:self.right_gripper_open_state_data_idx + 1] =  left_data
-        return new_action_data
+        
+        scaled_data = self._scale_columns(new_action_data)
+        smoothed_data = self._smooth_joint_data(scaled_data)
+        return smoothed_data
 
     # 忽略原始 action 数据，全部使用 state 数据覆盖
     def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         processed_state = self.process_episode_state_data(ori_data["observation.state"])
         # action 特征在本 processor 中与 state 特征长度一致，直接复制
         processed_action = processed_state.copy()
+
+        # 打印原始夹爪数据的最大值（在处理完成后）
+        central_logger = logging.getLogger("state action data post process server")
+        try:
+            orig_state = ori_data.get("observation.state")
+            left_idx = getattr(self, "left_gripper_open_state_data_idx", 6)
+            right_idx = getattr(self, "right_gripper_open_state_data_idx", 13)
+            if orig_state is not None and orig_state.ndim == 2:
+                left_max = float(np.max(orig_state[:, left_idx]))
+                right_max = float(np.max(orig_state[:, right_idx]))
+                central_logger.info(
+                    f"Episode {self.episode_index}: Original gripper max values - left(col {left_idx}): {left_max}, right(col {right_idx}): {right_max}"
+                )
+            else:
+                central_logger.warning(f"Episode {self.episode_index}: Original state data missing or malformed; cannot compute gripper max values.")
+        except Exception as e:
+            central_logger.warning(f"Episode {self.episode_index}: Could not compute original gripper max values. Reason: {e}")
+
         return {"observation.state": processed_state, "action": processed_action}
 
     # 该方法返回处理后的state数据名称
