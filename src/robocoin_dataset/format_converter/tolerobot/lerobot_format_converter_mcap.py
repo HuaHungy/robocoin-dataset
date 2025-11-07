@@ -784,10 +784,12 @@ int32 lift_pos
             max_frames = 10 + timeline_offset
             episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
             return episode_data["images"]
-        episode_data = self._get_episode_data(task_path, ep_idx)
-        # 🆕 将episode_data存储为实例变量，以便后续清理
-        self._current_episode_data = episode_data
-        return episode_data["images"]
+        
+        # 🔥 关键修复：只解析一次，避免重复调用
+        if not hasattr(self, '_current_episode_data') or self._current_episode_data is None:
+            episode_data = self._get_episode_data(task_path, ep_idx)
+            self._current_episode_data = episode_data
+        return self._current_episode_data["images"]
 
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
         if is_test:
@@ -802,10 +804,12 @@ int32 lift_pos
             max_frames = 10 + timeline_offset
             episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
             return episode_data["states"]
-        episode_data = self._get_episode_data(task_path, ep_idx)
-        # 🆕 将episode_data存储为实例变量，以便后续清理
-        self._current_episode_data = episode_data
-        return episode_data["states"]
+        
+        # 🔥 关键修复：复用已解析的数据
+        if not hasattr(self, '_current_episode_data') or self._current_episode_data is None:
+            episode_data = self._get_episode_data(task_path, ep_idx)
+            self._current_episode_data = episode_data
+        return self._current_episode_data["states"]
 
     def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
         if is_test:
@@ -820,10 +824,12 @@ int32 lift_pos
             max_frames = 10 + timeline_offset
             episode_data = self._get_episode_data_minimal(task_path, ep_idx, max_frames=max_frames)
             return episode_data["actions"]
-        episode_data = self._get_episode_data(task_path, ep_idx)
-        # 🆕 将episode_data存储为实例变量，以便后续清理
-        self._current_episode_data = episode_data
-        return episode_data["actions"]
+        
+        # 🔥 关键修复：复用已解析的数据
+        if not hasattr(self, '_current_episode_data') or self._current_episode_data is None:
+            episode_data = self._get_episode_data(task_path, ep_idx)
+            self._current_episode_data = episode_data
+        return self._current_episode_data["actions"]
     
     def _cleanup_episode_resources(self) -> None:
         """🔥 清理episode转换完成后的所有资源，释放内存
