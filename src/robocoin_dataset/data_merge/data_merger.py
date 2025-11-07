@@ -131,7 +131,8 @@ def merge_dataset_parquet_files(
     for feature in patch_features:
         _, feature_parquet_files = get_parquet_paths(root_dir, feature)
         if not feature_parquet_files[0].exists():
-            raise ValueError(f"{feature_parquet_files[0]} file not found")
+            # raise ValueError(f"{feature_parquet_files[0]} file not found")
+            continue
         features_parquet_files.append(feature_parquet_files)
 
     _merge_parquet_files(ori_parquet_files, features_parquet_files, merge_parquet_files)
@@ -199,7 +200,8 @@ def merge_dataset_info_files(
     for feature in patch_features:
         _, path = get_meta_info_file_path(root_dir, feature)
         if not path.exists():
-            raise FileNotFoundError(f"{path} not found")
+            # raise FileNotFoundError(f"{path} not found")
+            continue
         patch_info_paths.append(path)
 
     merged_info = _merge_info_files(ori_info_path, patch_info_paths)
@@ -247,7 +249,8 @@ def merge_dataset_stats_jsonl_files(
     for patch_feature in patch_features:
         _, patch_stats_file = get_episode_stats_file_path(root_dir, patch_feature)
         if not patch_stats_file.exists():
-            raise FileNotFoundError(f"{patch_stats_file} does not exist")
+            # raise FileNotFoundError(f"{patch_stats_file} does not exist")
+            continue
         patch_stats_files.append(patch_stats_file)
 
     _merge_jsonl_files(ori_stats_file, patch_stats_files, merged_stats_file)

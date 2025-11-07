@@ -1,0 +1,302 @@
+from pathlib import Path
+
+import av
+import imagehash
+import numpy as np
+
+from robocoin_dataset.quality_check.checker_registry import (
+    dataset_data_checker_registry,
+    episode_data_checker_registry,
+    episode_video_checker_registry,
+)
+
+
+@dataset_data_checker_registry("few_episode_frames")
+def detect_short_episodes(
+    episode_frame_nums: dict[int, int], ignored_indices: set[int], threshold: int = 150
+) -> set[int]:
+    """
+    检查视频数量是否过小。
+
+    参数:
+        video_paths (dict): 键为索引，值为视频路径列表
+        ignored_indices (list): 忽略的索引列表
+
+    返回:
+        list: 索引列表，表示视频数量小于10的索引
+    """
+    bad_episodes = set()
+    for ep_idx, frame_num in episode_frame_nums.items():
+        if ep_idx in ignored_indices:
+            continue
+        if frame_num < threshold:
+            bad_episodes.add(ep_idx)
+
+    return bad_episodes
+
+
+@dataset_data_checker_registry("too_few_episodes")
+def detect_few_episodes(
+    episode_frame_nums: dict[int, int], ignored_indices: set[int], threshold: int = 30
+) -> set[int]:
+    """
+    检查视频数量是否过小。
+
+    参数:
+        video_paths (dict): 键为索引，值为视频路径列表
+        ignored_indices (list): 忽略的索引列表
+
+    返回:
+        list: 索引列表，表示视频数量小于10的索引
+    """
+    bad_episodes = set()
+    if len(set(episode_frame_nums.keys()) - (ignored_indices)) < threshold:
+        return set(episode_frame_nums.keys())
+    return bad_episodes
+
+
+@dataset_data_checker_registry("abnormal_episode_length")
+def detect_frame_num_outliers_mad_idx(
+    episode_frame_nums: dict[int, int], ignored_indices: set[int], threshold: float = 3.0
+) -> set[int]:
+    episode_frame_nums.values()
+    bad_episodes = set()
+    episode_frame_nums = {
+        idx: num for idx, num in episode_frame_nums.items() if idx not in ignored_indices
+    }
+    data = np.asarray(list(episode_frame_nums.values()))
+    if data.size == 0:
+        return bad_episodes
+
+    median = np.median(data)
+    mad = np.median(np.abs(data - median))
+
+    # 避免除零：如果所有值相同，mad=0，则无离群值
+    if mad == 0:
+        return bad_episodes
+
+    # 计算修正的 Z-score（基于 MAD）
+    modified_z_scores = 0.6745 * (data - median) / mad
+
+    # 找出绝对值超过阈值的索引
+    outlier_indices = np.where(np.abs(modified_z_scores) > threshold)[0]
+
+    for idx in outlier_indices:
+        bad_episodes.add(list(episode_frame_nums.keys())[idx])
+    return bad_episodes
+
+
+def check_approximately_static_by_std_rms_per_dim(
+    data: np.ndarray, threshold: float = 0.01
+) -> bool:
+    """要求每个维度都近似静止"""
+    data = np.asarray(data)
+    if data.size == 0 or data.shape[0] <= 1:
+        return True
+
+    stds = np.std(data, axis=0)  # shape: (D,)
+    rms_vals = np.sqrt(np.mean(data**2, axis=0))  # shape: (D,)
+
+    # 处理某维度全为零的情况
+    with np.errstate(divide="ignore", invalid="ignore"):
+        relative_stds = np.divide(stds, rms_vals)
+        relative_stds[rms_vals == 0] = 0.0  # 全零维度视为静止
+
+    return not np.all(relative_stds < threshold)
+
+
+def normalize_per_dimension(data: np.ndarray) -> np.ndarray:
+    """
+    对每个维度独立进行 Z-score 归一化。
+    输入: (T, D)
+    输出: (T, D)，每列均值≈0，标准差≈1（若原标准差>0）
+    """
+    mean = np.mean(data, axis=0)
+    std = np.std(data, axis=0)
+
+    # 避免除零：标准差为0的维度保持原值（或设为0）
+    normalized = np.zeros_like(data)
+    nonzero_std = std > 1e-12
+    normalized[:, nonzero_std] = (data[:, nonzero_std] - mean[nonzero_std]) / std[nonzero_std]
+    # std=0 的维度已经是常数，归一化后可视为0（不影响静止判断）
+    return normalized
+
+
+def is_window_static(window_data: np.ndarray, threshold: float = 0.05) -> bool:
+    if window_data.shape[0] <= 1:
+        return True
+    stds = np.std(window_data, axis=0)
+    rms_vals = np.sqrt(np.mean(window_data**2, axis=0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rel_stds = np.divide(stds, rms_vals)
+        rel_stds[rms_vals == 0] = 0.0
+    return np.all(rel_stds < threshold)
+
+
+@episode_data_checker_registry("static_frame_rate")
+def count_total_static_frames_rate(
+    data: np.ndarray, window_size: int = 5, threshold: float = 0.05
+) -> float:
+    """
+    统计所有被判定为静止的帧的总数量（去重，每帧只算一次）。
+
+    参数:
+        data: np.ndarray, shape (T, D)
+        window_size: int, 判断静止的窗口大小
+        step: int, 滑动步长
+        threshold: float, 归一化后的静止阈值
+
+    返回:
+        int: 所有静止帧的总数占比
+    """
+    if data.size == 0:
+        return 0
+    frame_count = data.shape[0]
+    if frame_count == 1:
+        return 1  # 单帧视为静止
+
+    # Step 1: 归一化
+    data_norm = normalize_per_dimension(data)
+
+    # Step 2: 标记哪些帧属于至少一个静止窗口
+    frame_static = np.zeros(frame_count, dtype=bool)
+
+    for i in range(0, frame_count - window_size + 1, 1):
+        if is_window_static(data_norm[i : i + window_size], threshold):
+            frame_static[i : i + window_size] = True
+
+    # 可选：处理末尾不足 window_size 的帧（保守起见，可跳过）
+    # 如果希望更敏感，也可对末尾单独判断（但窗口太小可能不准）
+
+    # Step 3: 统计总静止帧数占比
+    total_static = np.sum(frame_static)
+    return float(total_static / frame_count)
+
+
+@episode_data_checker_registry("static_joint")
+def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float = 1e-3) -> float:
+    """
+    检测机械臂数据是否处于“静态”状态（全局判断，非滑动窗口）。
+
+    判断逻辑：
+        - 对每个维度（关节），计算其在整个时间序列上的标准差；
+        - 如果标准差 < epsilon，则认为该维度“几乎不变”；
+        - 若“几乎不变”的维度数 ≥ static_joints，则返回 1.0（静态），否则 0.0。
+
+    参数:
+        data: shape (T, D) 的数组，T 为时间步，D 为关节数/维度数
+        static_joints: 判定为静态所需的“几乎不变”维度数量阈值
+        epsilon: 判定“几乎不变”的标准差容差（默认 1e-2）
+
+    返回:
+        float: 1.0 表示静态（有足够多关节未动），0.0 表示非静态
+    """
+    if data.ndim != 2:
+        raise ValueError("Input data must be 2D array of shape (time_steps, dimensions).")
+
+    frame_num, dim = data.shape
+    if dim == 0:
+        return 1.0  # 无维度，默认静态
+
+    if frame_num <= 1:
+        # 只有一帧或空数据：所有维度视为不变
+        static_dim_count = dim
+    else:
+        # 计算每个维度的全局标准差
+        stds = np.std(data, axis=0)  # shape (D,)
+        is_static_dim = stds < epsilon
+        static_dim_count = np.sum(is_static_dim)
+
+    return 1.0 if static_dim_count >= static_joints else 0.0
+
+
+def detect_jump_frames(
+    video_path: str,
+    hash_size: int = 16,
+    stable_distance_threshold: int = 1,  # 静止期：phash 距离 <= 1
+    min_stable_frames: int = 2,  # 静止期最少连续帧数（关键帧对）
+) -> int:
+    """
+    检测在连续静止关键帧之后，图像跳变的最大 phash 距离。
+
+    算法逻辑：
+    1. 提取所有关键帧（I-frame）
+    2. 计算相邻关键帧的 phash 汉明距离
+    3. 找到所有“连续多个距离 <= 阈值”的静止段
+    4. 对每个静止段，查看其**后一个距离**（即跳变）
+    5. 返回这些跳变距离中的最大值
+
+    Args:
+        video_path: 视频路径
+        hash_size: phash 哈希尺寸（推荐 16）
+        stable_distance_threshold: 判断为“静止”的最大 phash 距离
+        min_stable_frames: 静止段最少包含多少个“小距离”（即连续静止帧对数）
+
+    Returns:
+        int: 所有“静止后跳变”中，跳变距离的最大值。如果没有符合条件的跳变，返回 0。
+    """
+    try:
+        container = av.open(video_path)
+        stream = container.streams.video[0]
+        stream.thread_count = 1
+    except Exception as e:
+        raise RuntimeError(f"无法打开视频: {e}")
+
+    keyframe_hashes = []
+    total_frame_count = 0
+    keyframe_count = 0
+
+    # 提取所有关键帧的 phash
+    for packet in container.demux(video=0):
+        for frame in packet.decode():
+            total_frame_count += 1
+
+            if not (frame.key_frame or frame.pict_type == "I"):
+                continue
+
+            try:
+                img = frame.to_image()
+                h = imagehash.phash(img, hash_size=hash_size)
+                keyframe_hashes.append(h)
+                keyframe_count += 1
+            except Exception as e:
+                print(f"处理第 {total_frame_count - 1} 帧时出错: {e}")
+                continue
+
+    container.close()
+
+    if len(keyframe_hashes) < 2:
+        return 0  # 帧数不足
+
+    # 计算相邻关键帧的 phash 距离
+    distances = [
+        keyframe_hashes[i] - keyframe_hashes[i - 1] for i in range(1, len(keyframe_hashes))
+    ]
+
+    max_jump = 0  # 存储最大跳变距离
+
+    # 遍历所有可能的跳变点（从第 min_stable_frames 个距离开始）
+    for i in range(min_stable_frames, len(distances)):
+        # 检查前 min_stable_frames 个距离是否都 <= 阈值（静止段）
+        is_stable = all(
+            d <= stable_distance_threshold for d in distances[i - min_stable_frames : i]
+        )
+
+        if is_stable:
+            # 当前距离就是“跳变”
+            jump_distance = distances[i]
+            if jump_distance > max_jump:
+                max_jump = jump_distance
+
+    return max_jump
+
+
+@episode_video_checker_registry("max_frame_jump_rate")
+def dectect_max_frame_jump(video_paths: list[str | Path]) -> float:
+    max_jump = 0
+    for video_path in video_paths:
+        if not Path(video_path).exists() or not Path(video_path).is_file():
+            return 100.0
+            break
+        max_jump = max(max_jump, detect_jump_frames(str(video_path)))
+    return max_jump / 100
