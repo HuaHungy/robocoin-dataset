@@ -100,6 +100,7 @@ def run_local_batch_detection(
     num_workers: int = 0,
     hardlink_target_dir: Path | None = None,
     logger: logging.Logger | None = None,
+    summary_logger: logging.Logger | None = None,
 ) -> dict:
     """Process all pending dataloader detection tasks in batch (local mode).
 
@@ -123,8 +124,13 @@ def run_local_batch_detection(
             "datasets_processed": int,
             "succeeded": [uuid, ...],
             "failed": [(uuid, error_msg), ...],
+            "total_time_s": float,
+            "total_frames": int,
+            "avg_time_per_frame_s": float,
         }
     """
+    import time
+
     from robocoin_dataset.database.database import DatasetDatabase
     from robocoin_dataset.dataloader.dataloader import (
         _gen_one_dataloader_detection_task,
@@ -135,6 +141,8 @@ def run_local_batch_detection(
     db = DatasetDatabase(Path(db_file).expanduser().absolute())
 
     succeeded, failed, datasets_processed = [], [], 0
+    batch_start_time = time.perf_counter()
+    total_frames = 0
 
     while True:
         # Sync and claim one task
@@ -170,15 +178,37 @@ def run_local_batch_detection(
         success, error_msg = _update_task_status(db, dataset_uuid, result, _logger)
         if success:
             succeeded.append(dataset_uuid)
+            # Accumulate frame counts for batch statistics
+            total_frames += result.get('total_frames_sampled', 0)
+            # Log per-dataset summary
+            if summary_logger:
+                summary_logger.info(
+                    f"✅ {dataset_uuid}: {result.get('total_frames_sampled', 0)} frames, "
+                    f"{result.get('total_time_s', 0):.2f}s, "
+                    f"{len(result.get('episodes_tested', []))} episodes, "
+                    f"backend={result.get('backend', 'unknown')}"
+                )
         else:
             failed.append((dataset_uuid, error_msg))
+            if summary_logger:
+                summary_logger.info(f"❌ {dataset_uuid}: {error_msg}")
 
-    _logger.info(f"Batch processing complete: {len(succeeded)} succeeded, {len(failed)} failed")
+    # Calculate batch statistics
+    batch_elapsed = time.perf_counter() - batch_start_time
+    avg_time_per_frame = batch_elapsed / total_frames if total_frames > 0 else 0.0
+
+    _logger.info(
+        f"Batch processing complete: {len(succeeded)} succeeded, {len(failed)} failed | "
+        f"{batch_elapsed:.2f}s total, {total_frames} frames, {avg_time_per_frame*1000:.1f}ms/frame avg"
+    )
 
     return {
         "datasets_processed": datasets_processed,
         "succeeded": succeeded,
         "failed": failed,
+        "total_time_s": batch_elapsed,
+        "total_frames": total_frames,
+        "avg_time_per_frame_s": avg_time_per_frame,
     }
 
 
@@ -423,7 +453,19 @@ def _update_task_status(
             item.data_loader_detection_status = TaskStatus.COMPLETED
             item.data_loader_detection_err_msg = None
             frames_count = result.get('total_frames_validated') or result.get('total_frames_sampled', 0)
-            logger.info(f"✅ {frames_count} frames in {len(result['episodes_tested'])} episodes")
+
+            # Performance summary
+            time_total = result.get('total_time_s', 0)
+            time_per_ep = result.get('time_per_episode_s', 0)
+            time_per_frame = result.get('time_per_frame_s', 0)
+            sample_ratio = result.get('sample_ratio', 1.0)
+            backend = result.get('backend', 'unknown')
+
+            logger.info(
+                f"✅ {frames_count} frames in {len(result['episodes_tested'])} episodes | "
+                f"{time_total:.2f}s total, {time_per_ep:.3f}s/ep, {time_per_frame*1000:.1f}ms/frame | "
+                f"sample_ratio={sample_ratio:.2f}, backend={backend}"
+            )
             session.commit()
             return True, None
         item.data_loader_detection_status = TaskStatus.FAILED
@@ -538,6 +580,8 @@ def _run_detection(
 
     Use this for quick smoke tests or performance benchmarking.
     """
+    import time
+
     from robocoin_dataset.dataloader.dataloader import _parse_episode_specification
 
     try:
@@ -546,6 +590,7 @@ def _run_detection(
         tqdm = None  # type: ignore
 
     repo_path = Path(repo_path)
+    start_time = time.perf_counter()
 
     result = {
         "success": False,
@@ -556,6 +601,9 @@ def _run_detection(
         "sample_ratio": sample_ratio,
         "backend": "unknown",
         "error_message": None,
+        "total_time_s": 0.0,
+        "time_per_episode_s": 0.0,
+        "time_per_frame_s": 0.0,
     }
 
     try:
@@ -608,6 +656,10 @@ def _run_detection(
 
         # Test each episode with downsampling
         for ep_idx in episodes_to_test:
+            # Update frame progress bar to show current episode
+            if frame_progress is not None:
+                frame_progress.set_description(f"📹 Episode {ep_idx}")
+
             # Create dataloader with EpisodeSampler using sample_ratio
             dl = create_episode_dataloader(
                 ds,
@@ -634,10 +686,18 @@ def _run_detection(
         if frame_progress is not None:
             frame_progress.close()
 
+        # Calculate timing statistics
+        elapsed_time = time.perf_counter() - start_time
+        result["total_time_s"] = elapsed_time
+        result["time_per_episode_s"] = elapsed_time / len(episodes_to_test) if episodes_to_test else 0.0
+        result["time_per_frame_s"] = elapsed_time / result["total_frames_sampled"] if result["total_frames_sampled"] > 0 else 0.0
+
         result["success"] = True
         return result
 
     except Exception as e:
+        elapsed_time = time.perf_counter() - start_time
+        result["total_time_s"] = elapsed_time
         result["error_message"] = str(e)
         result["success"] = False
         print(f"❌ Fast detection failed: {e}", file=sys.stderr)

@@ -132,6 +132,11 @@ class DataloaderDbServer(TaskServer):
         heartbeat_interval: float = 30.0,
         timeout: float = 15.0,
         logger: logging.Logger | None = None,
+        episodes: str = "all",
+        sample_ratio: float = 0.1,
+        batch_size: int = 32,
+        num_workers: int = 0,
+        summary_logger: logging.Logger | None = None,
     ) -> None:
         super().__init__(
             logger=logger,
@@ -153,6 +158,17 @@ class DataloaderDbServer(TaskServer):
 
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
+        self.summary_logger = summary_logger
+
+        # Store detection configuration
+        self.episodes = episodes
+        self.sample_ratio = sample_ratio
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+        # Auto-shutdown mechanism
+        self._shutdown_event = asyncio.Event()
+        self._auto_shutdown_task = None
 
     def get_task_category(self) -> str:
         return TASK_CATEGORY
@@ -174,7 +190,16 @@ class DataloaderDbServer(TaskServer):
             # claim one
             dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
             if dataset_uuid is None:
+                # No tasks available - schedule shutdown if not already scheduled
+                if self._auto_shutdown_task is None or self._auto_shutdown_task.done():
+                    self.logger.info("No tasks available, will auto-shutdown in 5 seconds if no new tasks arrive")
+                    self._auto_shutdown_task = asyncio.create_task(self._auto_shutdown_after_delay())
                 return None
+
+            # Task available - cancel any pending shutdown
+            if self._auto_shutdown_task and not self._auto_shutdown_task.done():
+                self._auto_shutdown_task.cancel()
+                self._auto_shutdown_task = None
 
             # Server prepares hardlinks with database access
             try:
@@ -199,6 +224,10 @@ class DataloaderDbServer(TaskServer):
             return {
                 DATASET_UUID: dataset_uuid,
                 LEFORMAT_PATH: str(test_path),  # Send hardlink path to client
+                "episodes": self.episodes,
+                "sample_ratio": self.sample_ratio,
+                "batch_size": self.batch_size,
+                "num_workers": self.num_workers,
             }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -235,13 +264,43 @@ class DataloaderDbServer(TaskServer):
             if db_status == TaskStatus.COMPLETED:
                 # Version was already incremented when task was claimed
                 item.data_loader_detection_err_msg = None
+                # Log to summary if available
+                if self.summary_logger:
+                    result = task_result_content.get(TASK_RESULT_CONTENT, {})
+                    self.summary_logger.info(
+                        f"✅ {ds_uuid}: {result.get('total_frames_sampled', 0)} frames, "
+                        f"{result.get('total_time_s', 0):.2f}s, "
+                        f"{len(result.get('episodes_tested', []))} episodes, "
+                        f"backend={result.get('backend', 'unknown')}"
+                    )
             elif db_status == TaskStatus.FAILED:
                 item.data_loader_detection_err_msg = db_error_message
                 # Version was already incremented when task was claimed (not rolled back on failure)
+                if self.summary_logger:
+                    self.summary_logger.info(f"❌ {ds_uuid}: {db_error_message}")
             session.commit()
             self.logger.info(
                 f"Upsert {item.convert_path} dataloader detection status to {db_status}, update_message: {db_error_message}"
             )
+
+    async def _auto_shutdown_after_delay(self) -> None:
+        """Auto-shutdown after 5 seconds of no tasks."""
+        try:
+            await asyncio.sleep(5.0)
+            self.logger.info("Auto-shutdown triggered: No tasks for 5 seconds")
+            self._shutdown_event.set()
+        except asyncio.CancelledError:
+            self.logger.info("Auto-shutdown cancelled: New tasks arrived")
+
+    async def start(self) -> None:
+        """Override start to support auto-shutdown."""
+        from websockets.legacy.server import serve
+
+        async with serve(self.handler, self.host, self.port, max_size=2**28):
+            self.logger.info(f"Task server started successfully: ws://{self.host}:{self.port}")
+            # Wait for shutdown event instead of running forever
+            await self._shutdown_event.wait()
+            self.logger.info("Server shutting down gracefully")
 
 
 # =============================

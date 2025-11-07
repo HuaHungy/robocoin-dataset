@@ -39,6 +39,18 @@ def _print_result_summary(result: dict) -> None:
 
     print(f"\n📊 Summary: {succeeded}/{total} succeeded, {failed}/{total} failed", file=sys.stderr)
 
+    # Performance summary
+    total_time = result.get('total_time_s', 0)
+    total_frames = result.get('total_frames', 0)
+    avg_time_per_frame = result.get('avg_time_per_frame_s', 0)
+
+    if total_time > 0:
+        print(
+            f"⏱️  Performance: {total_time:.2f}s total, {total_frames} frames, "
+            f"{avg_time_per_frame*1000:.1f}ms/frame avg",
+            file=sys.stderr
+        )
+
     if result["succeeded"]:
         print(f"\n✅ Succeeded ({succeeded}):", file=sys.stderr)
         for ds_uuid in result["succeeded"]:
@@ -64,6 +76,29 @@ def run_local(
     logger: logging.Logger,
 ) -> int:
     """Local mode: process datasets with automatic hardlink management."""
+    from datetime import datetime
+
+    from robocoin_dataset.utils.logger import setup_logger
+
+    # Create summary logger in logs/dataloader/sum/
+    sum_logger = setup_logger(
+        name="dataloader_summary",
+        log_dir=Path("logs/dataloader/sum"),
+        level=logging.INFO,
+    )
+
+    # Log execution parameters
+    sum_logger.info("="*80)
+    sum_logger.info(f"Execution started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    sum_logger.info("CLI Parameters:")
+    sum_logger.info(f"  --db={db_file}")
+    sum_logger.info(f"  --target={target_dir}")
+    sum_logger.info(f"  --episodes={episodes}")
+    sum_logger.info(f"  --sample-ratio={sample_ratio}")
+    sum_logger.info(f"  --batch-size={batch_size}")
+    sum_logger.info(f"  --num-workers={num_workers}")
+    sum_logger.info("="*80)
+
     result = run_local_batch_detection(
         db_file=db_file,
         episodes=episodes,
@@ -72,20 +107,69 @@ def run_local(
         num_workers=num_workers,
         hardlink_target_dir=target_dir,
         logger=logger,
+        summary_logger=sum_logger,
     )
 
     if result["datasets_processed"] == 0:
         _print_no_tasks_message()
+        sum_logger.info("No tasks processed")
         return 0
 
     _print_result_summary(result)
+
+    # Write summary to summary logger
+    sum_logger.info("-"*80)
+    sum_logger.info("Execution Summary:")
+    sum_logger.info(f"  Total datasets: {result['datasets_processed']}")
+    sum_logger.info(f"  Succeeded: {len(result['succeeded'])}")
+    sum_logger.info(f"  Failed: {len(result['failed'])}")
+    sum_logger.info(f"  Total time: {result.get('total_time_s', 0):.2f}s")
+    sum_logger.info(f"  Total frames: {result.get('total_frames', 0)}")
+    sum_logger.info(f"  Avg time/frame: {result.get('avg_time_per_frame_s', 0)*1000:.1f}ms")
+    sum_logger.info("="*80 + "\n")
+
     return 0 if not result["failed"] else 1
 
 
 async def run_server_async(
-    db_file: Path, host: str, port: int, heartbeat_interval: float, timeout: float, logger: logging.Logger
+    db_file: Path,
+    host: str,
+    port: int,
+    heartbeat_interval: float,
+    timeout: float,
+    logger: logging.Logger,
+    episodes: str = "all",
+    sample_ratio: float = 0.1,
+    batch_size: int = 32,
+    num_workers: int = 0,
 ) -> int:
     """Server mode: start task distribution server."""
+    from datetime import datetime
+
+    from robocoin_dataset.utils.logger import setup_logger
+
+    # Create summary logger
+    sum_logger = setup_logger(
+        name="dataloader_summary",
+        log_dir=Path("logs/dataloader/sum"),
+        level=logging.INFO,
+    )
+
+    # Log execution parameters
+    sum_logger.info("="*80)
+    sum_logger.info(f"Server started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    sum_logger.info("Server Parameters:")
+    sum_logger.info(f"  --db={db_file}")
+    sum_logger.info(f"  --host={host}")
+    sum_logger.info(f"  --port={port}")
+    sum_logger.info(f"  --episodes={episodes}")
+    sum_logger.info(f"  --sample-ratio={sample_ratio}")
+    sum_logger.info(f"  --batch-size={batch_size}")
+    sum_logger.info(f"  --num-workers={num_workers}")
+    sum_logger.info(f"  --heartbeat-interval={heartbeat_interval}")
+    sum_logger.info(f"  --timeout={timeout}")
+    sum_logger.info("="*80)
+
     server = DataloaderDbServer(
         db_file_path=db_file,
         host=host,
@@ -93,6 +177,11 @@ async def run_server_async(
         heartbeat_interval=heartbeat_interval,
         timeout=timeout,
         logger=logger,
+        episodes=episodes,
+        sample_ratio=sample_ratio,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        summary_logger=sum_logger,
     )
     await server.start()
     return 0
@@ -142,7 +231,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--sample-ratio",
         type=float,
-        default=0.1,
+        default=1.0,
         help="Sample ratio for fast detection (0.0-1.0, default: 0.1 = 10%%)",
     )
     parser.add_argument(
@@ -239,6 +328,10 @@ def main(argv: list[str]) -> int:
                 heartbeat_interval=args.heartbeat_interval,
                 timeout=args.timeout,
                 logger=logger,
+                episodes=args.episodes,
+                sample_ratio=args.sample_ratio,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
             )
         )
 
