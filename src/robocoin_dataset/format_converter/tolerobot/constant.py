@@ -81,6 +81,9 @@ DESCRIPTION_TXT_FILE = "description.txt"
 DESCRIBE_TXT_FILE = "describe.txt"
 DEVICE_MODEL_ANNOTATION_FILE = "device_model_annotation.yaml"
 
+# YAML field keys
+TASK_DESCRIPTIONS_KEY = "task_descriptions"
+
 # Acceptable file extensions
 H5_SUFFIX = ".h5"
 HDF5_SUFFIX = ".hdf5"
