@@ -1,47 +1,146 @@
 from pathlib import Path
-
+import logging
 import numpy as np
+import yaml
+import importlib
+from pathlib import Path
 
+from robocoin_dataset.sim_replay.lerobot_sim_replayer import LerobotSimReplayer
 from .state_action_data_processor_base import StateActionDataPostProcessorBase
 
+logger = logging.getLogger(__name__)
 
 class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
+        self.replayer: LerobotSimReplayer | None = self._setup_replayer()
+        self.episode_index = 0  # 默认值
+
+    def _setup_replayer(self) -> LerobotSimReplayer | None:
+        """动态加载并实例化 LerobotSimReplayer"""
+        try:
+            project_root = Path(__file__).resolve().parents[4]
+            config_path = project_root / "scripts/sim_replay/configs/sim_replay_config_path.yaml"
+
+            if not config_path.exists():
+                logger.warning(f"Sim replay config file not found at {config_path}. Replayer will not be available.")
+                return None
+
+            with open(config_path, "r") as f:
+                all_configs = yaml.safe_load(f)
+
+            device_configs = all_configs.get("agilex_cobot_decoupled_magic", [])
+            config_info = next((c for c in device_configs if c.get("version") == "default_version"), None)
+
+            if not config_info:
+                logger.warning("Config for 'agilex_cobot_decoupled_magic' with 'default_version' not found. Replayer will not be available.")
+                return None
+
+            module_name = config_info["mujoco_sim_replay_config_module"]
+            class_name = config_info["mujoco_sim_replay_config_class"]
+
+            module = importlib.import_module(module_name)
+            config_class = getattr(module, class_name)
+            replay_config = config_class()
+
+            # repo_path 是 LeRobot 数据集目录
+            return LerobotSimReplayer(replay_config=replay_config, repo_path=self.convert_path)
+
+        except Exception as e:
+            logger.error(f"Failed to setup LerobotSimReplayer. Reason: {e}", exc_info=True)
+            return None
+
+    def set_episode_index(self, episode_index: int):
+        """设置当前处理的 episode 索引"""
+        self.episode_index = episode_index
 
     def prepare_processing(self) -> None:
         pass
 
-    def _smooth_gripper_open_data(self, data: np.ndarray) -> np.ndarray:
-        smoothed = data.copy()
-        return smoothed
+    def _swap_left_right(self, data: np.ndarray) -> np.ndarray:
+        """交换前13维和后13维"""
+        if data.ndim != 2 or data.shape[1] < 26:
+            return data
+        swapped_data = data.copy()
+        left = swapped_data[:, :13].copy()
+        right = swapped_data[:, 13:26].copy()
+        swapped_data[:, :13] = right
+        swapped_data[:, 13:26] = left
+        return swapped_data
+
+    def _scale_columns(self, data: np.ndarray) -> np.ndarray:
+        """如果第7或第20列的最大值 > 0.8，则该列整体除以10"""
+        scaled_data = data.copy()
+        for col_idx in (6, 19):
+            try:
+                col_max = float(np.max(scaled_data[:, col_idx]))
+                if col_max > 0.8:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} max value is {col_max} > 0.8, scaling it by dividing by 10.")
+                    scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
+            except (IndexError, ValueError) as e:
+                logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
+                continue
+        return scaled_data
+
+    def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """
+        重写此方法以实现完整的处理逻辑：
+        1. 交换 state 和 action 的左右臂数据。
+        2. 根据条件缩放特定列。
+        3. 使用模拟器获取EEF数据，判断是否需要撤销交换。
+        """
+        # 步骤 1 & 2: 初始处理 state 和 action
+        processed_state = self._scale_columns(self._swap_left_right(ori_data["observation.state"]))
+        processed_action = self._scale_columns(self._swap_left_right(ori_data["action"]))
+
+        # 步骤 3: 调用模拟器并根据EEF距离决定是否再次交换
+        if self.replayer is None:
+            logger.warning(f"Episode {self.episode_index}: Replayer not available, skipping EEF distance check. The arm data remains swapped.")
+        else:
+            try:
+                # 假设 replayer 已经配置好，直接调用
+                self.replayer.mjcf_model.opt.gravity[2] = -9.81 # 确保重力正确
+                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True)
+                
+                if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
+                    eef_data = np.array(eef_data_list_state)
+                    # 假设左臂 EEF xyz 在前3个元素，右臂在第7-9个元素
+                    left_eef_xyz = eef_data[:, 0:3]
+                    right_eef_xyz = eef_data[:, 6:9]
+                    
+                    distances = np.linalg.norm(left_eef_xyz - right_eef_xyz, axis=1)
+                    initial_distance = distances[0]
+                    mean_distance = np.mean(distances)
+
+                    logger.info(f"Episode {self.episode_index}: Initial EEF distance: {initial_distance:.4f}, Mean EEF distance: {mean_distance:.4f}")
+
+                    if mean_distance > initial_distance:
+                        logger.info(f"Episode {self.episode_index}: Mean distance > initial distance. Swapping arms back to original order.")
+                        # 再次交换，恢复原状
+                        processed_state = self._swap_left_right(processed_state)
+                        processed_action = self._swap_left_right(processed_action)
+                    else:
+                        logger.info(f"Episode {self.episode_index}: Mean distance <= initial distance. Keeping the arms swapped.")
+                else:
+                    logger.warning(f"Episode {self.episode_index}: EEF data is invalid or insufficient. Skipping distance check. Data shape: {eef_data_list_state[0].shape if eef_data_list_state else 'Empty'}")
+
+            except Exception as e:
+                logger.error(f"Episode {self.episode_index}: Failed to get EEF data or perform distance check. Reason: {e}", exc_info=True)
+
+        return {
+            "observation.state": processed_state,
+            "action": processed_action,
+        }
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
-        # 交换前 13 维和后 13 维
-        new_state_data = ori_state_data.copy()
-        # if new_state_data.ndim != 2 or new_state_data.shape[1] < 26:
-        #     # 如果维度不满足，返回拷贝以保持稳健
-        #     return new_state_data
-
-        left = new_state_data[:, :13].copy()
-        right = new_state_data[:, 13:26].copy()
-        new_state_data[:, :13] = right
-        new_state_data[:, 13:26] = left
-        return new_state_data
+        # 这个方法现在由 process_episode_data 调用，逻辑已集中处理
+        return ori_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
-        # 对 action 同样交换前 13 维和后 13 维（如果形状满足）
-        new_action_data = ori_action_data.copy()
-        # if new_action_data.ndim != 2 or new_action_data.shape[1] < 26:
-        #     return new_action_data
-
-        left = new_action_data[:, :13].copy()
-        right = new_action_data[:, 13:26].copy()
-        new_action_data[:, :13] = right
-        new_action_data[:, 13:26] = left
-        return new_action_data
+        # 这个方法现在由 process_episode_data 调用，逻辑已集中处理
+        return ori_action_data
     def get_modified_feature_names(self):
         return super().get_modified_feature_names()
 
@@ -51,6 +150,65 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
     # 该方法返回处理后的action数据名称
     def get_modified_info_action_names(self) -> dict[str, str]:
         return {}
+
+    def get_modified_state_feature_names(self)-> list[str]:
+        return [
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_gripper_open",
+                "left_eef_pos_x_m",
+                "left_eef_pos_y_m",
+                "left_eef_pos_z_m",
+                "left_eef_rot_euler_x_rad",
+                "left_eef_rot_euler_y_rad",
+                "left_eef_rot_euler_z_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_gripper_open",
+                "right_eef_pos_x_m",
+                "right_eef_pos_y_m",
+                "right_eef_pos_z_m",
+                "right_eef_rot_euler_x_rad",
+                "right_eef_rot_euler_y_rad",
+                "right_eef_rot_euler_z_rad"
+            ]
+    def get_modified_action_feature_names(self)-> list[str]:
+        return [
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_gripper_open",
+                "left_eef_pos_x_m",
+                "left_eef_pos_y_m",
+                "left_eef_pos_z_m",
+                "left_eef_rot_euler_x_rad",
+                "left_eef_rot_euler_y_rad",
+                "left_eef_rot_euler_z_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_gripper_open",
+                "right_eef_pos_x_m",
+                "right_eef_pos_y_m",
+                "right_eef_pos_z_m",
+                "right_eef_rot_euler_x_rad",
+                "right_eef_rot_euler_y_rad",
+                "right_eef_rot_euler_z_rad"
+            ]
 
 
 

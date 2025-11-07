@@ -201,6 +201,13 @@ class GalaxeaR1LiteH5Mp4Processor(StateActionDataPostProcessorBase):
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
         new_state_data = ori_state_data.copy()
         return new_state_data
+    
+    # 忽略原始 action 数据，全部使用 state 数据覆盖
+    def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        processed_state = self.process_episode_state_data(ori_data["observation.state"])
+        # action 特征在本 processor 中与 state 特征长度一致，直接复制
+        processed_action = processed_state.copy()
+        return {"observation.state": processed_state, "action": processed_action}
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
