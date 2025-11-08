@@ -105,23 +105,23 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
                 
                 if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
                     eef_data = np.array(eef_data_list_state)
-                    # 假设左臂 EEF xyz 在前3个元素，右臂在第7-9个元素
-                    left_eef_xyz = eef_data[:, 0:3]
-                    right_eef_xyz = eef_data[:, 6:9]
+                    # 左臂 EEF y 在第2个元素(index 1)，右臂在第8个元素(index 7)
+                    left_eef_y = eef_data[:, 1]
+                    right_eef_y = eef_data[:, 7]
                     
-                    distances = np.linalg.norm(left_eef_xyz - right_eef_xyz, axis=1)
-                    initial_distance = distances[0]
-                    mean_distance = np.mean(distances)
+                    y_distances = np.abs(left_eef_y - right_eef_y)
+                    last_frame_distance = y_distances[-1]
+                    mean_y_distance = np.mean(y_distances)
 
-                    logger.info(f"Episode {self.episode_index}: Initial EEF distance: {initial_distance:.4f}, Mean EEF distance: {mean_distance:.4f}")
+                    logger.info(f"Episode {self.episode_index}: Last frame Y distance: {last_frame_distance:.4f}, Mean Y distance: {mean_y_distance:.4f}")
 
-                    if mean_distance > initial_distance:
-                        logger.info(f"Episode {self.episode_index}: Mean distance > initial distance. Swapping arms back to original order.")
+                    if mean_y_distance > last_frame_distance:
+                        logger.info(f"Episode {self.episode_index}: Mean Y distance > Last frame Y distance. Swapping arms back to original order.")
                         # 再次交换，恢复原状
                         processed_state = self._swap_left_right(processed_state)
                         processed_action = self._swap_left_right(processed_action)
                     else:
-                        logger.info(f"Episode {self.episode_index}: Mean distance <= initial distance. Keeping the arms swapped.")
+                        logger.info(f"Episode {self.episode_index}: Mean Y distance <= Last frame Y distance. Keeping the arms swapped.")
                 else:
                     logger.warning(f"Episode {self.episode_index}: EEF data is invalid or insufficient. Skipping distance check. Data shape: {eef_data_list_state[0].shape if eef_data_list_state else 'Empty'}")
 
@@ -336,7 +336,7 @@ class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
                 continue
         return scaled_data
 
-    def _smooth_joint_data(self, data: np.ndarray, window_size: int = 12) -> np.ndarray:
+    def _smooth_joint_data(self, data: np.ndarray, window_size: int = 16) -> np.ndarray:
         """对所有关节数据应用平滑滤波"""
         if data.ndim != 2 or data.shape[0] < window_size:
             return data
@@ -448,4 +448,100 @@ class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
                 "right_gripper_open"
             ]
 
-# h5_mp4_new
+
+class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorBase):
+    def __init__(self, convert_path: str | Path) -> None:
+        super().__init__(convert_path)
+
+    def prepare_processing(self) -> None:
+        pass
+
+    def _smooth_gripper_open_data(self, data: np.ndarray) -> np.ndarray:
+        smoothed = data.copy()
+        return smoothed
+
+    # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
+    def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
+        new_state_data = ori_state_data.copy()
+        return new_state_data
+
+    # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
+    def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
+        new_action_data = ori_action_data.copy()
+        return new_action_data
+    def get_modified_feature_names(self):
+        return super().get_modified_feature_names()
+
+    def get_modified_state_feature_names(self)-> list[str]:
+        return []
+    
+    def get_modified_action_feature_names(self)-> list[str]:
+        return []
+
+    def get_modified_info_state_names(self) -> dict[str, str]:
+        return {}
+
+    # 该方法返回处理后的action数据名称
+    def get_modified_info_action_names(self) -> dict[str, str]:
+        return {}
+
+    def get_modified_state_feature_names(self)-> list[str]:
+        return [
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_gripper_open",
+                "left_eef_pos_x_m",
+                "left_eef_pos_y_m",
+                "left_eef_pos_z_m",
+                "left_eef_rot_euler_x_rad",
+                "left_eef_rot_euler_y_rad",
+                "left_eef_rot_euler_z_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_gripper_open",
+                "right_eef_pos_x_m",
+                "right_eef_pos_y_m",
+                "right_eef_pos_z_m",
+                "right_eef_rot_euler_x_rad",
+                "right_eef_rot_euler_y_rad",
+                "right_eef_rot_euler_z_rad"
+            ]
+
+    def get_modified_action_feature_names(self)-> list[str]:
+        return [
+                "left_arm_joint_1_rad",
+                "left_arm_joint_2_rad",
+                "left_arm_joint_3_rad",
+                "left_arm_joint_4_rad",
+                "left_arm_joint_5_rad",
+                "left_arm_joint_6_rad",
+                "left_gripper_open",
+                "left_eef_pos_x_m",
+                "left_eef_pos_y_m",
+                "left_eef_pos_z_m",
+                "left_eef_rot_euler_x_rad",
+                "left_eef_rot_euler_y_rad",
+                "left_eef_rot_euler_z_rad",
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_gripper_open",
+                "right_eef_pos_x_m",
+                "right_eef_pos_y_m",
+                "right_eef_pos_z_m",
+                "right_eef_rot_euler_x_rad",
+                "right_eef_rot_euler_y_rad",
+                "right_eef_rot_euler_z_rad"
+            ]
+

@@ -35,7 +35,7 @@ agilex_cobot_decoupled_magic:
 
 - version: mult_sensor
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
-  post_processor_class: AgilexCobotDecoupledMagicProcessor
+  post_processor_class: AgilexCobotDecoupledMagicMultSensorProcessor
 
 - version: h5_mp4
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
@@ -97,3 +97,9 @@ yinhe:
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.yinhe_processor
   post_processor_class: YinheProcessor
+
+- version: lite_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.yinhe_processor
+  post_processor_class: YinheProcessor
+
+  
