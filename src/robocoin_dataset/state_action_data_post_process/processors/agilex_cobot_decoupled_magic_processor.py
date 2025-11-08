@@ -94,9 +94,10 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
         processed_state = self._scale_columns(self._swap_left_right(ori_data["observation.state"]))
         processed_action = self._scale_columns(self._swap_left_right(ori_data["action"]))
 
+        central_logger = logging.getLogger("state action data post process server")
         # 步骤 3: 调用模拟器并根据EEF距离决定是否再次交换
         if self.replayer is None:
-            logger.warning(f"Episode {self.episode_index}: Replayer not available, skipping EEF distance check. The arm data remains swapped.")
+            central_logger.warning(f"Episode {self.episode_index}: Replayer not available, skipping EEF distance check. The arm data remains swapped.")
         else:
             try:
                 # 假设 replayer 已经配置好，直接调用
@@ -105,28 +106,28 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
                 
                 if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
                     eef_data = np.array(eef_data_list_state)
-                    # 左臂 EEF y 在第2个元素(index 1)，右臂在第8个元素(index 7)
-                    left_eef_y = eef_data[:, 1]
-                    right_eef_y = eef_data[:, 7]
+                    # 左臂夹爪在第7个元素(index 6)，右臂夹爪在第20个元素(index 19)
+                    left_gripper = processed_state[:, 6]
+                    right_gripper = processed_state[:, 19]
                     
-                    y_distances = np.abs(left_eef_y - right_eef_y)
-                    last_frame_distance = y_distances[-1]
-                    mean_y_distance = np.mean(y_distances)
+                    gripper_distances = np.abs(left_gripper - right_gripper)
+                    last_frame_gripper_distance = gripper_distances[-1]
+                    mean_gripper_distance = np.mean(gripper_distances)
 
-                    logger.info(f"Episode {self.episode_index}: Last frame Y distance: {last_frame_distance:.4f}, Mean Y distance: {mean_y_distance:.4f}")
+                    central_logger.info(f"Episode {self.episode_index}: Last frame gripper distance: {last_frame_gripper_distance:.4f}, Mean gripper distance: {mean_gripper_distance:.4f}")
 
-                    if mean_y_distance > last_frame_distance:
-                        logger.info(f"Episode {self.episode_index}: Mean Y distance > Last frame Y distance. Swapping arms back to original order.")
+                    if mean_gripper_distance < last_frame_gripper_distance:
+                        central_logger.info(f"Episode {self.episode_index}: Mean gripper distance > Last frame gripper distance. Swapping arms back to original order.")
                         # 再次交换，恢复原状
                         processed_state = self._swap_left_right(processed_state)
                         processed_action = self._swap_left_right(processed_action)
                     else:
-                        logger.info(f"Episode {self.episode_index}: Mean Y distance <= Last frame Y distance. Keeping the arms swapped.")
+                        central_logger.info(f"Episode {self.episode_index}: Mean gripper distance <= Last frame gripper distance. Keeping the arms swapped.")
                 else:
-                    logger.warning(f"Episode {self.episode_index}: EEF data is invalid or insufficient. Skipping distance check. Data shape: {eef_data_list_state[0].shape if eef_data_list_state else 'Empty'}")
+                    central_logger.warning(f"Episode {self.episode_index}: EEF data is invalid or insufficient. Skipping distance check. Data shape: {eef_data_list_state[0].shape if eef_data_list_state else 'Empty'}")
 
             except Exception as e:
-                logger.error(f"Episode {self.episode_index}: Failed to get EEF data or perform distance check. Reason: {e}", exc_info=True)
+                central_logger.error(f"Episode {self.episode_index}: Failed to get EEF data or perform distance check. Reason: {e}", exc_info=True)
 
         return {
             "observation.state": processed_state,
