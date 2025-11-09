@@ -39,20 +39,17 @@ def prompt_for_token(config: LocalDsUploadConfig, token_from_cli: bool) -> str:
     return config_token
 
   # Prompt for token
-  token = getpass.getpass(f"🔑 {config.hub_name} token (or Enter for config): ").strip()
+  token = getpass.getpass(f"🔑 {config.hub_name.value} token: ").strip()
   if token:
     return token
 
   # Fall back to config token with deprecation warning
   if config_token and config_token.upper() not in ["NULL", "NONE", ""]:
-    response = input(
-      "⚠️  Token in config may cause secret conflict and is deprecated. "
-      "Confirm to upload using in-config token? (y/n): "
-    ).strip().lower()
+    response = input("⚠️  Use token from config? (y/n): ").strip().lower()
     if response in ["y", "yes"]:
       return config_token
 
-  print("❌ No token provided")
+  print("❌ No token")
   sys.exit(1)
 
 

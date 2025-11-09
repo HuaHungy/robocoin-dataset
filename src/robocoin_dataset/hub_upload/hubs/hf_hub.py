@@ -30,7 +30,7 @@ class HuggingfaceUploadHub(AbstractUploadHub):
             token (str): Authentication token for Hugging Face API.
         """
         super().__init__(token)
-        self.hub = HfApi()
+        self.hub = HfApi(token=token)
 
     def repo_exists(self, repo_id: str) -> bool:
         """
@@ -69,6 +69,9 @@ class HuggingfaceUploadHub(AbstractUploadHub):
         """
         Upload a local folder to a Hugging Face dataset repository.
 
+        Uses upload_folder() which handles large uploads efficiently and returns
+        commit information.
+
         Args:
             folder_path (Path): Path to the local folder to upload.
             repo_id (str): Identifier of the target repository.
@@ -86,11 +89,15 @@ class HuggingfaceUploadHub(AbstractUploadHub):
                 folder_path=folder_path,
                 token=self.token,
                 repo_type="dataset",
+                commit_message=commit_msg,
                 allow_patterns=DEFAULT_UPLOAD_ALLOW_PATTERNS,
                 ignore_patterns=DEFAULT_UPLOAD_IGNORE_PATTERNS,
-                commit_message=commit_msg,
             )
-            return commit_info.commit_url
+
+            # Handle both single CommitInfo object and Future[CommitInfo]
+            if hasattr(commit_info, 'commit_url'):
+                return commit_info.commit_url
+            return f"Successfully uploaded to {repo_id}"
         except Exception as e:
             print(e)
             raise e

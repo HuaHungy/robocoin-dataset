@@ -31,7 +31,6 @@ from robocoin_dataset.dataloader.dataloader_utils import (
     _update_task_status,
     create_episode_dataloader,
     create_lerobot_dataset,
-    prepare_hardlink_db,
     run_local_batch_detection,
 )
 from robocoin_dataset.distribution_computation.constant import (
@@ -49,6 +48,15 @@ from robocoin_dataset.distribution_computation.constant import (
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import LEFORMAT_PATH
+from robocoin_dataset.hardlink.prepare_hardlink import (
+    prepare_hardlink_for_task,
+    query_existing_hardlink,
+    update_hardlink_path,
+)
+from robocoin_dataset.hardlink.validate_hardlink import (
+    create_or_validate_hardlinks,
+    validate_source_for_lerobot,
+)
 
 # =============================
 # Task Management Constants
@@ -98,18 +106,14 @@ class DataloaderDbProcess:
             self.logger.info("No dataloader detection task to process")
             return
 
-        # Prepare path with hardlinks (find existing or create new)
+        # Prepare hardlink using the centralized helper function
         try:
-            with self.db.with_session() as session:
-                test_path = prepare_hardlink_db(
-                    source_path=convert_path,
-                    dataset_uuid=dataset_uuid,
-                    target_dir=hardlink_target_dir,
-                    db_session=session,
-                )
+            test_path = prepare_hardlink_for_task(
+                self.db, dataset_uuid, convert_path, hardlink_target_dir
+            )
             self.logger.info(f"Using hardlinks: {test_path}")
         except Exception as e:
-            error_msg = f"Path preparation failed: {e}"
+            error_msg = f"Hardlink preparation failed: {e}"
             self.logger.error(error_msg)
             _mark_task_failed(self.db, dataset_uuid, error_msg)
             return
@@ -180,55 +184,81 @@ class DataloaderDbServer(TaskServer):
         hardlink path to client. This ensures:
         1. Database query for existing hardlinks
         2. Validation and reuse of valid hardlinks
-        3. Creation of new hardlinks if needed
+        3. Creation of new hardlinks if needed (WITHOUT holding DB lock)
         4. Database update with hardlink path
+
+        If hardlink preparation fails, the task is marked as FAILED and the
+        server automatically tries the next task. This prevents one bad dataset
+        from blocking the entire queue.
         """
-        with self.db.with_session() as session:
-            # pre-sync queue
-            _sync_dataloader_detection_tasks(session, logger=self.logger)
+        # Retry loop: continue until we find a valid task or run out of tasks
+        # This ensures that hardlink preparation failures don't stop processing
+        max_retries = 100  # Safety limit to prevent infinite loops
+        attempt = 0
 
-            # claim one
-            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
-            if dataset_uuid is None:
-                # No tasks available - schedule shutdown if not already scheduled
-                if self._auto_shutdown_task is None or self._auto_shutdown_task.done():
-                    self.logger.info("No tasks available, will auto-shutdown in 5 seconds if no new tasks arrive")
-                    self._auto_shutdown_task = asyncio.create_task(self._auto_shutdown_after_delay())
-                return None
+        while attempt < max_retries:
+            attempt += 1
 
-            # Task available - cancel any pending shutdown
-            if self._auto_shutdown_task and not self._auto_shutdown_task.done():
-                self._auto_shutdown_task.cancel()
-                self._auto_shutdown_task = None
+            # Step 1: Sync and claim task (with DB session)
+            with self.db.with_session() as session:
+                # pre-sync queue (only on first attempt to avoid redundant syncs)
+                if attempt == 1:
+                    _sync_dataloader_detection_tasks(session, logger=self.logger)
 
-            # Server prepares hardlinks with database access
+                # claim one
+                dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
+                if dataset_uuid is None:
+                    # No tasks available - schedule shutdown if not already scheduled
+                    if self._auto_shutdown_task is None or self._auto_shutdown_task.done():
+                        self.logger.info("No tasks available, will auto-shutdown in 5 seconds if no new tasks arrive")
+                        self._auto_shutdown_task = asyncio.create_task(self._auto_shutdown_after_delay())
+                    return None
+
+                # Task available - cancel any pending shutdown
+                if self._auto_shutdown_task and not self._auto_shutdown_task.done():
+                    self._auto_shutdown_task.cancel()
+                    self._auto_shutdown_task = None
+
+            # Step 2: Prepare hardlinks using the centralized helper function
             try:
-                test_path = prepare_hardlink_db(
-                    source_path=convert_path,
-                    dataset_uuid=dataset_uuid,
-                    target_dir=None,  # Auto: {source}_hardlink
-                    db_session=session,
+                test_path = prepare_hardlink_for_task(
+                    self.db, dataset_uuid, convert_path, hardlink_target_dir=None
                 )
                 self.logger.info(f"Prepared dataset path for client: {test_path}")
-            except Exception as e:
-                # If hardlink preparation fails, mark as failed and return None
-                err_msg = f"Hardlink preparation failed: {e}"
-                self.logger.error(err_msg)
-                item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-                if item:
-                    item.data_loader_detection_status = TaskStatus.FAILED
-                    item.data_loader_detection_err_msg = err_msg
-                    session.commit()
-                return None
 
-            return {
-                DATASET_UUID: dataset_uuid,
-                LEFORMAT_PATH: str(test_path),  # Send hardlink path to client
-                "episodes": self.episodes,
-                "sample_ratio": self.sample_ratio,
-                "batch_size": self.batch_size,
-                "num_workers": self.num_workers,
-            }
+                # Success! Return the task
+                return {
+                    DATASET_UUID: dataset_uuid,
+                    LEFORMAT_PATH: str(test_path),  # Send hardlink path to client
+                    "episodes": self.episodes,
+                    "sample_ratio": self.sample_ratio,
+                    "batch_size": self.batch_size,
+                    "num_workers": self.num_workers,
+                }
+
+            except Exception as e:
+                # Hardlink preparation failed - mark as failed and try next task
+                err_msg = f"Hardlink preparation failed: {e}"
+                self.logger.error(f"❌ {dataset_uuid}: {err_msg}")
+
+                with self.db.with_session() as session:
+                    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+                    if item:
+                        item.data_loader_detection_status = TaskStatus.FAILED
+                        item.data_loader_detection_err_msg = err_msg
+                        session.commit()
+
+                # Log to summary if available
+                if self.summary_logger:
+                    self.summary_logger.info(f"❌ {dataset_uuid}: {err_msg}")
+
+                # Continue to next iteration to try another task
+                self.logger.info("Attempting to fetch next task...")
+                continue
+
+        # Safety: should never reach here unless we hit max_retries
+        self.logger.warning(f"Reached max retry limit ({max_retries}) in generate_task_content")
+        return None
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         """Handle task result from client and update database."""
@@ -316,12 +346,14 @@ class DataloaderDbClient(TaskClient):
         server_uri: str = "ws://localhost:8771",
         heartbeat_interval: float = 30.0,
         logger: logging.Logger | None = None,
+        tqdm_position: int = 0,
     ) -> None:
         super().__init__(
             server_uri=server_uri,
             heartbeat_interval=heartbeat_interval,
             logger=logger,
         )
+        self.tqdm_position = tqdm_position
 
     def get_task_category(self) -> str:
         return TASK_CATEGORY
@@ -346,18 +378,20 @@ class DataloaderDbClient(TaskClient):
 
         self.logger.info(f"Processing dataset: {test_path}")
 
-        # Run detection with downsampling
+        # Run detection with downsampling (pass client_id for progress bar positioning)
         return _run_detection(
             test_path,
             episode_indices=episodes,
             sample_ratio=sample_ratio,
             batch_size=batch_size,
             num_workers=num_workers,
+            client_id=self.client_id,
+            tqdm_position=self.tqdm_position,
         )
 
 
 async def run_client_async(
-    server_uri: str, heartbeat_interval: float, logger: logging.Logger
+    server_uri: str, heartbeat_interval: float, logger: logging.Logger, tqdm_position: int = 0
 ) -> dict:
     """Run a single client that connects to server and processes tasks until none remain.
 
@@ -365,7 +399,7 @@ async def run_client_async(
         Statistics dictionary with keys: tasks_processed, tasks_succeeded, tasks_failed
     """
     client = DataloaderDbClient(
-        server_uri=server_uri, heartbeat_interval=heartbeat_interval, logger=logger
+        server_uri=server_uri, heartbeat_interval=heartbeat_interval, logger=logger, tqdm_position=tqdm_position
     )
 
     # Track task counts
@@ -454,13 +488,14 @@ def client_process_main(
 
     logger.info(f"Client process {process_id} started, connecting to {server_uri}")
 
-    # Run async client
+    # Run async client (use process_id as tqdm_position for multi-client progress bars)
     try:
         stats = asyncio.run(
             run_client_async(
                 server_uri=server_uri,
                 heartbeat_interval=heartbeat_interval,
                 logger=logger,
+                tqdm_position=process_id,
             )
         )
         # Send statistics back to parent process
@@ -750,8 +785,12 @@ __all__ = [
     "EpisodeSampler",
     "create_lerobot_dataset",
     "create_episode_dataloader",
-    # Hardlink utilities (from utils module)
-    "prepare_hardlink_db",
+    # Hardlink utilities - database operations (from prepare_hardlink module)
+    "query_existing_hardlink",
+    "update_hardlink_path",
+    # Hardlink utilities - file system operations (from validate_hardlink module)
+    "create_or_validate_hardlinks",
+    "validate_source_for_lerobot",
     # Detection and validation (from utils module)
     "_run_detection",  # Fast detection with sampling
     "run_local_batch_detection",

@@ -18,7 +18,9 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from robocoin_dataset.hardlink.prepare_hardlink import prepare_hardlink_db
+from robocoin_dataset.hardlink.prepare_hardlink import (
+    prepare_hardlink_for_task,
+)
 
 if TYPE_CHECKING:
     pass
@@ -47,6 +49,15 @@ except Exception:  # pragma: no cover
 
 ######################### business logic functions #########################
 
+def _set_backend_metadata(ds: "LeRobotDataset", backend: str, reason: str) -> None:
+    """Set backend metadata on dataset (best-effort, silently ignore failures)."""
+    try:
+        setattr(ds, "robocoin_video_backend", backend)
+        setattr(ds, "robocoin_video_backend_reason", reason)
+    except Exception:
+        pass
+
+
 class EpisodeSampler(torch.utils.data.Sampler):  # type: ignore
 
     def __init__(self, dataset: "LeRobotDataset", episode_index: int, sample_ratio: float = 1.0) -> None:
@@ -73,6 +84,31 @@ class EpisodeSampler(torch.utils.data.Sampler):  # type: ignore
 
     def __len__(self) -> int:
         return len(self.frame_ids)
+
+    @staticmethod
+    def calculate_sample_count(
+        dataset: "LeRobotDataset",
+        episode_index: int,
+        sample_ratio: float = 1.0,
+    ) -> int:
+        """Calculate number of frames that will be sampled for an episode.
+
+        Args:
+            dataset: LeRobot dataset
+            episode_index: Episode index
+            sample_ratio: Sample ratio (0.0-1.0)
+
+        Returns:
+            Number of frames that will be sampled
+        """
+        from_idx = dataset.episode_data_index["from"][episode_index].item()
+        to_idx = dataset.episode_data_index["to"][episode_index].item()
+        total_frames = to_idx - from_idx
+
+        if sample_ratio == 1.0:
+            return total_frames
+
+        return max(1, int(total_frames * sample_ratio))
 
 def create_episode_dataloader(
     dataset: "LeRobotDataset",
@@ -254,11 +290,7 @@ def create_lerobot_dataset(
     if video_backend != "auto":
         ds = _build(video_backend)
         # Attach chosen backend metadata for downstream UIs/CLIs
-        try:
-            setattr(ds, "robocoin_video_backend", video_backend)
-            setattr(ds, "robocoin_video_backend_reason", "user_selected")
-        except Exception:
-            pass
+        _set_backend_metadata(ds, video_backend, "user_selected")
         return ds
 
     # Auto: prefer torchcodec, then fallback to pyav on failure
@@ -267,20 +299,12 @@ def create_lerobot_dataset(
         # Probe a single item to trigger video decoding if any video keys exist
         if len(ds.meta.video_keys) > 0 and ds.num_frames > 0:
             _ = ds[0]
-        try:
-            setattr(ds, "robocoin_video_backend", "torchcodec")
-            setattr(ds, "robocoin_video_backend_reason", "ok")
-        except Exception:
-            pass
+        _set_backend_metadata(ds, "torchcodec", "ok")
         return ds
     except Exception as e:
         # Fallback to pyav
         ds = _build("pyav")
-        try:
-            setattr(ds, "robocoin_video_backend", "pyav")
-            setattr(ds, "robocoin_video_backend_reason", f"torchcodec failed: {repr(e)}")
-        except Exception:
-            pass
+        _set_backend_metadata(ds, "pyav", f"torchcodec failed: {repr(e)}")
         return ds
 
 ######################### helper functions #########################
@@ -328,89 +352,6 @@ def _worker_init_suppress_output(worker_id: int) -> None:
 
     atexit.register(cleanup)
 
-def _validate_single_episode(
-    ds: "LeRobotDataset",
-    ep_idx: int,
-    video_keys: list[str],
-    batch_size: int,
-    num_workers: int,
-    overall_progress: "object | None" = None,
-) -> tuple[bool, int, str | None]:
-    """Validate a single episode by iterating through all frames.
-
-    Args:
-        ds: LeRobotDataset instance
-        ep_idx: Episode index to validate
-        video_keys: List of video keys to verify in each batch
-        batch_size: Batch size for dataloader
-        num_workers: Number of dataloader workers
-        overall_progress: Optional overall progress bar to update
-
-    Returns:
-        Tuple of (success, frames_validated, error_message)
-    """
-    try:
-        from tqdm import tqdm  # type: ignore
-    except Exception:
-        tqdm = None  # type: ignore
-
-    try:
-        # Get episode frame range
-        from_idx = ds.episode_data_index["from"][ep_idx].item()
-        to_idx = ds.episode_data_index["to"][ep_idx].item()
-        episode_frames = int(to_idx - from_idx)
-
-        # Create episode dataloader
-        dl = create_episode_dataloader(
-            ds,
-            episode_index=ep_idx,
-            batch_size=batch_size,
-            num_workers=num_workers,
-        )
-
-        # Episode-specific progress bar
-        ep_progress = None
-        if tqdm is not None:
-            ep_progress = tqdm(
-                total=episode_frames,
-                desc=f"  📹 Episode {ep_idx}",
-                unit="frame",
-                file=sys.stderr,
-                position=1,
-                leave=False,
-            )
-
-        # Iterate through all frames (simple core loop like simple_data_loader.py)
-        frames_validated = 0
-        with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
-            for batch in dl:
-                # Verify batch structure
-                if not isinstance(batch, dict):
-                    raise ValueError(f"Batch is not a dict: {type(batch)}")
-
-                # Verify all video keys present
-                for vkey in video_keys:
-                    if vkey not in batch:
-                        raise ValueError(f"Video key '{vkey}' missing from batch")
-
-                # Count frames in batch
-                batch_size_actual = len(batch["index"]) if "index" in batch else 1
-                frames_validated += batch_size_actual
-
-                # Update progress bars
-                if ep_progress is not None:
-                    ep_progress.update(batch_size_actual)
-                if overall_progress is not None:
-                    overall_progress.update(batch_size_actual)
-
-        # Close episode progress bar
-        if ep_progress is not None:
-            ep_progress.close()
-
-        return True, frames_validated, None
-
-    except Exception as e:
-        return False, 0, str(e)
 
 def _prepare_dataset_path(
     db: "object",
@@ -419,16 +360,17 @@ def _prepare_dataset_path(
     hardlink_target_dir: Path | None,
     logger: logging.Logger,
 ) -> Path:
-    """Prepare dataset path with hardlinks (find existing or create new)."""
-    with db.with_session() as session:
-        test_path = prepare_hardlink_db(
-            source_path=convert_path,
-            dataset_uuid=dataset_uuid,
-            target_dir=hardlink_target_dir,
-            db_session=session,
-        )
-    logger.info(f"Using hardlinks: {test_path}")
-    return test_path
+    """Prepare dataset path with hardlinks (legacy wrapper).
+
+    This is a legacy wrapper that adds logging around prepare_hardlink_for_task.
+    New code should use prepare_hardlink_for_task directly.
+
+    Raises:
+        FileNotFoundError: If source dataset is missing required LeRobotDataset files
+    """
+    result_path = prepare_hardlink_for_task(db, dataset_uuid, convert_path, hardlink_target_dir)
+    logger.info(f"Using hardlinks: {result_path}")
+    return result_path
 
 
 def _update_task_status(
@@ -452,7 +394,7 @@ def _update_task_status(
         if result["success"]:
             item.data_loader_detection_status = TaskStatus.COMPLETED
             item.data_loader_detection_err_msg = None
-            frames_count = result.get('total_frames_validated') or result.get('total_frames_sampled', 0)
+            frames_count = result.get('total_frames_sampled', 0)
 
             # Performance summary
             time_total = result.get('total_time_s', 0)
@@ -469,7 +411,7 @@ def _update_task_status(
             session.commit()
             return True, None
         item.data_loader_detection_status = TaskStatus.FAILED
-        error_msg = result.get("error_summary", result.get("error_message", "Unknown error"))
+        error_msg = result.get("error_message", "Unknown error")
         item.data_loader_detection_err_msg = error_msg
         logger.error(f"❌ {error_msg}")
         session.commit()
@@ -571,6 +513,8 @@ def _run_detection(
     sample_ratio: float = 0.1,
     batch_size: int = 32,
     num_workers: int = 0,
+    client_id: str | None = None,
+    tqdm_position: int = 0,
 ) -> dict:
     """Fast dataloader detection using episode sampling with downsampling.
 
@@ -579,15 +523,25 @@ def _run_detection(
     No detailed validation or error tracking - just checks if frames can be loaded.
 
     Use this for quick smoke tests or performance benchmarking.
-    """
-    import time
 
-    from robocoin_dataset.dataloader.dataloader import _parse_episode_specification
+    Memory management:
+    - Explicitly cleans up dataloaders after each episode
+    - Cleans up dataset in finally block
+    - Forces garbage collection to prevent accumulation
+
+    Args:
+        client_id: Optional client identifier for multi-client progress bars
+        tqdm_position: Base position for tqdm progress bars (client_id will use position*2 and position*2+1)
+    """
+    import gc
+    import time
 
     try:
         from tqdm import tqdm  # type: ignore
-    except Exception:
-        tqdm = None  # type: ignore
+    except ImportError as e:
+        raise RuntimeError(
+            "tqdm is required for dataloader detection. Install with: pip install tqdm"
+        ) from e
 
     repo_path = Path(repo_path)
     start_time = time.perf_counter()
@@ -606,11 +560,13 @@ def _run_detection(
         "time_per_frame_s": 0.0,
     }
 
+    ds = None  # Initialize for finally block
     try:
-        # Load dataset
+        # Load dataset - local only (hardlink validation already done by create_or_validate_hardlinks)
         ds = create_lerobot_dataset(
             repo_id=repo_path.name,
             root=repo_path,
+            download_videos=False,  # Never download from HuggingFace
         )
         result["backend"] = getattr(ds, "robocoin_video_backend", "unknown")
 
@@ -627,38 +583,38 @@ def _run_detection(
             return result
 
         # Calculate total frames to be sampled for progress bar
-        total_frames_to_sample = 0
-        for ep_idx in episodes_to_test:
-            from_idx = ds.episode_data_index["from"][ep_idx].item()
-            to_idx = ds.episode_data_index["to"][ep_idx].item()
-            total_frames = to_idx - from_idx
-            num_samples = max(1, int(total_frames * sample_ratio))
-            total_frames_to_sample += num_samples
+        total_frames_to_sample = sum(
+            EpisodeSampler.calculate_sample_count(ds, ep_idx, sample_ratio)
+            for ep_idx in episodes_to_test
+        )
 
-        # Progress bars
-        episode_progress = None
-        frame_progress = None
-        if tqdm is not None:
-            episode_progress = tqdm(
-                total=len(episodes_to_test),
-                desc="🚀 Fast detection",
-                unit="episode",
-                file=sys.stderr,
-                position=0,
-            )
-            frame_progress = tqdm(
-                total=total_frames_to_sample,
-                desc="📹 Frames",
-                unit="frame",
-                file=sys.stderr,
-                position=1,
-            )
+        # Prepare progress bar descriptions with client info
+        dataset_name = repo_path.name[:30]  # Truncate long dataset names
+        client_prefix = f"[{client_id}] " if client_id else ""
+
+        # Progress bars (always enabled - tqdm is required)
+        # Use tqdm_position * 2 to leave space between different clients' bars
+        episode_progress = tqdm(
+            total=len(episodes_to_test),
+            desc=f"{client_prefix}🚀 {dataset_name}",
+            unit="ep",
+            file=sys.stderr,
+            position=tqdm_position * 2,
+            leave=False,  # Clear bar when done to avoid clutter
+        )
+        frame_progress = tqdm(
+            total=total_frames_to_sample,
+            desc=f"{client_prefix}📹 Frames",
+            unit="fr",
+            file=sys.stderr,
+            position=tqdm_position * 2 + 1,
+            leave=False,  # Clear bar when done to avoid clutter
+        )
 
         # Test each episode with downsampling
-        for ep_idx in episodes_to_test:
-            # Update frame progress bar to show current episode
-            if frame_progress is not None:
-                frame_progress.set_description(f"📹 Episode {ep_idx}")
+        for ep_num, ep_idx in enumerate(episodes_to_test, 1):
+            # Update frame progress bar with current episode
+            frame_progress.set_description(f"{client_prefix}📹 Ep {ep_idx}/{total_episodes}")
 
             # Create dataloader with EpisodeSampler using sample_ratio
             dl = create_episode_dataloader(
@@ -669,22 +625,25 @@ def _run_detection(
                 sample_ratio=sample_ratio,
             )
 
-            # Iterate through batches (simple test - no validation)
-            # Suppress stdout to hide verbose output from third-party libraries (e.g., lerobot video decoding)
-            with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
-                for batch in dl:
-                    batch_frames = len(batch["index"]) if "index" in batch else 1
-                    result["total_frames_sampled"] += batch_frames
-                    if frame_progress is not None:
+            try:
+                # Iterate through batches (simple test - no validation)
+                # Suppress stdout to hide verbose output from third-party libraries (e.g., lerobot video decoding)
+                with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
+                    for batch in dl:
+                        batch_frames = len(batch["index"]) if "index" in batch else 1
+                        result["total_frames_sampled"] += batch_frames
                         frame_progress.update(batch_frames)
+            finally:
+                # CRITICAL: Clean up dataloader after each episode to prevent memory accumulation
+                # This is especially important with num_workers > 0 (worker processes)
+                del dl
+                gc.collect()
 
-            if episode_progress is not None:
-                episode_progress.update(1)
+            episode_progress.update(1)
 
-        if episode_progress is not None:
-            episode_progress.close()
-        if frame_progress is not None:
-            frame_progress.close()
+        # Close progress bars
+        episode_progress.close()
+        frame_progress.close()
 
         # Calculate timing statistics
         elapsed_time = time.perf_counter() - start_time
@@ -702,3 +661,10 @@ def _run_detection(
         result["success"] = False
         print(f"❌ Fast detection failed: {e}", file=sys.stderr)
         return result
+
+    finally:
+        # CRITICAL: Clean up dataset to prevent memory leaks
+        # This frees video decoder resources, file handles, and cached data
+        if ds is not None:
+            del ds
+        gc.collect()

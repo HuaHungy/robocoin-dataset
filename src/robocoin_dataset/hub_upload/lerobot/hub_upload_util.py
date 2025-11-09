@@ -38,7 +38,6 @@ class LocalDsUploadConfig(LocalDsConfig):
           Defaults to empty string.
       output_path (str): Path to the output directory for commit history files. Defaults to empty string.
       db_file_path (str): Path to the database file for dataset tracking. Defaults to empty string.
-      batch_size (int): Number of datasets to upload in each batch. Defaults to 5.
       skip_missing (bool): Skip datasets with missing paths instead of aborting. Defaults to False.
       unified_repo_name (str): Name of the unified repository for batch uploads. Defaults to "robocoin-dataset".
   """
@@ -48,7 +47,6 @@ class LocalDsUploadConfig(LocalDsConfig):
   namespace: str = ""
   output_path: str = ""
   db_file_path: str = ""
-  batch_size: int = 5
   skip_missing: bool = False
   unified_repo_name: str = "robocoin-dataset"
 
@@ -99,7 +97,8 @@ class LocalDsUploadUtil(LocalDsUtil):
 
   def _get_hub_field_prefix(self, field_suffix: str) -> str:
     """
-    Get the correct field prefix for the hub, trying short version first, then long version.
+    Return the correct field prefix for the hub,
+    trying short version first, then long version.
     """
     # Try short prefix first (ms/hf)
     short_prefix = "ms" if self.config.hub_name == DatasetsHubEnum.modelscope else "hf"
@@ -134,14 +133,13 @@ class LocalDsUploadUtil(LocalDsUtil):
     """
 
     repo_name = hardlink.removesuffix("_hardlink")
-    log_prefix = f"dataset {repo_name}:"
     # Remove "_hardlink" suffix from ds_name for clean repository name
     try:
       self.check_dataset_dir_valid(
         ds_name=hardlink, additional_check_list=UPLOAD_DATASET_ADDITIONAL_CHECK_STRUCTURE
       )
     except Exception as e:
-      self.logger.error(f"{log_prefix} {e}")
+      self.logger.debug(f"{repo_name}: {e}")
       return False
 
     hardlink_path = self.root_path.joinpath(hardlink)
@@ -149,7 +147,7 @@ class LocalDsUploadUtil(LocalDsUtil):
       raise FileNotFoundError(f"dataset path {hardlink_path} does not exist")
 
     upload_path = hardlink_path
-    self.logger.info(f"{log_prefix} Using hardlink folder: {upload_path}")
+    self.logger.debug(f"{repo_name}: Using {upload_path}")
 
     # Repository ID uses clean name (without _hardlink suffix)
     repo_id = f"{self.namespace}/{repo_name}"
@@ -166,10 +164,7 @@ class LocalDsUploadUtil(LocalDsUtil):
 
         # Step 2: Create repo if it doesn't exist
         if not repo_exists:
-          self.logger.info(
-            f"{log_prefix} repo {repo_id} does not exists in {self.config.hub_name}, "
-            f"creating repo {repo_id}"
-          )
+          self.logger.debug(f"{repo_name}: Creating repo {repo_id}")
           self.hub.create_repo(repo_id=repo_id)
 
         # Step 3: Upload files using hub's upload_repo method
@@ -179,26 +174,23 @@ class LocalDsUploadUtil(LocalDsUtil):
           commit_msg=commit_msg
         )
 
-        self.logger.info(f"{log_prefix} Upload successful. Commit: {commit_url}")
+        self.logger.debug(f"{repo_name}: {commit_url}")
         return True
 
       except Exception as e:  # noqa: PERF203
         if attempt < max_retries:
           # Random delay before retry
           delay = random.uniform(2, 10)
-          self.logger.warning(
-            f"{log_prefix} Upload interrupted (attempt {attempt}/{max_retries}): {e}. "
-            f"Retrying in {delay:.1f} seconds..."
-          )
+          self.logger.debug(f"{repo_name}: Retry {attempt}/{max_retries} in {delay:.1f}s: {e}")
           # Countdown display
           for remaining in range(int(delay), 0, -1):
-            print(f"\r  ⏳ Retrying in {remaining} seconds...   ", end="", flush=True)
+            print(f"\r  ⏳ {remaining}s...   ", end="", flush=True)
             time.sleep(1)
           # Sleep remaining fractional seconds
           time.sleep(delay - int(delay))
-          print("\r" + " " * 50 + "\r", end="", flush=True)  # Clear the countdown line
+          print("\r" + " " * 20 + "\r", end="", flush=True)  # Clear the countdown line
         else:
-          self.logger.error(f"{log_prefix} Failed after {max_retries} attempts: {e}")
+          self.logger.debug(f"{repo_name}: Failed after {max_retries} attempts: {e}")
           return False
 
     return False
@@ -225,18 +217,13 @@ class LocalDsUploadUtil(LocalDsUtil):
           yaml_db_path = yaml_config.get('db_file_path', '')
           if yaml_db_path and yaml_db_path.lower() not in ["null", "none", ""]:
             self.config.db_file_path = yaml_db_path
-            self.logger.info(f"📁 Using db_file_path from config: {yaml_db_path}")
+            self.logger.debug(f"Using db_file_path from config: {yaml_db_path}")
           else:
-            self.logger.error(
-              f"❌ No valid db_file_path in config. "
-              f"Please add 'db_file_path' to {config_file} or use --db_file_path"
-            )
+            self.logger.error(f"❌ No db_file_path in {config_file}")
             raise ValueError("db_file_path not found in config")
       else:
-        self.logger.error(
-          "❌ No config file found. Please provide --config or --db_file_path"
-        )
-        raise FileNotFoundError("Config file required for automatic db_file_path resolution")
+        self.logger.error("❌ No config file found")
+        raise FileNotFoundError("Config file required")
 
     # Validate path exists on filesystem
     db_path = Path(self.config.db_file_path).expanduser().absolute()
@@ -248,19 +235,19 @@ class LocalDsUploadUtil(LocalDsUtil):
 
   def upload_datasets_from_db(self) -> None:
     """
-    Upload datasets from database in batches.
+    Upload datasets from database one-by-one.
     """
     # Validate and resolve database path
     db_path = self._validate_and_resolve_db_path()
 
     # Print initial configuration
-    self.logger.info(f"🚀 Starting upload: {self.config.hub_name.value}/{self.namespace} (DB: {db_path.name})")
+    self.logger.info(f"🚀 Upload: {self.config.hub_name.value}/{self.namespace}")
 
     # Connect to database and store it as instance attribute for helper methods
     self.db = DatasetDatabase(db_path)
 
     # Step 1: Sync datasets upload status from database
-    self.logger.info("📋 Syncing upload status from database...")
+    self.logger.debug("Syncing upload status from database...")
     self._sync_datasets_upload_status(self.db, retry_failed=False)
 
     # Count total datasets to upload
@@ -275,10 +262,10 @@ class LocalDsUploadUtil(LocalDsUtil):
       ).count()
 
     if total_count == 0:
-      self.logger.info("✓ No datasets to upload\n")
+      self.logger.info("No datasets to upload")
       return
 
-    self.logger.info(f"✓ Found {total_count} dataset(s) to upload\n")
+    self.logger.debug(f"Found {total_count} dataset(s) to upload")
 
     # Step 2: Process datasets with progress bar
     uploaded_count = 0
@@ -291,8 +278,8 @@ class LocalDsUploadUtil(LocalDsUtil):
     # Create progress bar
     pbar = tqdm(
       total=total_count,
-      desc="📤 Uploading datasets",
-      unit="dataset",
+      desc="📤 Uploading",
+      unit="ds",
       bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
     )
 
@@ -312,30 +299,46 @@ class LocalDsUploadUtil(LocalDsUtil):
             continue
 
         # Prepare hardlink (validates convert_path, queries DB, creates if needed, updates DB)
-        from robocoin_dataset.hardlink.prepare_hardlink import prepare_hardlink_db
+        from robocoin_dataset.hardlink.prepare_hardlink import (
+            query_existing_hardlink,
+            update_hardlink_path,
+        )
+        from robocoin_dataset.hardlink.validate_hardlink import (
+            create_or_validate_hardlinks,
+            validate_source_for_lerobot,
+        )
 
         convert_path = Path(item.convert_path).expanduser().absolute()
 
         dataset_name = convert_path.name.removesuffix("_hardlink")
-        pbar.set_description(f"📤 {dataset_name[:40]:40s}")
+        pbar.set_description(f"📤 {dataset_name[:30]:30s}")
 
         try:
+          # Validate source files (fast, no DB)
+          validate_source_for_lerobot(convert_path)
+
+          # Query existing hardlink path (quick DB query)
           with self.db.with_session() as session:
-            hardlink_path = prepare_hardlink_db(
-              source_path=convert_path,
-              dataset_uuid=dataset_uuid,
-              target_dir=None,
-              db_session=session,
-            )
+            existing_path = query_existing_hardlink(dataset_uuid, session)
+
+          # Determine target path
+          dst = existing_path or convert_path.parent / f"{convert_path.name}_hardlink"
+
+          # Create/validate hardlinks (SLOW - no DB lock)
+          hardlink_path = create_or_validate_hardlinks(convert_path, dst)
+
+          # Update DB with hardlink path (quick DB update)
+          with self.db.with_session() as session:
+            update_hardlink_path(dataset_uuid, hardlink_path, session)
         except Exception as e:
-          error_msg = f"Failed to prepare hardlink: {e}"
-          pbar.write(f"  ❌ {dataset_name}: {error_msg}")
+          error_msg = f"Hardlink failed: {e}"
+          self.logger.debug(f"{dataset_name}: {error_msg}")
           self._mark_upload_failed(dataset_uuid, error_msg, self.db)
           failed_count += 1
           pbar.update(1)
           if not self.config.skip_missing:
             pbar.close()
-            self.logger.error("❌ Aborting upload (use --skip_missing=true to skip invalid datasets)")
+            self.logger.error(f"❌ {dataset_name}: {error_msg}")
             raise
           skipped_count += 1
           continue
@@ -345,8 +348,8 @@ class LocalDsUploadUtil(LocalDsUtil):
         repo_name = hardlink_path.name.removesuffix("_hardlink")
         repo_id = f"{self.namespace}/{repo_name}"
         if not self._check_repo_conflict(repo_id):
-          pbar.write(f"  ⚠️  {dataset_name}: Skipped (user cancelled)")
-          self._mark_upload_failed(item.dataset_uuid, "User cancelled upload due to repo conflict", self.db)
+          self.logger.debug(f"{dataset_name}: Skipped (user cancelled)")
+          self._mark_upload_failed(item.dataset_uuid, "User cancelled", self.db)
           skipped_count += 1
           pbar.update(1)
           continue
@@ -367,15 +370,15 @@ class LocalDsUploadUtil(LocalDsUtil):
           if success:
             self._mark_upload_completed(item.dataset_uuid, self.db)
             uploaded_count += 1
-            pbar.write(f"  ✓ {dataset_name}: Uploaded successfully")
+            self.logger.debug(f"{dataset_name}: Uploaded")
           else:
             self._mark_upload_failed(item.dataset_uuid, "Upload failed", self.db)
             failed_count += 1
-            pbar.write(f"  ❌ {dataset_name}: Upload failed")
+            self.logger.debug(f"{dataset_name}: Failed")
 
         except Exception as e:
           error_msg = str(e)
-          pbar.write(f"  ❌ {dataset_name}: {error_msg}")
+          self.logger.debug(f"{dataset_name}: {error_msg}")
           self._mark_upload_failed(item.dataset_uuid, error_msg, self.db)
           failed_count += 1
 
@@ -390,12 +393,12 @@ class LocalDsUploadUtil(LocalDsUtil):
       pbar.close()
 
     # Final summary
-    summary_parts = [f"✅ Upload complete: {uploaded_count}/{total_count} successful"]
+    status = f"✅ {uploaded_count}/{total_count}"
     if failed_count > 0:
-      summary_parts.append(f"{failed_count} failed")
+      status += f" | ❌ {failed_count}"
     if skipped_count > 0:
-      summary_parts.append(f"{skipped_count} skipped")
-    self.logger.info(", ".join(summary_parts))
+      status += f" | ⏭️  {skipped_count}"
+    self.logger.info(status)
 
   def _sync_datasets_upload_status(self, db: DatasetDatabase, retry_failed: bool = False) -> None:
     """
@@ -516,16 +519,16 @@ class LocalDsUploadUtil(LocalDsUtil):
     Returns:
         True if user confirms to proceed, False otherwise.
     """
-    self.logger.debug(f"Checking if repo exists: {repo_id}")
+    self.logger.debug(f"Checking repo: {repo_id}")
     repo_exists = self.hub.repo_exists(repo_id=repo_id)
-    self.logger.debug(f"Repo exists result: {repo_exists}")
+    self.logger.debug(f"Exists: {repo_exists}")
 
     if not repo_exists:
       return True
 
     # Use tqdm.write to avoid breaking progress bar if it exists
-    tqdm.write(f"\n⚠️  Repository {repo_id} exists. Upload will overwrite existing files.")
-    response = input("Proceed? (y/n): ").strip().lower()
+    tqdm.write(f"\n⚠️  {repo_id} exists. Overwrite? (y/n): ", end="")
+    response = input().strip().lower()
     return response in ["y", "yes"]
 
 
