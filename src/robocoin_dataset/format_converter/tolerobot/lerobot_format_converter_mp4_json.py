@@ -21,7 +21,6 @@ from robocoin_dataset.format_converter.tolerobot.video_frame_validator import (
 )
 from robocoin_dataset.format_converter.tolerobot.lazy_video_reader import (
     LazyVideoReader,
-    LazyVideoReaderPool,
 )
 from robocoin_dataset.format_converter.utils.unified_episode_locator import (
     UnifiedEpisodeLocator,
@@ -66,7 +65,6 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         )
         self._json_data_cache = {}  # 缓存JSON数据
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
-        self._video_caps = {}  # 延迟加载的VideoCapture对象缓存 {(task_path, ep_idx, cam_name): cv2.VideoCapture}
         # 🆕 时间戳对齐相关
         self._alignment_maps = {}  # 对齐映射表缓存 {(task_path, ep_idx): alignment_maps}
         self._reference_camera = {}  # 基准相机缓存 {(task_path, ep_idx): reference_camera_key}
@@ -369,6 +367,59 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         return self._json_data_cache[cache_key]
 
+    def _match_camera_keys(
+        self, 
+        cam_name: str, 
+        all_timestamps: dict[str, list[float]]
+    ) -> str | None:
+        """匹配相机名称到时间戳字典中的键
+        
+        Args:
+            cam_name: 配置中的相机名称
+            all_timestamps: 所有时间戳字典
+            
+        Returns:
+            匹配的键，如果未找到则返回None
+        """
+        for key in all_timestamps.keys():
+            if cam_name in key or key in cam_name or any(part in key for part in cam_name.split('_')):
+                return key
+        return None
+    
+    def _get_camera_keys_from_config(
+        self, 
+        all_timestamps: dict[str, list[float]]
+    ) -> list[str]:
+        """从配置中获取相机键列表
+        
+        Args:
+            all_timestamps: 所有时间戳字典
+            
+        Returns:
+            匹配的相机键列表
+        """
+        from robocoin_dataset.format_converter.tolerobot.constant import (
+            FEATURES_KEY,
+            IMAGE_KEY,
+            OBSERVATION_KEY,
+        )
+        
+        image_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(IMAGE_KEY, [])
+        camera_keys = []
+        
+        for cam_config in image_configs:
+            cam_name = cam_config.get('args', {}).get('cam_name', '')
+            if cam_name:
+                matched_key = self._match_camera_keys(cam_name, all_timestamps)
+                if matched_key:
+                    camera_keys.append(matched_key)
+        
+        # 如果没找到，尝试直接匹配所有camera_开头的键
+        if not camera_keys:
+            camera_keys = [key for key in all_timestamps.keys() if 'camera' in key.lower()]
+        
+        return camera_keys
+    
     def _extract_timestamps(self, json_data: dict) -> dict[str, list[float]]:
         """提取所有数据流的时间戳列表
         
@@ -595,12 +646,6 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         🆕 使用时间戳对齐方案：找到帧数最少的相机作为基准，返回基准相机的帧数
         """
-        from robocoin_dataset.format_converter.tolerobot.constant import (
-            FEATURES_KEY,
-            IMAGE_KEY,
-            OBSERVATION_KEY,
-        )
-        
         # 1. 加载JSON数据并提取时间戳
         json_data = self._load_json_data(task_path, ep_idx)
         all_timestamps = self._extract_timestamps(json_data)
@@ -616,21 +661,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             )
         
         # 2. 获取配置中的相机键列表
-        image_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(IMAGE_KEY, [])
-        camera_keys = []
-        for cam_config in image_configs:
-            # 从配置中获取相机名称，可能在不同的字段中
-            cam_name = cam_config.get('args', {}).get('cam_name', '')
-            if cam_name:
-                # 尝试匹配JSON中的相机键（可能带camera_前缀）
-                for key in all_timestamps.keys():
-                    if cam_name in key or key in cam_name or any(part in key for part in cam_name.split('_')):
-                        camera_keys.append(key)
-                        break
-        
-        # 如果没找到，尝试直接匹配所有camera_开头的键
-        if not camera_keys:
-            camera_keys = [key for key in all_timestamps.keys() if 'camera' in key.lower()]
+        camera_keys = self._get_camera_keys_from_config(all_timestamps)
         
         if not camera_keys:
             from .exceptions import CriticalDataError
@@ -907,22 +938,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         # 获取基准相机
         if cache_key not in self._reference_camera:
             # 如果基准相机未确定，尝试确定（可能是在_get_episode_frames_num中已确定）
-            from robocoin_dataset.format_converter.tolerobot.constant import (
-                FEATURES_KEY,
-                IMAGE_KEY,
-                OBSERVATION_KEY,
-            )
-            image_configs = self.converter_config.get(FEATURES_KEY, {}).get(OBSERVATION_KEY, {}).get(IMAGE_KEY, [])
-            camera_keys = []
-            for cam_config in image_configs:
-                cam_name = cam_config.get('args', {}).get('cam_name', '')
-                if cam_name:
-                    for key in all_timestamps.keys():
-                        if cam_name in key or key in cam_name or any(part in key for part in cam_name.split('_')):
-                            camera_keys.append(key)
-                            break
-            if not camera_keys:
-                camera_keys = [key for key in all_timestamps.keys() if 'camera' in key.lower()]
+            camera_keys = self._get_camera_keys_from_config(all_timestamps)
             
             if camera_keys:
                 try:
@@ -1025,11 +1041,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         if alignment_maps and reference_camera:
             # 使用时间戳对齐
             # 找到JSON中对应的相机键（可能带camera_前缀）
-            json_camera_key = None
-            for key in alignment_maps.keys():
-                if cam_name in key or key in cam_name or any(part in key for part in cam_name.split('_')):
-                    json_camera_key = key
-                    break
+            json_camera_key = self._match_camera_keys(cam_name, alignment_maps)
             
             if json_camera_key and json_camera_key in alignment_maps:
                 # 使用对齐映射表获取索引
