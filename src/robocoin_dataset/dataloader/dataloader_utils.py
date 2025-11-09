@@ -1,18 +1,17 @@
 """Dataset utilities for LeRobot datasets.
 
 This module provides utilities for:
-- Creating LeRobot datasets with auto backend selection
-- Episode sampling with downsampling support
+- Creating LeRobot datasets.
+- Episode sampling with downsampling support (single & multi-episode)
 - Hardlink preparation for dataset structures
 - Worker initialization for DataLoader
-- Dataset detection and validation using EpisodeSampler with downsampling
+- Dataset detection using MultiEpisodeSampler
 """
 
 import logging
 import os
 import sys
 from collections.abc import Iterator
-from contextlib import redirect_stdout
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,32 +30,16 @@ if TYPE_CHECKING:
 # These logs show 404s when checking for optional files - doesn't affect functionality
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Best-effort: auto-add vendored lerobot path for local runs without PYTHONPATH
+# Auto-add vendored lerobot to path and import
 try:
-    _here_lr = Path(__file__).resolve()
-    _repo_root_lr = _here_lr.parents[3]
-    _vendored_lr = _repo_root_lr / "third_parties" / "robocoin-lerobot" / "src"
-    if _vendored_lr.is_dir() and str(_vendored_lr) not in sys.path:
-        sys.path.insert(0, str(_vendored_lr))
-except Exception:
-    pass
-
-try:
-    # Prefer the vendored lerobot package in third_parties if available on PYTHONPATH
+    vendored_path = Path(__file__).resolve().parents[3] / "third_parties" / "robocoin-lerobot" / "src"
+    if vendored_path.is_dir() and str(vendored_path) not in sys.path:
+        sys.path.insert(0, str(vendored_path))
     from lerobot.datasets.lerobot_dataset import LeRobotDataset  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     LeRobotDataset = None  # type: ignore
 
 ######################### business logic functions #########################
-
-def _set_backend_metadata(ds: "LeRobotDataset", backend: str, reason: str) -> None:
-    """Set backend metadata on dataset (best-effort, silently ignore failures)."""
-    try:
-        setattr(ds, "robocoin_video_backend", backend)
-        setattr(ds, "robocoin_video_backend_reason", reason)
-    except Exception:
-        pass
-
 
 class EpisodeSampler(torch.utils.data.Sampler):  # type: ignore
 
@@ -109,6 +92,55 @@ class EpisodeSampler(torch.utils.data.Sampler):  # type: ignore
             return total_frames
 
         return max(1, int(total_frames * sample_ratio))
+
+
+class MultiEpisodeSampler(torch.utils.data.Sampler):  # type: ignore
+
+    def __init__(
+        self,
+        dataset: "LeRobotDataset",
+        episode_indices: list[int],
+        sample_ratio: float = 1.0,
+    ) -> None:
+        if not 0.0 <= sample_ratio <= 1.0:
+            raise ValueError(f"sample_ratio must be between 0 and 1, got {sample_ratio}")
+
+        self.frame_ids = []
+        self.episode_boundaries = []
+
+        for ep_idx in episode_indices:
+            from_idx = dataset.episode_data_index["from"][ep_idx].item()
+            to_idx = dataset.episode_data_index["to"][ep_idx].item()
+
+            start_pos = len(self.frame_ids)
+
+            if sample_ratio == 1.0:
+                episode_frames = list(range(from_idx, to_idx))
+            else:
+                total_frames = to_idx - from_idx
+                num_samples = max(1, int(total_frames * sample_ratio))
+
+                if num_samples == 1:
+                    episode_frames = [from_idx]
+                else:
+                    step = (total_frames - 1) / (num_samples - 1)
+                    episode_frames = [from_idx + int(i * step) for i in range(num_samples)]
+
+            self.frame_ids.extend(episode_frames)
+            self.episode_boundaries.append((ep_idx, start_pos, len(self.frame_ids)))
+
+    def __iter__(self) -> Iterator:
+        return iter(self.frame_ids)
+
+    def __len__(self) -> int:
+        return len(self.frame_ids)
+
+    def get_episode_for_position(self, position: int) -> int:
+        """Get episode index for a given position in the sampled frames."""
+        for ep_idx, start, end in self.episode_boundaries:
+            if start <= position < end:
+                return ep_idx
+        return -1
 
 def create_episode_dataloader(
     dataset: "LeRobotDataset",
@@ -194,7 +226,7 @@ def run_local_batch_detection(
 
         # Prepare path with hardlinks (find existing or create new)
         try:
-            test_path = _prepare_dataset_path(
+            test_path = prepare_hardlink_for_task(
                 db, dataset_uuid, convert_path, hardlink_target_dir, _logger
             )
         except Exception as e:
@@ -258,54 +290,32 @@ def create_lerobot_dataset(
     revision: str | None = None,
     force_cache_sync: bool = False,
     download_videos: bool = True,
-    video_backend: str = "auto",
+    video_backend: str = "pyav",
     batch_encoding_size: int = 1,
 ) -> "LeRobotDataset":
-    """Create a LeRobotDataset with optional auto backend fallback.
+    """Create a LeRobotDataset with pyav video backend.
 
     Returns:
-        LeRobotDataset instance with auto-selected video backend.
+        LeRobotDataset instance with pyav video backend.
     """
     if LeRobotDataset is None:
         raise RuntimeError(
             "LeRobotDataset is not available. Ensure third_parties/robocoin-lerobot is on PYTHONPATH."
         )
 
-    # Helper to build dataset with a specific backend
-    def _build(backend: str) -> "LeRobotDataset":
-        return LeRobotDataset(
-            repo_id=repo_id,
-            root=Path(root) if root is not None else None,
-            episodes=episodes,
-            image_transforms=image_transforms,
-            delta_timestamps=delta_timestamps,
-            tolerance_s=tolerance_s,
-            revision=revision,
-            force_cache_sync=force_cache_sync,
-            download_videos=download_videos,
-            video_backend=backend,
-            batch_encoding_size=batch_encoding_size,
-        )
-
-    if video_backend != "auto":
-        ds = _build(video_backend)
-        # Attach chosen backend metadata for downstream UIs/CLIs
-        _set_backend_metadata(ds, video_backend, "user_selected")
-        return ds
-
-    # Auto: prefer torchcodec, then fallback to pyav on failure
-    try:
-        ds = _build("torchcodec")
-        # Probe a single item to trigger video decoding if any video keys exist
-        if len(ds.meta.video_keys) > 0 and ds.num_frames > 0:
-            _ = ds[0]
-        _set_backend_metadata(ds, "torchcodec", "ok")
-        return ds
-    except Exception as e:
-        # Fallback to pyav
-        ds = _build("pyav")
-        _set_backend_metadata(ds, "pyav", f"torchcodec failed: {repr(e)}")
-        return ds
+    return LeRobotDataset(
+        repo_id=repo_id,
+        root=Path(root) if root is not None else None,
+        episodes=episodes,
+        image_transforms=image_transforms,
+        delta_timestamps=delta_timestamps,
+        tolerance_s=tolerance_s,
+        revision=revision,
+        force_cache_sync=force_cache_sync,
+        download_videos=download_videos,
+        video_backend=video_backend,
+        batch_encoding_size=batch_encoding_size,
+    )
 
 ######################### helper functions #########################
 
@@ -351,26 +361,6 @@ def _worker_init_suppress_output(worker_id: int) -> None:
             pass
 
     atexit.register(cleanup)
-
-
-def _prepare_dataset_path(
-    db: "object",
-    dataset_uuid: str,
-    convert_path: str,
-    hardlink_target_dir: Path | None,
-    logger: logging.Logger,
-) -> Path:
-    """Prepare dataset path with hardlinks (legacy wrapper).
-
-    This is a legacy wrapper that adds logging around prepare_hardlink_for_task.
-    New code should use prepare_hardlink_for_task directly.
-
-    Raises:
-        FileNotFoundError: If source dataset is missing required LeRobotDataset files
-    """
-    result_path = prepare_hardlink_for_task(db, dataset_uuid, convert_path, hardlink_target_dir)
-    logger.info(f"Using hardlinks: {result_path}")
-    return result_path
 
 
 def _update_task_status(
@@ -438,73 +428,43 @@ def _parse_episode_specification(
     episode_spec: str | int | list[int] | None,
     total_episodes: int,
 ) -> list[int]:
-    """Parse episode specification into list of episode indices.
+    """Parse episode specification: None/"all", int, list[int], "0,1,2", "0-5", "0-5,10".
 
-    Args:
-        episode_spec: Episode specification in various formats:
-            - None or "all": all episodes [0, 1, ..., total_episodes-1]
-            - int: single episode (e.g., 0)
-            - list[int]: specific episodes (e.g., [0, 1, 2])
-            - str "0": single episode 0
-            - str "0,1,2": comma-separated episodes
-            - str "0-5": range (inclusive) [0, 1, 2, 3, 4, 5]
-            - str "0-5,10,15-17": mixed notation
-        total_episodes: Total number of episodes in dataset
-
-    Returns:
-        Sorted list of unique episode indices
-
-    Raises:
-        ValueError: If specification is invalid or episodes out of range
+    Returns sorted unique episode indices, validates range [0, total_episodes-1].
     """
+    # Handle None or "all"
     if episode_spec is None or (isinstance(episode_spec, str) and episode_spec.lower() == "all"):
         return list(range(total_episodes))
 
+    # Convert int to list for unified handling
     if isinstance(episode_spec, int):
-        if episode_spec < 0 or episode_spec >= total_episodes:
-            raise ValueError(f"Episode {episode_spec} out of range [0, {total_episodes - 1}]")
-        return [episode_spec]
+        episode_spec = [episode_spec]
 
+    # Parse list[int] or string
     if isinstance(episode_spec, list):
-        for ep in episode_spec:
-            if not isinstance(ep, int) or ep < 0 or ep >= total_episodes:
-                raise ValueError(f"Episode {ep} out of range [0, {total_episodes - 1}]")
-        return sorted(set(episode_spec))
-
-    if isinstance(episode_spec, str):
-        # Parse string specification
+        episodes = episode_spec
+    elif isinstance(episode_spec, str):
         episodes = []
-        parts = episode_spec.split(",")
-        for part in parts:
+        for part in episode_spec.split(","):
             part = part.strip()
             if not part:
                 continue
             if "-" in part and not part.startswith("-"):
-                # Range notation: "0-5"
-                try:
-                    start_str, end_str = part.split("-", 1)
-                    start = int(start_str.strip())
-                    end = int(end_str.strip())
-                    if start > end:
-                        raise ValueError(f"Invalid range: {part} (start > end)")
-                    episodes.extend(range(start, end + 1))
-                except ValueError as e:
-                    raise ValueError(f"Invalid range specification: {part}") from e
+                start, end = map(int, part.split("-", 1))
+                if start > end:
+                    raise ValueError(f"Invalid range: {part} (start > end)")
+                episodes.extend(range(start, end + 1))
             else:
-                # Single episode
-                try:
-                    episodes.append(int(part))
-                except ValueError as e:
-                    raise ValueError(f"Invalid episode number: {part}") from e
+                episodes.append(int(part))
+    else:
+        raise ValueError(f"Invalid episode specification type: {type(episode_spec)}")
 
-        # Validate range
-        for ep in episodes:
-            if ep < 0 or ep >= total_episodes:
-                raise ValueError(f"Episode {ep} out of range [0, {total_episodes - 1}]")
+    # Validate range
+    for ep in episodes:
+        if ep < 0 or ep >= total_episodes:
+            raise ValueError(f"Episode {ep} out of range [0, {total_episodes - 1}]")
 
-        return sorted(set(episodes))
-
-    raise ValueError(f"Invalid episode specification type: {type(episode_spec)}")
+    return sorted(set(episodes))
 
 
 def _run_detection(
@@ -516,155 +476,75 @@ def _run_detection(
     client_id: str | None = None,
     tqdm_position: int = 0,
 ) -> dict:
-    """Fast dataloader detection using episode sampling with downsampling.
-
-    This is a lightweight detection method optimized for speed. It tests
-    episodes using EpisodeSampler with sample_ratio < 1.0 to reduce frames tested.
-    No detailed validation or error tracking - just checks if frames can be loaded.
-
-    Use this for quick smoke tests or performance benchmarking.
-
-    Memory management:
-    - Explicitly cleans up dataloaders after each episode
-    - Cleans up dataset in finally block
-    - Forces garbage collection to prevent accumulation
-
-    Args:
-        client_id: Optional client identifier for multi-client progress bars
-        tqdm_position: Base position for tqdm progress bars (client_id will use position*2 and position*2+1)
-    """
+    """Fast dataloader detection using multi-episode sampling."""
+    import contextlib
     import gc
     import time
 
-    try:
-        from tqdm import tqdm  # type: ignore
-    except ImportError as e:
-        raise RuntimeError(
-            "tqdm is required for dataloader detection. Install with: pip install tqdm"
-        ) from e
+    from tqdm import tqdm  # type: ignore
 
     repo_path = Path(repo_path)
     start_time = time.perf_counter()
+    result = {"success": False, "dataset_path": str(repo_path), "sample_ratio": sample_ratio,
+              "backend": "pyav", "total_frames_sampled": 0}
 
-    result = {
-        "success": False,
-        "dataset_path": str(repo_path),
-        "total_episodes_in_dataset": 0,
-        "episodes_tested": [],
-        "total_frames_sampled": 0,
-        "sample_ratio": sample_ratio,
-        "backend": "unknown",
-        "error_message": None,
-        "total_time_s": 0.0,
-        "time_per_episode_s": 0.0,
-        "time_per_frame_s": 0.0,
-    }
-
-    ds = None  # Initialize for finally block
+    ds = None
     try:
-        # Load dataset - local only (hardlink validation already done by create_or_validate_hardlinks)
-        ds = create_lerobot_dataset(
-            repo_id=repo_path.name,
-            root=repo_path,
-            download_videos=False,  # Never download from HuggingFace
-        )
-        result["backend"] = getattr(ds, "robocoin_video_backend", "unknown")
-
-        # Get dataset metadata
+        # Load dataset and parse episodes
+        ds = create_lerobot_dataset(repo_id=repo_path.name, root=repo_path, download_videos=False)
         total_episodes = len(ds.episode_data_index["from"])
-        result["total_episodes_in_dataset"] = total_episodes
-
-        # Parse episode specification
         episodes_to_test = _parse_episode_specification(episode_indices, total_episodes)
-        result["episodes_tested"] = episodes_to_test
+
+        result.update({
+            "total_episodes_in_dataset": total_episodes,
+            "episodes_tested": episodes_to_test,
+        })
 
         if not episodes_to_test:
             result["success"] = True
             return result
 
-        # Calculate total frames to be sampled for progress bar
-        total_frames_to_sample = sum(
-            EpisodeSampler.calculate_sample_count(ds, ep_idx, sample_ratio)
-            for ep_idx in episodes_to_test
+        # Create sampler and dataloader
+        sampler = MultiEpisodeSampler(ds, episodes_to_test, sample_ratio)
+        dl = torch.utils.data.DataLoader(
+            ds, num_workers=num_workers, batch_size=batch_size, sampler=sampler,
+            worker_init_fn=_worker_init_suppress_output if num_workers > 0 else None,
         )
 
-        # Prepare progress bar descriptions with client info
-        dataset_name = repo_path.name[:30]  # Truncate long dataset names
+        # Run detection with progress bar (suppress stdout to avoid LeRobot prints)
+        dataset_name = repo_path.name[:40]
         client_prefix = f"[{client_id}] " if client_id else ""
 
-        # Progress bars (always enabled - tqdm is required)
-        # Use tqdm_position * 2 to leave space between different clients' bars
-        episode_progress = tqdm(
-            total=len(episodes_to_test),
-            desc=f"{client_prefix}🚀 {dataset_name}",
-            unit="ep",
-            file=sys.stderr,
-            position=tqdm_position * 2,
-            leave=False,  # Clear bar when done to avoid clutter
-        )
-        frame_progress = tqdm(
-            total=total_frames_to_sample,
-            desc=f"{client_prefix}📹 Frames",
-            unit="fr",
-            file=sys.stderr,
-            position=tqdm_position * 2 + 1,
-            leave=False,  # Clear bar when done to avoid clutter
-        )
+        with contextlib.redirect_stdout(open(os.devnull, "w")):
+            for batch in tqdm(dl, total=len(dl), desc=f"{client_prefix}📦 {dataset_name}",
+                            unit="batch", file=sys.stderr, position=tqdm_position, leave=False):
+                result["total_frames_sampled"] += len(batch["index"]) if "index" in batch else batch_size
 
-        # Test each episode with downsampling
-        for ep_num, ep_idx in enumerate(episodes_to_test, 1):
-            # Update frame progress bar with current episode
-            frame_progress.set_description(f"{client_prefix}📹 Ep {ep_idx}/{total_episodes}")
+        # Properly shutdown DataLoader workers to avoid semaphore leaks
+        if hasattr(dl, '_iterator') and dl._iterator is not None:
+            dl._iterator._shutdown_workers()
+        del dl
+        gc.collect()
 
-            # Create dataloader with EpisodeSampler using sample_ratio
-            dl = create_episode_dataloader(
-                ds,
-                episode_index=ep_idx,
-                batch_size=batch_size,
-                num_workers=num_workers,
-                sample_ratio=sample_ratio,
-            )
-
-            try:
-                # Iterate through batches (simple test - no validation)
-                # Suppress stdout to hide verbose output from third-party libraries (e.g., lerobot video decoding)
-                with open(os.devnull, "w") as devnull, redirect_stdout(devnull):
-                    for batch in dl:
-                        batch_frames = len(batch["index"]) if "index" in batch else 1
-                        result["total_frames_sampled"] += batch_frames
-                        frame_progress.update(batch_frames)
-            finally:
-                # CRITICAL: Clean up dataloader after each episode to prevent memory accumulation
-                # This is especially important with num_workers > 0 (worker processes)
-                del dl
-                gc.collect()
-
-            episode_progress.update(1)
-
-        # Close progress bars
-        episode_progress.close()
-        frame_progress.close()
-
-        # Calculate timing statistics
-        elapsed_time = time.perf_counter() - start_time
-        result["total_time_s"] = elapsed_time
-        result["time_per_episode_s"] = elapsed_time / len(episodes_to_test) if episodes_to_test else 0.0
-        result["time_per_frame_s"] = elapsed_time / result["total_frames_sampled"] if result["total_frames_sampled"] > 0 else 0.0
-
-        result["success"] = True
-        return result
+        # Calculate timing stats
+        elapsed = time.perf_counter() - start_time
+        result.update({
+            "success": True,
+            "total_time_s": elapsed,
+            "time_per_episode_s": elapsed / len(episodes_to_test),
+            "time_per_frame_s": elapsed / result["total_frames_sampled"] if result["total_frames_sampled"] else 0.0,
+        })
 
     except Exception as e:
-        elapsed_time = time.perf_counter() - start_time
-        result["total_time_s"] = elapsed_time
-        result["error_message"] = str(e)
-        result["success"] = False
-        print(f"❌ Fast detection failed: {e}", file=sys.stderr)
-        return result
+        result.update({
+            "error_message": str(e),
+            "total_time_s": time.perf_counter() - start_time,
+        })
+        print(f"❌ Detection failed: {e}", file=sys.stderr)
 
     finally:
-        # CRITICAL: Clean up dataset to prevent memory leaks
-        # This frees video decoder resources, file handles, and cached data
-        if ds is not None:
+        if ds:
             del ds
         gc.collect()
+
+    return result

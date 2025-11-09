@@ -13,6 +13,7 @@ import asyncio
 import logging
 import multiprocessing as mp
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from robocoin_dataset.dataloader.dataloader import (
@@ -22,6 +23,37 @@ from robocoin_dataset.dataloader.dataloader import (
     run_multi_client,
 )
 from robocoin_dataset.utils.logger import setup_logger
+
+
+def _create_log_dir_name(args: argparse.Namespace) -> str:
+    """Create log directory name with date and key parameters."""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    # Determine mode
+    if args.server:
+        mode = "server"
+    elif args.client or args.cliet:
+        mode = f"client_n{getattr(args, 'num_clients', 1)}"
+    else:
+        mode = "local"
+
+    # Key parameters
+    parts = [timestamp, mode]
+
+    if hasattr(args, 'num_workers') and args.num_workers > 0:
+        parts.append(f"w{args.num_workers}")
+
+    if hasattr(args, 'sample_ratio') and args.sample_ratio != 1.0:
+        parts.append(f"sr{args.sample_ratio:.2f}")
+
+    if hasattr(args, 'batch_size') and args.batch_size != 32:
+        parts.append(f"bs{args.batch_size}")
+
+    if hasattr(args, 'episodes') and args.episodes != "all":
+        ep_str = args.episodes.replace(',', '_').replace('-', 'to')[:20]
+        parts.append(f"ep{ep_str}")
+
+    return "_".join(parts)
 
 
 def _print_no_tasks_message() -> None:
@@ -74,19 +106,9 @@ def run_local(
     batch_size: int,
     num_workers: int,
     logger: logging.Logger,
+    sum_logger: logging.Logger,
 ) -> int:
     """Local mode: process datasets with automatic hardlink management."""
-    from datetime import datetime
-
-    from robocoin_dataset.utils.logger import setup_logger
-
-    # Create summary logger in logs/dataloader/sum/
-    sum_logger = setup_logger(
-        name="dataloader_summary",
-        log_dir=Path("logs/dataloader/sum"),
-        level=logging.INFO,
-    )
-
     # Log execution parameters
     sum_logger.info("="*80)
     sum_logger.info(f"Execution started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -138,23 +160,13 @@ async def run_server_async(
     heartbeat_interval: float,
     timeout: float,
     logger: logging.Logger,
+    sum_logger: logging.Logger,
     episodes: str = "all",
     sample_ratio: float = 0.1,
     batch_size: int = 32,
     num_workers: int = 0,
 ) -> int:
     """Server mode: start task distribution server."""
-    from datetime import datetime
-
-    from robocoin_dataset.utils.logger import setup_logger
-
-    # Create summary logger
-    sum_logger = setup_logger(
-        name="dataloader_summary",
-        log_dir=Path("logs/dataloader/sum"),
-        level=logging.INFO,
-    )
-
     # Log execution parameters
     sum_logger.info("="*80)
     sum_logger.info(f"Server started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -300,15 +312,25 @@ def _validate_database(args: argparse.Namespace) -> Path | None:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
 
-    # Setup logging
-    logging.basicConfig(
-        level=getattr(logging, args.log_level, logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    # Create timestamped log directory with key parameters
+    log_dir_name = _create_log_dir_name(args)
+    log_base_dir = Path("logs/dataloader") / log_dir_name
+    log_base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup main logger (file only, no console output)
     logger = setup_logger(
-        name="dataloader_cli",
-        log_dir=Path(args.log_dir) if hasattr(args, "log_dir") else Path("logs/dataloader"),
+        name="dataloader_main",
+        log_dir=log_base_dir,
         level=getattr(logging, args.log_level, logging.INFO),
+        console_output=False,
+    )
+
+    # Setup summary logger (file only, no console output)
+    sum_logger = setup_logger(
+        name="dataloader_summary",
+        log_dir=log_base_dir,
+        level=logging.INFO,
+        console_output=False,
     )
 
     # Validate arguments
@@ -328,6 +350,7 @@ def main(argv: list[str]) -> int:
                 heartbeat_interval=args.heartbeat_interval,
                 timeout=args.timeout,
                 logger=logger,
+                sum_logger=sum_logger,
                 episodes=args.episodes,
                 sample_ratio=args.sample_ratio,
                 batch_size=args.batch_size,
@@ -343,7 +366,7 @@ def main(argv: list[str]) -> int:
                 server_uri=server_uri,
                 num_clients=num_clients,
                 heartbeat_interval=args.heartbeat_interval,
-                log_dir=args.log_dir,
+                log_dir=log_base_dir,
                 log_level=args.log_level,
             )
 
@@ -366,6 +389,7 @@ def main(argv: list[str]) -> int:
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         logger=logger,
+        sum_logger=sum_logger,
     )
 
 

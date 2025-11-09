@@ -25,6 +25,7 @@ from robocoin_dataset.database.models import DatasetDB, TaskStatus
 from robocoin_dataset.dataloader.dataloader_utils import (
     EpisodeSampler,
     LeRobotDataset,
+    MultiEpisodeSampler,
     _mark_task_failed,
     _parse_episode_specification,
     _run_detection,
@@ -479,11 +480,24 @@ def client_process_main(
     """Entry point for each client process in multi-client mode."""
     from robocoin_dataset.utils.logger import setup_logger
 
-    # Create per-process logger
+    # Suppress console output for client processes
+    # Remove all handlers from root logger
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    logging.basicConfig(
+        level=logging.CRITICAL + 1,  # Disable console output
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[],  # No handlers
+    )
+
+    # Create per-process logger with unique file name
     logger = setup_logger(
-        name=f"dataloader_client_{process_id}",
+        name=f"client_{process_id:02d}",
         log_dir=Path(log_dir),
         level=getattr(logging, log_level, logging.INFO),
+        console_output=False,
     )
 
     logger.info(f"Client process {process_id} started, connecting to {server_uri}")
@@ -783,6 +797,7 @@ __all__ = [
     # Dataset utilities (from utils module)
     "LeRobotDataset",
     "EpisodeSampler",
+    "MultiEpisodeSampler",
     "create_lerobot_dataset",
     "create_episode_dataloader",
     # Hardlink utilities - database operations (from prepare_hardlink module)
