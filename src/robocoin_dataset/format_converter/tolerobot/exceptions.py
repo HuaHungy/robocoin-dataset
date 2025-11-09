@@ -77,13 +77,27 @@ class CriticalDataError(ConverterError):
     - episode的有效帧数少于阈值（如<50%）
     - 所有相机的视频文件都缺失
     
+    Attributes:
+        error_category: 错误类别 ("data_quality"  | "potential_config")
+            - "data_quality": 纯数据质量问题（如图像尺寸不一致、文件损坏），不应计入配置错误率
+            - "potential_config": 可能是配置错误（如字段缺失），应计入配置错误率
+    
     Usage:
         raise CriticalDataError(
             f"Episode {ep_idx} 的有效帧数仅 {valid_frames}/{total_frames} ({ratio:.1%})\n"
-            f"低于最小阈值 50%，将跳过整个episode"
+            f"低于最小阈值 50%，将跳过整个episode",
+            error_category="data_quality"  # 明确标记为数据质量问题
         )
     """
-    pass
+    def __init__(self, message: str, error_category: str = "potential_config"):
+        """初始化CriticalDataError
+        
+        Args:
+            message: 错误消息
+            error_category: 错误类别，默认为"potential_config"（保守处理）
+        """
+        super().__init__(message)
+        self.error_category = error_category
 
 
 class FrameCountMismatchError(CriticalDataError):

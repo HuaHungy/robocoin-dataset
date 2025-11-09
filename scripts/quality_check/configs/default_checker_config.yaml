@@ -1,0 +1,37 @@
+# Dataset-level checkers (作用于整个数据集)
+dataset_data_checkers:
+  - name: "few_episode_frames"
+    params:
+      threshold: 150
+    should_check: True  
+
+  - name: "too_few_episodes"
+    params:
+      threshold: 30
+    should_check: True  
+
+  - name: "abnormal_episode_length"
+    params:
+      threshold: 3.0
+    should_check: True  
+
+# Episode-level data checkers (作用于每个 episode 的数值数据，如关节角)
+episode_data_checkers:
+  - name: "static_frame_rate"
+    params:
+      window_size: 5
+      threshold: 0.05
+    should_check: True  
+    score_weight: 1.0   
+
+  - name: "static_joint"
+    params:
+      static_joints: 2
+      epsilon: 0.001
+    should_check: True  
+    score_weight: 1.0   
+
+# episode_video_checkers:
+#   - name: "max_frame_jump_rate"
+#     should_check: True  
+#     score_weight: 1.0   

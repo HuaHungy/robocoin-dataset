@@ -1,6 +1,7 @@
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Enum,
     Float,
@@ -135,6 +136,12 @@ class DatasetDB(Base):
     data_merge_version_ps_ma = Column(Integer, nullable=True, default=0)
     data_merge_version = Column(Integer, nullable=True, default=0)
     data_merge_err_msg = Column(Text, nullable=True)
+
+    # Episode质量检测
+    qc_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True)
+    qc_version_ps = Column(Integer, nullable=True, default=0)
+    qc_version = Column(Integer, nullable=True, default=0)
+    qc_err_msg = Column(Text, nullable=True)
 
     # dataLoader 检测相关
     data_loader_detection_status = Column(
@@ -377,3 +384,14 @@ class DatasetHardLinkDB(Base):
     id = Column(Integer, primary_key=True, index=True)
     dataset_uuid = Column(String(255), index=True, nullable=False)
     hard_link_path = Column(String(255), index=True, nullable=True)
+
+
+class EpisodeQcDB(Base):
+    __tablename__ = "episode_qc"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_uuid = Column(String(255), index=True, nullable=False)
+    episode_idx = Column(Integer, index=True, nullable=False)
+    is_bad_episode = Column(Boolean, nullable=False)
+    state_data_score = Column(Float, nullable=True)
+    action_data_score = Column(Float, nullable=True)
+    video_score = Column(Float, nullable=True)
