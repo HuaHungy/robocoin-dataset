@@ -12,16 +12,24 @@ def get_meta_info_file_path(root_dir: str | Path, new_type: str) -> tuple[Path, 
     raise FileNotFoundError(f"Meta info file not found at {info_file_path}")
 
 
-def get_episodes_jsonl_file_path(root_dir: str | Path, new_type: str) -> tuple[Path, Path]:
+def get_episodes_jsonl_file_paths(root_dir: str | Path, new_type: str) -> tuple[Path, Path]:
     root_dir = Path(root_dir).expanduser().absolute()
     stats_file_path = root_dir / "meta/episodes.jsonl"
+    if stats_file_path.exists():
+        return stats_file_path, root_dir / f"meta/{new_type}_episodes.jsonl"
+    raise FileNotFoundError(f"Episodes jsonl file not found at {stats_file_path}")
+
+
+def get_episodes_stats_jsonl_file_paths(root_dir: str | Path, new_type: str) -> tuple[Path, Path]:
+    root_dir = Path(root_dir).expanduser().absolute()
+    stats_file_path = root_dir / "meta/episodes_stats.jsonl"
     if stats_file_path.exists():
         return stats_file_path, root_dir / f"meta/{new_type}_episodes_stats.jsonl"
     raise FileNotFoundError(f"Episodes jsonl file not found at {stats_file_path}")
 
 
 def get_episodes_frames(root_dir: str | Path) -> dict[int, int]:
-    jsonl_path, _ = get_episodes_jsonl_file_path(root_dir, "")
+    jsonl_path, _ = get_episodes_jsonl_file_paths(root_dir, "")
     with open(jsonl_path) as f:
         episode_frames = {}
         for line in f:

@@ -1,4 +1,7 @@
+import json
 import logging
+import pickle
+import traceback
 from collections import defaultdict
 from pathlib import Path
 
@@ -232,13 +235,21 @@ def _gen_one_dataset_quality_check_task(
 
 
 def _build_episode_summary(
-    bad_data_episodes: list[int],
-    state_data_scores: dict[int, float],
-    action_data_scores: dict[int, float],
-    video_scores: dict[int, float],
+    bad_data_episodes: list[int] | None = None,
+    state_data_scores: dict[int, float] | None = None,
+    action_data_scores: dict[int, float] | None = None,
+    video_scores: dict[int, float] | None = None,
 ) -> dict[int, dict]:
     # 转为 set 加速查找
+    if bad_data_episodes is None:
+        bad_data_episodes = []
     bad_set = set(bad_data_episodes)
+    if state_data_scores is None:
+        state_data_scores = {}
+    if action_data_scores is None:
+        action_data_scores = {}
+    if video_scores is None:
+        video_scores = {}
 
     # 假设所有 score 列表长度一致，取其一作为总 episode 数
     num_episodes = len(state_data_scores)
@@ -248,12 +259,165 @@ def _build_episode_summary(
     for episode_idx in range(num_episodes):
         episode_summary[episode_idx] = {
             "is_bad": episode_idx in bad_set,
-            "state_data_score": state_data_scores[episode_idx],
-            "action_data_score": action_data_scores[episode_idx],
-            "video_score": video_scores[episode_idx],
+            "state_data_score": state_data_scores.get(episode_idx, 1),
+            "action_data_score": action_data_scores.get(episode_idx, 1),
+            "video_score": video_scores.get(episode_idx, 1),
         }
 
     return episode_summary
+
+
+def _sync_quality_check_tasks(
+    session: Session, device_model: str | None = None, device_model_version: str | None = None
+) -> None:
+    query = session.query(DatasetDB).filter(
+        and_(
+            # 必要前提：convert必须成功
+            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            # 两个触发分支
+            or_(
+                # 分支1: 正在排队
+                DatasetDB.qc_status == TaskStatus.PENDING,
+                # 分支2: 已完成但版本过期
+                and_(
+                    DatasetDB.qc_status == TaskStatus.COMPLETED,
+                    DatasetDB.qc_version_ps < DatasetDB.data_merge_version,
+                ),
+            ),
+        )
+    )
+    items = query.all()
+
+    if not items:
+        return
+
+    for item in items:
+        item.qc_status = TaskStatus.PENDING
+        item.qc_version = item.qc_version + 1
+        item.qc_version_ps = item.data_merge_version
+
+    session.commit()
+
+
+def _gen_one_dataset_quality_check_task_without_sync(
+    session: Session,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    query = session.query(DatasetDB).filter(
+        and_(
+            # 必要前提：convert必须成功
+            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            DatasetDB.qc_status == TaskStatus.PENDING,
+        )
+    )
+    item = query.first()
+
+    if not item:
+        return None, None, None, None
+
+    item.qc_status = TaskStatus.PROCESSING
+
+    session.commit()
+
+    # 获取 sim_replay 配置
+    device_model = item.device_model
+    device_model_version = item.device_model_version
+
+    return item.dataset_uuid, item.convert_path, device_model, device_model_version
+
+
+class DatasetQualityCheck:
+    def __init__(
+        self,
+        db_file_path: str | Path,
+        qc_config_path: str | Path,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
+        self.db = DatasetDatabase(self.db_file_path)
+        self.logger = logger or logging.getLogger(__name__)
+        self.qc_config_path: Path = Path(qc_config_path).expanduser().absolute()
+
+    def check_one_repo(self) -> None:
+        with self.db.with_session() as session:
+            _sync_quality_check_tasks(session=session)
+            dataset_uuid, repo_path, device_model, device_model_version = (
+                _gen_one_dataset_quality_check_task_without_sync(session=session)
+            )
+
+        input("1, Press Enter to continue...")
+        if not dataset_uuid:
+            return
+
+        checker_config = get_checker_config(
+            device_model,
+            device_model_version,
+            self.qc_config_path,
+        )
+        print(checker_config)
+
+        try:
+            input("2, Press Enter to continue...")
+            qc_results, details = quality_check_pipeline(repo_path, checker_config)
+            # print(qc_results)
+            with open("datas/qc_results.pkl", "wb") as f:
+                pickle.dump(qc_results, f)
+            with open("datas/qc_results.pkl", "rb") as f:
+                qc_results = pickle.load(f)
+            input("3, Press Enter to continue...")
+            with open("datas/details.json", "w") as f:
+                json.dump(details, f)
+
+            bad_episodes, state_data_scores, action_data_scores, video_scores = (
+                qc_results.get("bad_data_episodes", None),
+                qc_results.get("state_data_scores", None),
+                qc_results.get("action_data_scores", None),
+                qc_results.get("video_scores", None),
+            )
+
+            qc_results_summary = _build_episode_summary(
+                bad_episodes,
+                state_data_scores=state_data_scores,
+                action_data_scores=action_data_scores,
+                video_scores=video_scores,
+            )
+            input("4, Press Enter to continue...")
+            with open("datas/qc_results_summary.pkl", "wb") as f:
+                pickle.dump(qc_results_summary, f)
+
+            with open("datas/qc_results_summary.pkl", "rb") as f:
+                qc_results_summary = pickle.load(f)
+            with self.db.with_session() as session:
+                item = (
+                    session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+                )
+                if item:
+                    item.qc_status = TaskStatus.COMPLETED
+                else:
+                    return
+                session.query(EpisodeQcDB).filter(EpisodeQcDB.dataset_uuid == dataset_uuid).delete()
+                for episode_idx, summary in qc_results_summary.items():
+                    episode_qc_item = EpisodeQcDB(
+                        dataset_uuid=dataset_uuid,
+                        episode_idx=episode_idx,
+                        is_bad_episode=summary["is_bad"],
+                        state_data_score=summary["state_data_score"],
+                        action_data_score=summary["action_data_score"],
+                        video_score=summary["video_score"],
+                    )
+                    session.add(episode_qc_item)
+                session.commit()
+        except Exception:
+            with self.db.with_session() as session:
+                item = (
+                    session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+                )
+                if item:
+                    item.qc_status = TaskStatus.FAILED
+                    item.qc_err_msg = traceback.format_exc()
+                else:
+                    return
+                session.commit()
+            print(traceback.format_exc())
 
 
 class DatasetQualityCheckServer(TaskServer):

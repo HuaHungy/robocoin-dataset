@@ -1,7 +1,10 @@
 import argparse
 from pathlib import Path
 
-from robocoin_dataset.quality_check.dataset_quality_check import get_checker_config, quality_check_pipeline
+from robocoin_dataset.quality_check.dataset_quality_check import (
+    get_checker_config,
+    quality_check_pipeline,
+)
 
 
 def check_repo(repo_path: str | Path, device_model: str, device_model_version: str) -> dict:
