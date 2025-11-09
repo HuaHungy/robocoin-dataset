@@ -319,6 +319,7 @@ class LerobotSimReplayer:
             / "chunk-000"
             / f"episode_{episode_index:06d}.parquet"
         )
+        print(f"***[界面] 正在播放 episode 文件: {parquet_file_path}")
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
         df = pd.read_parquet(str(parquet_file_path))

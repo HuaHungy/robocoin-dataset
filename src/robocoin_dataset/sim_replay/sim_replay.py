@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 # For gripper value visualization
+import asyncio
 import matplotlib.pyplot as plt
 import yaml
 from sqlalchemy.orm import Session
@@ -20,6 +21,9 @@ from robocoin_dataset.distribution_computation.constant import (
     ERR_MSG,
     TASK_RESULT_STATUS,
     TASK_SUCCESS,
+    TASK_FAILED,
+    TASK_RESULT_CONTENT,
+    TASK_ID,
 )
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.distribution_computation.task_server import TaskServer
@@ -199,9 +203,11 @@ def plot_gripper_values(gripper_values, title="Gripper Values"):
 def _sim_replay_dataset(
     repo_path: str | Path,
     sim_replay_config: LerobotSimReplayConfig,
+    episode_idx: int = 0,
 ) -> None:
     if sim_replay_config is None:
         raise ValueError("sim_replay_config_class is None")
+    
 
     simulator = LerobotSimReplayer(sim_replay_config, repo_path)
 
@@ -419,7 +425,7 @@ def _sim_replay_dataset(
             try:
                 print("[State Replay] 开始播放状态数据...")
                 simulator.replay_episode(
-                    0,
+                    episode_idx,
                     is_state=True,
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
@@ -462,7 +468,7 @@ def _sim_replay_dataset(
             try:
                 print("[Action Replay] 开始播放动作数据...")
                 simulator.replay_episode(
-                    0,
+                    episode_idx,
                     is_state=False,
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
@@ -739,21 +745,39 @@ class SimReplayClient(TaskClient):
         return {}
 
     def _sync_process_task(self, task_content: dict) -> dict:
+        repo_path = task_content.get(LEFORMAT_PATH)
+        sim_replay_config_module_path = task_content.get(SIM_REPLAY_CONFIG_MODULE_PATH)
+        sim_replay_config_class_name = task_content.get(SIM_REPLAY_CONFIG_CLASS_NAME)
+
+        sim_replay_config_class = importlib.import_module(
+            sim_replay_config_module_path
+        ).__getattribute__(sim_replay_config_class_name)
+
+        _sim_replay_dataset(
+            repo_path=repo_path,
+            sim_replay_config=sim_replay_config_class(),
+        )
+        print(f"sim replay dataset {repo_path} succeeded")
+
+        return {}
+
+    async def process_task(self, task_data: dict) -> dict:
+        """覆盖父类的 process_task 方法，只保存错误消息，不包含 traceback"""
+        loop = asyncio.get_event_loop()
+        task_id = task_data.get(TASK_ID)
         try:
-            repo_path = task_content.get(LEFORMAT_PATH)
-            sim_replay_config_module_path = task_content.get(SIM_REPLAY_CONFIG_MODULE_PATH)
-            sim_replay_config_class_name = task_content.get(SIM_REPLAY_CONFIG_CLASS_NAME)
-
-            sim_replay_config_class = importlib.import_module(
-                sim_replay_config_module_path
-            ).__getattribute__(sim_replay_config_class_name)
-
-            _sim_replay_dataset(
-                repo_path=repo_path,
-                sim_replay_config=sim_replay_config_class(),
+            task_result_content = await loop.run_in_executor(
+                None, self._sync_process_task, task_data
             )
-            print(f"sim replay dataset {repo_path} succeeded")
-
-            return {}
+            return {TASK_RESULT_STATUS: TASK_SUCCESS, TASK_RESULT_CONTENT: task_result_content}
         except Exception as e:
-            raise RuntimeError(f"sim replay dataset {repo_path} failed") from e
+            # 只保存错误消息本身，不包含 traceback，与 SimReplay 的行为一致
+            error_msg = str(e)
+            if self.logger:
+                self.logger.error(f"Task {task_id} failed: {error_msg}")
+            return {
+                TASK_RESULT_STATUS: TASK_FAILED,
+                ERR_MSG: error_msg,
+                TASK_RESULT_CONTENT: {},
+            }
+
