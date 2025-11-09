@@ -1004,14 +1004,15 @@ class LerobotFormatConverter(ABC):
                         f"   Skipping entire episode. Can be traced via episode_source_mapping.json"
                     )
                 
-                # 抛出CriticalDataError，让上层convert()处理统计和映射
+                # 🆕 抛出CriticalDataError，标记为"data_quality"（纯数据质量问题，不计入配置错误率）
                 raise CriticalDataError(
                     f"Episode {global_ep_idx} 图像尺寸不匹配，跳过整个episode:\n"
                     f"  任务: {task}\n"
                     f"  Episode索引: {task_ep_idx}\n"
                     f"  问题帧: {frame_idx}\n"
                     f"  错误: {e}\n"
-                    f"\n💡 这通常是数据采集过程中设备配置变化导致的"
+                    f"\n💡 这通常是数据采集过程中设备配置变化导致的",
+                    error_category="data_quality"  # 标记为纯数据质量问题
                 ) from e
                 
             except Exception as e:
@@ -1251,6 +1252,9 @@ class LerobotFormatConverter(ABC):
                     self._conversion_stats['skipped_episodes'] += 1
                     task_stats[task]['skipped'] += 1
                     
+                    # 🆕 提取错误类别（用于区分数据质量问题和配置错误）
+                    error_category = getattr(e, 'error_category', 'potential_config')
+                    
                     skip_reason = str(e)
                     self._conversion_stats['skip_details'].append({
                         'episode': original_ep_idx,
@@ -1258,6 +1262,7 @@ class LerobotFormatConverter(ABC):
                         'task_episode': task_ep_idx,
                         'reason': skip_reason,
                         'skipped_entire_episode': True,
+                        'error_category': error_category,  # 🆕 记录错误类别
                     })
                     
                     # 🆕 记录跳过的episode到mapping
@@ -1320,6 +1325,8 @@ class LerobotFormatConverter(ABC):
     def _check_failure_rate_threshold(self, task_stats: dict) -> None:
         """检查失败率是否超过阈值
         
+        🆕 只统计"potential_config"类型的错误，纯数据质量问题（如图像尺寸不匹配）不计入失败率
+        
         Args:
             task_stats: 任务统计信息
             
@@ -1328,19 +1335,37 @@ class LerobotFormatConverter(ABC):
         """
         total_attempted = self._conversion_stats['total_episodes']
         total_skipped = self._conversion_stats['skipped_episodes']
-        failure_rate = total_skipped / total_attempted if total_attempted > 0 else 0
+        
+        # 🆕 只统计可能是配置错误的失败episodes
+        skip_details = self._conversion_stats['skip_details']
+        config_related_failures = [
+            f for f in skip_details 
+            if f.get('error_category', 'potential_config') == 'potential_config'
+        ]
+        data_quality_failures = [
+            f for f in skip_details 
+            if f.get('error_category', 'potential_config') == 'data_quality'
+        ]
+        
+        config_failure_count = len(config_related_failures)
+        data_quality_count = len(data_quality_failures)
+        
+        # 🆕 使用config相关失败数计算失败率
+        failure_rate = config_failure_count / total_attempted if total_attempted > 0 else 0
         
         if failure_rate > self.failure_threshold:
-            # 收集详细错误信息
-            recent_failures = self._conversion_stats['skip_details'][-self.strict_episodes:]
+            # 收集详细错误信息（只显示config相关的）
+            recent_failures = config_related_failures[-self.strict_episodes:]
             
             raise ConfigError(
                 f"前{self.strict_episodes}个episode失败率过高，可能存在配置错误:\n"
                 f"  尝试转换: {total_attempted} episodes\n"
-                f"  跳过: {total_skipped} episodes\n"
-                f"  失败率: {failure_rate:.1%}\n"
+                f"  跳过（配置相关）: {config_failure_count} episodes\n"
+                f"  跳过（数据质量）: {data_quality_count} episodes (不计入失败率)\n"
+                f"  总跳过: {total_skipped} episodes\n"
+                f"  配置错误率: {failure_rate:.1%}\n"
                 f"  阈值: {self.failure_threshold:.1%}\n"
-                f"\n最近失败的episodes:\n" +
+                f"\n最近失败的episodes (配置相关):\n" +
                 "\n".join(
                     f"  - Episode {f['episode']} (task: {f['task']}): {f.get('reason', 'Unknown')}"
                     for f in recent_failures
@@ -1348,7 +1373,8 @@ class LerobotFormatConverter(ABC):
                 f"\n\n💡 建议：\n"
                 f"  1. 检查配置文件中的字段路径是否正确\n"
                 f"  2. 使用 diagnose_converter_config.py 诊断配置\n"
-                f"  3. 检查数据集格式是否与配置匹配"
+                f"  3. 检查数据集格式是否与配置匹配\n"
+                f"\n📊 注意：{data_quality_count}个episodes因纯数据质量问题被跳过（如图像尺寸不一致），这不算配置错误"
             )
 
     def _print_conversion_summary(self, task_stats: dict) -> None:
