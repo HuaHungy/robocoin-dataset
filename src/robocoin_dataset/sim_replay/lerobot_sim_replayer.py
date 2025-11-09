@@ -365,27 +365,38 @@ class LerobotSimReplayer:
                     self.mjcf_data.qpos[mjcf_addr] = mjcf_data
 
                 mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
+                
+                # 收集所有EEF位置用于计算距离
+                eef_positions = []
                 for site_id in self.mjcf_site_ids:
                     eef_results = []
                     site_pos = self.mjcf_data.site_xpos[site_id]
+                    eef_positions.append(site_pos.copy())
                     site_rot = self.mjcf_data.site_xmat[site_id]
                     site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
                         "xyz", degrees=False
                     )
                     eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
+                
+                # # 如果是双臂机器人（有2个EEF），计算并打印两个末端执行器之间的距离
+                # if len(eef_positions) == 2:
+                #     left_eef_pos = eef_positions[0]
+                #     right_eef_pos = eef_positions[1]
+                #     eef_distance = np.linalg.norm(left_eef_pos - right_eef_pos)
+                #     print(f"[Frame {i:04d}] EEF Distance: {eef_distance:.4f}m | Left: [{left_eef_pos[0]:.3f}, {left_eef_pos[1]:.3f}, {left_eef_pos[2]:.3f}] | Right: [{right_eef_pos[0]:.3f}, {right_eef_pos[1]:.3f}, {right_eef_pos[2]:.3f}]")
 
                 # 实时gripper曲线刷新
                 # Only plot gripper data when:
                 # - plotting enabled by caller,
                 # - a callback is provided,
                 # - the dataset actually contains gripper fields (leroot_gripper_ids),
-                # - AND the replay config declares gripper MJCF joint names. If the
-                #   config's `state_gripper_joint_mjcf_names` is empty, do not draw.
+                # - AND the replay config declares gripper lerobot names (not necessarily MJCF names,
+                #   as some configs like yinhe have gripper data but don't map to MJCF joints)
                 if (
                     enable_gripper_plot
                     and gripper_plot_callback is not None
                     and len(leroot_gripper_ids) > 0
-                    and len(self.state_gripper_joint_mjcf_names) > 0
+                    and len(self.state_gripper_lerobot_names) > 0
                 ):
                     gripper_history.append(list(lerobot_gripper_data))
                     gripper_plot_callback(gripper_history, ax, lines)

@@ -264,11 +264,11 @@ def _sim_replay_dataset(
                 # 如果需要也可以在 sim replay 配置类中暴露固定范围（以后可扩展）。
                 try:
                     # 优先使用 sim_replay_config.has_gripper 来判定是否使用配置中的固定上下界。
-                    # 兼容性：如果没有 has_gripper 字段，再回退到检查 state_gripper_joint_mjcf_names
+                    # 兼容性：如果没有 has_gripper 字段，再回退到检查 state_gripper_lerobot_names
                     has_gripper_attr = getattr(sim_replay_config, "has_gripper", None)
                     if has_gripper_attr is None:
                         cfg_has_gripper = bool(
-                            getattr(sim_replay_config, "state_gripper_joint_mjcf_names", None)
+                            getattr(sim_replay_config, "state_gripper_lerobot_names", None)
                         )
                     else:
                         cfg_has_gripper = bool(has_gripper_attr)
@@ -370,12 +370,12 @@ def _sim_replay_dataset(
         # 检查配置中是否启用了gripper
         has_gripper_attr = getattr(sim_replay_config, "has_gripper", None)
         if has_gripper_attr is None:
-            cfg_has_gripper = bool(getattr(sim_replay_config, "state_gripper_joint_mjcf_names", None))
+            cfg_has_gripper = bool(getattr(sim_replay_config, "state_gripper_lerobot_names", None))
         else:
             cfg_has_gripper = bool(has_gripper_attr)
         
         # 进一步检查mjcf配置中的gripper关节名称是否非空
-        mjcf_gripper_names = getattr(sim_replay_config, "state_gripper_joint_mjcf_names", [])
+        mjcf_gripper_names = getattr(sim_replay_config, "state_gripper_lerobot_names", [])
         cfg_has_gripper = cfg_has_gripper and len(mjcf_gripper_names) > 0
         
         if cfg_has_gripper:

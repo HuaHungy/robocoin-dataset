@@ -21,25 +21,25 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         
         # 查找 gripper 字段在 state 中的索引
         try:
-            self.left_gripper_state_idx = state_names.index("left_gripper_open")
+            self.left_gripper_state_idx = state_names.index("left_gripper_width_m")
         except ValueError:
             self.left_gripper_state_idx = None
             
         try:
-            self.right_gripper_state_idx = state_names.index("right_gripper_open")
+            self.right_gripper_state_idx = state_names.index("right_gripper_width_m")
         except ValueError:
             self.right_gripper_state_idx = None
-        
+        # print("索引是 {} 和 {}。".format(self.left_gripper_state_idx, self.right_gripper_state_idx))
         # 查找 gripper 字段在 action 中的索引
         try:
             self.left_gripper_action_idx = action_names.index("left_gripper_open")
         except ValueError:
-            self.left_gripper_action_idx = None
+            self.left_gripper_action_idx = 7
             
         try:
             self.right_gripper_action_idx = action_names.index("right_gripper_open")
         except ValueError:
-            self.right_gripper_action_idx = None
+            self.right_gripper_action_idx = 15
 
     def _smooth_gripper_open_data(self, data: np.ndarray) -> np.ndarray:
         smoothed = data.copy()
@@ -78,14 +78,23 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         # 复制 action 以便修改
         out_action = self.process_episode_action_data(action)
 
-        # 将 state 中的 gripper 数据复制到 action 对应列
-        if (self.left_gripper_state_idx is not None and 
-            self.left_gripper_action_idx is not None):
-            out_action[:, self.left_gripper_action_idx] = state[:, self.left_gripper_state_idx]
+        # 将 state 中的 gripper 数据插入到 action 中
+        # 按照 action 的特征顺序重新构建数组
+        if self.left_gripper_state_idx is not None and self.right_gripper_state_idx is not None:
+            # 提取 gripper 数据
+            left_gripper_data = state[:, self.left_gripper_state_idx:self.left_gripper_state_idx+1]
+            right_gripper_data = state[:, self.right_gripper_state_idx:self.right_gripper_state_idx+1]
             
-        if (self.right_gripper_state_idx is not None and 
-            self.right_gripper_action_idx is not None):
-            out_action[:, self.right_gripper_action_idx] = state[:, self.right_gripper_state_idx]
+            # 在索引 7 和 15 位置插入 gripper 数据
+            # left_gripper_open 插入到索引 7 (在 left_arm_joint_7_rad 之后)
+            # right_gripper_open 插入到索引 15 (在 right_arm_joint_7_rad 之后，但要考虑已插入的 left_gripper)
+            out_action = np.concatenate([
+                out_action[:, :7],              # left_arm_joint_1 到 joint_7
+                left_gripper_data,              # left_gripper_open
+                out_action[:, 7:14],            # right_arm_joint_1 到 joint_7
+                right_gripper_data,             # right_gripper_open
+            ], axis=1)
+            # print("已将 gripper 数据从 state 复制到 action。")
 
         return {"observation.state": out_state, "action": out_action}
     

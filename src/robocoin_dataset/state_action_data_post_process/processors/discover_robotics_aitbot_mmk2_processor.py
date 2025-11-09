@@ -58,14 +58,29 @@ class ThirdViewProcessor(StateActionDataPostProcessorBase):
         # 复制 action 以便修改
         out_action = action.copy()
 
-        # 将 state 中的 joint_6 数据复制到 action 对应列
+        # 将 state 中的 joint_6 数据插入到 action 中
+        # 如果 action 中不存在 joint_6，则需要插入
         if (self.left_arm_joint_6_state_idx is not None and 
-            self.left_arm_joint_6_action_idx is not None):
-            out_action[:, self.left_arm_joint_6_action_idx] = state[:, self.left_arm_joint_6_state_idx]
+            self.left_arm_joint_6_action_idx is None):
+            # 插入 left_arm_joint_6 到索引 5 (在 joint_5 之后)
+            left_joint_6_data = state[:, self.left_arm_joint_6_state_idx:self.left_arm_joint_6_state_idx+1]
+            out_action = np.concatenate([
+                out_action[:, :5],        # left_arm_joint_1 到 joint_5
+                left_joint_6_data,        # left_arm_joint_6
+                out_action[:, 5:],        # 剩余部分
+            ], axis=1)
             
         if (self.right_arm_joint_6_state_idx is not None and 
-            self.right_arm_joint_6_action_idx is not None):
-            out_action[:, self.right_arm_joint_6_action_idx] = state[:, self.right_arm_joint_6_state_idx]
+            self.right_arm_joint_6_action_idx is None):
+            # 插入 right_arm_joint_6 到索引 11 (在 right_arm_joint_5 之后，考虑已插入的 left_joint_6)
+            right_joint_6_data = state[:, self.right_arm_joint_6_state_idx:self.right_arm_joint_6_state_idx+1]
+            # 注意：如果 left_joint_6 已插入，索引需要 +1
+            insert_idx = 11 if self.left_arm_joint_6_action_idx is None else 12
+            out_action = np.concatenate([
+                out_action[:, :insert_idx],   # 前面的部分
+                right_joint_6_data,           # right_arm_joint_6
+                out_action[:, insert_idx:],   # 剩余部分
+            ], axis=1)
 
         return {"observation.state": out_state, "action": out_action}
 
