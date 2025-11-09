@@ -59,15 +59,85 @@ def decode_image_bytes(img_bytes: bytes, typestore) -> np.ndarray:  # noqa: ANN0
         # 如果解码失败，返回None
         return None
 
+class TopicMessageCache:
+    """Topic消息缓存，预计算时间戳列表以优化性能
+    
+    🚀 性能优化：避免每次调用find_nearest_msg时重复提取时间戳列表
+    - 原方案：每次调用都遍历整个消息列表（O(K)）
+    - 新方案：只提取一次，后续复用（O(1)）
+    
+    对于27,000帧 × 10 topics = 270,000次调用，节省巨大！
+    """
+    def __init__(self, msgs: list):
+        """初始化缓存
+        
+        Args:
+            msgs: list of (log_time, data) tuples，已按时间排序
+        """
+        self.msgs = msgs
+        self._times = None  # 延迟计算
+    
+    @property
+    def times(self):
+        """获取时间戳列表（延迟计算，只计算一次）"""
+        if self._times is None:
+            self._times = [t for t, _ in self.msgs]
+        return self._times
+    
+    def find_nearest(self, target_time):
+        """查找最接近目标时间的消息
+        
+        Args:
+            target_time: 目标时间戳
+            
+        Returns:
+            最接近的消息数据（bytes），如果消息列表为空则返回None
+        """
+        if not self.msgs:
+            return None
+        
+        import bisect
+        
+        # 使用预计算的时间戳列表（O(1)访问）
+        times = self.times
+        
+        # 使用二分查找找到最近的消息（O(log K)）
+        pos = bisect.bisect_left(times, target_time)
+        
+        if pos == 0:
+            return self.msgs[0][1]
+        if pos == len(times):
+            return self.msgs[-1][1]
+        
+        # 比较前后两个时间戳，返回更近的那个
+        before = times[pos - 1]
+        after = times[pos]
+        
+        if abs(target_time - before) <= abs(after - target_time):
+            return self.msgs[pos - 1][1]
+        return self.msgs[pos][1]
+
+
 def find_nearest_msg(msgs, target_time):  # noqa: ANN001, ANN201
-    # msgs: list of (log_time, data)
-    # 返回最近时间的消息，使用二分查找优化性能
+    """查找最接近目标时间的消息（兼容旧接口）
+    
+    ⚠️ 性能警告：此函数每次调用都会重新提取时间戳列表
+    对于频繁调用，建议使用TopicMessageCache类
+    
+    Args:
+        msgs: list of (log_time, data) tuples，已按时间排序
+        target_time: 目标时间戳
+        
+    Returns:
+        最接近的消息数据（bytes），如果消息列表为空则返回None
+    """
     if not msgs:
         return None
     
     import bisect
     
-    # 提取时间戳（假设msgs已按时间排序）
+    # ⚠️ 性能瓶颈：每次调用都重新提取时间戳列表
+    # 对于27,000条消息，这需要遍历27,000次
     times = [t for t, _ in msgs]
     
     # 使用二分查找找到最近的消息
@@ -543,7 +613,12 @@ int32 lift_pos
 
         mode_str = f"(TEST MODE: max {max_frames} frames)" if max_frames else "(FULL MODE: all frames)"
         self.logger.info(f"Parsing MCAP file: {mcap_file.name} {mode_str}")
-        with open(mcap_file, "rb") as f:
+        
+        # 🚀 阶段4优化：使用更大的文件缓冲区加速I/O
+        # 默认缓冲区是8KB，对于大文件使用更大的缓冲区可以减少系统调用
+        buffer_size = 1024 * 1024  # 1MB缓冲区
+        
+        with open(mcap_file, "rb", buffering=buffer_size) as f:
             reader = make_reader(f)
             for schema, channel, message in reader.iter_messages():
                 topic = channel.topic
@@ -551,6 +626,13 @@ int32 lift_pos
                     topic_msgs[topic].append((message.log_time, message.data))
         
         self.logger.info(f"Finished reading MCAP file, collected {sum(len(msgs) for msgs in topic_msgs.values())} messages")
+        
+        # 🚀 性能优化：将topic_msgs转换为TopicMessageCache，预计算时间戳列表
+        self.logger.info("Building topic message cache (optimizing timestamp lookups)...")
+        topic_caches = {}
+        for topic, msgs in topic_msgs.items():
+            topic_caches[topic] = TopicMessageCache(msgs)
+        self.logger.info(f"Built cache for {len(topic_caches)} topics")
 
         # 主对齐topic（如右臂关节）
         main_joint_topic = state_subs[0]['args']['mcap_topic']
@@ -564,26 +646,58 @@ int32 lift_pos
         decode_mode = f"(TEST MODE: {frames}/{total_frames} frames)" if max_frames else f"({frames} frames total)"
         self.logger.info(f"Starting to decode {frames} frames with {len(image_topics)} cameras {decode_mode}")
         
-        # 解析图片（对齐主topic时间戳）
-        images = {cam: [] for cam in image_topics.values()}
-        decode_progress_step = max(1, frames // 10) if frames >= 10 else 1  # 每10%记录一次
-        
+        # 🚀 阶段3优化：并行图像解码
+        # 先收集所有需要解码的图像字节数据
+        image_decode_tasks = []  # [(frame_idx, cam_name, img_bytes), ...]
         for i, t in enumerate(main_times):
-            if i % decode_progress_step == 0:
-                self.logger.info(f"Decoding images: {i}/{frames} frames ({100*i//frames}%)")
-            
             for topic, cam_name in image_topics.items():
-                img_bytes = find_nearest_msg(topic_msgs[topic], t)
-                if img_bytes is not None:
-                    try:
-                        img_arr = decode_image_bytes(img_bytes, self.typestore)
-                    except Exception:
-                        img_arr = None
-                    images[cam_name].append(img_arr)
-                else:
-                    images[cam_name].append(None)
+                img_bytes = topic_caches[topic].find_nearest(t)
+                image_decode_tasks.append((i, cam_name, img_bytes))
         
-        self.logger.info("Finished decoding all images")
+        # 并行解码图像
+        num_workers = min(4, len(image_topics) * 2)  # 根据相机数量调整
+        if self.logger:
+            self.logger.info(f"🚀 Using parallel image decoding with {num_workers} workers")
+        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        images = {cam: [None] * frames for cam in image_topics.values()}  # 预分配列表
+        
+        def decode_single_image(args):
+            """解码单张图像（用于并行处理）"""
+            frame_idx, cam_name, img_bytes = args
+            if img_bytes is not None:
+                try:
+                    return (frame_idx, cam_name, decode_image_bytes(img_bytes, self.typestore))
+                except Exception:
+                    return (frame_idx, cam_name, None)
+            return (frame_idx, cam_name, None)
+        
+        # 并行解码
+        decode_progress_step = max(1, len(image_decode_tasks) // 10) if len(image_decode_tasks) >= 10 else 1
+        decoded_count = 0
+        
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            # 提交所有任务
+            future_to_task = {executor.submit(decode_single_image, task): task for task in image_decode_tasks}
+            
+            # 收集结果（保持顺序）
+            for future in as_completed(future_to_task):
+                decoded_count += 1
+                if decoded_count % decode_progress_step == 0:
+                    if self.logger:
+                        self.logger.info(f"Decoding images: {decoded_count}/{len(image_decode_tasks)} ({100*decoded_count//len(image_decode_tasks)}%)")
+                
+                try:
+                    frame_idx, cam_name, img_arr = future.result()
+                    images[cam_name][frame_idx] = img_arr
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to decode image: {e}")
+                    frame_idx, cam_name, _ = future_to_task[future]
+                    images[cam_name][frame_idx] = None
+        
+        self.logger.info(f"✅ Finished parallel decoding of {len(image_decode_tasks)} images")
 
         # 解析状态
         # 注意：这里只提取原始数据，不应用convert_func
@@ -597,7 +711,8 @@ int32 lift_pos
                 from_idx = sub['args']['range_from']
                 to_idx = sub['args']['range_to']
                 
-                data = find_nearest_msg(topic_msgs[topic], t)
+                # 🚀 使用缓存的topic消息，避免重复提取时间戳
+                data = topic_caches[topic].find_nearest(t)
                 if data is not None:
                     # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
@@ -655,7 +770,8 @@ int32 lift_pos
                 from_idx = sub['args']['range_from']
                 to_idx = sub['args']['range_to']
                 
-                data = find_nearest_msg(topic_msgs[topic], t)
+                # 🚀 使用缓存的topic消息，避免重复提取时间戳
+                data = topic_caches[topic].find_nearest(t)
                 if data is not None:
                     # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
