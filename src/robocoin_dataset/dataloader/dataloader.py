@@ -1,13 +1,12 @@
-"""Dataloader utilities and validation for LeRobot datasets.
+"""Orchestration layer for dataloader detection tasks.
 
-This module provides a unified interface for:
-- Dataset creation and loading
-- Episode sampling and dataloader creation
-- Local and distributed validation workflows
+This module provides high-level orchestration for:
 - Server/client architecture for distributed processing
-- Task management for database-backed workflows
+- Multi-client task distribution and execution
+- Asynchronous client task processing
 
-All core functionality is consolidated in this module for ease of use and maintenance.
+Core utilities, database operations, and business logic are in dataloader_utils.py.
+This module focuses solely on assembling and coordinating those components.
 """
 
 import asyncio
@@ -15,21 +14,17 @@ import logging
 import multiprocessing as mp
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, TaskStatus
 from robocoin_dataset.dataloader.dataloader_utils import (
-    EpisodeSampler,
+    TASK_CATEGORY,
     LeRobotDataset,
     MultiEpisodeSampler,
-    _mark_task_failed,
+    _gen_one_dataloader_detection_task,
     _parse_episode_specification,
     _run_detection,
-    _update_task_status,
+    _sync_dataloader_detection_tasks,
     create_episode_dataloader,
     create_lerobot_dataset,
     run_local_batch_detection,
@@ -60,70 +55,8 @@ from robocoin_dataset.hardlink.validate_hardlink import (
 )
 
 # =============================
-# Task Management Constants
-# =============================
-
-TASK_CATEGORY = "dataloader_detection"
-
-# =============================
 # Server Components
 # =============================
-
-
-class DataloaderDbProcess:
-    """Single-dataset processor for dataloader detection."""
-
-    def __init__(
-        self, db_file_path: str | Path, logger: logging.Logger | None = None
-    ) -> None:
-        if not db_file_path:
-            raise ValueError("db_file_path is required and cannot be None or empty")
-
-        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
-
-        if not self.db_file_path.exists():
-            raise FileNotFoundError(f"Database file not found: {self.db_file_path}")
-        if not self.db_file_path.is_file():
-            raise ValueError(f"Database path is not a file: {self.db_file_path}")
-
-        self.db = DatasetDatabase(self.db_file_path)
-        self.logger = logger or logging.getLogger(__name__)
-
-    def process_one_dataset(
-        self,
-        hardlink_target_dir: Path | None = None,
-    ) -> None:
-        """Process one dataset from the queue.
-
-        Args:
-            hardlink_target_dir: Target directory for hardlinks (default: None = auto)
-        """
-        # Sync tasks and claim one
-        with self.db.with_session() as session:
-            _sync_dataloader_detection_tasks(session, logger=self.logger)
-            dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
-
-        if not dataset_uuid or not convert_path:
-            self.logger.info("No dataloader detection task to process")
-            return
-
-        # Prepare hardlink using the centralized helper function
-        try:
-            test_path = prepare_hardlink_for_task(
-                self.db, dataset_uuid, convert_path, hardlink_target_dir
-            )
-            self.logger.info(f"Using hardlinks: {test_path}")
-        except Exception as e:
-            error_msg = f"Hardlink preparation failed: {e}"
-            self.logger.error(error_msg)
-            _mark_task_failed(self.db, dataset_uuid, error_msg)
-            return
-
-        # Run detection
-        result = _run_detection(test_path, episode_indices="all", sample_ratio=0.1)
-
-        # Update database (uses helper from utils.py)
-        _update_task_status(self.db, dataset_uuid, result, self.logger)
 
 
 class DataloaderDbServer(TaskServer):
@@ -132,8 +65,9 @@ class DataloaderDbServer(TaskServer):
     def __init__(
         self,
         db_file_path: str | Path,
+        summary_logger: logging.Logger,
         host: str = "0.0.0.0",
-        port: int = 8771,
+        port: int = 2100,
         heartbeat_interval: float = 30.0,
         timeout: float = 15.0,
         logger: logging.Logger | None = None,
@@ -141,7 +75,6 @@ class DataloaderDbServer(TaskServer):
         sample_ratio: float = 0.1,
         batch_size: int = 32,
         num_workers: int = 0,
-        summary_logger: logging.Logger | None = None,
     ) -> None:
         super().__init__(
             logger=logger,
@@ -171,27 +104,10 @@ class DataloaderDbServer(TaskServer):
         self.batch_size = batch_size
         self.num_workers = num_workers
 
-        # Auto-shutdown mechanism
-        self._shutdown_event = asyncio.Event()
-        self._auto_shutdown_task = None
-
     def get_task_category(self) -> str:
         return TASK_CATEGORY
 
     def generate_task_content(self) -> dict | None:
-        """Generate task content from the database queue.
-
-        Server prepares hardlinks with database integration and sends the
-        hardlink path to client. This ensures:
-        1. Database query for existing hardlinks
-        2. Validation and reuse of valid hardlinks
-        3. Creation of new hardlinks if needed (WITHOUT holding DB lock)
-        4. Database update with hardlink path
-
-        If hardlink preparation fails, the task is marked as FAILED and the
-        server automatically tries the next task. This prevents one bad dataset
-        from blocking the entire queue.
-        """
         # Retry loop: continue until we find a valid task or run out of tasks
         # This ensures that hardlink preparation failures don't stop processing
         max_retries = 100  # Safety limit to prevent infinite loops
@@ -209,16 +125,7 @@ class DataloaderDbServer(TaskServer):
                 # claim one
                 dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
                 if dataset_uuid is None:
-                    # No tasks available - schedule shutdown if not already scheduled
-                    if self._auto_shutdown_task is None or self._auto_shutdown_task.done():
-                        self.logger.info("No tasks available, will auto-shutdown in 5 seconds if no new tasks arrive")
-                        self._auto_shutdown_task = asyncio.create_task(self._auto_shutdown_after_delay())
                     return None
-
-                # Task available - cancel any pending shutdown
-                if self._auto_shutdown_task and not self._auto_shutdown_task.done():
-                    self._auto_shutdown_task.cancel()
-                    self._auto_shutdown_task = None
 
             # Step 2: Prepare hardlinks using the centralized helper function
             try:
@@ -249,9 +156,8 @@ class DataloaderDbServer(TaskServer):
                         item.data_loader_detection_err_msg = err_msg
                         session.commit()
 
-                # Log to summary if available
-                if self.summary_logger:
-                    self.summary_logger.info(f"❌ {dataset_uuid}: {err_msg}")
+                # Log to summary
+                self.summary_logger.info(f"❌ {dataset_uuid}: {err_msg}")
 
                 # Continue to next iteration to try another task
                 self.logger.info("Attempting to fetch next task...")
@@ -295,43 +201,22 @@ class DataloaderDbServer(TaskServer):
             if db_status == TaskStatus.COMPLETED:
                 # Version was already incremented when task was claimed
                 item.data_loader_detection_err_msg = None
-                # Log to summary if available
-                if self.summary_logger:
-                    result = task_result_content.get(TASK_RESULT_CONTENT, {})
-                    self.summary_logger.info(
-                        f"✅ {ds_uuid}: {result.get('total_frames_sampled', 0)} frames, "
-                        f"{result.get('total_time_s', 0):.2f}s, "
-                        f"{len(result.get('episodes_tested', []))} episodes, "
-                        f"backend={result.get('backend', 'unknown')}"
-                    )
+                # Log to summary
+                result = task_result_content.get(TASK_RESULT_CONTENT, {})
+                self.summary_logger.info(
+                    f"✅ {ds_uuid}: {result.get('total_frames_sampled', 0)} frames, "
+                    f"{result.get('total_time_s', 0):.2f}s, "
+                    f"{len(result.get('episodes_tested', []))} episodes, "
+                    f"backend={result.get('backend', 'unknown')}"
+                )
             elif db_status == TaskStatus.FAILED:
                 item.data_loader_detection_err_msg = db_error_message
                 # Version was already incremented when task was claimed (not rolled back on failure)
-                if self.summary_logger:
-                    self.summary_logger.info(f"❌ {ds_uuid}: {db_error_message}")
+                self.summary_logger.info(f"❌ {ds_uuid}: {db_error_message}")
             session.commit()
             self.logger.info(
                 f"Upsert {item.convert_path} dataloader detection status to {db_status}, update_message: {db_error_message}"
             )
-
-    async def _auto_shutdown_after_delay(self) -> None:
-        """Auto-shutdown after 5 seconds of no tasks."""
-        try:
-            await asyncio.sleep(5.0)
-            self.logger.info("Auto-shutdown triggered: No tasks for 5 seconds")
-            self._shutdown_event.set()
-        except asyncio.CancelledError:
-            self.logger.info("Auto-shutdown cancelled: New tasks arrived")
-
-    async def start(self) -> None:
-        """Override start to support auto-shutdown."""
-        from websockets.legacy.server import serve
-
-        async with serve(self.handler, self.host, self.port, max_size=2**28):
-            self.logger.info(f"Task server started successfully: ws://{self.host}:{self.port}")
-            # Wait for shutdown event instead of running forever
-            await self._shutdown_event.wait()
-            self.logger.info("Server shutting down gracefully")
 
 
 # =============================
@@ -696,128 +581,28 @@ def run_multi_client(
 
 
 # =============================
-# Task Management Functions
-# =============================
-
-
-def _sync_dataloader_detection_tasks(
-    session: "Session",
-    logger: logging.Logger | None = None,
-) -> None:
-    """Mark datasets requiring dataloader detection as pending and align versions.
-
-    Trigger rules (STRICT REQUIREMENTS):
-      - data_merge_status must be COMPLETED
-      - convert_status must be COMPLETED
-      - data_loader_detection_status is NULL (never tested), PENDING, or COMPLETED but outdated
-
-    WARNING: NULL data_loader_detection_status is ILLEGAL but handled for robustness.
-    """
-    from sqlalchemy.sql.expression import and_, or_
-
-    _logger = logger or logging.getLogger(__name__)
-
-    query = session.query(DatasetDB).filter(
-        and_(
-            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
-            or_(
-                # NEW: Match records that have never been tested (NULL status)
-                DatasetDB.data_loader_detection_status == None,  # noqa: E711
-                # Match records explicitly marked as PENDING
-                DatasetDB.data_loader_detection_status == TaskStatus.PENDING,
-                # Match records that were COMPLETED but are now outdated
-                and_(
-                    DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
-                    DatasetDB.data_loader_detection_version_ps < DatasetDB.data_merge_version,
-                ),
-            ),
-        )
-    )
-
-    items = query.all()
-    if not items:
-        return
-
-    # Separate NULL status records and warn about them
-    null_status_items = []
-    valid_items = []
-
-    for item in items:
-        if item.data_loader_detection_status is None:
-            null_status_items.append(item)
-        else:
-            valid_items.append(item)
-
-        item.data_loader_detection_status = TaskStatus.PENDING
-        item.data_loader_detection_version_ps = item.data_merge_version
-        item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
-
-    # Log warnings for NULL status records
-    if null_status_items:
-        _logger.warning(
-            f"⚠️  Found {len(null_status_items)} dataset(s) with NULL data_loader_detection_status. "
-            f"This is ILLEGAL - status should be initialized. Treating as PENDING for robustness."
-        )
-        for item in null_status_items:
-            _logger.warning(
-                f"   ⚠️  Dataset {item.dataset_uuid} has NULL data_loader_detection_status "
-                f"(convert_path: {item.convert_path})"
-            )
-
-    if valid_items:
-        _logger.info(f"Marked {len(valid_items)} dataset(s) as PENDING for dataloader detection")
-
-    session.commit()
-
-
-def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, str | None]:
-    """Claim one pending dataset and transition it to PROCESSING.
-
-    Returns (dataset_uuid, convert_path) or (None, None) if no task available.
-    """
-    item = (
-        session.query(DatasetDB)
-        .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
-        .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
-        .first()
-    )
-    if not item:
-        return None, None
-
-    item.data_loader_detection_status = TaskStatus.PROCESSING
-    session.commit()
-    return item.dataset_uuid, item.convert_path
-
-
-# =============================
 # Public API Exports
 # =============================
 
 __all__ = [
-    # Dataset utilities (from utils module)
+    # Re-exported from dataloader_utils for convenience
+    "TASK_CATEGORY",
     "LeRobotDataset",
-    "EpisodeSampler",
     "MultiEpisodeSampler",
     "create_lerobot_dataset",
     "create_episode_dataloader",
-    # Hardlink utilities - database operations (from prepare_hardlink module)
-    "query_existing_hardlink",
-    "update_hardlink_path",
-    # Hardlink utilities - file system operations (from validate_hardlink module)
-    "create_or_validate_hardlinks",
-    "validate_source_for_lerobot",
-    # Detection and validation (from utils module)
-    "_run_detection",  # Fast detection with sampling
     "run_local_batch_detection",
-    # Task management
-    "TASK_CATEGORY",
+    "_run_detection",
+    "_parse_episode_specification",
     "_sync_dataloader_detection_tasks",
     "_gen_one_dataloader_detection_task",
-    "_parse_episode_specification",
-    # Server components
-    "DataloaderDbProcess",
+    # Re-exported from hardlink modules for convenience
+    "query_existing_hardlink",
+    "update_hardlink_path",
+    "create_or_validate_hardlinks",
+    "validate_source_for_lerobot",
+    # Orchestration components (defined in this module)
     "DataloaderDbServer",
-    # Client components
     "DataloaderDbClient",
     "run_client_async",
     "client_process_main",

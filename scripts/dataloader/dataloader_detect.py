@@ -123,13 +123,13 @@ def run_local(
 
     result = run_local_batch_detection(
         db_file=db_file,
+        summary_logger=sum_logger,
         episodes=episodes,
         sample_ratio=sample_ratio,
         batch_size=batch_size,
         num_workers=num_workers,
         hardlink_target_dir=target_dir,
         logger=logger,
-        summary_logger=sum_logger,
     )
 
     if result["datasets_processed"] == 0:
@@ -184,6 +184,7 @@ async def run_server_async(
 
     server = DataloaderDbServer(
         db_file_path=db_file,
+        summary_logger=sum_logger,
         host=host,
         port=port,
         heartbeat_interval=heartbeat_interval,
@@ -193,7 +194,6 @@ async def run_server_async(
         sample_ratio=sample_ratio,
         batch_size=batch_size,
         num_workers=num_workers,
-        summary_logger=sum_logger,
     )
     await server.start()
     return 0
