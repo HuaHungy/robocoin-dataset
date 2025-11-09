@@ -921,31 +921,74 @@ int32 lift_pos
         """🔥 清理episode转换完成后的所有资源，释放内存
         
         这个方法应该在每个episode转换完成后被基类调用
+        
+        🆕 支持chunked loading buffer的清理
         """
+        # 🆕 延迟导入，避免循环依赖
+        try:
+            from robocoin_dataset.format_converter.tolerobot.chunked_mcap_buffer import ChunkedImagesBuffer
+        except ImportError:
+            ChunkedImagesBuffer = None  # 如果模块不存在，设为None
+        
         # 清理episode数据
         if hasattr(self, '_current_episode_data') and self._current_episode_data:
             if self.logger:
                 # 估算内存占用
                 if 'images' in self._current_episode_data:
-                    num_cameras = len(self._current_episode_data['images'])
-                    num_frames = len(next(iter(self._current_episode_data['images'].values()))) if self._current_episode_data['images'] else 0
-                    estimated_mb = num_cameras * num_frames * 0.5
-                    self.logger.debug(
-                        f"🧹 清理episode数据: ~{estimated_mb:.1f} MB "
-                        f"({num_cameras} cameras × {num_frames} frames)"
-                    )
+                    images_buffer = self._current_episode_data['images']
+                    
+                    # 🆕 检查是否是chunked buffer
+                    if ChunkedImagesBuffer is not None and isinstance(images_buffer, ChunkedImagesBuffer):
+                        # Chunked buffer: 使用keys()获取相机数量
+                        num_cameras = len(list(images_buffer.keys()))
+                        # 使用states或actions的len获取帧数
+                        if 'states' in self._current_episode_data:
+                            num_frames = len(self._current_episode_data['states'])
+                        elif 'actions' in self._current_episode_data:
+                            num_frames = len(self._current_episode_data['actions'])
+                        else:
+                            num_frames = 0
+                        estimated_mb = num_cameras * num_frames * 0.5
+                        self.logger.debug(
+                            f"🧹 清理episode数据 (chunked): ~{estimated_mb:.1f} MB "
+                            f"({num_cameras} cameras × {num_frames} frames)"
+                        )
+                    else:
+                        # 传统dict格式
+                        num_cameras = len(images_buffer)
+                        num_frames = len(next(iter(images_buffer.values()))) if images_buffer else 0
+                        estimated_mb = num_cameras * num_frames * 0.5
+                        self.logger.debug(
+                            f"🧹 清理episode数据: ~{estimated_mb:.1f} MB "
+                            f"({num_cameras} cameras × {num_frames} frames)"
+                        )
             
             # 显式删除所有大数据结构
             if 'images' in self._current_episode_data:
-                for cam_images in self._current_episode_data['images'].values():
-                    cam_images.clear() if isinstance(cam_images, list) else None
-                self._current_episode_data['images'].clear()
+                images_buffer = self._current_episode_data['images']
+                
+                # 🆕 检查是否是chunked buffer
+                if ChunkedImagesBuffer is not None and isinstance(images_buffer, ChunkedImagesBuffer):
+                    # Chunked buffer: 清理底层buffer（如果有close方法）
+                    if hasattr(images_buffer.parent, 'close'):
+                        images_buffer.parent.close()
+                else:
+                    # 传统dict格式：清理每个相机的图像列表
+                    for cam_images in images_buffer.values():
+                        cam_images.clear() if isinstance(cam_images, list) else None
+                    images_buffer.clear()
             
             if 'states' in self._current_episode_data:
-                self._current_episode_data['states'].clear() if isinstance(self._current_episode_data['states'], list) else None
+                states_buffer = self._current_episode_data['states']
+                # 🆕 只清理list类型，chunked buffer会自动管理
+                if isinstance(states_buffer, list):
+                    states_buffer.clear()
             
             if 'actions' in self._current_episode_data:
-                self._current_episode_data['actions'].clear() if isinstance(self._current_episode_data['actions'], list) else None
+                actions_buffer = self._current_episode_data['actions']
+                # 🆕 只清理list类型，chunked buffer会自动管理
+                if isinstance(actions_buffer, list):
+                    actions_buffer.clear()
             
             # 删除整个dict
             del self._current_episode_data
