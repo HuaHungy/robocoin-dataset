@@ -244,14 +244,31 @@ class LerobotSimReplayer:
         self,
         episode_index: int,
         is_state: bool = True,
+        is_sa_dpp: bool = False,
     ) -> list[np.ndarray]:
-        if episode_index >= len(self.parquet_file_paths):
-            raise ValueError(f"episode_index {episode_index} out of range")
-        parquet_file_path = self.parquet_file_paths[episode_index]
+        # 根据 is_sa_dpp 参数决定从哪个路径读取 parquet 文件
+        if is_sa_dpp:
+            # 从原始 data 目录读取
+            parquet_file_path = (
+                self.repo_path
+                / "data"
+                / f"chunk-{episode_index // 1000:03d}"
+                / f"episode_{episode_index:06d}.parquet"
+            )
+        else:
+            # 从 state_action_data 目录读取（默认）
+            if episode_index >= len(self.parquet_file_paths):
+                raise ValueError(f"episode_index {episode_index} out of range")
+            parquet_file_path = self.parquet_file_paths[episode_index]
+        
+        print(f"***[后台] 正在读取末端信息， episode 文件: {parquet_file_path}")
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
         df = pd.read_parquet(str(parquet_file_path))
         results: list[np.ndarray] = []
+
+        # 重置 MuJoCo 数据状态，避免前一个 episode 的状态影响当前计算
+        mujoco.mj_resetData(self.mjcf_model, self.mjcf_data)
 
         if is_state:
             mjcf_arm_joint_addrs = self.state_arm_joint_mjcf_addrs
@@ -319,6 +336,7 @@ class LerobotSimReplayer:
             / "chunk-000"
             / f"episode_{episode_index:06d}.parquet"
         )
+        print(f"***[界面] 正在播放 episode 文件: {parquet_file_path}")
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
         df = pd.read_parquet(str(parquet_file_path))
@@ -346,6 +364,9 @@ class LerobotSimReplayer:
 
         # 启动 MuJoCo 界面
         self.start_viewer()
+        
+        # # 用于记录所有帧的EEF距离
+        # eef_distance_history = []
 
         try:
             for i in range(len(data)):
@@ -364,27 +385,39 @@ class LerobotSimReplayer:
                     self.mjcf_data.qpos[mjcf_addr] = mjcf_data
 
                 mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
+                
+                # 收集所有EEF位置用于计算距离
+                eef_positions = []
                 for site_id in self.mjcf_site_ids:
                     eef_results = []
                     site_pos = self.mjcf_data.site_xpos[site_id]
+                    eef_positions.append(site_pos.copy())
                     site_rot = self.mjcf_data.site_xmat[site_id]
                     site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
                         "xyz", degrees=False
                     )
                     eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
+                
+                # # 如果是双臂机器人（有2个EEF），计算并打印两个末端执行器之间的距离
+                # if len(eef_positions) == 2:
+                #     left_eef_pos = eef_positions[0]
+                #     right_eef_pos = eef_positions[1]
+                #     eef_distance = np.linalg.norm(left_eef_pos - right_eef_pos)
+                #     eef_distance_history.append(eef_distance)
+                #     print(f"[Frame {i:04d}] EEF Distance: {eef_distance:.4f}m | Left: [{left_eef_pos[0]:.3f}, {left_eef_pos[1]:.3f}, {left_eef_pos[2]:.3f}] | Right: [{right_eef_pos[0]:.3f}, {right_eef_pos[1]:.3f}, {right_eef_pos[2]:.3f}]")
 
                 # 实时gripper曲线刷新
                 # Only plot gripper data when:
                 # - plotting enabled by caller,
                 # - a callback is provided,
                 # - the dataset actually contains gripper fields (leroot_gripper_ids),
-                # - AND the replay config declares gripper MJCF joint names. If the
-                #   config's `state_gripper_joint_mjcf_names` is empty, do not draw.
+                # - AND the replay config declares gripper lerobot names (not necessarily MJCF names,
+                #   as some configs like yinhe have gripper data but don't map to MJCF joints)
                 if (
                     enable_gripper_plot
                     and gripper_plot_callback is not None
                     and len(leroot_gripper_ids) > 0
-                    and len(self.state_gripper_joint_mjcf_names) > 0
+                    and len(self.state_gripper_lerobot_names) > 0
                 ):
                     gripper_history.append(list(lerobot_gripper_data))
                     gripper_plot_callback(gripper_history, ax, lines)
@@ -398,6 +431,21 @@ class LerobotSimReplayer:
                 remaining = frame_duration - elapsed
                 if remaining > 0:
                     time.sleep(remaining)
+            
+            # # 播放完成后，打印EEF距离统计信息
+            # if len(eef_distance_history) > 0:
+            #     mean_distance = np.mean(eef_distance_history)
+            #     min_distance = np.min(eef_distance_history)
+            #     max_distance = np.max(eef_distance_history)
+            #     std_distance = np.std(eef_distance_history)
+            #     print(f"\n{'='*80}")
+            #     print(f"[EEF Distance Statistics]")
+            #     print(f"  Total Frames: {len(eef_distance_history)}")
+            #     print(f"  Mean Distance: {mean_distance:.4f}m")
+            #     print(f"  Min Distance:  {min_distance:.4f}m")
+            #     print(f"  Max Distance:  {max_distance:.4f}m")
+            #     print(f"  Std Distance:  {std_distance:.4f}m")
+            #     print(f"{'='*80}\n")
 
         finally:
             # 确保在任何情况下都能正确关闭界面

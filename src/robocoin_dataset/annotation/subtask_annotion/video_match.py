@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from robocoin_dataset.annotation.subtask_annotion.utils import (
     match_video_file_hash,
     match_video_image_hashes,
-    sort_video_imagehashes_from_frame_num,
 )
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
@@ -39,7 +38,7 @@ def prepare_video_filehash_lib(session: Session) -> dict[str, str]:
     return {sha256_list[i]: video_id_list[i] for i in range(len(video_id_list))}
 
 
-def prepare_video_imagehashes_lib(session: Session) -> dict[str, list[str]]:
+def prepare_video_imagehashes_lib(session: Session) -> dict[str, dict[int, imagehash.ImageHash]]:
     items = (
         session.query(StAnnotationVideoDB)
         .filter(
@@ -55,8 +54,13 @@ def prepare_video_imagehashes_lib(session: Session) -> dict[str, list[str]]:
     frame_num_list = [row.frame_num for row in items]
 
     frame_num_dict = {id_list[i]: frame_num_list[i] for i in range(len(id_list))}
+    result = defaultdict(dict)
 
-    return sort_video_imagehashes_from_frame_num(video_imagehashes, frame_num_dict=frame_num_dict)
+    for id_, image_hash in video_imagehashes.items():
+        frame_num = frame_num_dict[id_]
+        result[frame_num][id_] = image_hash
+
+    return result
 
 
 def match_episode_with_url_video(
@@ -83,10 +87,10 @@ def match_episode_with_url_video(
 
 def match_dataset_with_url_video(
     dataset_file_hashes: dict[int, list[str]],
-    dataset_image_hashes: dict[int, list[list[imagehash.ImageHash]]],
+    dataset_image_hashes: dict[int, list[imagehash.ImageHash]],
     dataset_frame_nums: dict[int, int],
     file_hash_lib: dict[str, int],
-    image_hashes_lib: dict[int, list[tuple[int, list[imagehash.ImageHash]]]],
+    image_hashes_lib: dict[int, dict[int, imagehash.ImageHash]],
 ) -> dict[int, int | None]:
     results = {}
     for ep_idx in tqdm.tqdm(dataset_file_hashes.keys(), desc="match episodes", unit="episode"):

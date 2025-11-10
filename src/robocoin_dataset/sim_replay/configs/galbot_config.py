@@ -55,6 +55,13 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
     ]
 
 
+    # eef_sim 配置
+    has_gripper = True
+    gripper_value_close = 0
+    gripper_value_open = 1
+
+
+
     action_arm_joint_lerobot_names= state_arm_joint_lerobot_names
     
      # gripper names allow not 1v1 assignment
@@ -63,11 +70,12 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
 
     state_gripper_lerobot_names: list[str] = [
         # left_hand
-        "left_gripper_width_m",
+        "left_gripper_open",
         # right hand
-        "right_gripper_width_m",
+        "right_gripper_open",
     ]
     action_gripper_lerobot_names = state_gripper_lerobot_names
 
     def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
         return []
+    

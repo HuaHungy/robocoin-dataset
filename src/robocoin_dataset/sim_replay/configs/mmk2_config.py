@@ -202,15 +202,15 @@ class Mmk2LerobotSimReplayConfig(LerobotSimReplayConfig):
         "right_hand_joint_12_rad",
     ]
 
-    gripper_position_max = 100
-    gripper_position_min = 0
-    gripper_mjcf_joint_max = 0.05
-    gripper_mjcf_joint_min = 0
+    # gripper_position_max = 100
+    # gripper_position_min = 0
+    # gripper_mjcf_joint_max = 0.05
+    # gripper_mjcf_joint_min = 0
 
     # eef_sim 配置
-    has_gripper = True
-    gripper_value_open = gripper_position_max
-    gripper_value_close = gripper_position_min
+    has_gripper = False
+    # gripper_value_open = gripper_position_max
+    # gripper_value_close = gripper_position_min
 
     def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
         return []

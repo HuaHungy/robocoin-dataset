@@ -1,6 +1,4 @@
-import json
 import logging
-import pickle
 import traceback
 from collections import defaultdict
 from pathlib import Path
@@ -252,18 +250,27 @@ def _build_episode_summary(
         video_scores = {}
 
     # 假设所有 score 列表长度一致，取其一作为总 episode 数
-    num_episodes = len(state_data_scores)
 
     # 构建字典
-    episode_summary = {}
-    for episode_idx in range(num_episodes):
-        episode_summary[episode_idx] = {
-            "is_bad": episode_idx in bad_set,
-            "state_data_score": state_data_scores.get(episode_idx, 1),
-            "action_data_score": action_data_scores.get(episode_idx, 1),
-            "video_score": video_scores.get(episode_idx, 1),
-        }
-
+    episode_summary = defaultdict(dict)
+    for episode_idx in bad_data_episodes:
+        episode_summary[episode_idx].update(
+            {
+                "is_bad": 1,
+                "state_data_score": state_data_scores.get(episode_idx, 0),
+                "action_data_score": action_data_scores.get(episode_idx, 0),
+                "video_score": video_scores.get(episode_idx, 1),
+            }
+        )
+    for episode_idx in state_data_scores.keys():
+        episode_summary[episode_idx].update(
+            {
+                "is_bad": episode_idx in bad_set,
+                "state_data_score": state_data_scores.get(episode_idx, 0),
+                "action_data_score": action_data_scores.get(episode_idx, 0),
+                "video_score": video_scores.get(episode_idx, 1),
+            }
+        )
     return episode_summary
 
 
@@ -344,7 +351,6 @@ class DatasetQualityCheck:
                 _gen_one_dataset_quality_check_task_without_sync(session=session)
             )
 
-        input("1, Press Enter to continue...")
         if not dataset_uuid:
             return
 
@@ -353,39 +359,28 @@ class DatasetQualityCheck:
             device_model_version,
             self.qc_config_path,
         )
-        print(checker_config)
 
         try:
-            input("2, Press Enter to continue...")
             qc_results, details = quality_check_pipeline(repo_path, checker_config)
-            # print(qc_results)
-            with open("datas/qc_results.pkl", "wb") as f:
-                pickle.dump(qc_results, f)
-            with open("datas/qc_results.pkl", "rb") as f:
-                qc_results = pickle.load(f)
-            input("3, Press Enter to continue...")
-            with open("datas/details.json", "w") as f:
-                json.dump(details, f)
-
             bad_episodes, state_data_scores, action_data_scores, video_scores = (
-                qc_results.get("bad_data_episodes", None),
-                qc_results.get("state_data_scores", None),
-                qc_results.get("action_data_scores", None),
-                qc_results.get("video_scores", None),
+                qc_results.get("bad_data_episodes", []),
+                qc_results.get("state_data_scores", {}),
+                qc_results.get("action_data_scores", {}),
+                qc_results.get("video_scores", {}),
             )
 
+            print(
+                len(bad_episodes),
+                len(state_data_scores),
+                len(action_data_scores),
+            )
             qc_results_summary = _build_episode_summary(
                 bad_episodes,
                 state_data_scores=state_data_scores,
                 action_data_scores=action_data_scores,
                 video_scores=video_scores,
             )
-            input("4, Press Enter to continue...")
-            with open("datas/qc_results_summary.pkl", "wb") as f:
-                pickle.dump(qc_results_summary, f)
 
-            with open("datas/qc_results_summary.pkl", "rb") as f:
-                qc_results_summary = pickle.load(f)
             with self.db.with_session() as session:
                 item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
@@ -417,7 +412,7 @@ class DatasetQualityCheck:
                 else:
                     return
                 session.commit()
-            print(traceback.format_exc())
+            self.logger.info(traceback.format_exc())
 
 
 class DatasetQualityCheckServer(TaskServer):

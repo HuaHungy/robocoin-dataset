@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 # For gripper value visualization
+import asyncio
 import matplotlib.pyplot as plt
 import yaml
 from sqlalchemy.orm import Session
@@ -20,6 +21,9 @@ from robocoin_dataset.distribution_computation.constant import (
     ERR_MSG,
     TASK_RESULT_STATUS,
     TASK_SUCCESS,
+    TASK_FAILED,
+    TASK_RESULT_CONTENT,
+    TASK_ID,
 )
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.distribution_computation.task_server import TaskServer
@@ -199,9 +203,11 @@ def plot_gripper_values(gripper_values, title="Gripper Values"):
 def _sim_replay_dataset(
     repo_path: str | Path,
     sim_replay_config: LerobotSimReplayConfig,
+    episode_idx: int = 0,
 ) -> None:
     if sim_replay_config is None:
         raise ValueError("sim_replay_config_class is None")
+    
 
     simulator = LerobotSimReplayer(sim_replay_config, repo_path)
 
@@ -221,7 +227,8 @@ def _sim_replay_dataset(
 
             # 假设有两个gripper：gripper_left 和 gripper_right
             gripper_names = ["gripper_left", "gripper_right"]
-            gripper_colors = ["green", "red"]  # gripper_left用绿色，gripper_right用红色
+            # 使用6种分明的颜色，适用于所有维度
+            distinct_colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c']
 
             # 检测每个gripper的子数据数量
             total_grippers = arr.shape[1]
@@ -239,36 +246,32 @@ def _sim_replay_dataset(
                 fig, ax_sub = plt.subplots(figsize=(10, 6))
                 fig.suptitle(f"{gripper_name} Values")
 
-                # 在这个窗口中绘制该gripper的所有子数据，使用相同颜色
+                # 在这个窗口中绘制该gripper的所有子数据，使用不同颜色
                 gripper_lines = []
                 start_idx = gripper_idx * grippers_per_side
                 end_idx = min(start_idx + grippers_per_side, total_grippers)
 
-                base_color = gripper_colors[gripper_idx]  # 使用gripper对应的基础颜色
-
                 for sub_idx in range(start_idx, end_idx):
                     local_sub_idx = sub_idx - start_idx
                     label = f"{gripper_name}_{local_sub_idx}"
-                    (line,) = ax_sub.plot(arr[:, sub_idx], color=base_color, label=label)
+                    # 使用6种分明的颜色，循环使用
+                    color = distinct_colors[local_sub_idx % len(distinct_colors)]
+                    (line,) = ax_sub.plot(arr[:, sub_idx], color=color, label=label)
                     gripper_lines.append(line)
 
                 ax_sub.set_xlabel("Step")
                 ax_sub.set_ylabel("Gripper Value")
-                # 确定该窗口的 y 轴上下界：优先使用当前数据范围并添加边距，
-                # 如果需要也可以在 sim replay 配置类中暴露固定范围（以后可扩展）。
+                # 确定该窗口的 y 轴上下界：
+                # 1. 如果 has_gripper=True 且配置了固定范围，使用固定范围（y轴不动态变化）
+                # 2. 如果 has_gripper=False 或未配置固定范围，使用动态范围（y轴动态变化）
+                use_dynamic_ylim = True  # 默认使用动态y轴
                 try:
-                    # 优先使用 sim_replay_config.has_gripper 来判定是否使用配置中的固定上下界。
-                    # 兼容性：如果没有 has_gripper 字段，再回退到检查 state_gripper_joint_mjcf_names
+                    # 检查 has_gripper 属性
                     has_gripper_attr = getattr(sim_replay_config, "has_gripper", None)
-                    if has_gripper_attr is None:
-                        cfg_has_gripper = bool(
-                            getattr(sim_replay_config, "state_gripper_joint_mjcf_names", None)
-                        )
-                    else:
-                        cfg_has_gripper = bool(has_gripper_attr)
-
+                    
+                    # 如果 has_gripper 明确为 True 且配置了固定范围，则使用固定范围
                     if (
-                        cfg_has_gripper
+                        has_gripper_attr is True
                         and hasattr(sim_replay_config, "gripper_value_close")
                         and hasattr(sim_replay_config, "gripper_value_open")
                     ):
@@ -277,6 +280,7 @@ def _sim_replay_dataset(
                         # 保证 ymin <= ymax
                         if ymin > ymax:
                             ymin, ymax = ymax, ymin
+                        use_dynamic_ylim = False  # 使用固定y轴
                     else:
                         # 动态范围：根据当前数据计算 min/max 并添加边距
                         col = arr[:, start_idx:end_idx]
@@ -289,13 +293,18 @@ def _sim_replay_dataset(
                             margin = (vmax - vmin) * 0.1
                         ymin = vmin - margin
                         ymax = vmax + margin
+                        use_dynamic_ylim = True  # 使用动态y轴
                 except Exception:
                     ymin, ymax = -0.1, 1.1
+                    use_dynamic_ylim = False
+                    
                 ax_sub.set_ylim(ymin, ymax)
-                # 记录初始 ylim，后续更新时保持不变以避免缩放抖动
+                # 记录初始 ylim 和是否使用动态y轴
                 if not hasattr(gripper_plot_callback, "ylims"):
                     gripper_plot_callback.ylims = []
+                    gripper_plot_callback.use_dynamic_ylims = []
                 gripper_plot_callback.ylims.append((ymin, ymax))
+                gripper_plot_callback.use_dynamic_ylims.append(use_dynamic_ylim)
                 ax_sub.legend()
                 ax_sub.grid(True, alpha=0.3)
 
@@ -312,29 +321,70 @@ def _sim_replay_dataset(
             # 将创建的lines返回给调用者
             lines.extend(gripper_plot_callback.lines)
         else:
-            # 更新现有的线条数据（只对 x 轴 做 autoscale，y 轴保持固定范围）
+            # 更新现有的线条数据
             for i, line in enumerate(gripper_plot_callback.lines):
                 if i < arr.shape[1]:
                     line.set_ydata(arr[:, i])
                     line.set_xdata(np.arange(arr.shape[0]))
 
-            # 对每个 axes 重新计算数据范围但仅自动缩放 x 轴，y 轴使用创建时记录的固定范围
+            # 对每个 axes 重新计算数据范围
             for idx, ax_sub in enumerate(gripper_plot_callback.axes):
+                # 检查是否使用动态y轴
+                use_dynamic = False
+                if hasattr(gripper_plot_callback, "use_dynamic_ylims") and idx < len(
+                    gripper_plot_callback.use_dynamic_ylims
+                ):
+                    use_dynamic = gripper_plot_callback.use_dynamic_ylims[idx]
+                
                 # 先重新计算数据边界
                 try:
                     ax_sub.relim()
-                    # 仅对 x 轴自动缩放，保持 y 轴不变
-                    ax_sub.autoscale_view(scalex=True, scaley=False)
-                except Exception:
-                    # 如果 relim/autoscale 失败，忽略并继续（保持之前的显示）
+                    
+                    if use_dynamic:
+                        # 动态y轴：手动计算当前数据的y轴范围
+                        # 获取该窗口对应的数据列范围
+                        gripper_names = ["gripper_left", "gripper_right"]
+                        total_grippers = arr.shape[1]
+                        grippers_per_side = (
+                            total_grippers // 2 if total_grippers % 2 == 0 else (total_grippers + 1) // 2
+                        )
+                        
+                        start_idx = idx * grippers_per_side
+                        end_idx = min(start_idx + grippers_per_side, total_grippers)
+                        
+                        # 计算这些列的数据范围
+                        col = arr[:, start_idx:end_idx]
+                        vmin = float(col.min())
+                        vmax = float(col.max())
+                        
+                        # 添加边距
+                        if vmin == vmax:
+                            margin = max(abs(vmin) * 0.1, 0.01)
+                        else:
+                            margin = (vmax - vmin) * 0.1
+                        
+                        ymin = vmin - margin
+                        ymax = vmax + margin
+                        
+                        # 设置新的y轴范围
+                        ax_sub.set_ylim(ymin, ymax)
+                        # 只自动缩放x轴
+                        ax_sub.autoscale_view(scalex=True, scaley=False)
+                    else:
+                        # 固定y轴：仅对 x 轴自动缩放，保持 y 轴不变
+                        ax_sub.autoscale_view(scalex=True, scaley=False)
+                        # 恢复初始 ylim 以保证固定上下界
+                        if hasattr(gripper_plot_callback, "ylims") and idx < len(
+                            gripper_plot_callback.ylims
+                        ):
+                            ymin, ymax = gripper_plot_callback.ylims[idx]
+                            ax_sub.set_ylim(ymin, ymax)
+                except Exception as e:
+                    # 如果计算失败，忽略并继续（保持之前的显示）
+                    import traceback
+                    print(f"[Gripper可视化] 更新axes {idx} 时出错: {e}")
+                    traceback.print_exc()
                     pass
-
-                # 恢复每个axes的初始 ylim（如果存在）以保证固定上下界
-                if hasattr(gripper_plot_callback, "ylims") and idx < len(
-                    gripper_plot_callback.ylims
-                ):
-                    ymin, ymax = gripper_plot_callback.ylims[idx]
-                    ax_sub.set_ylim(ymin, ymax)
 
             # 请求界面重绘
             for fig in gripper_plot_callback.figs:
@@ -361,21 +411,15 @@ def _sim_replay_dataset(
         # 预创建图表窗口（读取第一帧数据来初始化窗口）
         print("[数据集回放] 正在初始化可视化图表窗口...")
         
-        # 检查配置中是否启用了gripper
-        has_gripper_attr = getattr(sim_replay_config, "has_gripper", None)
-        if has_gripper_attr is None:
-            cfg_has_gripper = bool(getattr(sim_replay_config, "state_gripper_joint_mjcf_names", None))
-        else:
-            cfg_has_gripper = bool(has_gripper_attr)
-        
-        # 进一步检查mjcf配置中的gripper关节名称是否非空
-        mjcf_gripper_names = getattr(sim_replay_config, "state_gripper_joint_mjcf_names", [])
-        cfg_has_gripper = cfg_has_gripper and len(mjcf_gripper_names) > 0
+        # 检查是否有gripper字段：只要 state_gripper_lerobot_names 有字段就启用绘图
+        mjcf_gripper_names = getattr(sim_replay_config, "state_gripper_lerobot_names", [])
+        cfg_has_gripper = len(mjcf_gripper_names) > 0
         
         if cfg_has_gripper:
-            print(f"[数据集回放] 配置中启用了gripper，MJCF gripper关节数量: {len(mjcf_gripper_names)}")
+            has_gripper_attr = getattr(sim_replay_config, "has_gripper", None)
+            print(f"[数据集回放] 检测到gripper字段，数量: {len(mjcf_gripper_names)}, has_gripper={has_gripper_attr}")
         else:
-            print("[数据集回放] 配置中未启用gripper或gripper关节为空，跳过图表窗口创建")
+            print("[数据集回放] 未检测到gripper字段，跳过图表窗口创建")
         
         try:
             # 只有当配置启用了gripper时才尝试创建图表
@@ -419,7 +463,7 @@ def _sim_replay_dataset(
             try:
                 print("[State Replay] 开始播放状态数据...")
                 simulator.replay_episode(
-                    0,
+                    episode_idx,
                     is_state=True,
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
@@ -462,7 +506,7 @@ def _sim_replay_dataset(
             try:
                 print("[Action Replay] 开始播放动作数据...")
                 simulator.replay_episode(
-                    0,
+                    episode_idx,
                     is_state=False,
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
@@ -520,6 +564,8 @@ def _sim_replay_dataset(
                 delattr(gripper_plot_callback, "lines")
             if hasattr(gripper_plot_callback, "ylims"):
                 delattr(gripper_plot_callback, "ylims")
+            if hasattr(gripper_plot_callback, "use_dynamic_ylims"):
+                delattr(gripper_plot_callback, "use_dynamic_ylims")
             print("[数据集回放] 图表窗口已关闭")
         except Exception as e:
             print(f"[数据集回放] 关闭图表窗口时出现错误: {e}")
@@ -739,21 +785,39 @@ class SimReplayClient(TaskClient):
         return {}
 
     def _sync_process_task(self, task_content: dict) -> dict:
+        repo_path = task_content.get(LEFORMAT_PATH)
+        sim_replay_config_module_path = task_content.get(SIM_REPLAY_CONFIG_MODULE_PATH)
+        sim_replay_config_class_name = task_content.get(SIM_REPLAY_CONFIG_CLASS_NAME)
+
+        sim_replay_config_class = importlib.import_module(
+            sim_replay_config_module_path
+        ).__getattribute__(sim_replay_config_class_name)
+
+        _sim_replay_dataset(
+            repo_path=repo_path,
+            sim_replay_config=sim_replay_config_class(),
+        )
+        print(f"sim replay dataset {repo_path} succeeded")
+
+        return {}
+
+    async def process_task(self, task_data: dict) -> dict:
+        """覆盖父类的 process_task 方法，只保存错误消息，不包含 traceback"""
+        loop = asyncio.get_event_loop()
+        task_id = task_data.get(TASK_ID)
         try:
-            repo_path = task_content.get(LEFORMAT_PATH)
-            sim_replay_config_module_path = task_content.get(SIM_REPLAY_CONFIG_MODULE_PATH)
-            sim_replay_config_class_name = task_content.get(SIM_REPLAY_CONFIG_CLASS_NAME)
-
-            sim_replay_config_class = importlib.import_module(
-                sim_replay_config_module_path
-            ).__getattribute__(sim_replay_config_class_name)
-
-            _sim_replay_dataset(
-                repo_path=repo_path,
-                sim_replay_config=sim_replay_config_class(),
+            task_result_content = await loop.run_in_executor(
+                None, self._sync_process_task, task_data
             )
-            print(f"sim replay dataset {repo_path} succeeded")
-
-            return {}
+            return {TASK_RESULT_STATUS: TASK_SUCCESS, TASK_RESULT_CONTENT: task_result_content}
         except Exception as e:
-            raise RuntimeError(f"sim replay dataset {repo_path} failed") from e
+            # 只保存错误消息本身，不包含 traceback，与 SimReplay 的行为一致
+            error_msg = str(e)
+            if self.logger:
+                self.logger.error(f"Task {task_id} failed: {error_msg}")
+            return {
+                TASK_RESULT_STATUS: TASK_FAILED,
+                ERR_MSG: error_msg,
+                TASK_RESULT_CONTENT: {},
+            }
+
