@@ -46,9 +46,12 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         failure_threshold: float = 0.8,
         auto_reencode: bool = False,
     ) -> None:
-        # 🚀 在super().__init__之前初始化，因为父类会调用_get_all_episode_dirs
+        # 🚀 在super().__init__之前初始化，因为父类会调用_get_all_episode_dirs和_get_frame_image
         self._episode_locator = UnifiedEpisodeLocator(logger=logger)
         self._auto_reencode = auto_reencode  # 🎬 自动重编码标志
+        # 🆕 时间戳对齐相关（必须在super().__init__之前初始化，因为父类初始化时会访问）
+        self._alignment_maps = {}  # 对齐映射表缓存 {(task_path, ep_idx): alignment_maps}
+        self._reference_camera = {}  # 基准相机缓存 {(task_path, ep_idx): reference_camera_key}
         
         super().__init__(
             dataset_path=dataset_path,
@@ -65,9 +68,6 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         )
         self._json_data_cache = {}  # 缓存JSON数据
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
-        # 🆕 时间戳对齐相关
-        self._alignment_maps = {}  # 对齐映射表缓存 {(task_path, ep_idx): alignment_maps}
-        self._reference_camera = {}  # 基准相机缓存 {(task_path, ep_idx): reference_camera_key}
 
     def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志
