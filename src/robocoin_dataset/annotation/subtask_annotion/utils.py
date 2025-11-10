@@ -4,7 +4,6 @@ import pickle
 import re
 import subprocess
 import tempfile
-from collections import defaultdict
 from pathlib import Path
 
 import av
@@ -197,26 +196,28 @@ def compute_video_hash(video_path: str | Path) -> tuple[str, int, str]:
     file_hash = compute_sha256(video_path)
     frame_num = get_frame_num(video_path=video_path)
 
-    image_frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
+    # image_frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
+    image_frame_indices = [0]
     phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
         video_path=video_path, frame_indices=image_frame_indices
     )
-    serialized_phashes = pickle.dumps(phashes)
-    serialized_phashes = base64.b64encode(serialized_phashes).decode("ascii")
+    phash = phashes[0]
+    serialized_phash = pickle.dumps(phash)
+    serialized_phash = base64.b64encode(serialized_phash).decode("ascii")
 
-    return file_hash, frame_num, serialized_phashes
+    return file_hash, frame_num, serialized_phash
 
 
-def sort_video_imagehashes_from_frame_num(
-    video_imagehashes: dict[int, list[imagehash.ImageHash]],
-    frame_num_dict: dict[int, int],
-) -> dict[int, list[tuple[int, list[imagehash.ImageHash]]]]:
-    result = defaultdict(list)
-    for idx, frame_num in frame_num_dict.items():
-        if idx in video_imagehashes:
-            result[frame_num].append((idx, video_imagehashes[idx]))
+# def sort_video_imagehashes_from_frame_num(
+#     video_imagehashes: dict[int, list[imagehash.ImageHash]],
+#     frame_num_dict: dict[int, int],
+# ) -> dict[int, list[tuple[int, list[imagehash.ImageHash]]]]:
+#     result = defaultdict(list)
+#     for idx, frame_num in frame_num_dict.items():
+#         if idx in video_imagehashes:
+#             result[frame_num].append((idx, video_imagehashes[idx]))
 
-    return dict(result)
+#     return dict(result)
 
 
 def match_video_file_hash(hash: str, file_hash_lib: dict[str, int]) -> int | None:
@@ -228,39 +229,35 @@ def match_video_file_hash(hash: str, file_hash_lib: dict[str, int]) -> int | Non
 def match_video_image_hashes(
     frame_num: int,
     image_phashes: list[imagehash.ImageHash],
-    video_image_phashes_lib: dict[int, list[tuple[int, list[imagehash.ImageHash]]]],
+    video_image_phashes_lib: dict[int, dict[int, imagehash.ImageHash]],
+    win_size: int = 1,
     threashold: float = 0.95,
 ) -> int | None:
     if frame_num not in video_image_phashes_lib:
         return None
 
-    min_avg_dist = 1
-    matched_id = None
+    frame_num_scope = range(frame_num - win_size, frame_num + win_size + 1)
 
-    for item in video_image_phashes_lib[frame_num]:
-        id = item[0]
-        phashes = item[1]
-        if len(image_phashes) != len(phashes):
+    phashes: dict[int, imagehash.ImageHash] = {}
+    for frame_num_in_scope in frame_num_scope:
+        if frame_num_in_scope not in video_image_phashes_lib:
             continue
+        phashes = phashes | video_image_phashes_lib[frame_num_in_scope]
 
-        dist = 0
-        hash_num = 0
+    min_dist = float("inf")
+    matched_id = None
+    for image_phash in image_phashes:
+        for url_idx, phash in phashes.items():
+            dist = (image_phash - phash) / len(phash)
+            if dist < min_dist:
+                min_dist = dist
+                matched_id = url_idx
         for s_phash, t_phash in zip(image_phashes, phashes):
             if s_phash is None or t_phash is None:
                 continue
             dist += (s_phash - t_phash) / len(t_phash)
-            hash_num += 1
 
-        if hash_num == 0:
-            continue
-        avg_dist = dist / hash_num
-        if avg_dist < min_avg_dist:
-            min_avg_dist = avg_dist
-            matched_id = id
-
-    if matched_id is None:
-        return None
-    if 1 - min_avg_dist < threashold:
+    if min_dist > threashold:
         return None
 
     return matched_id

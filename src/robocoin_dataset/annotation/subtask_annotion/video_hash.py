@@ -83,8 +83,8 @@ def compute_dataset_video_hashes(
     for video_path, ep_idx in tqdm.tqdm(
         video_paths.items(), desc="Compute Video Hash", unit="video"
     ):
-        file_hash, frame_num, serialized_phashes = compute_video_hash(video_path)
-        results[str(video_path)] = (ep_idx, frame_num, file_hash, serialized_phashes)
+        file_hash, frame_num, serialized_image_phash = compute_video_hash(video_path)
+        results[str(video_path)] = (ep_idx, frame_num, file_hash, serialized_image_phash)
 
     return results
 
