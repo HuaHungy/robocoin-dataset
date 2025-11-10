@@ -1,12 +1,9 @@
-"""Orchestration layer for dataloader detection tasks.
+"""Client component for distributed dataloader detection tasks.
 
-This module provides high-level orchestration for:
-- Server/client architecture for distributed processing
-- Multi-client task distribution and execution
-- Asynchronous client task processing
-
-Core utilities, database operations, and business logic are in dataloader_utils.py.
-This module focuses solely on assembling and coordinating those components.
+This module provides the client-side execution for:
+- Connecting to the server and requesting tasks
+- Running detection on assigned datasets
+- Multi-client process management
 """
 
 import asyncio
@@ -15,213 +12,20 @@ import multiprocessing as mp
 import time
 from pathlib import Path
 
-from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import DatasetDB, TaskStatus
-from robocoin_dataset.dataloader.dataloader_utils import (
-    TASK_CATEGORY,
-    LeRobotDataset,
-    MultiEpisodeSampler,
-    _gen_one_dataloader_detection_task,
-    _parse_episode_specification,
-    _run_detection,
-    _sync_dataloader_detection_tasks,
-    create_episode_dataloader,
-    create_lerobot_dataset,
-    run_local_batch_detection,
-)
+from robocoin_dataset.dataloader.dataloader_utils import _run_detection
 from robocoin_dataset.distribution_computation.constant import (
     CLIENT_ID,
-    DATASET_UUID,
     MSG_CONTENT,
     MSG_TYPE,
-    TASK_FAILED,
     TASK_ID,
     TASK_RESULT,
-    TASK_RESULT_CONTENT,
     TASK_RESULT_STATUS,
     TASK_SUCCESS,
 )
 from robocoin_dataset.distribution_computation.task_client import TaskClient
-from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import LEFORMAT_PATH
-from robocoin_dataset.hardlink.prepare_hardlink import (
-    prepare_hardlink_for_task,
-    query_existing_hardlink,
-    update_hardlink_path,
-)
-from robocoin_dataset.hardlink.validate_hardlink import (
-    create_or_validate_hardlinks,
-    validate_source_for_lerobot,
-)
 
-# =============================
-# Server Components
-# =============================
-
-
-class DataloaderDbServer(TaskServer):
-    """Task distribution server for dataloader detection."""
-
-    def __init__(
-        self,
-        db_file_path: str | Path,
-        summary_logger: logging.Logger,
-        host: str = "0.0.0.0",
-        port: int = 2100,
-        heartbeat_interval: float = 30.0,
-        timeout: float = 15.0,
-        logger: logging.Logger | None = None,
-        episodes: str = "all",
-        sample_ratio: float = 0.1,
-        batch_size: int = 32,
-        num_workers: int = 0,
-    ) -> None:
-        super().__init__(
-            logger=logger,
-            host=host,
-            port=port,
-            heartbeat_interval=heartbeat_interval,
-            timeout=timeout,
-        )
-
-        if not db_file_path:
-            raise ValueError("db_file_path is required and cannot be None or empty")
-
-        self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
-
-        if not self.db_file_path.exists():
-            raise FileNotFoundError(f"Database file not found: {self.db_file_path}")
-        if not self.db_file_path.is_file():
-            raise ValueError(f"Database path is not a file: {self.db_file_path}")
-
-        self.db = DatasetDatabase(self.db_file_path)
-        self.logger = logger or logging.getLogger(__name__)
-        self.summary_logger = summary_logger
-
-        # Store detection configuration
-        self.episodes = episodes
-        self.sample_ratio = sample_ratio
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-
-    def get_task_category(self) -> str:
-        return TASK_CATEGORY
-
-    def generate_task_content(self) -> dict | None:
-        # Retry loop: continue until we find a valid task or run out of tasks
-        # This ensures that hardlink preparation failures don't stop processing
-        max_retries = 100  # Safety limit to prevent infinite loops
-        attempt = 0
-
-        while attempt < max_retries:
-            attempt += 1
-
-            # Step 1: Sync and claim task (with DB session)
-            with self.db.with_session() as session:
-                # pre-sync queue (only on first attempt to avoid redundant syncs)
-                if attempt == 1:
-                    _sync_dataloader_detection_tasks(session, logger=self.logger)
-
-                # claim one
-                dataset_uuid, convert_path = _gen_one_dataloader_detection_task(session)
-                if dataset_uuid is None:
-                    return None
-
-            # Step 2: Prepare hardlinks using the centralized helper function
-            try:
-                test_path = prepare_hardlink_for_task(
-                    self.db, dataset_uuid, convert_path, hardlink_target_dir=None
-                )
-                self.logger.info(f"Prepared dataset path for client: {test_path}")
-
-                # Success! Return the task
-                return {
-                    DATASET_UUID: dataset_uuid,
-                    LEFORMAT_PATH: str(test_path),  # Send hardlink path to client
-                    "episodes": self.episodes,
-                    "sample_ratio": self.sample_ratio,
-                    "batch_size": self.batch_size,
-                    "num_workers": self.num_workers,
-                }
-
-            except Exception as e:
-                # Hardlink preparation failed - mark as failed and try next task
-                err_msg = f"Hardlink preparation failed: {e}"
-                self.logger.error(f"❌ {dataset_uuid}: {err_msg}")
-
-                with self.db.with_session() as session:
-                    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-                    if item:
-                        item.data_loader_detection_status = TaskStatus.FAILED
-                        item.data_loader_detection_err_msg = err_msg
-                        session.commit()
-
-                # Log to summary
-                self.summary_logger.info(f"❌ {dataset_uuid}: {err_msg}")
-
-                # Continue to next iteration to try another task
-                self.logger.info("Attempting to fetch next task...")
-                continue
-
-        # Safety: should never reach here unless we hit max_retries
-        self.logger.warning(f"Reached max retry limit ({max_retries}) in generate_task_content")
-        return None
-
-    def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
-        """Handle task result from client and update database."""
-        ds_uuid = task_content.get(DATASET_UUID)
-        # Client execution state: did the client process crash/throw exception?
-        client_execution_status = task_result_content.get(TASK_RESULT_STATUS)
-
-        # Level 1: Check if client crashed (process-level failure)
-        if client_execution_status == TASK_FAILED:
-            db_status = TaskStatus.FAILED
-            db_error_message = task_result_content.get("err_msg", "Client execution failed")
-        else:
-            # Level 2: Client executed successfully, check dataset validation result (business-level)
-            dataset_validation_result = task_result_content.get(TASK_RESULT_CONTENT, {})
-            dataset_validation_passed = dataset_validation_result.get("success", False)
-
-            if dataset_validation_passed:
-                db_status = TaskStatus.COMPLETED
-                db_error_message = None
-            else:
-                db_status = TaskStatus.FAILED
-                db_error_message = dataset_validation_result.get(
-                    "error_summary", "Dataset validation failed"
-                )
-
-        with self.db.with_session() as session:
-            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
-            if item is None:
-                self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
-                return
-
-            item.data_loader_detection_status = db_status
-            if db_status == TaskStatus.COMPLETED:
-                # Version was already incremented when task was claimed
-                item.data_loader_detection_err_msg = None
-                # Log to summary
-                result = task_result_content.get(TASK_RESULT_CONTENT, {})
-                self.summary_logger.info(
-                    f"✅ {ds_uuid}: {result.get('total_frames_sampled', 0)} frames, "
-                    f"{result.get('total_time_s', 0):.2f}s, "
-                    f"{len(result.get('episodes_tested', []))} episodes, "
-                    f"backend={result.get('backend', 'unknown')}"
-                )
-            elif db_status == TaskStatus.FAILED:
-                item.data_loader_detection_err_msg = db_error_message
-                # Version was already incremented when task was claimed (not rolled back on failure)
-                self.summary_logger.info(f"❌ {ds_uuid}: {db_error_message}")
-            session.commit()
-            self.logger.info(
-                f"Upsert {item.convert_path} dataloader detection status to {db_status}, update_message: {db_error_message}"
-            )
-
-
-# =============================
-# Client Components
-# =============================
+TASK_CATEGORY = "dataloader_detection"
 
 
 class DataloaderDbClient(TaskClient):
@@ -247,7 +51,7 @@ class DataloaderDbClient(TaskClient):
     def generate_task_request_desc(self) -> dict:
         return {}
 
-    def _sync_process_task(self, task_content: dict) -> dict:
+    def _process_one_task(self, task_content: dict) -> dict:
         """Process a single task synchronously.
 
         Client receives the dataset path from server (already prepared with hardlinks).
@@ -276,7 +80,7 @@ class DataloaderDbClient(TaskClient):
         )
 
 
-async def run_client_async(
+async def run_one_client_async(
     server_uri: str, heartbeat_interval: float, logger: logging.Logger, tqdm_position: int = 0
 ) -> dict:
     """Run a single client that connects to server and processes tasks until none remain.
@@ -322,7 +126,7 @@ async def run_client_async(
             if logger:
                 logger.info(f"🚀 Starting to process task: {task.get(TASK_ID)}")
 
-            result_content = await client.process_task(task)
+            result_content = client._process_one_task(task)
             tasks_processed += 1
 
             # Check if task succeeded or failed
@@ -354,7 +158,7 @@ async def run_client_async(
     }
 
 
-def client_process_main(
+def run_one_client_process_main(
     server_uri: str,
     heartbeat_interval: float,
     log_dir: str | Path,
@@ -390,7 +194,7 @@ def client_process_main(
     # Run async client (use process_id as tqdm_position for multi-client progress bars)
     try:
         stats = asyncio.run(
-            run_client_async(
+            run_one_client_async(
                 server_uri=server_uri,
                 heartbeat_interval=heartbeat_interval,
                 logger=logger,
@@ -415,7 +219,7 @@ def client_process_main(
         return 1
 
 
-def run_multi_client(
+def run_multi_clients(
     server_uri: str,
     num_clients: int,
     heartbeat_interval: float,
@@ -452,7 +256,7 @@ def run_multi_client(
 
     for i in range(num_clients):
         proc = mp.Process(
-            target=client_process_main,
+            target=run_one_client_process_main,
             kwargs=dict(
                 server_uri=server_uri,
                 heartbeat_interval=heartbeat_interval,
@@ -468,7 +272,7 @@ def run_multi_client(
 
         # Add startup delay to avoid thundering herd
         if i < num_clients - 1:
-            time.sleep(0.1)
+            time.sleep(0.8)
 
     print(f"\n{'EXECUTION'}")
     print(f"  ⏳ Waiting for {num_clients} client(s) to complete...")
@@ -580,31 +384,10 @@ def run_multi_client(
     return 0 if total_tasks_failed == 0 else 1
 
 
-# =============================
-# Public API Exports
-# =============================
-
 __all__ = [
-    # Re-exported from dataloader_utils for convenience
-    "TASK_CATEGORY",
-    "LeRobotDataset",
-    "MultiEpisodeSampler",
-    "create_lerobot_dataset",
-    "create_episode_dataloader",
-    "run_local_batch_detection",
-    "_run_detection",
-    "_parse_episode_specification",
-    "_sync_dataloader_detection_tasks",
-    "_gen_one_dataloader_detection_task",
-    # Re-exported from hardlink modules for convenience
-    "query_existing_hardlink",
-    "update_hardlink_path",
-    "create_or_validate_hardlinks",
-    "validate_source_for_lerobot",
-    # Orchestration components (defined in this module)
-    "DataloaderDbServer",
     "DataloaderDbClient",
-    "run_client_async",
-    "client_process_main",
-    "run_multi_client",
+    "run_one_client_async",
+    "run_one_client_process_main",
+    "run_multi_clients",
+    "TASK_CATEGORY",
 ]

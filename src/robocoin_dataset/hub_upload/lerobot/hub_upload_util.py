@@ -117,7 +117,7 @@ class LocalDsUploadUtil(LocalDsUtil):
       f"Neither '{short_field_name}' nor '{long_field_name}' field exists in DatasetDB"
     )
 
-  def _upload_dataset(self, hardlink: str, commit_msg: str = "", max_retries: int = 3) -> bool:
+  def _upload_one_dataset(self, hardlink: str, commit_msg: str = "", max_retries: int = 3) -> bool:
     """
     Upload a single dataset to the remote hub according to the hardlink.
     local function without db.
@@ -363,7 +363,7 @@ class LocalDsUploadUtil(LocalDsUtil):
           # Upload from the already-validated hardlink folder
           # Pass the actual hardlink folder name (with _hardlink suffix)
           # _upload_dataset will automatically strip _hardlink for repo_id
-          success = self._upload_dataset(
+          success = self._upload_one_dataset(
             hardlink=hardlink_path.name  # e.g., "realman_rmc_aidal_only_test_fix_hardlink"
           )
 
