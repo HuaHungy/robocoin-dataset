@@ -76,3 +76,12 @@ python scripts/sim_replay/sim_replay.py \
     --device_model_version default_version \
     --log_dir ./logs/sim_replay
 """
+# galaxea
+"""
+python scripts/sim_replay/sim_replay.py \
+    --db_file_path /mnt/db/datasets.db \
+    --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
+    --device_model galaxea \
+    --device_model_version h5_mp4_version \
+    --log_dir ./logs/sim_replay
+"""

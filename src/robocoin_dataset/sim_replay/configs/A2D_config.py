@@ -5,10 +5,10 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 )
 
 
-class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
+class A2DLerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
-        / "mjcfs/galbot/robot_with_sites.xml"
+        / "mjcfs/A2D/G1_roh_roh_with_sites.xml"
     )
 
     # fixed
@@ -18,21 +18,21 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
     # joint_names should be 1 v 1 assignment
     state_arm_joint_mjcf_names: list[str] = [
         # left arm
-        "left_arm_joint1",
-        "left_arm_joint2",
-        "left_arm_joint3",
-        "left_arm_joint4",
-        "left_arm_joint5",
-        "left_arm_joint6",
-        "left_arm_joint7",
+        "idx21_arm_l_joint1",
+        "idx22_arm_l_joint2",
+        "idx23_arm_l_joint3",
+        "idx24_arm_l_joint4",
+        "idx25_arm_l_joint5",
+        "idx26_arm_l_joint6",
+        "idx27_arm_l_joint7",
         # right arm
-        "right_arm_joint1",
-        "right_arm_joint2",
-        "right_arm_joint3",
-        "right_arm_joint4",
-        "right_arm_joint5",
-        "right_arm_joint6",
-        "right_arm_joint7",
+        "idx61_arm_r_joint1",
+        "idx62_arm_r_joint2",
+        "idx63_arm_r_joint3",
+        "idx64_arm_r_joint4",
+        "idx65_arm_r_joint5",
+        "idx66_arm_r_joint6",
+        "idx67_arm_r_joint7",
     ]
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
@@ -55,13 +55,6 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
     ]
 
 
-    # eef_sim 配置
-    has_gripper = True
-    gripper_value_close = 0
-    gripper_value_open = 1
-
-
-
     action_arm_joint_lerobot_names= state_arm_joint_lerobot_names
     
      # gripper names allow not 1v1 assignment
@@ -69,13 +62,10 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
     state_gripper_lerobot_names: list[str] = [
-        # left_hand
         "left_gripper_open",
-        # right hand
         "right_gripper_open",
     ]
     action_gripper_lerobot_names = state_gripper_lerobot_names
 
     def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
         return []
-    

@@ -85,9 +85,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    visualize_dataset(
-        repo_path=args.repo_path,
-    )
+    visualize_dataset(repo_path=args.repo_path, episode_index=args.episode_index)
 
 
 if __name__ == "__main__":

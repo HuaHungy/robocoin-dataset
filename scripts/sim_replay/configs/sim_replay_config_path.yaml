@@ -1,3 +1,9 @@
+#a2d
+a2d:
+- version: default_version
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.A2D_config
+  mujoco_sim_replay_config_class: A2DLerobotSimReplayConfig
+
 # agilex_cobot_decoupled_magic
 agilex_cobot_decoupled_magic:
 - version: default_version

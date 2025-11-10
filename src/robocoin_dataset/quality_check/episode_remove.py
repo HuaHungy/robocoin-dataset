@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from 
+import tqdm
 
 from robocoin_dataset.utils.parquet_paths import get_parquet_paths
 from robocoin_dataset.utils.path_utils import (
@@ -37,10 +37,10 @@ def _remove_episode(
     _, input_info_file_path = get_meta_info_file_path(repo_path, input_feature)
     _, out_info_file_path = get_meta_info_file_path(repo_path, output_feature)
 
-    _, input_episodes_jsonl_path, _ = get_episodes_jsonl_file_paths(repo_path, input_feature)
+    input_episodes_jsonl_path, _ = get_episodes_jsonl_file_paths(repo_path, input_feature)
     _, out_episodes_jsonl_path = get_episodes_jsonl_file_paths(repo_path, output_feature)
 
-    _, input_episodes_stats_jsonl_path, _ = get_episodes_stats_jsonl_file_paths(
+    _, input_episodes_stats_jsonl_path = get_episodes_stats_jsonl_file_paths(
         repo_path, input_feature
     )
     _, out_episodes_stats_jsonl_path = get_episodes_stats_jsonl_file_paths(
@@ -60,12 +60,12 @@ def _remove_episode(
     sorted_episodes_frame_nums = sorted(episodes_frame_nums.items(), key=lambda x: x[0])
     episodes_frame_nums_list = [frame_num for _, frame_num in sorted_episodes_frame_nums]
 
-    prior_episodes_bad_frame_nums = [0]
+    qc_episodes_start_frame_indices = [0]
     for episode_id in range(len(episodes_frame_nums_list)):
-        prior_episodes_bad_frame_nums.extend(
-            frame_num
-            for idx, frame_num in enumerate(episodes_frame_nums_list)
-            if idx in bad_episodes
+        if episode_id in bad_episodes:
+            continue
+        qc_episodes_start_frame_indices.append(
+            qc_episodes_start_frame_indices[-1] + episodes_frame_nums_list[episode_id]
         )
 
     out_total_frames = sum(
@@ -94,7 +94,7 @@ def _remove_episode(
         repo_path=repo_path,
         input_parquet_paths=input_parquet_paths,
         bad_episodes=bad_episodes,
-        prior_episodes_bad_frame_nums=prior_episodes_bad_frame_nums,
+        qc_episodes_start_frame_indices=qc_episodes_start_frame_indices,
         chunk_size=chunks_size,
         output_feature=output_feature,
     )
@@ -135,6 +135,7 @@ def _gen_output_episodes_jsonl_file(
     output_episodes_jsonl_path: Path,
     bad_episodes: set[int],
 ) -> None:
+    out_ep_idx = 0
     with open(
         input_episodes_jsonl_path,
     ) as f:
@@ -144,7 +145,9 @@ def _gen_output_episodes_jsonl_file(
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:
                     continue
+                data["episode_index"] = out_ep_idx
                 out_f.write(json.dumps(data) + "\n")
+                out_ep_idx += 1
 
 
 def _gen_output_episodes_stats_jsonl_file(
@@ -152,6 +155,7 @@ def _gen_output_episodes_stats_jsonl_file(
     output_episodes_stats_jsonl_path: Path,
     bad_episodes: set[int],
 ) -> None:
+    out_ep_idx = 0
     with open(
         input_episodes_stats_jsonl_path,
     ) as f:
@@ -161,14 +165,16 @@ def _gen_output_episodes_stats_jsonl_file(
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:
                     continue
+                data["episode_index"] = out_ep_idx
                 out_f.write(json.dumps(data) + "\n")
+                out_ep_idx += 1
 
 
 def _gen_output_parquet_files(
     repo_path: str | Path,
     input_parquet_paths: list[Path],
     bad_episodes: set[int],
-    prior_episodes_bad_frame_nums: list[int],
+    qc_episodes_start_frame_indices: list[int],
     chunk_size: int,
     output_feature: str,
 ) -> None:
@@ -180,19 +186,27 @@ def _gen_output_parquet_files(
         output_parquet_path = (
             repo_path
             / f"{output_feature}_data"
-            / f"chunk_{chunk_idx:03d}"
-            / f"episode_{out_ep_idx:06d}"
+            / f"chunk-{chunk_idx:03d}"
+            / f"episode_{out_ep_idx:06d}.parquet"
         )
         output_parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        return output_parquet_path
 
-    for ep_idx, input_parquet_path in enumerate(input_parquet_paths):
+    for ep_idx, input_parquet_path in tqdm.tqdm(
+        enumerate(input_parquet_paths),
+        total=len(input_parquet_paths),
+        desc="Generating output parquet files",
+        unit="episode",
+    ):
         if ep_idx in bad_episodes:
             continue
         df = pd.read_parquet(input_parquet_path)
         indices_data = np.array(df["index"].to_list(), dtype=int)
-
-        indices_data = indices_data - prior_episodes_bad_frame_nums[ep_idx]
+        indices_data = (
+            indices_data - indices_data[0] + qc_episodes_start_frame_indices[out_episode_idx]
+        )
         df["index"] = indices_data.tolist()
+        df["episode_index"] = out_episode_idx
         output_parquet_path = get_output_parquet_path(out_episode_idx)
         df.to_parquet(output_parquet_path, engine="pyarrow")
         out_episode_idx += 1
@@ -213,12 +227,13 @@ def _gen_video_path_matching_dict(
         for video_path in ep_video_paths:
             new_video_path = (
                 repo_path
-                / f"{output_feature}_videos"
-                / f"chunk_{chunk_idx:03d}"
+                / "videos"
+                / f"chunk-{chunk_idx:03d}"
                 / video_path.parent.name
                 / f"episode_{output_ep_idx:06d}.mp4"
             )
             results[str(video_path)] = str(new_video_path)
+        return results
 
     matching_dict = {}
 
@@ -228,14 +243,15 @@ def _gen_video_path_matching_dict(
             continue
 
         matching_dict.update(get_video_new_path(video_paths, out_episode_idx))
+        out_episode_idx += 1
 
     return matching_dict
 
-def _sync_remove_bad_episodes_tasks(
-    session: Session,
-    device_model: str | None = None,
-    device_model_version: str | None = None,
-) -> None:
 
-class RemoveBadEpisodes:
-    
+# def _sync_remove_bad_episodes_tasks(
+#     session: Session,
+#     device_model: str | None = None,
+#     device_model_version: str | None = None,
+# ) -> None:
+
+# class RemoveBadEpisodes:

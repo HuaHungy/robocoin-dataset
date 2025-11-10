@@ -255,9 +255,9 @@ python scripts/format_converters/tolerobot/convert2lerobot.py \
 
 
 python scripts/format_converters/tolerobot/convert2lerobot.py \
---dataset_path /mnt/nas/synnas/docker/test_dataset/source \
---output_path /mnt/nas/synnas/docker/test_dataset/target \
---device_model realman_rmc_aidal \
+--dataset_path ~/Desktop/action44 \
+--output_path ~/Desktop/output \
+--device_model discover_robotics_aitbot_mmk2 \
 --factory_config_path scripts/format_converters/tolerobot/configs/converter_factory_config.yaml \
 --repo_id robocoin/test \
 --log_dir ./outputs/lerobot_converter_test/test/logs \

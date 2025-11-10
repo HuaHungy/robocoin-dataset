@@ -170,7 +170,9 @@ class LeFormatConverterTaskServer(TaskServer):
                 if item is None:
                     return None
 
-                item.convert_test_version = item.convert_version + 1
+                # 兼容数据库旧数据：convert_version 可能为 None
+                base_version = item.convert_version if isinstance(item.convert_version, int) else 0
+                item.convert_test_version = base_version + 1
                 item.convert_test_status = TaskStatus.PROCESSING
 
             else:
@@ -198,8 +200,11 @@ class LeFormatConverterTaskServer(TaskServer):
                 if item is None:
                     return None
                 item.convert_status = TaskStatus.PROCESSING
-                item.convert_version_ps = item.convert_test_version
-                item.convert_version += 1
+                # 兼容数据库旧数据：convert_test_version / convert_version 可能为 None
+                test_version = item.convert_test_version if isinstance(item.convert_test_version, int) else 0
+                item.convert_version_ps = test_version
+                current_version = item.convert_version if isinstance(item.convert_version, int) else 0
+                item.convert_version = current_version + 1
 
             item.convert_path = str(
                 Path(self.convert_root_path) / f"{item.device_model}_{item.dataset_name}"
