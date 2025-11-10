@@ -54,8 +54,11 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
 
     # eef_sim 配置
     has_gripper = True
-    gripper_position_max = 1000
+    gripper_position_max = 130
     gripper_position_min = 0
+
+    gripper_value_open = gripper_position_max
+    gripper_value_close = gripper_position_min
 
     # gripper names allow not 1v1 assignment
     state_gripper_joint_mjcf_names: list[str] = []

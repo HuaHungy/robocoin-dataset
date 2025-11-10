@@ -158,6 +158,7 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
         # 这个方法现在由 process_episode_data 调用，逻辑已集中处理
         return ori_action_data
+    
     def get_modified_feature_names(self):
         return super().get_modified_feature_names()
 

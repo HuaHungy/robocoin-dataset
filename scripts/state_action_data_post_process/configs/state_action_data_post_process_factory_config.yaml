@@ -56,7 +56,7 @@ unitree_g1:
 
 - version: twocam_hand_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
-  post_processor_class: UnitreeG1Processor
+  post_processor_class: UnitreeG1ThreeFingerOutProcessor
 
 - version: dex3v1_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
@@ -102,4 +102,7 @@ yinhe:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.yinhe_processor
   post_processor_class: YinheProcessor
 
-  
+alpha_bot_2:
+- version: dual_arm_with_pose
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.alpha_bot_2_processor
+  post_processor_class: AlphaBot2Processor

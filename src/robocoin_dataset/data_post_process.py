@@ -122,8 +122,35 @@ class DataPostProcessorBase:
         json_dict["features"] = {}
         for feature_key, names in self.get_modified_feature_names().items():
             if names is not None:
+                # 确保 names 是一个列表
+                if not isinstance(names, list):
+                    raise ValueError(f"Feature names must be a list, got {type(names)} for '{feature_key}'")
+                
+                # 扁平化处理：如果列表中有嵌套列表，展开它们
+                flattened_names = []
+                for item in names:
+                    if isinstance(item, list):
+                        # 如果是列表，展开它
+                        flattened_names.extend(item)
+                    elif isinstance(item, str):
+                        # 如果是字符串，直接添加
+                        flattened_names.append(item)
+                    else:
+                        raise ValueError(
+                            f"Feature name in '{feature_key}' must be a string or list, "
+                            f"got {type(item)}: {item}"
+                        )
+                
+                # 使用扁平化后的列表
+                names = flattened_names
+                
+                # 检查是否有重复的名称
                 if len(names) != len(set(names)):
-                    raise ValueError(f"given feature names contain duplicated names: {names}")
+                    duplicates = [name for name in names if names.count(name) > 1]
+                    raise ValueError(
+                        f"Feature '{feature_key}' contains duplicated names: {set(duplicates)}"
+                    )
+            
             json_dict["features"][feature_key] = {}
             json_dict["features"][feature_key]["names"] = names
 
