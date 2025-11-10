@@ -1,3 +1,4 @@
+### fps by manual
 fps: 30
 features:
   observation:
@@ -198,4 +199,16 @@ features:
           field_name: position
           range_from: 0
           range_to: 7
+
+# 🆕 时间戳对齐配置：指定用于计算公共时间范围的数据流字段
+# 这些字段必须都包含timestamp，用于确定所有数据流的公共时间范围
+timestamp_alignment:
+  relevant_fields:
+    - camera_front_head_rgb
+    - camera_left_wrist
+    - camera_right_wrist
+    - state_left_arm_joint_position
+    - state_right_arm_joint_position
+    - state_left_arm_gripper_width
+    - state_right_arm_gripper_width
 
