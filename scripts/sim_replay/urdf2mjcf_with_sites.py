@@ -151,5 +151,5 @@ except Exception as e:
     exit(1)
 
 """usage:
-python scripts/sim_replay/urdf2mjcf_with_sites.py src/robocoin_dataset/sim_replay/configs/mjcfs/agilex_cobot_magic/aloha_new/aloha_new.urdf --left_eef_body_name fl_link6 --right_eef_body_name fr_link6
+python scripts/sim_replay/urdf2mjcf_with_sites.py /home/kemove/Downloads/G1_URDF_Roh/urdf/G1/G1_roh_roh.urdf --left_eef_body_name arm_l_end_link --right_eef_body_name arm_r_end_link
 """
