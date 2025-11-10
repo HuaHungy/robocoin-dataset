@@ -91,11 +91,14 @@ def construce_target_file(
         _logger.debug(f"Videos directory already exists: {videos_dir}")
 
     # 3-8. Main loop: sync -> generate task -> copy yaml -> copy & compress videos -> align video name -> mark completed
+    task_count = 0
     while True:
         # 3. Sync the task status
+        _logger.debug("Syncing page sync status...")
         _sync_page_sync_status(db, session, _logger)
 
         # 4. Generate one task
+        _logger.debug("Generating next task...")
         yaml_path, hardlink_path, dataset_uuid = _gen_one_page_sync_task(db)
 
         if yaml_path is None:
@@ -106,33 +109,46 @@ def construce_target_file(
             _logger.error("No dataset_uuid returned from task generation")
             continue
 
+        task_count += 1
+        _logger.info(f"Processing task {task_count}: dataset_uuid={dataset_uuid}")
+        _logger.debug(f"  yaml_path: {yaml_path}")
+        _logger.debug(f"  hardlink_path: {hardlink_path}")
+
         try:
             # 5. Copy yaml
+            _logger.debug(f"Getting dataset name for {dataset_uuid}...")
             dataset_name = _get_dataset_name(db)
             if not dataset_name:
                 _logger.error(f"Failed to get dataset name for dataset {dataset_uuid}")
                 _mark_task_failed(db, dataset_uuid)
                 continue
 
+            _logger.info(f"Dataset name: {dataset_name}")
             yaml_dst = dataset_info_dir / f"{dataset_name}.yml"
+
+            _logger.debug(f"Copying YAML from {yaml_path} to {yaml_dst}...")
             _copy_yaml_file_from_db(yaml_path, str(yaml_dst))
             _logger.info(f"Copied YAML file to {yaml_dst}")
 
             # 6. Copy and compress videos
             if hardlink_path:
+                _logger.debug(f"Sampling video from hardlink path: {hardlink_path}...")
                 sampled_video_path = _sample_one_video_path(hardlink_path)
                 if not sampled_video_path:
                     _logger.error(f"Failed to sample video from {hardlink_path}")
                     _mark_task_failed(db, dataset_uuid)
                     continue
 
+                _logger.info(f"Sampled video: {sampled_video_path}")
+                _logger.debug(f"Starting video compression (target: {target_size_kb}KB)...")
                 _compress_video_to_dst(sampled_video_path, str(videos_dir), target_size_kb)
                 _logger.info(f"Compressed video from {sampled_video_path} into {videos_dir}")
 
                 # 7. Alighment-Rename videos
+                _logger.debug("Aligning video name with dataset name...")
                 compressed_video_name = Path(sampled_video_path).name
                 compressed_video_path = videos_dir / compressed_video_name
-                _align_video_name_with_yaml(str(compressed_video_path), dataset_name)
+                _align_video_name_with_yaml(str(yaml_dst), str(compressed_video_path), dataset_name)
                 _logger.info(f"Aligned video name to {dataset_name}")
             else:
                 _logger.warning("No hardlink path provided, skipping video processing")

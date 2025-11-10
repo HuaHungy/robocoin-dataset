@@ -87,32 +87,43 @@ def _gen_one_page_sync_task(db: "DatasetDatabase") -> tuple[str | None, str | No
 
   from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB, TaskStatus
 
+  _logger = logging.getLogger(__name__)
+
   with db.with_session() as session:
+      _logger.debug("Querying for PENDING tasks...")
       query = session.query(DatasetDB).filter(
           DatasetDB.dataset_info_sync_status == TaskStatus.PENDING
       )
       item = query.first()
       if not item:
+          _logger.debug("No PENDING tasks found")
           return None, None, None
 
+      _logger.debug("Found PENDING task, marking as PROCESSING...")
       item.dataset_info_sync_status = TaskStatus.PROCESSING
       session.commit()
 
       # Get dataset_uuid
       dataset_uuid = item.dataset_uuid if hasattr(item, 'dataset_uuid') and item.dataset_uuid else None
+      _logger.debug(f"Dataset UUID: {dataset_uuid}")
 
       # Get yaml path from dataset
       yaml_path = item.yaml_file_path if hasattr(item, 'yaml_file_path') and item.yaml_file_path else None
+      _logger.debug(f"YAML path: {yaml_path}")
 
       # Get hardlink path from dataset_hard_link table using dataset_uuid
       hardlink_path = None
       if dataset_uuid:
+          _logger.debug(f"Querying hardlink path for dataset_uuid: {dataset_uuid}")
           hardlink_query = session.query(DatasetHardLinkDB).filter(
               DatasetHardLinkDB.dataset_uuid == dataset_uuid
           )
           hardlink_item = hardlink_query.first()
           if hardlink_item and hasattr(hardlink_item, 'hard_link_path'):
               hardlink_path = hardlink_item.hard_link_path
+              _logger.debug(f"Hardlink path: {hardlink_path}")
+          else:
+              _logger.warning(f"No hardlink found for dataset_uuid: {dataset_uuid}")
 
       return yaml_path, hardlink_path, dataset_uuid
 
@@ -190,19 +201,25 @@ def _copy_yaml_file_from_db(yaml_path: str, dst_path: str) -> None:
   import shutil
   from pathlib import Path
 
+  _logger = logging.getLogger(__name__)
   src_path = Path(yaml_path)
   dest_path = Path(dst_path)
 
+  _logger.debug(f"Source YAML: {yaml_path}")
+  _logger.debug(f"Destination: {dst_path}")
+
   # Check if source file exists
   if not src_path.exists():
+      _logger.error(f"Source YAML file does not exist: {yaml_path}")
       raise FileNotFoundError(f"Source YAML file not found: {yaml_path}")
 
   # Create destination directory if it doesn't exist
   dest_path.parent.mkdir(parents=True, exist_ok=True)
 
   # Copy the file
+  _logger.debug("Copying file...")
   shutil.copy2(src_path, dest_path)
-  logging.getLogger(__name__).debug(f"Copied YAML file from {yaml_path} to {dst_path}")
+  _logger.debug(f"Successfully copied YAML file from {yaml_path} to {dst_path}")
 
 
 #------- VIDEO OPERATION -------#
@@ -227,31 +244,36 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
   import random
   from pathlib import Path
 
+  _logger = logging.getLogger(__name__)
   root_path = Path(hardlink_path)
 
+  _logger.debug(f"Checking if root directory exists: {hardlink_path}")
   if not root_path.exists():
-      logging.getLogger(__name__).warning(f"Root directory does not exist: {hardlink_path}")
+      _logger.warning(f"Root directory does not exist: {hardlink_path}")
       return None
 
   # Navigate to videos subdirectory
   videos_path = root_path / "videos"
+  _logger.debug(f"Looking for videos directory: {videos_path}")
 
   if not videos_path.exists():
-      logging.getLogger(__name__).warning(f"Videos directory does not exist: {videos_path}")
+      _logger.warning(f"Videos directory does not exist: {videos_path}")
       return None
 
   # Find all videos in cam_high_rgb across all chunks
+  _logger.debug(f"Searching for videos with pattern: {videos_path}/chunk-*/observation.images.cam_high_rgb/*.mp4")
   video_files = list(videos_path.glob("chunk-*/observation.images.cam_high_rgb/*.mp4"))
+  _logger.debug(f"Found {len(video_files)} video files")
 
   if not video_files:
-      logging.getLogger(__name__).warning(
+      _logger.warning(
           f"No videos found matching pattern: {videos_path}/chunk-*/observation.images.cam_high_rgb/*.mp4"
       )
       return None
 
   # Randomly sample one video
   selected_video_path = random.choice(video_files)
-  logging.getLogger(__name__).debug(f"Sampled video: {selected_video_path}")
+  _logger.debug(f"Sampled video: {selected_video_path}")
 
   return str(selected_video_path)
 
@@ -269,31 +291,37 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
   from pathlib import Path
 
   video_file = Path(selected_video_path)
-  dst_video_path = Path(dst_path)
+  dst_video_path = Path(dst_path) / video_file.name
+
+  _logger = logging.getLogger(__name__)
+
+  _logger.debug(f"Video file: {video_file}")
+  _logger.debug(f"Destination: {dst_video_path}")
 
   # Check if source video file exists
   if not video_file.exists():
+      _logger.error(f"Source video file does not exist: {selected_video_path}")
       raise FileNotFoundError(f"Source video file not found: {selected_video_path}")
 
   # Create destination directory if it doesn't exist
   dst_video_path.parent.mkdir(parents=True, exist_ok=True)
 
-  _logger = logging.getLogger(__name__)
-
-  _logger.debug(f"Compressing video from {selected_video_path} to {dst_path}")
-
   # Get video duration using ffprobe
   try:
+      _logger.debug("Running ffprobe to get video duration...")
       duration_cmd = [
           "ffprobe", "-v", "error", "-show_entries",
           "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
           str(video_file)
       ]
-      result = subprocess.run(duration_cmd, capture_output=True, text=True, check=True)
+      _logger.debug(f"ffprobe command: {' '.join(duration_cmd)}")
+      result = subprocess.run(duration_cmd, capture_output=True, text=True, check=True, timeout=30)
       duration = float(result.stdout.strip())
+      _logger.debug(f"Video duration: {duration:.2f} seconds")
 
       # Calculate target bitrate: (target_size_kb * 8) / duration (in kbps)
       target_bitrate_kbps = int((target_size_kb * 8) / duration)
+      _logger.debug(f"Target bitrate: {target_bitrate_kbps} kbps")
 
       # Compress video directly from source to destination
       compress_cmd = [
@@ -305,17 +333,26 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
           str(dst_video_path)
       ]
 
-      subprocess.run(compress_cmd, check=True, capture_output=True)
+      _logger.debug(f"ffmpeg command: {' '.join(compress_cmd)}")
+      _logger.info("Starting video compression (this may take a while)...")
+      result = subprocess.run(compress_cmd, check=True, capture_output=True, timeout=300)
       _logger.info(f"Successfully compressed {video_file.name} to approximately {target_size_kb}KB at {dst_video_path}")
 
+  except subprocess.TimeoutExpired:
+      _logger.error(f"Video compression timed out for {video_file.name}")
+      # Clean up partial output file if it exists
+      if dst_video_path.exists():
+          dst_video_path.unlink()
+      raise RuntimeError(f"Video compression timed out for {video_file.name}")
   except subprocess.CalledProcessError as e:
       _logger.error(f"Failed to compress {video_file.name}: {e}")
+      _logger.error(f"ffmpeg stderr: {e.stderr.decode() if e.stderr else 'N/A'}")
       # Clean up partial output file if it exists
       if dst_video_path.exists():
           dst_video_path.unlink()
       raise RuntimeError(f"Video compression failed for {video_file.name}: {e}")
   except Exception as e:
-      _logger.error(f"Error processing {video_file.name}: {e}")
+      _logger.error(f"Error processing {video_file.name}: {e}", exc_info=True)
       # Clean up partial output file if it exists
       if dst_video_path.exists():
           dst_video_path.unlink()
@@ -330,20 +367,27 @@ def _get_dataset_name(db: "DatasetDatabase") -> str | None:
 
   from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
+  _logger = logging.getLogger(__name__)
+
   with db.with_session() as session:
+      _logger.debug("Querying for PROCESSING task to get dataset name...")
       query = session.query(DatasetDB).filter(
           DatasetDB.dataset_info_sync_status == TaskStatus.PROCESSING
       )
       item = query.first()
 
       if not item:
+          _logger.warning("No PROCESSING task found when trying to get dataset name")
           return None
 
       if not hasattr(item, 'convert_path') or not item.convert_path:
+          _logger.warning("PROCESSING task found but convert_path is missing or empty")
           return None
 
       # Get the basename (ending) of the convert_path as dataset_name
-      return Path(item.convert_path).name
+      dataset_name = Path(item.convert_path).name
+      _logger.debug(f"Retrieved dataset name: {dataset_name}")
+      return dataset_name
 
 def _align_video_name_with_yaml(yaml_path: str, video_path: str, dataset_name: str) -> None:
   """
