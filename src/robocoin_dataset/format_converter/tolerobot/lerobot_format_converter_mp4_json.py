@@ -921,7 +921,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         cache_key = (str(task_path), ep_idx)
         
         # 如果对齐映射表已存在，直接返回数据
-        if cache_key in self._alignment_maps:
+        if cache_key in getattr(self, "_alignment_maps", {}):
             return json_data['data']
         
         # 提取所有时间戳
@@ -936,7 +936,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
             return json_data['data']
         
         # 获取基准相机
-        if cache_key not in self._reference_camera:
+        if cache_key not in getattr(self, "_reference_camera", {}):
             # 如果基准相机未确定，尝试确定（可能是在_get_episode_frames_num中已确定）
             camera_keys = self._get_camera_keys_from_config(all_timestamps)
             
@@ -961,7 +961,15 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                     )
                 return json_data['data']
         
-        reference_camera_key = self._reference_camera[cache_key]
+        # 读取基准相机键（带安全回退）
+        reference_camera_key = getattr(self, "_reference_camera", {}).get(cache_key)
+        if reference_camera_key is None:
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️  Reference camera cache missing, falling back to direct indexing.\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}"
+                )
+            return json_data['data']
         if reference_camera_key not in all_timestamps:
             if self.logger:
                 self.logger.warning(
@@ -1034,8 +1042,8 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         # 🆕 检查是否有对齐映射表
         cache_key = (str(task_path), ep_idx)
-        alignment_maps = self._alignment_maps.get(cache_key, {})
-        reference_camera = self._reference_camera.get(cache_key, None)
+        alignment_maps = getattr(self, "_alignment_maps", {}).get(cache_key, {})
+        reference_camera = getattr(self, "_reference_camera", {}).get(cache_key, None)
         
         # 确定实际使用的索引
         if alignment_maps and reference_camera:
@@ -1112,7 +1120,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         # 🆕 检查是否有对齐映射表
         cache_key = (str(task_path), ep_idx)
-        alignment_maps = self._alignment_maps.get(cache_key, {})
+        alignment_maps = getattr(self, "_alignment_maps", {}).get(cache_key, {})
         
         # 确定实际使用的索引
         actual_frame_idx = frame_idx
