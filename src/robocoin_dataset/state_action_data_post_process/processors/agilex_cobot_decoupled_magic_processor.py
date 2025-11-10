@@ -14,12 +14,17 @@ logger = logging.getLogger(__name__)
 class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
-        self.replayer: LerobotSimReplayer | None = self._setup_replayer()
+        self.replayer: LerobotSimReplayer | None = None
+        self.replayer_convert_path: Path | None = None  # 记录 replayer 对应的路径
         self.episode_index = 0  # 默认值
 
     def _setup_replayer(self) -> LerobotSimReplayer | None:
         """动态加载并实例化 LerobotSimReplayer"""
         try:
+            # 检查 replayer 是否已存在且路径匹配
+            if self.replayer is not None and self.replayer_convert_path == self.convert_path:
+                return self.replayer
+            
             project_root = Path(__file__).resolve().parents[4]
             config_path = project_root / "scripts/sim_replay/configs/sim_replay_config_path.yaml"
 
@@ -45,7 +50,9 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
             replay_config = config_class()
 
             # repo_path 是 LeRobot 数据集目录
-            return LerobotSimReplayer(replay_config=replay_config, repo_path=self.convert_path)
+            new_replayer = LerobotSimReplayer(replay_config=replay_config, repo_path=self.convert_path)
+            self.replayer_convert_path = self.convert_path
+            return new_replayer
 
         except Exception as e:
             logger.error(f"Failed to setup LerobotSimReplayer. Reason: {e}", exc_info=True)
@@ -96,13 +103,15 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
         # 根据EEF距离判断是否需要交换
         need_swap = False
         
+        self.replayer = self._setup_replayer()
+
         if self.replayer is None:
             central_logger.warning(f"Episode {self.episode_index}: Replayer not available, skipping EEF distance check. Will not swap arms.")
         else:
             try:
                 # 假设 replayer 已经配置好，直接调用
                 self.replayer.mjcf_model.opt.gravity[2] = -9.81 # 确保重力正确
-                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True)
+                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True)
                 
                 if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
                     eef_data = np.array(eef_data_list_state)
@@ -110,20 +119,19 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
                     left_eef_positions = eef_data[:, :3]
                     right_eef_positions = eef_data[:, 6:9]
                     
-                    # 计算每一帧双臂末端执行器之间的欧几里得距离
+                    # 计算每一帧双臂末端执行器之间的距离
                     eef_distances = np.linalg.norm(left_eef_positions - right_eef_positions, axis=1)
                     mean_eef_distance = np.mean(eef_distances)
                     
-                    # 设定距离阈值（单位：米），可根据实际情况调整
                     DISTANCE_THRESHOLD = 0.67
                     
-                    central_logger.info(f"Episode {self.episode_index}: Mean EEF distance: {mean_eef_distance:.4f}m, Threshold: {DISTANCE_THRESHOLD}m")
+                    central_logger.info(f"Episode {self.episode_index}: Mean EEF distance: {mean_eef_distance:.4f}m {'>=' if mean_eef_distance >= DISTANCE_THRESHOLD else '<'} Threshold: {DISTANCE_THRESHOLD}m, ")
 
                     if mean_eef_distance >= DISTANCE_THRESHOLD:
-                        central_logger.info(f"Episode {self.episode_index}: Mean EEF distance >= threshold. Arms need to be swapped.")
+                        # central_logger.info(f"Episode {self.episode_index}: Mean EEF distance >= threshold. Arms need to be swapped.")
                         need_swap = True
-                    else:
-                        central_logger.info(f"Episode {self.episode_index}: Mean EEF distance < threshold. Arms are in correct order, no swap needed.")
+                    # else:
+                    #     central_logger.info(f"Episode {self.episode_index}: Mean EEF distance < threshold. Arms are in correct order, no swap needed.")
                 else:
                     central_logger.warning(f"Episode {self.episode_index}: EEF data is invalid or insufficient. Skipping distance check. Data shape: {eef_data_list_state[0].shape if eef_data_list_state else 'Empty'}")
 
@@ -460,12 +468,17 @@ class AgilexCobotDecoupledMagicH5Mp4Processor(StateActionDataPostProcessorBase):
 class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
-        self.replayer: LerobotSimReplayer | None = self._setup_replayer()
+        self.replayer: LerobotSimReplayer | None = None
+        self.replayer_convert_path: Path | None = None  # 记录 replayer 对应的路径
         self.episode_index = 0  # 默认值
 
     def _setup_replayer(self) -> LerobotSimReplayer | None:
         """动态加载并实例化 LerobotSimReplayer"""
         try:
+            # 检查 replayer 是否已存在且路径匹配
+            if self.replayer is not None and self.replayer_convert_path == self.convert_path:
+                return self.replayer
+            
             project_root = Path(__file__).resolve().parents[4]
             config_path = project_root / "scripts/sim_replay/configs/sim_replay_config_path.yaml"
 
@@ -477,10 +490,10 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
                 all_configs = yaml.safe_load(f)
 
             device_configs = all_configs.get("agilex_cobot_decoupled_magic", [])
-            config_info = next((c for c in device_configs if c.get("version") == "mult_sensor_version"), None)
+            config_info = next((c for c in device_configs if c.get("version") == "mult_sensor"), None)
 
             if not config_info:
-                logger.warning("Config for 'agilex_cobot_decoupled_magic' with 'mult_sensor_version' not found. Replayer will not be available.")
+                logger.warning("Config for 'agilex_cobot_decoupled_magic' with 'mult_sensor' not found. Replayer will not be available.")
                 return None
 
             module_name = config_info["mujoco_sim_replay_config_module"]
@@ -491,7 +504,9 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
             replay_config = config_class()
 
             # repo_path 是 LeRobot 数据集目录
-            return LerobotSimReplayer(replay_config=replay_config, repo_path=self.convert_path)
+            new_replayer = LerobotSimReplayer(replay_config=replay_config, repo_path=self.convert_path)
+            self.replayer_convert_path = self.convert_path
+            return new_replayer
 
         except Exception as e:
             logger.error(f"Failed to setup LerobotSimReplayer. Reason: {e}", exc_info=True)
@@ -529,6 +544,21 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
                 continue
         return scaled_data
 
+    def _smooth_joint_data(self, data: np.ndarray, window_size: int = 4) -> np.ndarray:
+        """对所有关节数据应用平滑滤波"""
+        if data.ndim != 2 or data.shape[0] < window_size:
+            return data
+        
+        smoothed_data = data.copy()
+        # 对每一列（每个关节）应用移动平均滤波
+        for i in range(data.shape[1]):
+            # 使用 pandas 的 rolling mean 来处理，center=True 确保窗口居中
+            series = pd.Series(data[:, i])
+            smoothed_series = series.rolling(window=window_size, min_periods=1, center=True).mean()
+            smoothed_data[:, i] = smoothed_series.to_numpy()
+            
+        return smoothed_data
+
     def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         # 从基类获取当前正在处理的 episode 索引
         if self.episode_idx is not None:
@@ -542,13 +572,15 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
         # 根据EEF距离判断是否需要交换
         need_swap = False
         
+        self.replayer = self._setup_replayer()
+
         if self.replayer is None:
             central_logger.warning(f"Episode {self.episode_index}: Replayer not available, skipping EEF distance check. Will not swap arms.")
         else:
             try:
                 # 假设 replayer 已经配置好，直接调用
                 self.replayer.mjcf_model.opt.gravity[2] = -9.81 # 确保重力正确
-                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True)
+                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True)
                 
                 if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
                     eef_data = np.array(eef_data_list_state)
@@ -581,6 +613,10 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
             central_logger.info(f"Episode {self.episode_index}: Swapping left and right arms.")
             processed_state = self._swap_left_right(processed_state)
             processed_action = self._swap_left_right(processed_action)
+
+        # 应用平滑滤波
+        processed_state = self._smooth_joint_data(processed_state)
+        processed_action = self._smooth_joint_data(processed_action)
 
         return {
             "observation.state": processed_state,
