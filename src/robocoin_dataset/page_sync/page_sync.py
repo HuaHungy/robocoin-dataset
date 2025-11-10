@@ -4,7 +4,7 @@ Page Sync Orchestration Module
 
 This module contains the main orchestration logic for syncing dataset information
 to the page project. It coordinates the following workflow:
-1. Detect and create directory structure (assets/dataset_info, assets/videos)
+1. Detect and create directory structure (assets/dataset_info, assets/videos, assets/info)
 2. Loop through pending tasks:
    - Sync task status (mark eligible datasets as PENDING)
    - Generate one task (mark PENDING -> PROCESSING)
@@ -12,6 +12,9 @@ to the page project. It coordinates the following workflow:
    - Sample and compress video to videos directory
    - Align video name to match dataset name
    - Mark task as COMPLETED or FAILED
+3. Generate consolidated metadata files:
+   - consolidated_datasets.json: All metadata in one file
+   - data_index.json: List of all YAML files
 
 The actual business logic is implemented in page_sync_utils.py.
 """
@@ -44,6 +47,9 @@ def construce_target_file(
                 *.yml files
             videos/
                 *.mp4 files
+            info/
+                consolidated_datasets.json
+                data_index.json
 
     Args:
         db: Database connection
@@ -56,12 +62,15 @@ def construce_target_file(
         _align_video_name_with_yaml,
         _compress_video_to_dst,
         _copy_yaml_file_from_db,
+        _gen_consolidation,
+        _gen_data_index,
         _gen_one_page_sync_task,
         _get_dataset_name,
         _mark_task_completed,
         _mark_task_failed,
         _sample_one_video_path,
         _sync_page_sync_status,
+        _validate_exist,
     )
 
     _logger = logger or logging.getLogger(__name__)
@@ -90,6 +99,13 @@ def construce_target_file(
     else:
         _logger.debug(f"Videos directory already exists: {videos_dir}")
 
+    info_dir = assets_dir / "info"
+    if not info_dir.exists():
+        info_dir.mkdir(parents=True, exist_ok=True)
+        _logger.debug(f"Created info directory: {info_dir}")
+    else:
+        _logger.debug(f"Info directory already exists: {info_dir}")
+
     # 3-8. Main loop: sync -> generate task -> copy yaml -> copy & compress videos -> align video name -> mark completed
     task_count = 0
     while True:
@@ -99,7 +115,7 @@ def construce_target_file(
 
         # 4. Generate one task
         _logger.debug("Generating next task...")
-        yaml_path, hardlink_path, dataset_uuid = _gen_one_page_sync_task(db)
+        yaml_path, hardlink_path, dataset_uuid = _gen_one_page_sync_task(session)
 
         if yaml_path is None:
             _logger.info("No more pending tasks to process")
@@ -114,13 +130,24 @@ def construce_target_file(
         _logger.debug(f"  yaml_path: {yaml_path}")
         _logger.debug(f"  hardlink_path: {hardlink_path}")
 
+        # Validate that both yaml_path and hardlink_path exist
+        if not _validate_exist(yaml_path, hardlink_path):
+            _logger.error(
+                f"Validation failed for dataset {dataset_uuid}: "
+                f"yaml_path={yaml_path}, hardlink_path={hardlink_path}. "
+                f"Both paths must exist. Marking as FAILED."
+            )
+            _mark_task_failed(session, dataset_uuid)
+            continue
+
         try:
+
             # 5. Copy yaml
             _logger.debug(f"Getting dataset name for {dataset_uuid}...")
-            dataset_name = _get_dataset_name(db)
+            dataset_name = _get_dataset_name(session)
             if not dataset_name:
                 _logger.error(f"Failed to get dataset name for dataset {dataset_uuid}")
-                _mark_task_failed(db, dataset_uuid)
+                _mark_task_failed(session, dataset_uuid)
                 continue
 
             _logger.info(f"Dataset name: {dataset_name}")
@@ -130,36 +157,48 @@ def construce_target_file(
             _copy_yaml_file_from_db(yaml_path, str(yaml_dst))
             _logger.info(f"Copied YAML file to {yaml_dst}")
 
-            # 6. Copy and compress videos
-            if hardlink_path:
-                _logger.debug(f"Sampling video from hardlink path: {hardlink_path}...")
-                sampled_video_path = _sample_one_video_path(hardlink_path)
-                if not sampled_video_path:
-                    _logger.error(f"Failed to sample video from {hardlink_path}")
-                    _mark_task_failed(db, dataset_uuid)
-                    continue
+            # 6. Sample and compress videos
+            _logger.debug(f"Sampling video from hardlink path: {hardlink_path}...")
+            sampled_video_path = _sample_one_video_path(hardlink_path)
+            if not sampled_video_path:
+                _logger.error(f"Failed to sample video from {hardlink_path}")
+                _mark_task_failed(session, dataset_uuid)
+                continue
 
-                _logger.info(f"Sampled video: {sampled_video_path}")
-                _logger.debug(f"Starting video compression (target: {target_size_kb}KB)...")
-                _compress_video_to_dst(sampled_video_path, str(videos_dir), target_size_kb)
-                _logger.info(f"Compressed video from {sampled_video_path} into {videos_dir}")
+            _logger.info(f"Sampled video: {sampled_video_path}")
+            _logger.debug(f"Starting video compression (target: {target_size_kb}KB)...")
+            _compress_video_to_dst(sampled_video_path, str(videos_dir), target_size_kb)
+            _logger.info(f"Compressed video from {sampled_video_path} into {videos_dir}")
 
-                # 7. Alighment-Rename videos
-                _logger.debug("Aligning video name with dataset name...")
-                compressed_video_name = Path(sampled_video_path).name
-                compressed_video_path = videos_dir / compressed_video_name
-                _align_video_name_with_yaml(str(yaml_dst), str(compressed_video_path), dataset_name)
-                _logger.info(f"Aligned video name to {dataset_name}")
-            else:
-                _logger.warning("No hardlink path provided, skipping video processing")
+            # 7. Alighment-Rename videos
+            _logger.debug("Aligning video name with dataset name...")
+            compressed_video_name = Path(sampled_video_path).name
+            compressed_video_path = videos_dir / compressed_video_name
+            _align_video_name_with_yaml(str(yaml_dst), str(compressed_video_path), dataset_name)
+            _logger.info(f"Aligned video name to {dataset_name}")
 
             # 8. Update task status to COMPLETED
-            _mark_task_completed(db, dataset_uuid)
+            _mark_task_completed(session, dataset_uuid)
             _logger.info(f"Successfully processed dataset: {dataset_name} ({dataset_uuid})")
 
         except Exception as e:
             _logger.error(f"Error processing task {dataset_uuid}: {e}", exc_info=True)
-            _mark_task_failed(db, dataset_uuid)
+            _mark_task_failed(session, dataset_uuid)
+
+    # 9. Generate consolidated datasets and data index files
+    _logger.info("Generating consolidated metadata files...")
+    try:
+        consolidated_path = info_dir / "consolidated_datasets.json"
+        _logger.debug(f"Generating consolidated datasets at: {consolidated_path}")
+        _gen_consolidation(str(dataset_info_dir), str(consolidated_path))
+
+        data_index_path = info_dir / "data_index.json"
+        _logger.debug(f"Generating data index at: {data_index_path}")
+        _gen_data_index(str(dataset_info_dir), str(data_index_path))
+
+        _logger.info("Successfully generated consolidated metadata files")
+    except Exception as e:
+        _logger.error(f"Error generating consolidated metadata files: {e}", exc_info=True)
 
     _logger.info(f"Target file structure construction completed at: {target_dir}")
 

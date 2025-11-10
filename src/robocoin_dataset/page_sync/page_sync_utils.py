@@ -77,9 +77,9 @@ def _sync_page_sync_status(
   _logger.info(f"Successfully marked {len(items)} datasets as PENDING")
 
 
-def _gen_one_page_sync_task(db: "DatasetDatabase") -> tuple[str | None, str | None, str | None]:
+def _gen_one_page_sync_task(session: "Session") -> tuple[str | None, str | None, str | None]:
   '''Mark first PENDING -> PROCESSING, and return the yaml_path, hardlink_path, and dataset_uuid
-  I: Database.
+  I: Database session.
   O: yaml_path, -> read the metadata.
   hardlink_path, -> the dataset in lerobot foramt.
   dataset_uuid -> to identify which record should be COMPLETED or FAILED.
@@ -89,78 +89,75 @@ def _gen_one_page_sync_task(db: "DatasetDatabase") -> tuple[str | None, str | No
 
   _logger = logging.getLogger(__name__)
 
-  with db.with_session() as session:
-      _logger.debug("Querying for PENDING tasks...")
-      query = session.query(DatasetDB).filter(
-          DatasetDB.dataset_info_sync_status == TaskStatus.PENDING
+  _logger.debug("Querying for PENDING tasks...")
+  query = session.query(DatasetDB).filter(
+      DatasetDB.dataset_info_sync_status == TaskStatus.PENDING
+  )
+  item = query.first()
+  if not item:
+      _logger.debug("No PENDING tasks found")
+      return None, None, None
+
+  _logger.debug("Found PENDING task, marking as PROCESSING...")
+  item.dataset_info_sync_status = TaskStatus.PROCESSING
+  session.commit()
+
+  # Get dataset_uuid
+  dataset_uuid = item.dataset_uuid if hasattr(item, 'dataset_uuid') and item.dataset_uuid else None
+  _logger.debug(f"Dataset UUID: {dataset_uuid}")
+
+  # Get yaml path from dataset
+  yaml_path = item.yaml_file_path if hasattr(item, 'yaml_file_path') and item.yaml_file_path else None
+  _logger.debug(f"YAML path: {yaml_path}")
+
+  # Get hardlink path from dataset_hard_link table using dataset_uuid
+  hardlink_path = None
+  if dataset_uuid:
+      _logger.debug(f"Querying hardlink path for dataset_uuid: {dataset_uuid}")
+      hardlink_query = session.query(DatasetHardLinkDB).filter(
+          DatasetHardLinkDB.dataset_uuid == dataset_uuid
       )
-      item = query.first()
-      if not item:
-          _logger.debug("No PENDING tasks found")
-          return None, None, None
+      hardlink_item = hardlink_query.first()
+      if hardlink_item and hasattr(hardlink_item, 'hard_link_path'):
+          hardlink_path = hardlink_item.hard_link_path
+          _logger.debug(f"Hardlink path: {hardlink_path}")
+      else:
+          _logger.warning(f"No hardlink found for dataset_uuid: {dataset_uuid}")
 
-      _logger.debug("Found PENDING task, marking as PROCESSING...")
-      item.dataset_info_sync_status = TaskStatus.PROCESSING
-      session.commit()
-
-      # Get dataset_uuid
-      dataset_uuid = item.dataset_uuid if hasattr(item, 'dataset_uuid') and item.dataset_uuid else None
-      _logger.debug(f"Dataset UUID: {dataset_uuid}")
-
-      # Get yaml path from dataset
-      yaml_path = item.yaml_file_path if hasattr(item, 'yaml_file_path') and item.yaml_file_path else None
-      _logger.debug(f"YAML path: {yaml_path}")
-
-      # Get hardlink path from dataset_hard_link table using dataset_uuid
-      hardlink_path = None
-      if dataset_uuid:
-          _logger.debug(f"Querying hardlink path for dataset_uuid: {dataset_uuid}")
-          hardlink_query = session.query(DatasetHardLinkDB).filter(
-              DatasetHardLinkDB.dataset_uuid == dataset_uuid
-          )
-          hardlink_item = hardlink_query.first()
-          if hardlink_item and hasattr(hardlink_item, 'hard_link_path'):
-              hardlink_path = hardlink_item.hard_link_path
-              _logger.debug(f"Hardlink path: {hardlink_path}")
-          else:
-              _logger.warning(f"No hardlink found for dataset_uuid: {dataset_uuid}")
-
-      return yaml_path, hardlink_path, dataset_uuid
+  return yaml_path, hardlink_path, dataset_uuid
 
 
-def _mark_task_completed(db: "DatasetDatabase", dataset_uuid: str) -> None:
+def _mark_task_completed(session: "Session", dataset_uuid: str) -> None:
   """
   Mark the specific task as COMPLETED using dataset_uuid.
   """
   from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
-  with db.with_session() as session:
-      query = session.query(DatasetDB).filter(
-          DatasetDB.dataset_uuid == dataset_uuid
-      )
-      item = query.first()
+  query = session.query(DatasetDB).filter(
+      DatasetDB.dataset_uuid == dataset_uuid
+  )
+  item = query.first()
 
-      if item:
-          item.dataset_info_sync_status = TaskStatus.COMPLETED
-          session.commit()
-          logging.getLogger(__name__).info(f"Marked dataset {dataset_uuid} as COMPLETED")
+  if item:
+      item.dataset_info_sync_status = TaskStatus.COMPLETED
+      session.commit()
+      logging.getLogger(__name__).info(f"Marked dataset {dataset_uuid} as COMPLETED")
 
-def _mark_task_failed(db: "DatasetDatabase", dataset_uuid: str) -> None:
+def _mark_task_failed(session: "Session", dataset_uuid: str) -> None:
   """
   Mark the specific task as FAILED using dataset_uuid.
   """
   from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
-  with db.with_session() as session:
-      query = session.query(DatasetDB).filter(
-          DatasetDB.dataset_uuid == dataset_uuid
-      )
-      item = query.first()
+  query = session.query(DatasetDB).filter(
+      DatasetDB.dataset_uuid == dataset_uuid
+  )
+  item = query.first()
 
-      if item:
-          item.dataset_info_sync_status = TaskStatus.FAILED
-          session.commit()
-          logging.getLogger(__name__).error(f"Marked dataset {dataset_uuid} as FAILED")
+  if item:
+      item.dataset_info_sync_status = TaskStatus.FAILED
+      session.commit()
+      logging.getLogger(__name__).error(f"Marked dataset {dataset_uuid} as FAILED")
 
 def _get_hub_field_prefix(dataset_table: "type[DatasetDB]") -> tuple[str, str]:
     '''Return the correct field prefixes for both HuggingFace and ModelScope hubs,
@@ -187,6 +184,44 @@ def _get_hub_field_prefix(dataset_table: "type[DatasetDB]") -> tuple[str, str]:
 
 
 ######## ACTUAL OPERATION ########
+#------- VALIDATION -------#
+
+def _validate_exist(yaml_path: str | None, hardlink_path: str | None) -> bool:
+  """
+  Validate that both yaml_path and hardlink_path exist.
+
+  INPUT:
+  yaml_path -> path to YAML file
+  hardlink_path -> path to hardlink directory with videos
+
+  OUTPUT:
+  bool -> True if BOTH exist, False otherwise
+  """
+  from pathlib import Path
+
+  _logger = logging.getLogger(__name__)
+
+  # Check if both paths are provided
+  if not yaml_path or not hardlink_path:
+      _logger.debug(f"Missing paths - yaml_path: {yaml_path}, hardlink_path: {hardlink_path}")
+      return False
+
+  # Check if yaml_path exists
+  yaml_file = Path(yaml_path)
+  if not yaml_file.exists():
+      _logger.debug(f"YAML file does not exist: {yaml_path}")
+      return False
+
+  # Check if hardlink_path exists
+  hardlink_dir = Path(hardlink_path)
+  if not hardlink_dir.exists():
+      _logger.debug(f"Hardlink directory does not exist: {hardlink_path}")
+      return False
+
+  _logger.debug("Both paths validated successfully")
+  return True
+
+
 #------- YAML OPERATION -------#
 
 def _copy_yaml_file_from_db(yaml_path: str, dst_path: str) -> None:
@@ -358,7 +393,7 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
           dst_video_path.unlink()
       raise
 
-def _get_dataset_name(db: "DatasetDatabase") -> str | None:
+def _get_dataset_name(session: "Session") -> str | None:
   """
   Get dataset name from a PROCESSING status record.
   This is for the page script compatibility.
@@ -369,25 +404,24 @@ def _get_dataset_name(db: "DatasetDatabase") -> str | None:
 
   _logger = logging.getLogger(__name__)
 
-  with db.with_session() as session:
-      _logger.debug("Querying for PROCESSING task to get dataset name...")
-      query = session.query(DatasetDB).filter(
-          DatasetDB.dataset_info_sync_status == TaskStatus.PROCESSING
-      )
-      item = query.first()
+  _logger.debug("Querying for PROCESSING task to get dataset name...")
+  query = session.query(DatasetDB).filter(
+      DatasetDB.dataset_info_sync_status == TaskStatus.PROCESSING
+  )
+  item = query.first()
 
-      if not item:
-          _logger.warning("No PROCESSING task found when trying to get dataset name")
-          return None
+  if not item:
+      _logger.warning("No PROCESSING task found when trying to get dataset name")
+      return None
 
-      if not hasattr(item, 'convert_path') or not item.convert_path:
-          _logger.warning("PROCESSING task found but convert_path is missing or empty")
-          return None
+  if not hasattr(item, 'convert_path') or not item.convert_path:
+      _logger.warning("PROCESSING task found but convert_path is missing or empty")
+      return None
 
-      # Get the basename (ending) of the convert_path as dataset_name
-      dataset_name = Path(item.convert_path).name
-      _logger.debug(f"Retrieved dataset name: {dataset_name}")
-      return dataset_name
+  # Get the basename (ending) of the convert_path as dataset_name
+  dataset_name = Path(item.convert_path).name
+  _logger.debug(f"Retrieved dataset name: {dataset_name}")
+  return dataset_name
 
 def _align_video_name_with_yaml(yaml_path: str, video_path: str, dataset_name: str) -> None:
   """
@@ -424,3 +458,111 @@ def _align_video_name_with_yaml(yaml_path: str, video_path: str, dataset_name: s
       _logger.debug(f"Renamed video from {src_video.name} to {dst_video.name}")
   else:
       _logger.debug(f"Video already named correctly: {src_video.name}")
+
+
+#------- CONSOLIDATION -------#
+
+def _gen_consolidation(dataset_info_dir: str, output_path: str) -> None:
+  """
+  Generate consolidated_datasets.json by reading all YAML files from dataset_info directory
+  and combining their metadata into a single JSON file.
+
+  INPUT:
+  dataset_info_dir -> path to the directory containing YAML files
+  output_path -> path to write the consolidated JSON file
+
+  OUTPUT:
+  None, writes consolidated_datasets.json with all metadata
+  """
+  import json
+  from pathlib import Path
+
+  import yaml
+
+  _logger = logging.getLogger(__name__)
+
+  dataset_info_path = Path(dataset_info_dir)
+  output_file = Path(output_path)
+
+  if not dataset_info_path.exists():
+      _logger.error(f"Dataset info directory does not exist: {dataset_info_dir}")
+      raise FileNotFoundError(f"Dataset info directory not found: {dataset_info_dir}")
+
+  # Find all YAML files
+  yaml_files = list(dataset_info_path.glob("*.yaml")) + list(dataset_info_path.glob("*.yml"))
+  _logger.info(f"Found {len(yaml_files)} YAML files to consolidate")
+
+  if not yaml_files:
+      _logger.warning("No YAML files found to consolidate")
+      consolidated_data = {}
+  else:
+      consolidated_data = {}
+
+      for yaml_file in yaml_files:
+          try:
+              _logger.debug(f"Reading YAML file: {yaml_file}")
+              with open(yaml_file, encoding='utf-8') as f:
+                  data = yaml.safe_load(f)
+
+              # Use the filename (without extension) as the key
+              dataset_name = yaml_file.stem
+              consolidated_data[dataset_name] = data
+              _logger.debug(f"Added {dataset_name} to consolidated data")
+
+          except Exception as e:  # noqa: PERF203
+              _logger.error(f"Failed to read or parse {yaml_file}: {e}", exc_info=True)
+              continue
+
+  # Create output directory if it doesn't exist
+  output_file.parent.mkdir(parents=True, exist_ok=True)
+
+  # Write consolidated data to JSON
+  _logger.debug(f"Writing consolidated data to {output_file}")
+  with open(output_file, 'w', encoding='utf-8') as f:
+      json.dump(consolidated_data, f, indent=2, ensure_ascii=False)
+
+  _logger.info(f"Successfully wrote consolidated datasets to {output_file}")
+
+
+def _gen_data_index(dataset_info_dir: str, output_path: str) -> None:
+  """
+  Generate data_index.json by listing all YAML files from dataset_info directory.
+
+  INPUT:
+  dataset_info_dir -> path to the directory containing YAML files
+  output_path -> path to write the data index JSON file
+
+  OUTPUT:
+  None, writes data_index.json with list of all YAML files
+  """
+  import json
+  from pathlib import Path
+
+  _logger = logging.getLogger(__name__)
+
+  dataset_info_path = Path(dataset_info_dir)
+  output_file = Path(output_path)
+
+  if not dataset_info_path.exists():
+      _logger.error(f"Dataset info directory does not exist: {dataset_info_dir}")
+      raise FileNotFoundError(f"Dataset info directory not found: {dataset_info_dir}")
+
+  # Find all YAML files
+  yaml_files = list(dataset_info_path.glob("*.yaml")) + list(dataset_info_path.glob("*.yml"))
+  _logger.info(f"Found {len(yaml_files)} YAML files for indexing")
+
+  # Create list of dataset names (filenames without extension)
+  data_index = {
+      "datasets": sorted([yaml_file.stem for yaml_file in yaml_files]),
+      "count": len(yaml_files)
+  }
+
+  # Create output directory if it doesn't exist
+  output_file.parent.mkdir(parents=True, exist_ok=True)
+
+  # Write index to JSON
+  _logger.debug(f"Writing data index to {output_file}")
+  with open(output_file, 'w', encoding='utf-8') as f:
+      json.dump(data_index, f, indent=2, ensure_ascii=False)
+
+  _logger.info(f"Successfully wrote data index to {output_file} with {len(yaml_files)} datasets")
