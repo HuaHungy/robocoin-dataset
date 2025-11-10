@@ -26,7 +26,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logger = setup_logger(
-        name="data_merge",
+        name="quality check",
         log_dir=Path(args.log_dir),
         level=logging.INFO,
     )

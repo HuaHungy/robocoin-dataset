@@ -231,7 +231,8 @@ def _merge_jsonl_files(
     new_jsonl = []
     for i in range(len(ori_jsonl)):
         ori_json = ori_jsonl[i]
-        for patch_json in patch_jsonl:
+        for patch_jsonl in patch_jsonls:
+            patch_json = patch_jsonl[i]
             ori_json = _deep_merge_dict(ori_json, patch_json)
         new_jsonl.append(ori_json)
 
@@ -257,7 +258,7 @@ def merge_dataset_stats_jsonl_files(
 
 
 def merge_dataset_data(root_dir: str | Path, patch_features: list[str], merge_feature: str) -> None:
-    merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
+    # merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
     merge_dataset_info_files(root_dir, patch_features, merge_feature)
     merge_dataset_stats_jsonl_files(root_dir, patch_features, merge_feature)
 
