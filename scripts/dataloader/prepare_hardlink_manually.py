@@ -3,11 +3,16 @@
 This script:
 1. Queries all datasets where data_merge_status is COMPLETED
 2. Checks if each dataset has a hardlink in the dataset_hard_link table
-3. Creates hardlinks for datasets that don't have one
+3. Creates hardlinks for datasets that don't have one (using convert_path's ending + "_hardlink" as name)
 4. Updates the database with the hardlink path
 
+Safety features:
+- Only creates hardlinks within the specified dst-path directory
+- Prevents hardlinking from within dst-path (no recursive hardlinks)
+- Validates all paths to ensure operations stay within dst-path
+
 Usage:
-    python manual_prepare_hardlink.py --dst-path /path/to/hardlinks --db /path/to/database.db
+    python prepare_hardlink_manually.py --dst-path /path/to/hardlinks --db /path/to/database.db
 """
 
 import argparse
@@ -93,6 +98,10 @@ def manual_prepare_hardlink(dst_path: str | Path, db_path: str | Path) -> None:
 
     dst_path.mkdir(parents=True, exist_ok=True)
 
+    # Safety check: ensure dst_path is a directory
+    if not dst_path.is_dir():
+        raise ValueError(f"dst_path must be a directory: {dst_path}")
+
     # Initialize database
     db = DatasetDatabase(db_path)
     logger.info(f"Connected to database: {db_path}")
@@ -124,15 +133,41 @@ def manual_prepare_hardlink(dst_path: str | Path, db_path: str | Path) -> None:
 
             # (3) Create hardlink if it doesn't exist
             logger.info(f"  Creating hardlink for {dataset_uuid}")
-            convert_path_obj = Path(convert_path)
+            convert_path_obj = Path(convert_path).absolute()
 
             if not convert_path_obj.exists():
                 logger.error(f"  ✗ Convert path does not exist: {convert_path}")
                 failed += 1
                 continue
 
+            # Safety check: Ensure convert_path is not inside dst_path
+            # (to avoid hardlinking a hardlink)
+            try:
+                convert_path_obj.relative_to(dst_path)
+                logger.error(
+                    f"  ✗ Convert path is inside dst_path. "
+                    f"Cannot hardlink from within destination: {convert_path}"
+                )
+                failed += 1
+                continue
+            except ValueError:
+                # This is expected - convert_path should NOT be relative to dst_path
+                pass
+
             # Determine target directory for this dataset
-            dataset_hardlink_dir = dst_path / dataset_uuid
+            # Use convert_path's ending + "_hardlink" as the name
+            dataset_name = convert_path_obj.name
+            dataset_hardlink_dir = dst_path / f"{dataset_name}_hardlink"
+
+            # Safety check: Ensure hardlink path is within dst_path
+            try:
+                dataset_hardlink_dir.absolute().relative_to(dst_path)
+            except ValueError:
+                logger.error(
+                    f"  ✗ Computed hardlink path is outside dst_path: {dataset_hardlink_dir}"
+                )
+                failed += 1
+                continue
 
             # Use prepare_hardlink_for_task to create hardlink and update database
             hardlink_path = prepare_hardlink_for_task(

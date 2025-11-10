@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def _sync_page_sync_status(
-    db: DatasetDatabase,
+    db: "DatasetDatabase",
     session: "Session",
     logger: logging.Logger | None = None,
 ) -> None:
@@ -77,7 +77,7 @@ def _sync_page_sync_status(
   _logger.info(f"Successfully marked {len(items)} datasets as PENDING")
 
 
-def _gen_one_page_sync_task(db: DatasetDatabase) -> tuple[str | None, str | None, str | None]:
+def _gen_one_page_sync_task(db: "DatasetDatabase") -> tuple[str | None, str | None, str | None]:
   '''Mark first PENDING -> PROCESSING, and return the yaml_path, hardlink_path, and dataset_uuid
   I: Database.
   O: yaml_path, -> read the metadata.
@@ -85,7 +85,7 @@ def _gen_one_page_sync_task(db: DatasetDatabase) -> tuple[str | None, str | None
   dataset_uuid -> to identify which record should be COMPLETED or FAILED.
   '''
 
-  from robocoin_dataset.database.models import DatasetDB, DatasetHardLink, TaskStatus
+  from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB, TaskStatus
 
   with db.with_session() as session:
       query = session.query(DatasetDB).filter(
@@ -107,8 +107,8 @@ def _gen_one_page_sync_task(db: DatasetDatabase) -> tuple[str | None, str | None
       # Get hardlink path from dataset_hard_link table using dataset_uuid
       hardlink_path = None
       if dataset_uuid:
-          hardlink_query = session.query(DatasetHardLink).filter(
-              DatasetHardLink.dataset_uuid == dataset_uuid
+          hardlink_query = session.query(DatasetHardLinkDB).filter(
+              DatasetHardLinkDB.dataset_uuid == dataset_uuid
           )
           hardlink_item = hardlink_query.first()
           if hardlink_item and hasattr(hardlink_item, 'hard_link_path'):
