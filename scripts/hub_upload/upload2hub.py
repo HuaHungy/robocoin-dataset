@@ -1,265 +1,271 @@
 """
-RoboCoin Datasets Uploader
+RoboCoin Datasets Uploader - Main CLI Entry Point
 
-This script is for uploading datasets to the hub, is a script rather than a module.
-All the configs are set according to the config file, such as upload2ms.yml or upload2hf.yml in examples/configs/
-All uploading process needs KEY ITEMS:
-token(to identify the target account and the admission to upload),
-root_path(the folder path that contains all the subfolder to be uploaded)
+This script uploads datasets to the hub using a database-driven strategy.
+It generates dataset info YAML files and README.md files ON-DEMAND for each dataset
+right before uploading, using the hardlink paths from the database.
+
+KEY FEATURES:
+- On-demand generation of dataset info YAML files from metadata (per dataset)
+- On-demand generation of README.md files from templates (per dataset)
+- Upload datasets to HuggingFace or ModelScope
+- Database-driven upload tracking
+- Works with hardlinks at any location (not restricted to single root_path)
+
+WORKFLOW:
+    For each dataset in the database:
+    1. Generate dataset_info.yml file from metadata
+    2. Generate README.md file from template
+    3. Upload dataset to hub
 
 Usage:
-python scripts/upload2hub.py --config configs/upload.yaml
+    # Basic upload
+    python scripts/hub_upload/upload2hub.py --config configs/upload.yaml
 
-Example:
-python scripts/upload2hub.py --config configs/upload2ms.yml
-python scripts/upload2hub.py --config configs/upload2hf.yml
+    # With authentication token
+    python scripts/hub_upload/upload2hub.py \\
+        --config configs/upload.yaml \\
+        --token YOUR_TOKEN
+
+    # With custom database path
+    python scripts/hub_upload/upload2hub.py \\
+        --config configs/upload.yaml \\
+        --db-file-path /path/to/datasets_new.db
 """
 
+import argparse
 import getpass
+import logging
 import sys
-from pathlib import Path
 
-import draccus
-import yaml
-
+from robocoin_dataset.hub_upload.lerobot.hub_upload import (
+    upload_datasets,
+)
 from robocoin_dataset.hub_upload.lerobot.hub_upload_util import (
-  LocalDsUploadConfig,
-  LocalDsUploadUtil,
+    create_upload_config,
+    load_config_from_yaml,
 )
 
 
-def prompt_for_token(config: LocalDsUploadConfig, token_from_cli: bool) -> str:
-  """
-  Prompt user to input authentication token with security warnings.
+def setup_logging(log_level: str = "INFO") -> logging.Logger:
+    """
+    Set up logging configuration for CLI.
 
-  Args:
-      config: The parsed configuration object
-      token_from_cli: Whether token was provided via command line argument
+    Args:
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
-  Returns:
-      str: The authentication token (from CLI argument, user input, or config file)
-  """
-  # Check if token was provided via command line argument (--token)
-  config_token = config.token
-  if config_token and config_token.upper() not in ["NULL", "NONE", ""] and token_from_cli:
-    print("\n" + "=" * 70)
-    print("AUTHENTICATION TOKEN DETECTED")
-    print("=" * 70)
-    print(f"Target Hub: {config.hub_name}")
-    print("✓ Token received from command line argument (--token)")
-    print(f"   Token: {'*' * min(len(config_token), 8)}... (hidden for security)\n")
-    return config_token
+    Returns:
+        Logger instance
+    """
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper()),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
-  print("\n" + "=" * 70)
-  print("AUTHENTICATION TOKEN REQUIRED")
-  print("=" * 70)
-  print(f"Target Hub: {config.hub_name}")
-  print("\nFor security reasons, please provide your authentication token.")
-  print("The token will not be echoed to the screen.\n")
+    # Reduce verbosity of HTTP request logs
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
-  # Prompt for token
-  token = getpass.getpass("Enter your authentication token (or press Enter to skip): ").strip()
+    return logging.getLogger(__name__)
 
-  if token:
-    print("✓ Token received from user input.")
-    return token
 
-  # User did not provide token, check config file
-  print("\n" + "!" * 70)
-  print("WARNING: No token provided via prompt")
-  print("!" * 70)
-  print("\n⚠️  Token is a REQUIRED parameter for uploading datasets.")
-  print("⚠️  It is STRONGLY RECOMMENDED to provide the token via prompt or --token argument.\n")
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parse command line arguments.
 
-  # Check if token exists in config file
-  if config_token and config_token.upper() not in ["NULL", "NONE", ""]:
-    print("🔍 Searching for token in configuration file...")
-    print("   Location: Configuration field 'token'")
-    print(f"   Found: {'*' * min(len(config_token), 8)}... (hidden for security)\n")
+    Returns:
+        Parsed arguments namespace
+    """
+    parser = argparse.ArgumentParser(
+        description="Upload RoboCoin datasets to remote hubs (HuggingFace/ModelScope). "
+                    "Always generates info YAML and README files before uploading.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic upload (uses default info output path: ./dataset_info)
+  python scripts/hub_upload/upload2hub.py --config configs/upload.yaml
 
-    print("⛔ SECURITY WARNING:")
-    print("   ━" * 35)
-    print("   • Storing tokens in configuration files is NOT RECOMMENDED")
-    print("   • This practice may trigger Git secret detection checks")
-    print("   • Git may BLOCK your push if a token is detected")
-    print("   • Exposed tokens pose a SECURITY RISK to your account")
-    print("   ━" * 35)
-    print("\n⚠️  ACTION REQUIRED:")
-    print("   → Remove the token from your configuration file immediately")
-    print("   → Ensure all commits do not contain the token value")
-    print("   → Use the --token argument or prompt method for token input in the future\n")
+  # With custom info output path
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --info-output-path ./outputs/dataset_infos
 
-    # Ask for confirmation
-    response = input("Continue with token from config file? (yes/no): ").strip().lower()
-    if response in ["yes", "y"]:
-      print("✓ Proceeding with token from configuration file...\n")
-      return config_token
-    print("✗ Upload cancelled by user.")
+  # With authentication token
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --token YOUR_TOKEN
+
+  # With custom log level
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --log-level DEBUG
+
+  # Skip datasets with missing files
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --skip-missing
+
+  # Force overwrite existing repos without prompting
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --force
+
+  # Override database path
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --db-file-path /path/to/db.db
+
+  # All options combined
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --info-output-path ./outputs/infos \\
+      --token YOUR_TOKEN \\
+      --db-file-path /path/to/db.db \\
+      --log-level DEBUG \\
+      --skip-missing \\
+      --force
+        """
+    )
+
+    parser.add_argument(
+        "--config", "-c",
+        type=str,
+        required=True,
+        help="Path to YAML configuration file"
+    )
+
+    parser.add_argument(
+        "--token",
+        type=str,
+        help="Authentication token for the hub platform (if not provided, will prompt)"
+    )
+
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging level (default: INFO)"
+    )
+
+    parser.add_argument(
+        "--skip-missing",
+        action="store_true",
+        help="Skip datasets with missing hardlinks instead of aborting"
+    )
+
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force overwrite existing repositories without prompting"
+    )
+
+    parser.add_argument(
+        "--db-file-path",
+        type=str,
+        help="Override database file path from config"
+    )
+
+    parser.add_argument(
+        "--info-output-path",
+        type=str,
+        default=None,
+        help="Output path for generated dataset info files (default: ./dataset_info)"
+    )
+
+    return parser.parse_args()
+
+
+def prompt_for_token(hub_name: str, token_from_config: str = "") -> str:
+    """
+    Prompt user for authentication token.
+
+    Args:
+        hub_name: Name of the hub platform
+        token_from_config: Token from config file (if any)
+
+    Returns:
+        Authentication token
+    """
+    # Prompt for token
+    token = getpass.getpass(f"🔑 {hub_name} token: ").strip()
+    if token:
+        return token
+
+    # Fall back to config token with confirmation
+    if token_from_config and token_from_config.upper() not in ["NULL", "NONE", ""]:
+        response = input("⚠️  Use token from config? (y/n): ").strip().lower()
+        if response in ["y", "yes"]:
+            return token_from_config
+
+    print("❌ No valid token provided")
     sys.exit(1)
-  else:
-    print("✗ No valid token found in configuration file.")
-    print("✗ Cannot proceed without authentication token.")
-    print("\nPlease run the script again and provide your token via --token argument or prompt.")
-    sys.exit(1)
+
+
+def main() -> None:
+    """
+    Main entry point for the hub upload CLI.
+    """
+    # Parse arguments
+    args = parse_arguments()
+
+    # Setup logging
+    logger = setup_logging(args.log_level)
+
+    try:
+        # Load configuration
+        logger.info(f"Loading configuration from: {args.config}")
+        config_dict = load_config_from_yaml(args.config)
+
+        # Override config with command line arguments if provided
+        if args.skip_missing:
+            config_dict["skip_missing"] = True
+        if args.force:
+            config_dict["force_overwrite"] = True
+        if args.db_file_path:
+            config_dict["db_file_path"] = args.db_file_path
+
+        # Handle token (from CLI, config, or prompt)
+        if args.token:
+            config_dict["token"] = args.token
+        elif not config_dict.get("token") or config_dict["token"].upper() in ["NULL", "NONE", ""]:
+            hub_name = config_dict.get("hub_name", "hub")
+            config_dict["token"] = prompt_for_token(hub_name, config_dict.get("token", ""))
+
+        # Create upload config
+        config = create_upload_config(config_dict)
+
+        # Validate required fields
+        if not config.root_path:
+            logger.error("❌ root_path is required in configuration")
+            sys.exit(1)
+
+        # NOTE: Steps 1 & 2 are now performed on-demand during upload
+        # Each dataset will have its YAML and README generated right before upload
+        # based on the hardlink path from the database
+        logger.info("=" * 80)
+        logger.info("📝 YAML and README files will be generated on-demand for each dataset")
+        logger.info("=" * 80)
+
+        # Upload datasets to hub (with on-demand file generation)
+        logger.info("=" * 80)
+        logger.info("🚀 Starting upload process with on-demand file generation")
+        logger.info("=" * 80)
+        upload_datasets(config, logger)
+
+    except FileNotFoundError as e:
+        logger.error(f"❌ File not found: {e}")
+        sys.exit(1)
+    except ValueError as e:
+        logger.error(f"❌ Configuration error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logger.warning("\n⚠️  Upload interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-  """
-  Main entry point for the dataset uploader.
-
-  Parses command line configuration, prompts for authentication token,
-  and runs the upload process.
-
-  If db_file_path is provided, uses database-driven batch upload to unified repository.
-  Otherwise, uses traditional directory-based upload.
-
-  Supports three methods for providing authentication token:
-  1. Command line argument: --token YOUR_TOKEN (recommended)
-  2. Interactive prompt: Enter token when prompted
-  3. Config file: token field in YAML (not recommended for security)
-  """
-  # Parse configuration from YAML file and command line arguments
-  config = draccus.parse(LocalDsUploadConfig)
-
-  # Detect if token was provided via command line argument
-  # If token is not NULL/NONE/empty and we have CLI args, it likely came from --token
-  token_from_cli = False
-  if "--token" in sys.argv:
-    token_from_cli = True
-
-  # Get or prompt for token with security warnings
-  token = prompt_for_token(config, token_from_cli)
-
-  # Override config token with the obtained token
-  config.token = token
-
-  # Detect which upload mode was explicitly specified via command line
-  db_path_specified = "--db_file_path" in sys.argv or "--db-file-path" in sys.argv
-  root_path_specified = "--root_path" in sys.argv or "--root-path" in sys.argv
-
-  # Check for mutually exclusive options
-  if db_path_specified and root_path_specified:
-    print("\n" + "❌ " * 35)
-    print("ERROR: Conflicting upload modes specified")
-    print("❌ " * 35)
-    print("\nYou cannot specify both --db_file_path and --root_path simultaneously.")
-    print("These options are mutually exclusive:")
-    print("  • --db_file_path: Upload datasets from database (recommended)")
-    print("  • --root_path: Upload datasets from directory structure (legacy)")
-    print("\nPlease choose only one upload mode.\n")
-    sys.exit(1)
-
-  # Require explicit mode selection
-  if not db_path_specified and not root_path_specified:
-    print("\n" + "⚠️ " * 35)
-    print("WARNING: No upload mode specified")
-    print("⚠️ " * 35)
-    print("\nYou MUST explicitly specify the upload mode via command line.")
-    print("Choose one of the following:")
-    print("  • --db_file_path <path>     : Database-driven upload (recommended)")
-    print("  • --db_file_path default    : Use db_file_path from YAML config")
-    print("  • --root_path <path>        : Directory-based upload (legacy)")
-    print("  • --root_path default       : Use root_path from YAML config")
-    print("\nExamples:")
-    print("  # Database mode with explicit path:")
-    print("  python scripts/hub_upload/upload2hub.py \\")
-    print("    --config examples/configs/upload2hf.yml \\")
-    print("    --db_file_path /path/to/datasets.db \\")
-    print("    --token YOUR_TOKEN\n")
-    print("  # Database mode with path from YAML:")
-    print("  python scripts/hub_upload/upload2hub.py \\")
-    print("    --config examples/configs/upload2hf.yml \\")
-    print("    --db_file_path default \\")
-    print("    --token YOUR_TOKEN\n")
-    print("  # Directory mode with explicit path:")
-    print("  python scripts/hub_upload/upload2hub.py \\")
-    print("    --config examples/configs/upload2hf.yml \\")
-    print("    --root_path /path/to/datasets \\")
-    print("    --token YOUR_TOKEN\n")
-    sys.exit(1)
-
-  # Handle "default" keyword to read from YAML config
-  if db_path_specified:
-    if config.db_file_path.lower() in ["default", "", "null", "none"]:
-      # Read from YAML config file - need to parse it again
-      # Find the config file path from sys.argv
-      config_file = None
-      for i, arg in enumerate(sys.argv):
-        if arg in ["--config", "-c"] and i + 1 < len(sys.argv):
-          config_file = sys.argv[i + 1]
-          break
-
-      if config_file and Path(config_file).exists():
-        with open(config_file) as f:
-          yaml_config = yaml.safe_load(f)
-          yaml_db_path = yaml_config.get('db_file_path', '')
-          if yaml_db_path and yaml_db_path.lower() not in ["", "null", "none"]:
-            config.db_file_path = yaml_db_path
-            print(f"ℹ️  Using db_file_path from YAML config: {yaml_db_path}")
-          else:
-            print("\n❌ ERROR: 'default' specified but no valid db_file_path found in YAML config")
-            print(f"   Config file: {config_file}")
-            print(f"   db_file_path in YAML: '{yaml_db_path}'")
-            print("\nPlease specify a valid path in the YAML config or provide an explicit path.\n")
-            sys.exit(1)
-      else:
-        print("\n❌ ERROR: Cannot read default value - config file not found")
-        print("   Please provide an explicit --db_file_path value.\n")
-        sys.exit(1)
-
-  if root_path_specified:
-    if str(config.root_path).lower() in ["default", "", "null", "none", "."]:
-      # Read from YAML config file
-      config_file = None
-      for i, arg in enumerate(sys.argv):
-        if arg in ["--config", "-c"] and i + 1 < len(sys.argv):
-          config_file = sys.argv[i + 1]
-          break
-
-      if config_file and Path(config_file).exists():
-        with open(config_file) as f:
-          yaml_config = yaml.safe_load(f)
-          yaml_root_path = yaml_config.get('root_path', '')
-          if yaml_root_path and str(yaml_root_path).lower() not in ["", "null", "none", "."]:
-            config.root_path = Path(yaml_root_path)
-            print(f"ℹ️  Using root_path from YAML config: {yaml_root_path}")
-          else:
-            print("\n❌ ERROR: 'default' specified but no valid root_path found in YAML config")
-            print(f"   Config file: {config_file}")
-            print(f"   root_path in YAML: '{yaml_root_path}'")
-            print("\nPlease specify a valid path in the YAML config or provide an explicit path.\n")
-            sys.exit(1)
-      else:
-        print("\n❌ ERROR: Cannot read default value - config file not found")
-        print("   Please provide an explicit --root_path value.\n")
-        sys.exit(1)
-
-  # Validate that the chosen mode has a valid path
-  if db_path_specified:
-    if not config.db_file_path or config.db_file_path.strip() in ["", "null", "none"]:
-      print("\n❌ ERROR: --db_file_path specified but no valid path provided")
-      print("   Provide either a path or 'default' to read from YAML config.\n")
-      sys.exit(1)
-
-  # Initialize uploader
-  uploader = LocalDsUploadUtil(config)
-
-  # Choose upload method based on which mode was explicitly specified
-  if db_path_specified:
-    print(f"\n{'='*70}")
-    print("📊 DATABASE-DRIVEN UPLOAD MODE")
-    print(f"{'='*70}")
-    print(f"Database: {config.db_file_path}")
-    print(f"{'='*70}\n")
-    # Database-driven upload
-    uploader.upload_datasets_from_db()
-  else:
-    # root_path_specified must be True here (due to validation above)
-    print(f"\n{'='*70}")
-    print("📁 DIRECTORY-BASED UPLOAD MODE (Legacy)")
-    print(f"{'='*70}")
-    print(f"Root Path: {config.root_path}")
-    print(f"{'='*70}\n")
-    # Traditional directory-based upload
-    uploader.upload_datasets()
-  pass
+    main()

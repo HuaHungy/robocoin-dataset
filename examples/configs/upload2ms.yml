@@ -47,10 +47,7 @@ db_file_path: "/path/to/your/datasets_new.db"  # Default path when using --db_fi
 #   --root_path default         : Use the root_path below from this YAML config
 # Note: db_file_path and root_path cannot both be specified on command line.
 
-# Number of datasets to upload in each batch (for database-driven uploads).
-batch_size: 5
-
-# Skip datasets with missing paths instead of aborting (for database-driven uploads).
+# Skip datasets with missing paths instead of aborting.
 skip_missing: false
 
 # Name of the unified repository for batch uploads (for database-driven uploads).

@@ -53,8 +53,9 @@ def _sync_video_hash_status(session: Session) -> None:
     if not items:
         return
     for item in items:
+        if item.video_hash_status == TaskStatus.COMPLETED:
+            item.video_hash_version = item.video_hash_version + 1
         item.video_hash_status = TaskStatus.PENDING
-        item.video_hash_version = item.video_hash_version + 1
         item.video_hash_version_ps = item.convert_version
 
     session.commit()
@@ -63,6 +64,7 @@ def _sync_video_hash_status(session: Session) -> None:
 def _gen_one_video_hash_task(session: Session) -> tuple[str | None, str | None]:
     query = session.query(DatasetDB).filter(
         DatasetDB.video_hash_status == TaskStatus.PENDING,
+        DatasetDB.convert_status == TaskStatus.COMPLETED,
     )
     item = query.first()
     if not item:
@@ -227,8 +229,9 @@ class VideoHashServer(TaskServer):
             if not item:
                 return None
 
+            if item.video_hash_status == TaskStatus.COMPLETED:
+                item.video_hash_version = item.video_hash_version + 1
             item.video_hash_status = TaskStatus.PROCESSING
-            item.video_hash_version = item.video_hash_version + 1
             item.video_hash_version_ps = item.convert_version
 
             session.commit()

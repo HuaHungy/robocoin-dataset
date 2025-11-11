@@ -22,6 +22,7 @@ from robocoin_dataset.distribution_computation.constant import (
     DEVICE_MODEL,
     DEVICE_MODEL_VERSION,
     ERR_MSG,
+    TASK_RESULT_CONTENT,
     TASK_RESULT_STATUS,
     TASK_SUCCESS,
 )
@@ -226,8 +227,6 @@ def _gen_one_dataset_quality_check_task(
     if not item:
         return None, None, None, None
     item.motion_annotation_status = TaskStatus.PROCESSING
-    item.motion_annotation_version_ps = item.sim_replay_version
-    item.motion_annotation_version = item.motion_annotation_version + 1
     session.commit()
     return item.dataset_uuid, item.convert_path, item.device_model, item.device_model_version
 
@@ -299,8 +298,9 @@ def _sync_quality_check_tasks(
         return
 
     for item in items:
+        if item.qc_status == TaskStatus.COMPLETED:
+            item.qc_version = item.qc_version + 1
         item.qc_status = TaskStatus.PENDING
-        item.qc_version = item.qc_version + 1
         item.qc_version_ps = item.data_merge_version
 
     session.commit()
@@ -453,6 +453,7 @@ class DatasetQualityCheckServer(TaskServer):
             )
 
         if not dataset_uuid:
+            self.logger.info("No dataset quality check task available.")
             return None
 
         checker_config = get_checker_config(
@@ -474,12 +475,8 @@ class DatasetQualityCheckServer(TaskServer):
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
-        dataset_qc_status = (
-            TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
-        )
-        qc_results = task_result_content.get(QC_RESULT)
+        qc_results = task_result_content.get(TASK_RESULT_CONTENT).get(QC_RESULT)
 
-        episode_qc_results = _build_episode_qc_summary(task_result_content.get(QC_RESULT, {}))
         err_msg = task_result_content.get(ERR_MSG)
 
         if task_status == TASK_SUCCESS:
@@ -493,7 +490,7 @@ class DatasetQualityCheckServer(TaskServer):
                 for episode_idx, summary in qc_results.items():
                     episode_qc_item = EpisodeQcDB(
                         dataset_uuid=ds_uuid,
-                        episode_idx=episode_idx,
+                        episode_idx=int(episode_idx),
                         is_bad_episode=summary["is_bad"],
                         state_data_score=summary["state_data_score"],
                         action_data_score=summary["action_data_score"],
@@ -541,11 +538,12 @@ class DatasetQualityCheckClient(TaskClient):
         try:
             repo_path = task_content.get(LEFORMAT_PATH)
 
-            results, _ = _check_repo(
+            results = _check_repo(
                 repo_path,
                 task_content.get(QC_CONFIG),
             )
+            results_send = {str(episode_idx): v for episode_idx, v in results.items()}
 
-            return {QC_RESULT: results}
+            return {QC_RESULT: results_send}
         except Exception as e:
             raise RuntimeError(f"dataset quality check {repo_path} failed") from e
