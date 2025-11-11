@@ -8,7 +8,7 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 class AlphaBot2LerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
-        / "mjcfs/ai2robotics/meshes_simplified_simplified/Bot2_ZPF_L2Fgripper_R2Fgripper_A_description_with_sites.xml"
+        / "mjcfs/ai2robotics_bot2/Bot2_ZPF_L2Fgripper_R2Fgripper_A_description_with_sites.xml"
     )
 
     # fixed

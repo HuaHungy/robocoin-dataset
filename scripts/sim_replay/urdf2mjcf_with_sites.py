@@ -151,5 +151,7 @@ except Exception as e:
     exit(1)
 
 """usage:
-python scripts/sim_replay/urdf2mjcf_with_sites.py /home/kemove/Downloads/Bot2_ZPF_L2Fgripper_R2Fgripper_A1.1_description/meshes_simplified_simplified/Bot2_ZPF_L2Fgripper_R2Fgripper_A_description.urdf --left_eef_body_name ZPF_left_Link7 --right_eef_body_name ZPF_right_Link7
+python scripts/sim_replay/urdf2mjcf_with_sites.py /home/kemove/robocoin-dataset/src/robocoin_dataset/sim_replay/configs/mjcfs/A2D/G1_roh_roh.urdf \
+--left_eef_body_name arm_l_end_link \
+--right_eef_body_name arm_r_end_link
 """
