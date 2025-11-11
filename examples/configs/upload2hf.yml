@@ -94,8 +94,8 @@ subdirs_to_ignore:
 log_config:
     # where to save log files, the log directory will be created if it does not exist
     log_dir: ./examples/datasets/logs/dataset_uploads
-    # whether to log to console
-    log_to_console: true
+    # whether to log to console (set to false to avoid duplicate messages)
+    log_to_console: false
     # log level, can be DEBUG, INFO, WARNING, ERROR, CRITICAL
     log_level: INFO
 

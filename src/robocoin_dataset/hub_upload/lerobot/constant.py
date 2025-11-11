@@ -68,22 +68,41 @@ LEROBOT_META_INFO_FILE = "meta/info.json"
 LEROBOT_META_TASKS_FILE = "meta/tasks.jsonl"
 """str: LeRobot format tasks file path."""
 
-ANNOTATION_SOURCE_FILE = "label/data_annotation.json"
-"""str: Annotation data file path."""
+LEROBOT_META_EPISODES_FILE = "meta/episodes.jsonl"
+"""str: LeRobot format episodes file path."""
 
-DEVICE_INFO_SOURCE_FILE = "device/device_info.json"
-"""str: Device information file path."""
+LEROBOT_META_EPISODES_STATS_FILE = "meta/episodes_stats.jsonl"
+"""str: LeRobot format episodes statistics file path."""
 
 README_FILE = "README.md"
 """str: README file name."""
 
 
+# New structure directories (LeRobot v2.0+ format)
+ANNOTATIONS_DIR = "annotations"
+"""str: Annotations directory path."""
+
+DATA_DIR = "data"
+"""str: Data directory path."""
+
+META_DIR = "meta"
+"""str: Metadata directory path."""
+
+VIDEOS_DIR = "videos"
+"""str: Videos directory path."""
+
+
 LOCAL_DATASET_CHECK_STRUCTURE = [
+    ANNOTATIONS_DIR,
+    DATA_DIR,
+    META_DIR,
+    VIDEOS_DIR,
     LEROBOT_META_INFO_FILE,
-    ANNOTATION_SOURCE_FILE,
-    DEVICE_INFO_SOURCE_FILE,
+    LEROBOT_META_TASKS_FILE,
+    LEROBOT_META_EPISODES_FILE,
+    LEROBOT_META_EPISODES_STATS_FILE,
 ]
-"""list[str]: Required files for basic local dataset validation."""
+"""list[str]: Required files and directories for basic local dataset validation (LeRobot v2.0+ format)."""
 
 GEN_README_DATASET_ADDITIONAL_CHECK_STRUCTURE = [
     DATASET_INFO_FILE,

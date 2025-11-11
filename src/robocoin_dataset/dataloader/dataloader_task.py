@@ -27,16 +27,14 @@ def _sync_dataloader_detection_tasks(
 
     query = session.query(DatasetDB).filter(
         and_(
-            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,
             or_(
-                # NEW: Match records that have never been tested (NULL status)
-                DatasetDB.data_loader_detection_status == None,  # noqa: E711
                 # Match records explicitly marked as PENDING
                 DatasetDB.data_loader_detection_status == TaskStatus.PENDING,
                 # Match records that were COMPLETED but are now outdated
                 and_(
                     DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
-                    DatasetDB.data_loader_detection_version_ps < DatasetDB.data_merge_version,
+                    DatasetDB.data_loader_detection_version_ps < DatasetDB.qced_repo_gen_version,
                 ),
             ),
         )
@@ -46,34 +44,13 @@ def _sync_dataloader_detection_tasks(
     if not items:
         return
 
-    # Separate NULL status records and warn about them
-    null_status_items = []
-    valid_items = []
+    if items:
+        _logger.info(f"Marked {len(items)} dataset(s) as PENDING for dataloader detection")
 
     for item in items:
-        if item.data_loader_detection_status is None:
-            null_status_items.append(item)
-        else:
-            valid_items.append(item)
-
         item.data_loader_detection_status = TaskStatus.PENDING
-        item.data_loader_detection_version_ps = item.data_merge_version
+        item.data_loader_detection_version_ps = item.qced_repo_gen_version
         item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
-
-    # Log warnings for NULL status records
-    if null_status_items:
-        _logger.warning(
-            f"⚠️  Found {len(null_status_items)} dataset(s) with NULL data_loader_detection_status. "
-            f"This is ILLEGAL - status should be initialized. Treating as PENDING for robustness."
-        )
-        for item in null_status_items:
-            _logger.warning(
-                f"   ⚠️  Dataset {item.dataset_uuid} has NULL data_loader_detection_status "
-                f"(convert_path: {item.convert_path})"
-            )
-
-    if valid_items:
-        _logger.info(f"Marked {len(valid_items)} dataset(s) as PENDING for dataloader detection")
 
     session.commit()
 
@@ -101,24 +78,34 @@ def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, 
     if not item:
         return None, None
 
-    # Query hardlink path before claiming task without validation
+    # Query hardlink path before claiming task and validate
     from robocoin_dataset.database.models import DatasetHardLinkDB
 
-    hardlink_record = session.query(DatasetHardLinkDB).filter(
-        DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
-    ).first()
-    hardlink_path = Path(hardlink_record.hard_link_path) if hardlink_record and hardlink_record.hard_link_path else None
-    if hardlink_path is None:
-        raise FileNotFoundError(
-            f"No hardlink found in database for dataset {item.dataset_uuid}. "
-            f"Hardlinks must be created before running dataloader detection."
-        )
+    try:
+        hardlink_record = session.query(DatasetHardLinkDB).filter(
+            DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
+        ).first()
+        hardlink_path = Path(hardlink_record.hard_link_path) if hardlink_record and hardlink_record.hard_link_path else None
 
-    # Verify hardlink path exists on disk
-    if not hardlink_path.exists():
+        if hardlink_path is None:
+            raise FileNotFoundError(
+                f"No hardlink found in database for dataset {item.dataset_uuid}. "
+                f"Hardlinks must be created before running dataloader detection."
+            )
+
+        # Verify hardlink path exists on disk
+        if not hardlink_path.exists():
+            raise FileNotFoundError(
+                f"Hardlink path in database does not exist on disk: {hardlink_path}"
+            )
+    except FileNotFoundError:
+        # Re-raise FileNotFoundError as-is
+        raise
+    except Exception as e:
+        # Wrap other exceptions as FileNotFoundError
         raise FileNotFoundError(
-            f"Hardlink path in database does not exist on disk: {hardlink_path}"
-        )
+            f"Failed to retrieve or validate hardlink for dataset {item.dataset_uuid}: {e}"
+        ) from e
 
     # All validations passed - claim the task
     item.data_loader_detection_status = TaskStatus.PROCESSING
