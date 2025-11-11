@@ -5,6 +5,10 @@ import numpy as np
 import pandas as pd
 import tqdm
 
+from robocoin_dataset.quality_check.hardlink.make_hardlink import (
+    RepoHardLinkCorresp,
+    create_hardlinks_from_correspondence,
+)
 from robocoin_dataset.utils.parquet_paths import get_parquet_paths
 from robocoin_dataset.utils.path_utils import (
     get_dataset_video_paths,
@@ -14,9 +18,12 @@ from robocoin_dataset.utils.path_utils import (
 )
 
 
-def _remove_episode(
-    repo_path: str | Path, bad_episodes: set[int], input_feature: str, output_feature: str
-) -> None:
+def gen_qc_repo_files(
+    repo_path: str | Path,
+    bad_episodes: set[int],
+    input_feature: str,
+    output_feature: str,
+) -> dict[str | Path, str | Path]:
     """Remove bad episodes from the dataset repository.
 
     Args:
@@ -98,15 +105,12 @@ def _remove_episode(
         chunk_size=chunks_size,
         output_feature=output_feature,
     )
-    video_match_dict = _gen_video_path_matching_dict(
+    return _gen_video_path_matching_dict(
         input_video_paths=get_dataset_video_paths(repo_path),
         repo_path=repo_path,
         bad_episodes=bad_episodes,
         chunk_size=chunks_size,
-        output_feature=output_feature,
     )
-    with open(repo_path / f"{output_feature}_video_path_mapping.json", "w") as f:
-        json.dump(video_match_dict, f, indent=2)
 
 
 def _gen_output_meta_info_file(
@@ -217,7 +221,6 @@ def _gen_video_path_matching_dict(
     repo_path: str | Path,
     bad_episodes: set[int],
     chunk_size: int,
-    output_feature: str,
 ) -> dict[int, list[Path]]:
     repo_path = Path(repo_path).expanduser().absolute()
 
@@ -248,10 +251,24 @@ def _gen_video_path_matching_dict(
     return matching_dict
 
 
-# def _sync_remove_bad_episodes_tasks(
-#     session: Session,
-#     device_model: str | None = None,
-#     device_model_version: str | None = None,
-# ) -> None:
+def gen_qc_repo(
+    repo_path: str | Path,
+    bad_episodes: set[int],
+    input_feature: str = "quality_checked",
+    hl_suffix: str = "hardlink",
+) -> None:
+    repo_path = Path(repo_path).expanduser().absolute()
 
-# class RemoveBadEpisodes:
+    video_path_corresp = gen_qc_repo_files(
+        repo_path=repo_path,
+        bad_episodes=bad_episodes,
+        input_feature=input_feature,
+        output_feature=hl_suffix,
+    )
+    file_corresp, dir_corresp = RepoHardLinkCorresp(
+        input_feature=input_feature,
+        repo_path=repo_path,
+        hard_link_repo_path=repo_path.parent / f"{str(repo_path.name)}_{hl_suffix}",
+        video_path_corresp=video_path_corresp,
+    ).get_hard_link_corresp()
+    create_hardlinks_from_correspondence(file_corresp=file_corresp, dir_corresp=dir_corresp)

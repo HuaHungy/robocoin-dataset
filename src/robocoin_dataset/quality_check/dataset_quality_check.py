@@ -232,7 +232,7 @@ def _gen_one_dataset_quality_check_task(
     return item.dataset_uuid, item.convert_path, item.device_model, item.device_model_version
 
 
-def _build_episode_summary(
+def _build_episode_qc_summary(
     bad_data_episodes: list[int] | None = None,
     state_data_scores: dict[int, float] | None = None,
     action_data_scores: dict[int, float] | None = None,
@@ -332,6 +332,23 @@ def _gen_one_dataset_quality_check_task_without_sync(
     return item.dataset_uuid, item.convert_path, device_model, device_model_version
 
 
+def _check_repo(repo_path: str | Path, checker_config: dict) -> dict[int, dict]:
+    qc_results, _ = quality_check_pipeline(repo_path, checker_config)
+    bad_episodes, state_data_scores, action_data_scores, video_scores = (
+        qc_results.get("bad_data_episodes", []),
+        qc_results.get("state_data_scores", {}),
+        qc_results.get("action_data_scores", {}),
+        qc_results.get("video_scores", {}),
+    )
+
+    return _build_episode_qc_summary(
+        bad_episodes,
+        state_data_scores=state_data_scores,
+        action_data_scores=action_data_scores,
+        video_scores=video_scores,
+    )
+
+
 class DatasetQualityCheck:
     def __init__(
         self,
@@ -361,25 +378,7 @@ class DatasetQualityCheck:
         )
 
         try:
-            qc_results, details = quality_check_pipeline(repo_path, checker_config)
-            bad_episodes, state_data_scores, action_data_scores, video_scores = (
-                qc_results.get("bad_data_episodes", []),
-                qc_results.get("state_data_scores", {}),
-                qc_results.get("action_data_scores", {}),
-                qc_results.get("video_scores", {}),
-            )
-
-            print(
-                len(bad_episodes),
-                len(state_data_scores),
-                len(action_data_scores),
-            )
-            qc_results_summary = _build_episode_summary(
-                bad_episodes,
-                state_data_scores=state_data_scores,
-                action_data_scores=action_data_scores,
-                video_scores=video_scores,
-            )
+            qc_results = _check_repo(repo_path, checker_config)
 
             with self.db.with_session() as session:
                 item = (
@@ -390,7 +389,7 @@ class DatasetQualityCheck:
                 else:
                     return
                 session.query(EpisodeQcDB).filter(EpisodeQcDB.dataset_uuid == dataset_uuid).delete()
-                for episode_idx, summary in qc_results_summary.items():
+                for episode_idx, summary in qc_results.items():
                     episode_qc_item = EpisodeQcDB(
                         dataset_uuid=dataset_uuid,
                         episode_idx=episode_idx,
@@ -448,50 +447,26 @@ class DatasetQualityCheckServer(TaskServer):
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
-            query = session.query(DatasetDB).filter(
-                and_(
-                    # 必要前提：convert必须成功
-                    DatasetDB.data_merge_status == TaskStatus.COMPLETED,
-                    # 两个触发分支
-                    or_(
-                        # 分支1: 正在排队
-                        DatasetDB.qc_status == TaskStatus.PENDING,
-                        # 分支2: 已完成但版本过期
-                        and_(
-                            DatasetDB.qc_status == TaskStatus.COMPLETED,
-                            DatasetDB.qc_version_ps < DatasetDB.data_merge_version,
-                        ),
-                    ),
-                )
-            )
-            item = query.first()
-
-            if not item:
-                return None
-
-            item.qc_status = TaskStatus.PROCESSING
-            item.qc_version = item.qc_version + 1
-            item.qc_version_ps = item.data_merge_version
-
-            session.commit()
-
-            # 获取 sim_replay 配置
-            device_model = item.device_model
-            device_model_version = item.device_model_version
-
-            checker_config = get_checker_config(
-                device_model,
-                device_model_version,
-                self.qc_config_path,
+            _sync_quality_check_tasks(session=session)
+            dataset_uuid, repo_path, device_model, device_model_version = (
+                _gen_one_dataset_quality_check_task_without_sync(session=session)
             )
 
-            return {
-                DATASET_UUID: item.dataset_uuid,
-                LEFORMAT_PATH: item.convert_path,
-                DEVICE_MODEL: device_model,
-                DEVICE_MODEL_VERSION: device_model_version,
-                QC_CONFIG: checker_config,
-            }
+        if not dataset_uuid:
+            return None
+
+        checker_config = get_checker_config(
+            device_model,
+            device_model_version,
+            self.qc_config_path,
+        )
+        return {
+            DATASET_UUID: dataset_uuid,
+            LEFORMAT_PATH: repo_path,
+            DEVICE_MODEL: device_model,
+            DEVICE_MODEL_VERSION: device_model_version,
+            QC_CONFIG: checker_config,
+        }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         ds_uuid = task_content.get(DATASET_UUID)
@@ -502,24 +477,20 @@ class DatasetQualityCheckServer(TaskServer):
         dataset_qc_status = (
             TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
         )
+        qc_results = task_result_content.get(QC_RESULT)
 
-        episode_qc_results = _build_episode_summary(task_result_content.get(QC_RESULT, {}))
+        episode_qc_results = _build_episode_qc_summary(task_result_content.get(QC_RESULT, {}))
+        err_msg = task_result_content.get(ERR_MSG)
 
-        # 🆕 合并为单个session，保证原子性
-        with self.db.with_session() as session:
-            # 查询 device_model_version
-            item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
-            if item is None:
-                self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
-
-            # 在同一个session中更新转换状态
-            item.qc_status = dataset_qc_status
-            item.qc_err_msg = task_status_msg
-            session.commit()
-
-            if task_status == TASK_SUCCESS:
+        if task_status == TASK_SUCCESS:
+            with self.db.with_session() as session:
+                item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
+                if item:
+                    item.qc_status = TaskStatus.COMPLETED
+                else:
+                    return
                 session.query(EpisodeQcDB).filter(EpisodeQcDB.dataset_uuid == ds_uuid).delete()
-                for episode_idx, summary in episode_qc_results.items():
+                for episode_idx, summary in qc_results.items():
                     episode_qc_item = EpisodeQcDB(
                         dataset_uuid=ds_uuid,
                         episode_idx=episode_idx,
@@ -529,7 +500,16 @@ class DatasetQualityCheckServer(TaskServer):
                         video_score=summary["video_score"],
                     )
                     session.add(episode_qc_item)
-            session.commit()
+                session.commit()
+        else:
+            with self.db.with_session() as session:
+                item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
+                if item:
+                    item.qc_status = TaskStatus.FAILED
+                    item.qc_err_msg = err_msg
+                else:
+                    return
+                session.commit()
 
             self.logger.info(
                 f"Upsert {item.convert_path} dataset quality check status to {item.qc_status}, "
@@ -561,7 +541,7 @@ class DatasetQualityCheckClient(TaskClient):
         try:
             repo_path = task_content.get(LEFORMAT_PATH)
 
-            results, _ = quality_check_pipeline(
+            results, _ = _check_repo(
                 repo_path,
                 task_content.get(QC_CONFIG),
             )

@@ -4,8 +4,51 @@ from pathlib import Path
 
 import av
 import imagehash
+import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
+
+
+def detect_frame_dist(
+    video_path: str,
+    hash_size: int = 16,
+) -> None:
+    try:
+        container = av.open(video_path)
+        stream = container.streams.video[0]
+        stream.thread_count = 1
+    except Exception as e:
+        raise RuntimeError(f"无法打开视频: {e}")
+
+    keyframe_hashes = []
+    total_frame_count = 0
+    keyframe_count = 0
+
+    # 提取所有关键帧的 phash
+    for packet in container.demux(video=0):
+        for frame in packet.decode():
+            total_frame_count += 1
+
+            if not (frame.key_frame or frame.pict_type == "I"):
+                continue
+
+            try:
+                img = frame.to_image()
+                h = imagehash.phash(img, hash_size=hash_size)
+                keyframe_hashes.append(h)
+                keyframe_count += 1
+            except Exception as e:
+                print(f"处理第 {total_frame_count - 1} 帧时出错: {e}")
+                continue
+
+    container.close()
+
+    # 计算相邻关键帧的 phash 距离
+    distances = [
+        keyframe_hashes[i] - keyframe_hashes[i - 1] for i in range(1, len(keyframe_hashes))
+    ]
+    plt.plot(distances)
+    plt.show()
 
 
 def detect_max_jump_after_stable(

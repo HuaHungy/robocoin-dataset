@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from robocoin_dataset.annotation.subtask_annotion.utils import (
     match_video_file_hash,
-    match_video_image_hashes,
+    match_video_image_hash,
 )
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
@@ -65,19 +65,20 @@ def prepare_video_imagehashes_lib(session: Session) -> dict[str, dict[int, image
 
 def match_episode_with_url_video(
     ep_videos_file_hashes: list[str],
-    ep_video_image_hashes: list[list[imagehash.ImageHash]],
+    ep_video_image_hashes: list[imagehash.ImageHash],
     frame_num: int,
     file_hash_lib: dict[str, int],
-    image_hashes_lib: dict[int, list[tuple[int, list[imagehash.ImageHash]]]],
+    image_hashes_lib: dict[int, dict[int, imagehash.ImageHash]],
 ) -> int | None:
     for file_hash in ep_videos_file_hashes:
         matched_video_id = match_video_file_hash(file_hash, file_hash_lib)
         if matched_video_id:
             return matched_video_id
-    for video_image_hashes in ep_video_image_hashes:
-        matched_video_id = match_video_image_hashes(
+    for video_image_hash in ep_video_image_hashes:
+        print(f"type of video_image_hashes: {type(video_image_hash)}")
+        matched_video_id = match_video_image_hash(
             frame_num=frame_num,
-            image_phashes=video_image_hashes,
+            image_phash=video_image_hash,
             video_image_phashes_lib=image_hashes_lib,
         )
         if matched_video_id:
@@ -96,6 +97,7 @@ def match_dataset_with_url_video(
     for ep_idx in tqdm.tqdm(dataset_file_hashes.keys(), desc="match episodes", unit="episode"):
         ep_video_file_hashes = dataset_file_hashes[ep_idx]
         ep_video_image_hashes = dataset_image_hashes[ep_idx]
+        print(f"type of ep_video_image_hashes: {type(ep_video_image_hashes)}")
         frame_num = dataset_frame_nums[ep_idx]
         matched_video_id = match_episode_with_url_video(
             ep_video_file_hashes,
@@ -137,9 +139,15 @@ class VideoMatch:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
-        with self.db.with_session() as session:
-            self.file_hash_lib = prepare_video_filehash_lib(session)
-            self.image_hashes_lib = prepare_video_imagehashes_lib(session)
+        # with self.db.with_session() as session:
+        #     self.file_hash_lib = prepare_video_filehash_lib(session)
+        #     self.image_hash_lib = prepare_video_imagehashes_lib(session)
+
+        # pickle.dump(self.file_hash_lib, open("datas/file_hash_lib.pkl", "wb"))
+        # pickle.dump(self.image_hash_lib, open("datas/image_hash_lib.pkl", "wb"))
+
+        self.file_hash_lib = pickle.load(open("datas/file_hash_lib.pkl", "rb"))
+        self.image_hash_lib = pickle.load(open("datas/image_hashes_lib.pkl", "rb"))
 
     def sync_video_match_status(self, match_failed_videos: bool = False) -> None:
         with self.db.with_session() as session:
@@ -186,7 +194,7 @@ class VideoMatch:
                 return None
 
             item.video_match_status = TaskStatus.PROCESSING
-            session.flush()
+            session.commit()
             return item.dataset_uuid
 
     def get_ep_video_hashes(
@@ -227,7 +235,7 @@ class VideoMatch:
                 ep_video_image_hashes,
                 dataset_frame_nums,
                 self.file_hash_lib,
-                self.image_hashes_lib,
+                self.image_hash_lib,
             )
 
             unmatched_ep_idxs = [k for k, v in match_results.items() if v is None]
@@ -287,6 +295,9 @@ class VideoMatch:
 
                 item.video_match_status = TaskStatus.FAILED
                 item.video_match_err_msg = traceback.format_exc()
+                self.logger.error(
+                    f"Dataset {dataset_uuid} video match failed: {traceback.format_exc()}"
+                )
                 session.commit()
 
     def match_videos(self, match_failed_videos: bool = True) -> None:

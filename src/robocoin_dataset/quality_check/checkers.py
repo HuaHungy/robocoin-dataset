@@ -215,7 +215,7 @@ def detect_jump_frames(
     hash_size: int = 16,
     stable_distance_threshold: int = 1,  # 静止期：phash 距离 <= 1
     min_stable_frames: int = 2,  # 静止期最少连续帧数（关键帧对）
-) -> int:
+) -> tuple[int, int]:
     """
     检测在连续静止关键帧之后，图像跳变的最大 phash 距离。
 
@@ -274,6 +274,7 @@ def detect_jump_frames(
     ]
 
     max_jump = 0  # 存储最大跳变距离
+    frame_idx = 0
 
     # 遍历所有可能的跳变点（从第 min_stable_frames 个距离开始）
     for i in range(min_stable_frames, len(distances)):
@@ -287,8 +288,9 @@ def detect_jump_frames(
             jump_distance = distances[i]
             if jump_distance > max_jump:
                 max_jump = jump_distance
+                frame_idx = i
 
-    return max_jump
+    return max_jump, frame_idx
 
 
 @episode_video_checker_registry("max_frame_jump_rate")
@@ -297,6 +299,6 @@ def dectect_max_frame_jump(video_paths: list[str | Path]) -> float:
     for video_path in video_paths:
         if not Path(video_path).exists() or not Path(video_path).is_file():
             return 100.0
-            break
-        max_jump = max(max_jump, detect_jump_frames(str(video_path)))
+        current_jump, _ = detect_jump_frames(str(video_path))
+        max_jump = max(max_jump, current_jump)
     return max_jump / 100

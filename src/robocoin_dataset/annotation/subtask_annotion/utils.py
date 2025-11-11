@@ -226,9 +226,9 @@ def match_video_file_hash(hash: str, file_hash_lib: dict[str, int]) -> int | Non
     return None
 
 
-def match_video_image_hashes(
+def match_video_image_hash(
     frame_num: int,
-    image_phashes: list[imagehash.ImageHash],
+    image_phash: imagehash.ImageHash,
     video_image_phashes_lib: dict[int, dict[int, imagehash.ImageHash]],
     win_size: int = 1,
     threashold: float = 0.95,
@@ -246,16 +246,11 @@ def match_video_image_hashes(
 
     min_dist = float("inf")
     matched_id = None
-    for image_phash in image_phashes:
-        for url_idx, phash in phashes.items():
-            dist = (image_phash - phash) / len(phash)
-            if dist < min_dist:
-                min_dist = dist
-                matched_id = url_idx
-        for s_phash, t_phash in zip(image_phashes, phashes):
-            if s_phash is None or t_phash is None:
-                continue
-            dist += (s_phash - t_phash) / len(t_phash)
+    for url_idx, phash in phashes.items():
+        dist = (image_phash - phash) / len(phash)
+        if dist < min_dist:
+            min_dist = dist
+            matched_id = url_idx
 
     if min_dist > threashold:
         return None
