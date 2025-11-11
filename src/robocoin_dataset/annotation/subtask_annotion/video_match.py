@@ -139,15 +139,9 @@ class VideoMatch:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
-        # with self.db.with_session() as session:
-        #     self.file_hash_lib = prepare_video_filehash_lib(session)
-        #     self.image_hash_lib = prepare_video_imagehashes_lib(session)
-
-        # pickle.dump(self.file_hash_lib, open("datas/file_hash_lib.pkl", "wb"))
-        # pickle.dump(self.image_hash_lib, open("datas/image_hash_lib.pkl", "wb"))
-
-        self.file_hash_lib = pickle.load(open("datas/file_hash_lib.pkl", "rb"))
-        self.image_hash_lib = pickle.load(open("datas/image_hashes_lib.pkl", "rb"))
+        with self.db.with_session() as session:
+            self.file_hash_lib = prepare_video_filehash_lib(session)
+            self.image_hash_lib = prepare_video_imagehashes_lib(session)
 
     def sync_video_match_status(self, match_failed_videos: bool = False) -> None:
         with self.db.with_session() as session:
