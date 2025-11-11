@@ -95,8 +95,9 @@ def _sync_motion_annotation_data_post_processing_tasks(
     if not items:
         return
     for item in items:
+        if item.motion_annotation_status == TaskStatus.COMPLETED:
+            item.motion_annotation_version = item.motion_annotation_version + 1
         item.motion_annotation_status = TaskStatus.PENDING
-        item.motion_annotation_version = item.motion_annotation_version + 1
         item.motion_annotation_version_ps = item.sim_replay_version
 
     session.commit()
@@ -120,9 +121,10 @@ def _gen_one_motion_annotation_data_post_processing_task(
     item = query.first()
     if not item:
         return None, None, None, None
+    if item.motion_annotation_status == TaskStatus.COMPLETED:
+        item.motion_annotation_version = item.motion_annotation_version + 1
     item.motion_annotation_status = TaskStatus.PROCESSING
     item.motion_annotation_version_ps = item.sim_replay_version
-    item.motion_annotation_version = item.motion_annotation_version + 1
     session.commit()
     return item.dataset_uuid, item.convert_path, item.device_model, item.device_model_version
 

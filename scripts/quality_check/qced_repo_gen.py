@@ -44,5 +44,5 @@ if __name__ == "__main__":
     generator.gen_one_qced_repo()
 
 """Usage:
-python scripts/quality_check/qced_repo_gen.py --db_file_path ./db/datasets_new.db --log_dir ./logs/quality_check --qc_config_path ./scripts/quality_check/configs/device_version_checker_config.yaml
+python scripts/quality_check/qced_repo_gen.py --db_file_path ./db/datasets_new.db --log_dir ./logs/qced_repo_gen
 """

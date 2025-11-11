@@ -279,26 +279,27 @@ def _gen_video_path_matching_dict(
 def gen_qced_repo(
     repo_path: str | Path,
     bad_episodes: set[int],
-    input_feature: str = "quality_checked",
+    input_feature: str = "merged",
+    qced_feature: str = "quality_checked",
     hl_suffix: str = "qced_hardlink",
-) -> Path:
+) -> str:
     repo_path = Path(repo_path).expanduser().absolute()
 
     video_path_corresp = gen_qced_repo_files(
         repo_path=repo_path,
         bad_episodes=bad_episodes,
         input_feature=input_feature,
-        output_feature=hl_suffix,
+        output_feature=qced_feature,
     )
     hard_link_repo_path = repo_path.parent / f"{str(repo_path.name)}_{hl_suffix}"
     file_corresp, dir_corresp = RepoHardLinkCorresp(
-        input_feature=input_feature,
-        repo_path=repo_path,
+        input_feature=qced_feature,
+        source_repo_path=repo_path,
         hard_link_repo_path=hard_link_repo_path,
         video_path_corresp=video_path_corresp,
     ).get_hard_link_corresp()
     create_hardlinks_from_correspondence(file_corresp=file_corresp, dir_corresp=dir_corresp)
-    return hard_link_repo_path
+    return str(hard_link_repo_path)
 
 
 def _sync_qced_repo_gen_tasks(session: Session) -> None:
@@ -324,8 +325,10 @@ def _sync_qced_repo_gen_tasks(session: Session) -> None:
         return
 
     for item in items:
+        if item.qced_repo_gen_status == TaskStatus.COMPLETED:
+            item.qced_repo_gen_version = item.qced_repo_gen_version + 1
+            continue
         item.qced_repo_gen_status = TaskStatus.PENDING
-        item.qced_repo_gen_version = item.qced_repo_gen_version + 1
         item.qced_repo_gen_version_ps = item.qc_version
 
     session.commit()
@@ -426,6 +429,7 @@ class QualityCheckedRepoGenerator:
                 )
                 if not ds_item:
                     return
+                ds_item.qced_repo_gen_status = TaskStatus.COMPLETED
                 hardlink_item = (
                     session.query(DatasetHardLinkDB)
                     .filter(DatasetHardLinkDB.dataset_uuid == dataset_uuid)

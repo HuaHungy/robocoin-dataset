@@ -227,8 +227,6 @@ def _gen_one_dataset_quality_check_task(
     if not item:
         return None, None, None, None
     item.motion_annotation_status = TaskStatus.PROCESSING
-    item.motion_annotation_version_ps = item.sim_replay_version
-    item.motion_annotation_version = item.motion_annotation_version + 1
     session.commit()
     return item.dataset_uuid, item.convert_path, item.device_model, item.device_model_version
 
@@ -300,8 +298,9 @@ def _sync_quality_check_tasks(
         return
 
     for item in items:
+        if item.qc_status == TaskStatus.COMPLETED:
+            item.qc_version = item.qc_version + 1
         item.qc_status = TaskStatus.PENDING
-        item.qc_version = item.qc_version + 1
         item.qc_version_ps = item.data_merge_version
 
     session.commit()
@@ -544,7 +543,6 @@ class DatasetQualityCheckClient(TaskClient):
                 task_content.get(QC_CONFIG),
             )
             results_send = {str(episode_idx): v for episode_idx, v in results.items()}
-            print(results_send)
 
             return {QC_RESULT: results_send}
         except Exception as e:

@@ -75,7 +75,6 @@ def match_episode_with_url_video(
         if matched_video_id:
             return matched_video_id
     for video_image_hash in ep_video_image_hashes:
-        print(f"type of video_image_hashes: {type(video_image_hash)}")
         matched_video_id = match_video_image_hash(
             frame_num=frame_num,
             image_phash=video_image_hash,
@@ -97,7 +96,6 @@ def match_dataset_with_url_video(
     for ep_idx in tqdm.tqdm(dataset_file_hashes.keys(), desc="match episodes", unit="episode"):
         ep_video_file_hashes = dataset_file_hashes[ep_idx]
         ep_video_image_hashes = dataset_image_hashes[ep_idx]
-        print(f"type of ep_video_image_hashes: {type(ep_video_image_hashes)}")
         frame_num = dataset_frame_nums[ep_idx]
         matched_video_id = match_episode_with_url_video(
             ep_video_file_hashes,

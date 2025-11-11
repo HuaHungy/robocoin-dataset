@@ -380,8 +380,9 @@ def _sync_data_merge_tasks(
     if not items:
         return
     for item in items:
-        item.data_merge_status = TaskStatus.PENDING
-        item.data_merge_version = item.data_merge_version + 1
+        if item.data_merge_status == TaskStatus.COMPLETED:
+            item.data_merge_version = item.data_merge_version + 1
+        item.data_merge_status = TaskStatus.PROCESSING
         item.data_merge_version_ps_ma = item.motion_annotation_version
         item.data_merge_version_ps_sa = item.scene_annotation_version
         item.data_merge_version_ps_sta = item.video_embed_subtask_annotation_version
