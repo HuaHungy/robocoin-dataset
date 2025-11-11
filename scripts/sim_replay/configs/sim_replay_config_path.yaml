@@ -100,12 +100,16 @@ realman_rmc_aidal:
 # ruantong_a2d
 ruantong_a2d:
 - version: default_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ruantong_config
-  mujoco_sim_replay_config_class: RuantongA2dLerobotSimReplayConfig
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.A2D_config
+  mujoco_sim_replay_config_class: A2DLerobotSimReplayConfig
+
+- version: gt01_no_depth
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.A2D_config
+  mujoco_sim_replay_config_class: A2DLerobotSimReplayConfig
 
 - version: gt02_new_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ruantong_config
-  mujoco_sim_replay_config_class: RuantongA2dLerobotSimReplayConfig  
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.A2D_config
+  mujoco_sim_replay_config_class: A2DLerobotSimReplayConfig
 
 # unitree_g1
 unitree_g1: 

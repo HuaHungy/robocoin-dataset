@@ -80,6 +80,10 @@ ruantong_a2d:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.ruantong_a2d_processor
   post_processor_class: RuantongA2dProcessor
 
+- version: gt01_no_depth
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.ruantong_a2d_processor
+  post_processor_class: RuantongA2dProcessor
+
 - version: gt02_new_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.ruantong_a2d_processor
   post_processor_class: RuantongA2dGt02Processor
