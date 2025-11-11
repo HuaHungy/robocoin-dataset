@@ -18,6 +18,12 @@
   </asset>
 
   <worldbody>
+  <site name="world_site_x_axis" pos="0.25 0 0" size="0.25 0.025 0.025"
+      rgba="1 1 0 0.5" type="box" />
+    <site name="world_site_y_axis" pos="0 0.5 0" size="0.025 0.5 0.025"
+      rgba="1 1 0 0.5" type="box" />
+    <site name="world_site_z_axis" pos="0 0 1" size="0.025 0.025 1"
+      rgba="1 1 0 0.5" type="box" />
     <body name="body_link1" pos="0 0 0.6485">
       <inertial pos="0.0338352 -0.00248044 0.000838431" quat="0.70654 0.707661 -0.00251284 0.00337775" mass="3.26275" diaginertia="0.0128303 0.011172 0.00610409" />
       <joint name="idx01_body_joint1" pos="0 0 0" axis="0 0 1" type="slide" range="0 0.55" actuatorfrcrange="-100 100" />
@@ -216,5 +222,23 @@
         </body>
       </body>
     </body>
+  </worldbody>
+  <!-- setup scene -->
+  <statistic center="1.0 0.7 1.0" extent="0.8" />
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.1 0.1 0.1" specular="0.9 0.9 0.9" />
+    <rgba haze="0.15 0.25 0.35 1" />
+    <global azimuth="-140" elevation="-20" />
+  </visual>
+  <asset>
+    <texture type="skybox" builtin="flat" rgb1="0 0 0" rgb2="0 0 0" width="512" height="3072" />
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
+      rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300" />
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
+      reflectance="0.2" />
+  </asset>
+  <worldbody>
+    <light pos="1 0 3.5" dir="0 0 -1" directional="true" />
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" pos="0 0 0" />
   </worldbody>
 </mujoco>

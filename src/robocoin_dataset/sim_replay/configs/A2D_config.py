@@ -8,7 +8,7 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 class A2DLerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
-        / "mjcfs/A2D/G1_roh_extracted_with_env.xml"
+        / "mjcfs/A2D/G1_roh_roh_with_sites.xml"
     )
 
     # fixed
