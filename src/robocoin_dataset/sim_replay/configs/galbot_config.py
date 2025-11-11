@@ -55,10 +55,12 @@ class GalbotLerobotSimReplayConfig(LerobotSimReplayConfig):
     ]
 
 
+    gripper_position_max = 0.042
+    gripper_position_min = 0.025
     # eef_sim 配置
     has_gripper = True
-    gripper_value_close = 0
-    gripper_value_open = 1
+    gripper_value_open = gripper_position_max
+    gripper_value_close = gripper_position_min
 
 
 

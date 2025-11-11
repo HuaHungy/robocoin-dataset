@@ -233,23 +233,147 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
 class AgilexCobotDecoupledRealsenseMagicProcessor(StateActionDataPostProcessorBase):
     def __init__(self, convert_path: str | Path) -> None:
         super().__init__(convert_path)
+        self.replayer: LerobotSimReplayer | None = None
+        self.replayer_convert_path: Path | None = None  # 记录 replayer 对应的路径
+        self.episode_index = 0  # 默认值
+
+    def _setup_replayer(self) -> LerobotSimReplayer | None:
+        """动态加载并实例化 LerobotSimReplayer"""
+        try:
+            # 检查 replayer 是否已存在且路径匹配
+            if self.replayer is not None and self.replayer_convert_path == self.convert_path:
+                return self.replayer
+            
+            project_root = Path(__file__).resolve().parents[4]
+            config_path = project_root / "scripts/sim_replay/configs/sim_replay_config_path.yaml"
+
+            if not config_path.exists():
+                logger.warning(f"Sim replay config file not found at {config_path}. Replayer will not be available.")
+                return None
+
+            with open(config_path, "r") as f:
+                all_configs = yaml.safe_load(f)
+
+            device_configs = all_configs.get("agilex_cobot_decoupled_magic", [])
+            config_info = next((c for c in device_configs if c.get("version") == "realsense_version"), None)
+
+            if not config_info:
+                logger.warning("Config for 'agilex_cobot_decoupled_magic' with 'realsense_version' not found. Replayer will not be available.")
+                return None
+
+            module_name = config_info["mujoco_sim_replay_config_module"]
+            class_name = config_info["mujoco_sim_replay_config_class"]
+
+            module = importlib.import_module(module_name)
+            config_class = getattr(module, class_name)
+            replay_config = config_class()
+
+            # repo_path 是 LeRobot 数据集目录
+            new_replayer = LerobotSimReplayer(replay_config=replay_config, repo_path=self.convert_path)
+            self.replayer_convert_path = self.convert_path
+            return new_replayer
+
+        except Exception as e:
+            logger.error(f"Failed to setup LerobotSimReplayer. Reason: {e}", exc_info=True)
+            return None
+
+    def set_episode_index(self, episode_index: int):
+        """设置当前处理的 episode 索引"""
+        self.episode_index = episode_index
 
     def prepare_processing(self) -> None:
         pass
 
-    def _smooth_gripper_open_data(self, data: np.ndarray) -> np.ndarray:
-        smoothed = data.copy()
-        return smoothed
+    def _swap_left_right(self, data: np.ndarray) -> np.ndarray:
+        """交换前13维和后13维"""
+        if data.ndim != 2 or data.shape[1] < 26:
+            return data
+        swapped_data = data.copy()
+        left = swapped_data[:, :13].copy()
+        right = swapped_data[:, 13:26].copy()
+        swapped_data[:, :13] = right
+        swapped_data[:, 13:26] = left
+        return swapped_data
+
+    def _scale_columns(self, data: np.ndarray) -> np.ndarray:
+        """如果第7或第20列的最大值 > 0.8，则该列整体除以10"""
+        scaled_data = data.copy()
+        for col_idx in (6, 19):
+            try:
+                col_max = float(np.max(scaled_data[:, col_idx]))
+                if col_max > 0.8:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} max value is {col_max} > 0.8, scaling it by dividing by 10.")
+                    scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
+            except (IndexError, ValueError) as e:
+                logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
+                continue
+        return scaled_data
+
+    def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        # 从基类获取当前正在处理的 episode 索引
+        if self.episode_idx is not None:
+            self.episode_index = self.episode_idx
+        
+        # 先进行缩放处理
+        processed_state = self._scale_columns(ori_data["observation.state"])
+        processed_action = self._scale_columns(ori_data["action"])
+
+        central_logger = logging.getLogger("state action data post process server")
+        # 根据EEF距离判断是否需要交换
+        need_swap = False
+        
+        self.replayer = self._setup_replayer()
+
+        if self.replayer is None:
+            central_logger.warning(f"Episode {self.episode_index}: Replayer not available, skipping EEF distance check. Will not swap arms.")
+        else:
+            try:
+                # 假设 replayer 已经配置好，直接调用
+                self.replayer.mjcf_model.opt.gravity[2] = -9.81 # 确保重力正确
+                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True)
+                
+                if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
+                    eef_data = np.array(eef_data_list_state)
+                    # 左臂末端执行器位置在前3个元素(index 0:3)，右臂末端执行器位置在6:9
+                    left_eef_positions = eef_data[:, :3]
+                    right_eef_positions = eef_data[:, 6:9]
+                    
+                    # 计算每一帧双臂末端执行器之间的距离
+                    eef_distances = np.linalg.norm(left_eef_positions - right_eef_positions, axis=1)
+                    mean_eef_distance = np.mean(eef_distances)
+                    
+                    DISTANCE_THRESHOLD = 0.67
+                    
+                    central_logger.info(f"Episode {self.episode_index}: Mean EEF distance: {mean_eef_distance:.4f}m {'>=' if mean_eef_distance >= DISTANCE_THRESHOLD else '<'} Threshold: {DISTANCE_THRESHOLD}m")
+
+                    if mean_eef_distance >= DISTANCE_THRESHOLD:
+                        need_swap = True
+                else:
+                    central_logger.warning(f"Episode {self.episode_index}: EEF data is invalid or insufficient. Skipping distance check. Data shape: {eef_data_list_state[0].shape if eef_data_list_state else 'Empty'}")
+
+            except Exception as e:
+                central_logger.error(f"Episode {self.episode_index}: Failed to get EEF data or perform distance check. Reason: {e}", exc_info=True)
+        
+        # 如果需要交换，执行交换操作
+        if need_swap:
+            central_logger.info(f"Episode {self.episode_index}: Swapping left and right arms.")
+            processed_state = self._swap_left_right(processed_state)
+            processed_action = self._swap_left_right(processed_action)
+
+        return {
+            "observation.state": processed_state,
+            "action": processed_action,
+        }
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
-        new_state_data = ori_state_data.copy()
-        return new_state_data
+        # 这个方法现在由 process_episode_data 调用，逻辑已集中处理
+        return ori_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
-        new_action_data = ori_action_data.copy()
-        return new_action_data
+        # 这个方法现在由 process_episode_data 调用，逻辑已集中处理
+        return ori_action_data
     def get_modified_feature_names(self):
         return super().get_modified_feature_names()
 
