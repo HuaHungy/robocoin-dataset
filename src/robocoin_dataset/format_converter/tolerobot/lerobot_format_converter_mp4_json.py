@@ -709,10 +709,8 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         lengths = self._extract_lengths(json_data)
         if not lengths:
             return json_data['data']
-        relevant_fields = set(
-            self.converter_config.get("frequency_alignment", {}).get("relevant_fields", [])
-        )
-        keys_to_map = [k for k in lengths.keys() if (not relevant_fields or k in relevant_fields)]
+        # 频率对齐需要覆盖所有会被访问的流，直接对 data 下所有列表键构建映射，避免未映射键回退到未对齐索引导致越界
+        keys_to_map = list(lengths.keys())
         alignment_maps: dict[str, list[int]] = {}
         for key in keys_to_map:
             stream_len = int(lengths.get(key, 0))
