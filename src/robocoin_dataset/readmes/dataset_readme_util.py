@@ -12,12 +12,12 @@ import draccus
 import yaml
 from jinja2 import Environment, FileSystemLoader
 
-from .constant import (
+from robocoin_dataset.hub_upload.lerobot.constant import (
   DATASET_INFO_FILE,
   LEROBOT_META_INFO_FILE,
   README_FILE,
 )
-from .local_datasets_util import LocalDsConfig, LocalDsUtil
+from robocoin_dataset.hub_upload.lerobot.local_datasets_util import LocalDsConfig, LocalDsUtil
 
 
 @dataclass
@@ -151,7 +151,7 @@ class LocalDsReadmeUtil(LocalDsUtil):
 if __name__ == "__main__":
   """
     Main entry point for the README generator.
-    
+
     Parses command line configuration and runs the README generation process.
     """
   config = draccus.parse(LocalDsReadmeConfig)

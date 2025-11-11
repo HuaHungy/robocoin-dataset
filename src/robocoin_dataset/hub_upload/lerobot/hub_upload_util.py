@@ -5,7 +5,6 @@ This module provides utility classes and functions for uploading datasets to rem
 It contains the business logic for dataset upload operations.
 """
 
-import logging
 import random
 import sys
 import time
@@ -18,12 +17,18 @@ from tqdm import tqdm
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, TaskStatus
+from robocoin_dataset.readmes.dataset_readme_util import (
+  LocalDsReadmeConfig,
+  LocalDsReadmeUtil,
+)
 
 from .constant import (
+  DATASET_INFO_FILE,
   DS_PLATFORM_NAME,
-  UPLOAD_DATASET_ADDITIONAL_CHECK_STRUCTURE,
+  README_FILE,
   DatasetsHubEnum,
 )
+from .dataset_info_util import LocalDsInfoConfig, LocalDsInfoUtil
 from .hub_upload_task import (
   _gen_one_dataset_upload_task,
   _mark_upload_completed,
@@ -49,6 +54,7 @@ class LocalDsUploadConfig(LocalDsConfig):
       output_path (str): Path to the output directory for commit history files. Defaults to empty string.
       db_file_path (str): Path to the database file for dataset tracking. Defaults to empty string.
       skip_missing (bool): Skip datasets with missing paths instead of aborting. Defaults to False.
+      force_overwrite (bool): Force overwrite existing repositories without prompting. Defaults to False.
       unified_repo_name (str): Name of the unified repository for batch uploads. Defaults to "robocoin-dataset".
   """
 
@@ -58,6 +64,7 @@ class LocalDsUploadConfig(LocalDsConfig):
   output_path: str = ""
   db_file_path: str = ""
   skip_missing: bool = False
+  force_overwrite: bool = False
   unified_repo_name: str = "robocoin-dataset"
 
 
@@ -170,7 +177,7 @@ class LocalDsUploadUtil(LocalDsUtil):
 
     self.logger = self.setup_logger(logger_name="UPLOAD_DATASETS")
 
-  def _upload_one_dataset(self, hardlink: str, commit_msg: str = "", max_retries: int = 3) -> bool:
+  def _upload_one_dataset(self, hardlink: str, commit_msg: str = "", max_retries: int = 3) -> tuple[bool, str]:
     """
     Upload a single dataset to the remote hub according to the hardlink.
     local function without db.
@@ -182,18 +189,23 @@ class LocalDsUploadUtil(LocalDsUtil):
         max_retries (int): Maximum number of retry attempts. Defaults to 3.
 
     Returns:
-        bool: if seccessful.
+        tuple[bool, str]: (success status, error message if failed or empty string if success)
     """
 
     repo_name = hardlink.removesuffix("_hardlink")
     # Remove "_hardlink" suffix from ds_name for clean repository name
+
+    # Validate dataset structure using shared validation from LocalDsUtil
+    # (same validation used in dataset_info_util.py for info generation)
     try:
       self.check_dataset_dir_valid(
-        ds_name=hardlink, additional_check_list=UPLOAD_DATASET_ADDITIONAL_CHECK_STRUCTURE
+        ds_name=hardlink,
+        additional_check_list=[README_FILE]  # Upload requires README.md
       )
     except Exception as e:
-      self.logger.debug(f"{repo_name}: {e}")
-      return False
+      error_msg = f"Validation failed: {e}"
+      self.logger.debug(f"{repo_name}: {error_msg}")
+      return False, error_msg
 
     hardlink_path = self.root_path.joinpath(hardlink)
     if not hardlink_path.exists():
@@ -228,7 +240,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         )
 
         self.logger.debug(f"{repo_name}: {commit_url}")
-        return True
+        return True, ""
 
       except Exception as e:  # noqa: PERF203
         if attempt < max_retries:
@@ -243,10 +255,11 @@ class LocalDsUploadUtil(LocalDsUtil):
           time.sleep(delay - int(delay))
           print("\r" + " " * 20 + "\r", end="", flush=True)  # Clear the countdown line
         else:
-          self.logger.debug(f"{repo_name}: Failed after {max_retries} attempts: {e}")
-          return False
+          error_msg = f"Failed after {max_retries} attempts: {e}"
+          self.logger.debug(f"{repo_name}: {error_msg}")
+          return False, error_msg
 
-    return False
+    return False, "Upload failed with unknown error"
 
   def _validate_and_resolve_db_path(self) -> Path:
     """
@@ -286,7 +299,7 @@ class LocalDsUploadUtil(LocalDsUtil):
 
     return db_path
 
-  def upload_datasets_from_db(self) -> None:
+  def _upload_datasets_from_db(self) -> None:
     """
     Upload datasets from database one-by-one.
     """
@@ -366,18 +379,22 @@ class LocalDsUploadUtil(LocalDsUtil):
           pbar.update(1)
           continue
 
+        # Print status to console (in addition to log file)
+        tqdm.write(f"  📦 Processing: {dataset_name}")
+
         # Upload dataset with temporary root_path change
-        success = self._upload_one_dataset_in_changed_root(hardlink_path, original_root_path)
+        success, error_msg = self._upload_one_dataset_in_changed_root(hardlink_path, original_root_path)
 
         # Handle result
         if success:
           _mark_upload_completed(self.db, dataset_uuid, self.config.hub_name, self.logger)
           uploaded_count += 1
-          self.logger.debug(f"{dataset_name}: Uploaded")
+          self.logger.info(f"{dataset_name}: ✅ Successfully uploaded")
         else:
-          _mark_upload_failed(self.db, dataset_uuid, "Upload failed", self.config.hub_name, self.logger)
+          _mark_upload_failed(self.db, dataset_uuid, error_msg, self.config.hub_name, self.logger)
           failed_count += 1
-          self.logger.debug(f"{dataset_name}: Failed")
+          tqdm.write(f"  ❌ Failed: {error_msg}")
+          self.logger.error(f"{dataset_name}: {error_msg}")
 
         pbar.update(1)
 
@@ -399,23 +416,130 @@ class LocalDsUploadUtil(LocalDsUtil):
       status += f" | ⏭️  {skipped_count}"
     self.logger.info(status)
 
-  def _upload_one_dataset_in_changed_root(self, hardlink_path: Path, original_root_path: Path) -> bool:
+  def _generate_yaml_for_dataset(self, hardlink_path: Path, output_path: Path) -> bool:
+    """
+    Generate dataset info YAML for a single dataset.
+
+    Args:
+        hardlink_path: Path to the hardlink directory
+        output_path: Output path for the YAML file
+
+    Returns:
+        bool: True if generation succeeded, False otherwise
+    """
+    try:
+      # Temporarily change root_path to hardlink's parent
+      temp_root = hardlink_path.parent
+      ds_name = hardlink_path.name
+
+      # Create info generator with temporary config
+      info_config = LocalDsInfoConfig(
+        root_path=str(temp_root),
+        output_path=str(output_path),
+        task_tags_yamls_dir=""
+      )
+      info_generator = LocalDsInfoUtil(info_config)
+
+      # Generate info for this specific dataset
+      ds_info = info_generator._generate_info(ds_name)
+
+      # Write YAML file
+      ds_info_file = output_path.joinpath(ds_name, DATASET_INFO_FILE)
+      ds_info_file.parent.mkdir(parents=True, exist_ok=True)
+
+      import yaml
+      with open(ds_info_file, "w+", encoding="utf-8") as f:
+        yaml.safe_dump(ds_info, f, allow_unicode=True, sort_keys=False)
+
+      # Console output with path
+      tqdm.write(f"      ✅ YAML: {ds_info_file}")
+      self.logger.debug(f"{ds_name}: Generated YAML at {ds_info_file}")
+      return True
+
+    except Exception as e:
+      tqdm.write(f"      ❌ YAML generation failed: {e}")
+      self.logger.error(f"{hardlink_path.name}: Failed to generate YAML: {e}")
+      return False
+
+  def _generate_readme_for_dataset(self, hardlink_path: Path, dataset_info_root_path: Path) -> bool:
+    """
+    Generate README.md for a single dataset.
+
+    Args:
+        hardlink_path: Path to the hardlink directory
+        dataset_info_root_path: Path containing the dataset info YAML files
+
+    Returns:
+        bool: True if generation succeeded, False otherwise
+    """
+    try:
+      # Temporarily change root_path to hardlink's parent
+      temp_root = hardlink_path.parent
+      ds_name = hardlink_path.name
+
+      # Create readme generator with temporary config
+      readme_config = LocalDsReadmeConfig(
+        root_path=str(temp_root),
+        dataset_info_root_path=str(dataset_info_root_path)
+      )
+      readme_generator = LocalDsReadmeUtil(readme_config)
+
+      # Generate README for this specific dataset
+      readme_generator._generate_readme(ds_name)
+
+      # Console output with path
+      readme_path = hardlink_path / "README.md"
+      tqdm.write(f"      ✅ README: {readme_path}")
+      self.logger.debug(f"{ds_name}: Generated README at {readme_path}")
+      return True
+
+    except Exception as e:
+      tqdm.write(f"      ❌ README generation failed: {e}")
+      self.logger.error(f"{hardlink_path.name}: Failed to generate README: {e}")
+      return False
+
+  def _upload_one_dataset_in_changed_root(self, hardlink_path: Path, original_root_path: Path) -> tuple[bool, str]:
     """
     Upload a dataset with temporarily changed root_path.
+    Generates YAML and README files on-demand before upload.
 
     Args:
         hardlink_path: Path to the hardlink directory
         original_root_path: Original root_path to restore after upload
 
     Returns:
-        True if upload succeeded, False otherwise
+        tuple[bool, str]: (success status, error message if failed or empty string if success)
     """
     try:
-      # Temporarily change root_path to hardlink's parent
+      dataset_name = hardlink_path.name.removesuffix("_hardlink")
+
+      # Define output path for intermediate YAML file
+      output_path = Path("./dataset_info").absolute()
+
+      # Step 1: Generate YAML file for this dataset
+      tqdm.write("    📝 Generating YAML...")
+      self.logger.info(f"{dataset_name}: Generating YAML...")
+      if not self._generate_yaml_for_dataset(hardlink_path, output_path):
+        return False, "Failed to generate dataset info YAML"
+
+      # Step 2: Generate README file for this dataset
+      tqdm.write("    📝 Generating README...")
+      self.logger.info(f"{dataset_name}: Generating README...")
+      if not self._generate_readme_for_dataset(hardlink_path, output_path):
+        return False, "Failed to generate README.md"
+
+      # Step 3: Temporarily change root_path to hardlink's parent
       self.root_path = hardlink_path.parent
 
-      # Execute upload
-      return self._upload_one_dataset(hardlink=hardlink_path.name)
+      # Step 4: Execute upload
+      tqdm.write("    ⬆️  Uploading to hub (this may take several minutes for large datasets)...")
+      self.logger.info(f"{dataset_name}: Uploading to hub...")
+      result = self._upload_one_dataset(hardlink=hardlink_path.name)
+
+      if result[0]:  # success
+        tqdm.write("    ✅ Upload completed successfully!")
+
+      return result
 
     finally:
       # Always restore original root_path
@@ -438,44 +562,49 @@ class LocalDsUploadUtil(LocalDsUtil):
     if not repo_exists:
       return True
 
+    # Repo exists - check force_overwrite flag
+    if self.config.force_overwrite:
+      self.logger.debug(f"{repo_id}: Force overwrite enabled")
+      return True
+
+    # Prompt user for confirmation
+    import sys
     # Use tqdm.write to avoid breaking progress bar if it exists
-    tqdm.write(f"\n⚠️  {repo_id} exists. Overwrite? (y/n): ", end="")
+    tqdm.write("")  # Blank line for spacing
+    tqdm.write(f"⚠️  Repository already exists: {repo_id}")
+    tqdm.write("   Overwrite? (y/n): ", end="")
+    sys.stdout.flush()  # Ensure prompt is displayed
     response = input().strip().lower()
     return response in ["y", "yes"]
 
 
-######## HIGH-LEVEL ORCHESTRATION ########
+def _gen_yaml(config: LocalDsInfoConfig) -> None:
+  """
+  Generate dataset info YAML files for all datasets.
+
+  This function creates a LocalDsInfoUtil instance with the provided configuration
+  and generates dataset information YAML files for all valid datasets.
+
+  Args:
+      config (LocalDsInfoConfig): Configuration object for dataset info generation.
+  """
+  generator = LocalDsInfoUtil(config)
+  generator.generate_infos()
 
 
-def upload_datasets(config: LocalDsUploadConfig, logger: logging.Logger | None = None) -> None:
-    """
-    Upload datasets to remote hub using database management.
 
-    This is the main business logic function that orchestrates the upload process.
+def _gen_readme(config: LocalDsReadmeConfig) -> None:
+  """
+  Generate README.md files for all datasets.
 
-    Args:
-        config: Upload configuration
-        logger: Logger instance (optional)
-    """
-    _logger = logger or logging.getLogger(__name__)
+  This function creates a LocalDsReadmeUtil instance with the provided configuration
+  and generates README.md files for all valid datasets using Jinja2 templates.
 
-    try:
-        # Initialize uploader
-        _logger.info("Initializing uploader...")
-        uploader = LocalDsUploadUtil(config)
-
-        # Start upload process
-        _logger.info("Starting upload process...")
-        uploader.upload_datasets_from_db()
-
-        _logger.info("✅ Upload process completed successfully")
-
-    except KeyboardInterrupt:
-        _logger.warning("\n⚠️  Upload interrupted by user")
-        raise
-    except Exception as e:
-        _logger.error(f"❌ Upload failed: {e}", exc_info=True)
-        raise
+  Args:
+      config (LocalDsReadmeConfig): Configuration object for README generation.
+  """
+  generator = LocalDsReadmeUtil(config)
+  generator.generate_readmes()
 
 
 if __name__ == "__main__":

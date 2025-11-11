@@ -106,7 +106,7 @@ def _sync_datasets_upload_status(
             _logger.debug("No datasets found for upload sync")
             return
 
-        _logger.info(f"Found {len(items)} datasets to sync for upload")
+        _logger.debug(f"Found {len(items)} datasets to sync for upload")
 
         for item in items:
             setattr(item, upload_status_field, TaskStatus.PENDING)

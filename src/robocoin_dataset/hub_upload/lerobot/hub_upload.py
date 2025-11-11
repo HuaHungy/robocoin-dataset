@@ -1,143 +1,144 @@
 """
-RoboCoin Datasets Hub Upload - CLI Entry Point
+RoboCoin Datasets Hub Upload - Business Logic Functions
 
-This module provides the command-line interface for uploading RoboCoin datasets
-to remote hubs (HuggingFace or ModelScope).
+This module provides reusable business logic functions for:
+- Generating dataset info YAML files from metadata
+- Generating README.md files from templates
+- Uploading datasets to remote hubs (HuggingFace or ModelScope)
 
-Usage:
-    python -m robocoin_dataset.hub_upload.lerobot.hub_upload --config configs/upload.yaml
+These functions can be imported and used by CLI scripts or other modules.
+
+Example:
+    from robocoin_dataset.hub_upload.lerobot.hub_upload import (
+        generate_dataset_info,
+        generate_dataset_readmes,
+        upload_datasets,
+    )
 """
 
-import argparse
 import logging
-import sys
 
-from .hub_upload_util import (
-    create_upload_config,
-    load_config_from_yaml,
-    upload_datasets,
-)
+from robocoin_dataset.readmes.dataset_readme_util import LocalDsReadmeConfig, LocalDsReadmeUtil
+
+from .dataset_info_util import LocalDsInfoConfig, LocalDsInfoUtil
+from .hub_upload_util import LocalDsUploadConfig, LocalDsUploadUtil
 
 
-def setup_logging(log_level: str = "INFO") -> logging.Logger:
+def generate_dataset_info(
+    root_path: str,
+    output_path: str | None = None,
+    logger: logging.Logger | None = None
+) -> str:
     """
-    Set up logging configuration for CLI.
+    Generate dataset info YAML files for all datasets.
+
+    All information is extracted from the dataset metadata (meta/info.json, meta/tasks.jsonl, etc.)
+    in the dataset directories.
 
     Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        root_path: Root path containing dataset directories
+        output_path: Output path for generated info files. If None, defaults to "./dataset_info"
+        logger: Logger instance (optional)
 
     Returns:
-        Logger instance
+        str: The output path used (resolved to default if None was passed)
     """
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    return logging.getLogger(__name__)
+    _logger = logger or logging.getLogger(__name__)
 
-
-def parse_arguments() -> argparse.Namespace:
-    """
-    Parse command line arguments.
-
-    Returns:
-        Parsed arguments namespace
-    """
-    parser = argparse.ArgumentParser(
-        description="Upload RoboCoin datasets to remote hubs (HuggingFace/ModelScope)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Upload using config file
-  python -m robocoin_dataset.hub_upload.lerobot.hub_upload --config configs/upload.yaml
-
-  # Upload with custom log level
-  python -m robocoin_dataset.hub_upload.lerobot.hub_upload --config configs/upload.yaml --log-level DEBUG
-
-  # Override skip_missing from command line
-  python -m robocoin_dataset.hub_upload.lerobot.hub_upload --config configs/upload.yaml --skip-missing
-
-  # Override database path
-  python -m robocoin_dataset.hub_upload.lerobot.hub_upload --config configs/upload.yaml --db-file-path /path/to/db.db
-        """
-    )
-
-    parser.add_argument(
-        "--config", "-c",
-        type=str,
-        required=True,
-        help="Path to YAML configuration file"
-    )
-
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Logging level (default: INFO)"
-    )
-
-    parser.add_argument(
-        "--skip-missing",
-        action="store_true",
-        help="Skip datasets with missing hardlinks instead of aborting"
-    )
-
-    parser.add_argument(
-        "--db-file-path",
-        type=str,
-        help="Override database file path from config"
-    )
-
-    return parser.parse_args()
-
-
-def main() -> None:
-    """
-    Main entry point for the hub upload CLI.
-    """
-    # Parse arguments
-    args = parse_arguments()
-
-    # Setup logging
-    logger = setup_logging(args.log_level)
+    # Set default output path if not provided
+    if output_path is None:
+        output_path = "./dataset_info"
+        _logger.info(f"Using default info output path: {output_path}")
 
     try:
-        # Load configuration
-        logger.info(f"Loading configuration from: {args.config}")
-        config_dict = load_config_from_yaml(args.config)
+        _logger.info(f"📝 Generating dataset info YAML files to: {output_path}")
 
-        # Override config with command line arguments if provided
-        if args.skip_missing:
-            config_dict["skip_missing"] = True
-        if args.db_file_path:
-            config_dict["db_file_path"] = args.db_file_path
+        # Create info generator config (no task_tags_yamls_dir needed)
+        info_config = LocalDsInfoConfig(
+            root_path=root_path,
+            output_path=output_path,
+            task_tags_yamls_dir=""  # Not used - all info from dataset metadata
+        )
 
-        # Create upload config
-        config = create_upload_config(config_dict)
+        # Generate info files
+        info_generator = LocalDsInfoUtil(info_config)
+        info_generator.generate_infos()
 
-        # Validate required fields
-        if not config.root_path:
-            logger.error("❌ root_path is required in configuration")
-            sys.exit(1)
+        _logger.info("✅ Dataset info files generated successfully")
 
-        # Run upload
-        upload_datasets(config, logger)
+        return output_path
 
-    except FileNotFoundError as e:
-        logger.error(f"❌ File not found: {e}")
-        sys.exit(1)
-    except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
-        sys.exit(1)
-    except KeyboardInterrupt:
-        logger.warning("\n⚠️  Upload interrupted by user")
-        sys.exit(1)
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}", exc_info=True)
-        sys.exit(1)
+        _logger.error(f"❌ Failed to generate dataset info files: {e}", exc_info=True)
+        raise
 
 
-if __name__ == "__main__":
-    main()
+def generate_dataset_readmes(
+    root_path: str,
+    dataset_info_root_path: str | None = None,
+    logger: logging.Logger | None = None
+) -> None:
+    """
+    Generate README.md files for all datasets.
+
+    Args:
+        root_path: Root path containing dataset directories
+        dataset_info_root_path: Path containing dataset info YAML files. If None, defaults to "./dataset_info"
+        logger: Logger instance (optional)
+    """
+    _logger = logger or logging.getLogger(__name__)
+
+    # Set default dataset info path if not provided
+    if dataset_info_root_path is None:
+        dataset_info_root_path = "./dataset_info"
+        _logger.info(f"Using default dataset info path: {dataset_info_root_path}")
+
+    try:
+        _logger.info(f"📝 Generating dataset README files from: {dataset_info_root_path}")
+
+        # Create readme generator config
+        readme_config = LocalDsReadmeConfig(
+            root_path=root_path,
+            dataset_info_root_path=dataset_info_root_path
+        )
+
+        # Generate readme files
+        readme_generator = LocalDsReadmeUtil(readme_config)
+        readme_generator.generate_readmes()
+
+        _logger.info("✅ Dataset README files generated successfully")
+
+    except Exception as e:
+        _logger.error(f"❌ Failed to generate dataset README files: {e}", exc_info=True)
+        raise
+
+
+def upload_datasets(config: LocalDsUploadConfig, logger: logging.Logger | None = None) -> None:
+    """
+    Upload datasets to remote hub using database management.
+
+    This is the main business logic function that orchestrates the upload process.
+
+    Args:
+        config: Upload configuration
+        logger: Logger instance (optional)
+    """
+    _logger = logger or logging.getLogger(__name__)
+
+    try:
+        # Initialize uploader
+        _logger.info("Initializing uploader...")
+        uploader = LocalDsUploadUtil(config)
+
+        # Start upload process
+        _logger.info("Starting upload process...")
+        uploader._upload_datasets_from_db()
+
+        _logger.info("✅ Upload process completed successfully")
+
+    except KeyboardInterrupt:
+        _logger.warning("\n⚠️  Upload interrupted by user")
+        raise
+    except Exception as e:
+        _logger.error(f"❌ Upload failed: {e}", exc_info=True)
+        raise

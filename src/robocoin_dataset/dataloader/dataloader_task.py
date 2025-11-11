@@ -27,14 +27,14 @@ def _sync_dataloader_detection_tasks(
 
     query = session.query(DatasetDB).filter(
         and_(
-            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,
             or_(
                 # Match records explicitly marked as PENDING
                 DatasetDB.data_loader_detection_status == TaskStatus.PENDING,
                 # Match records that were COMPLETED but are now outdated
                 and_(
                     DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
-                    DatasetDB.data_loader_detection_version_ps < DatasetDB.data_merge_version,
+                    DatasetDB.data_loader_detection_version_ps < DatasetDB.qced_repo_gen_version,
                 ),
             ),
         )
@@ -49,7 +49,7 @@ def _sync_dataloader_detection_tasks(
 
     for item in items:
         item.data_loader_detection_status = TaskStatus.PENDING
-        item.data_loader_detection_version_ps = item.data_merge_version
+        item.data_loader_detection_version_ps = item.qced_repo_gen_version
         item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
 
     session.commit()
