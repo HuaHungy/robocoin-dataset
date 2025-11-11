@@ -18,6 +18,7 @@ from .constant import (
     LAST_PONG,
     MSG_CONTENT,
     MSG_TYPE,
+    NO_TASK,
     PING,
     PONG,
     REGISTER,
@@ -122,8 +123,7 @@ class TaskServer(ABC):
 
         task_content = await asyncio.to_thread(self.generate_task_content)
         if not task_content:
-            # Send NO_TASK
-            await websocket.send(json.dumps({MSG_TYPE: "NO_TASK"}))
+            await websocket.send(json.dumps({MSG_TYPE: NO_TASK}))
             self.logger.info(f"No task available for client {info[CLIENT_ID]}")
             return
 
@@ -211,9 +211,7 @@ class TaskServer(ABC):
         except json.JSONDecodeError:
             error_msg = {
                 MSG_TYPE: ERROR,
-                MSG_CONTENT: {
-                    ERROR_MSG: "Invalid JSON format",
-                },
+                ERROR_MSG: "Invalid JSON format",
             }
             await websocket.send(json.dumps(error_msg))
         except Exception as e:

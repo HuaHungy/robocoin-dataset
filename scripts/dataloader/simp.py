@@ -1,10 +1,15 @@
 import argparse
 import random
+import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import torch
 import torch.utils.data
 import tqdm
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "third_parties" / "robocoin-lerobot" / "src"))
+
 from lerobot.datasets.lerobot_dataset import LeRobotDataset  # type: ignore
 
 
@@ -29,6 +34,7 @@ args = parser.parse_args()
 dataset = LeRobotDataset(
     repo_id="test/dataloader_check",
     root=args.repo_path,
+    video_backend="pyav", # torchcodec is not supported.(2.0)
 )
 
 sampler = EpisodeSampler(dataset)

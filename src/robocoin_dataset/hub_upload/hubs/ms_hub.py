@@ -1,3 +1,4 @@
+import logging
 import warnings
 from pathlib import Path
 
@@ -12,11 +13,12 @@ from robocoin_dataset.hub_upload.constant import (  # noqa: E402
 from .abstract_hub import (  # noqa: E402
     AbstractUploadHub,
 )
+from .batch_upload import BatchUploadMixin  # noqa: E402
 
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
 
 
-class ModelscopeUploadHub(AbstractUploadHub):
+class ModelscopeUploadHub(AbstractUploadHub, BatchUploadMixin):
     """
     Implementation of AbstractUploadHub for ModelScope dataset uploads.
 
@@ -50,7 +52,11 @@ class ModelscopeUploadHub(AbstractUploadHub):
         Returns:
             bool: True if repository exists, False otherwise.
         """
-        return self.hub.repo_exists(repo_id=repo_id, token=self.token, repo_type="dataset")
+        try:
+            return self.hub.repo_exists(repo_id=repo_id, token=self.token, repo_type="dataset")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not check if repo {repo_id} exists: {e}")
+            return False
 
     def create_repo(self, repo_id: str) -> None:
         """
@@ -73,6 +79,8 @@ class ModelscopeUploadHub(AbstractUploadHub):
         """
         Upload a local folder to a ModelScope dataset repository.
 
+        Uses batched upload to split large folders into manageable chunks for reliability.
+
         Args:
             folder_path (Path): Path to the local folder to upload.
             repo_id (str): Identifier of the target repository.
@@ -84,19 +92,69 @@ class ModelscopeUploadHub(AbstractUploadHub):
         Raises:
             Exception: If upload fails for any reason other than the known ModelScope bug.
         """
-        try:
-            commit_info = self.hub.upload_folder(
-                repo_id=repo_id,
-                folder_path=folder_path,
-                token=self.token,
-                repo_type="dataset",
-                allow_patterns=DEFAULT_UPLOAD_ALLOW_PATTERNS,
-                ignore_patterns=DEFAULT_UPLOAD_IGNORE_PATTERNS,
-                commit_message=commit_msg,
-            )
-        except Exception as e:
-            if str(e) == MODELSCOPE_BUG_EXCEPTON_MSG:
-                return f"Exception captured when Modelscope upload dataset {repo_id}, but the repo has been uploaded successfully."
-            raise e
+        return self.upload_repo_batched(
+            folder_path=folder_path,
+            repo_id=repo_id,
+            commit_msg=commit_msg,
+        )
 
-        return commit_info.commit_url
+    def upload_repo_batched(self, folder_path: Path, repo_id: str, commit_msg: str) -> str:
+        """
+        Upload a folder in batches for better reliability with large datasets.
+
+        Splits files into batches of 500MB or 1000 files (whichever comes first),
+        then uploads each batch separately.
+
+        Args:
+            folder_path: Path to folder to upload
+            repo_id: Repository identifier
+            commit_msg: Base commit message
+
+        Returns:
+            Success message or URL of the final commit
+        """
+        logger = logging.getLogger(__name__)
+
+        # Get all files to upload
+        files = self.get_files_to_upload(
+            folder_path,
+            DEFAULT_UPLOAD_ALLOW_PATTERNS,
+            DEFAULT_UPLOAD_IGNORE_PATTERNS
+        )
+
+        # Split into batches (500MB or 1000 files per batch)
+        batches = self.split_into_batches(files, max_batch_size_mb=500, max_files_per_batch=1000)
+
+        # Upload each batch
+        final_result = ""
+        for i, batch in enumerate(batches, 1):
+            file_count, total_size = self.calculate_batch_stats(batch)
+            logger.info(
+                f"Uploading batch {i}/{len(batches)}: "
+                f"{file_count} files, {self.format_size(total_size)}"
+            )
+
+            batch_commit_msg = f"{commit_msg} (batch {i}/{len(batches)})"
+
+            try:
+                for file_path in batch:
+                    path_in_repo = str(file_path.relative_to(folder_path))
+                    self.hub.upload_file(
+                        path_or_fileobj=str(file_path),
+                        path_in_repo=path_in_repo,
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        token=self.token,
+                        commit_message=batch_commit_msg,
+                    )
+
+                logger.info(f"✓ Batch {i}/{len(batches)} completed")
+
+            except Exception as e:
+                if str(e) == MODELSCOPE_BUG_EXCEPTON_MSG:
+                    final_result = f"Exception captured when Modelscope upload dataset {repo_id}, but the repo has been uploaded successfully."
+                else:
+                    raise e
+
+        logger.info(f"✅ All {len(batches)} batches uploaded successfully")
+        return final_result if final_result else f"Uploaded {len(batches)} batches successfully"

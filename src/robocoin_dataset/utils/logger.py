@@ -13,6 +13,7 @@ def setup_logger(
     backup_count: int = 5,
     fmt: str = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt: str = "%Y-%m-%d %H:%M:%S",
+    console_output: bool = True,
 ) -> logging.Logger:
     """
     创建一个同时输出到文件（带时间戳）和控制台的日志记录器
@@ -49,14 +50,15 @@ def setup_logger(
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
-    # 控制台处理器
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(level)
-    console_handler.setFormatter(formatter)
-
-    # 添加处理器
+    # 添加文件处理器
     logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+
+    # 控制台处理器（可选）
+    if console_output:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(level)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
 
     logger.info(f"The log system has been started, log file: {log_filepath.resolve()}")
 
