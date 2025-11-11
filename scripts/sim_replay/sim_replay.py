@@ -79,9 +79,9 @@ python scripts/sim_replay/sim_replay.py \
 # galaxea
 """
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path /mnt/db/datasets.db \
+    --db_file_path /mnt/db/datasets_new.db \
     --converter_factory_config_path ./scripts/sim_replay/configs/sim_replay_factory_config.yaml \
-    --device_model galaxea \
-    --device_model_version h5_mp4_version \
+    --device_model yinhe \
+    --device_model_version lite_version \
     --log_dir ./logs/sim_replay
 """
