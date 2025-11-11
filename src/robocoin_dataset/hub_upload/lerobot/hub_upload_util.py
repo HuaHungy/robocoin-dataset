@@ -1,9 +1,11 @@
 """
-RoboCoin Datasets Uploader
-usage:
-python -m robocoin.datasets.upload --config configs/upload.yaml
+RoboCoin Datasets Upload Utilities
+
+This module provides utility classes and functions for uploading datasets to remote hubs.
+It contains the business logic for dataset upload operations.
 """
 
+import logging
 import random
 import sys
 import time
@@ -11,18 +13,26 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-from sqlalchemy.sql.expression import and_, or_
+from sqlalchemy.sql.expression import and_
 from tqdm import tqdm
 
 from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB, TaskStatus
+from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
 from .constant import (
   DS_PLATFORM_NAME,
   UPLOAD_DATASET_ADDITIONAL_CHECK_STRUCTURE,
   DatasetsHubEnum,
 )
+from .hub_upload_task import (
+  _gen_one_dataset_upload_task,
+  _mark_upload_completed,
+  _mark_upload_failed,
+  _sync_datasets_upload_status,
+)
 from .local_datasets_util import LocalDsConfig, LocalDsUtil
+
+######## CONFIGURATION ########
 
 
 @dataclass
@@ -49,6 +59,71 @@ class LocalDsUploadConfig(LocalDsConfig):
   db_file_path: str = ""
   skip_missing: bool = False
   unified_repo_name: str = "robocoin-dataset"
+
+
+def load_config_from_yaml(config_path: str | Path) -> dict:
+    """
+    Load configuration from YAML file.
+
+    Args:
+        config_path: Path to the YAML configuration file
+
+    Returns:
+        Dictionary containing configuration parameters
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        yaml.YAMLError: If config file is invalid YAML
+    """
+    config_file = Path(config_path)
+
+    if not config_file.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+
+    with open(config_file, encoding="utf-8") as f:
+        config_dict = yaml.safe_load(f)
+
+    if not config_dict:
+        raise ValueError(f"Empty or invalid configuration file: {config_path}")
+
+    return config_dict
+
+
+def create_upload_config(config_dict: dict) -> LocalDsUploadConfig:
+    """
+    Create LocalDsUploadConfig from configuration dictionary.
+
+    Args:
+        config_dict: Dictionary containing configuration parameters
+
+    Returns:
+        LocalDsUploadConfig instance
+
+    Raises:
+        ValueError: If required configuration parameters are missing
+    """
+    # Convert hub_name string to enum if needed
+    hub_name = config_dict.get("hub_name", "huggingface")
+    if isinstance(hub_name, str):
+        try:
+            hub_name = DatasetsHubEnum[hub_name.lower()]
+        except KeyError:
+            raise ValueError(f"Invalid hub_name: {hub_name}. Must be 'huggingface' or 'modelscope'")
+
+    # Create config with all parameters
+    return LocalDsUploadConfig(
+        root_path=config_dict.get("root_path", ""),
+        hub_name=hub_name,
+        token=config_dict.get("token", ""),
+        namespace=config_dict.get("namespace", ""),
+        output_path=config_dict.get("output_path", ""),
+        db_file_path=config_dict.get("db_file_path", ""),
+        skip_missing=config_dict.get("skip_missing", False),
+        unified_repo_name=config_dict.get("unified_repo_name", "robocoin-dataset"),
+    )
+
+
+######## UPLOAD UTILITY CLASS ########
 
 
 class LocalDsUploadUtil(LocalDsUtil):
@@ -94,28 +169,6 @@ class LocalDsUploadUtil(LocalDsUtil):
     pass
 
     self.logger = self.setup_logger(logger_name="UPLOAD_DATASETS")
-
-  def _get_hub_field_prefix(self, field_suffix: str) -> str:
-    """
-    Return the correct field prefix for the hub,
-    trying short version first, then long version.
-    """
-    # Try short prefix first (ms/hf)
-    short_prefix = "ms" if self.config.hub_name == DatasetsHubEnum.modelscope else "hf"
-    short_field_name = f"{short_prefix}_{field_suffix}"
-    if hasattr(DatasetDB, short_field_name):
-      return short_field_name
-
-    # Fall back to long prefix (modelscope/huggingface)
-    long_prefix = "modelscope" if self.config.hub_name == DatasetsHubEnum.modelscope else "huggingface"
-    long_field_name = f"{long_prefix}_{field_suffix}"
-    if hasattr(DatasetDB, long_field_name):
-      return long_field_name
-
-    # Neither exists, raise error
-    raise AttributeError(
-      f"Neither '{short_field_name}' nor '{long_field_name}' field exists in DatasetDB"
-    )
 
   def _upload_one_dataset(self, hardlink: str, commit_msg: str = "", max_retries: int = 3) -> bool:
     """
@@ -246,38 +299,16 @@ class LocalDsUploadUtil(LocalDsUtil):
     # Connect to database and store it as instance attribute for helper methods
     self.db = DatasetDatabase(db_path)
 
-    # Step 1: Sync datasets upload status from database
-    self.logger.debug("Syncing upload status from database...")
-    self._sync_datasets_upload_status(self.db, retry_failed=False)
+    # Store original root_path to restore later
+    original_root_path = self.root_path
 
-    # Count total datasets to upload
-    upload_status_field = self._get_hub_field_prefix("upload_status")
-    upload_status_col = getattr(DatasetDB, upload_status_field)
-    with self.db.with_session() as session:
-      total_count = session.query(DatasetDB).filter(
-        and_(
-          DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
-          upload_status_col == TaskStatus.PENDING,
-        )
-      ).count()
-
-    if total_count == 0:
-      self.logger.info("No datasets to upload")
-      return
-
-    self.logger.debug(f"Found {total_count} dataset(s) to upload")
-
-    # Step 2: Process datasets with progress bar
+    # Process datasets with progress bar
     uploaded_count = 0
     failed_count = 0
     skipped_count = 0
 
-    # Store original root_path to restore later
-    original_root_path = self.root_path
-
-    # Create progress bar
+    # Create progress bar (will be updated after first sync)
     pbar = tqdm(
-      total=total_count,
       desc="📤 Uploading",
       unit="ds",
       bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
@@ -285,222 +316,110 @@ class LocalDsUploadUtil(LocalDsUtil):
 
     try:
       while True:
-        # Get next dataset to upload from database
-        dataset_uuid, upload_path = self._gen_one_dataset_upload_task()
-        if dataset_uuid is None:
+        # Sync datasets upload status from database
+        _sync_datasets_upload_status(self.db, self.config.hub_name, self.logger, retry_failed=False)
+
+        # Count remaining datasets to upload
+        from .hub_upload_task import _get_hub_field_prefix
+        upload_status_field = _get_hub_field_prefix(self.config.hub_name, DatasetDB, "upload_status")
+        upload_status_col = getattr(DatasetDB, upload_status_field)
+        with self.db.with_session() as session:
+          pending_count = session.query(DatasetDB).filter(
+            and_(
+              DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
+              upload_status_col == TaskStatus.PENDING,
+            )
+          ).count()
+
+        if pending_count == 0:
           break
 
-        # Query the dataset from database to get additional info
-        with self.db.with_session() as session:
-          item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-          if not item:
-            self.logger.error(f"❌ Dataset {dataset_uuid} not found in database")
-            pbar.update(1)
-            continue
+        # Update progress bar total if needed
+        if pbar.total is None or pbar.total != pending_count + uploaded_count + failed_count + skipped_count:
+          pbar.total = pending_count + uploaded_count + failed_count + skipped_count
 
-        # get hardlink path from database
-        with self.db.with_session() as session:
-          hardlink_record = session.query(DatasetHardLinkDB).filter(
-            DatasetHardLinkDB.dataset_uuid == dataset_uuid
-          ).first()
-          hardlink_path = Path(hardlink_record.hard_link_path) if hardlink_record and hardlink_record.hard_link_path else None
+        # Get next dataset to upload from database (with validation)
+        try:
+          dataset_uuid, hardlink_path = _gen_one_dataset_upload_task(
+            self.db, self.config.hub_name, self.logger, self.config.skip_missing
+          )
+        except FileNotFoundError:
+          # Error was raised and not skipped
+          pbar.close()
+          raise
 
-        convert_path = Path(item.convert_path).expanduser().absolute()
+        if dataset_uuid is None or hardlink_path is None:
+          # No more tasks
+          break
 
-        dataset_name = convert_path.name.removesuffix("_hardlink")
+        # Get dataset name for logging
+        dataset_name = hardlink_path.name.removesuffix("_hardlink")
         pbar.set_description(f"📤 {dataset_name[:30]:30s}")
 
-        try:
-          # Validate hardlink path exists in database
-          if hardlink_path is None:
-            raise FileNotFoundError(
-              f"No hardlink found in database for dataset {dataset_uuid}. "
-              f"Hardlinks must be created before uploading."
-            )
-
-          # Verify hardlink path exists on disk
-          if not hardlink_path.exists():
-            raise FileNotFoundError(
-              f"Hardlink path in database does not exist on disk: {hardlink_path}"
-            )
-        except Exception as e:
-          error_msg = f"Hardlink failed: {e}"
-          self.logger.debug(f"{dataset_name}: {error_msg}")
-          self._mark_upload_failed(dataset_uuid, error_msg, self.db)
-          failed_count += 1
-          pbar.update(1)
-          if not self.config.skip_missing:
-            pbar.close()
-            self.logger.error(f"❌ {dataset_name}: {error_msg}")
-            raise
-          skipped_count += 1
-          continue
-
-        # Check repo conflict before uploading
-        # Derive repo name from hardlink name (same as _upload_dataset does)
+        # Check repo conflict
         repo_name = hardlink_path.name.removesuffix("_hardlink")
         repo_id = f"{self.namespace}/{repo_name}"
         if not self._check_repo_conflict(repo_id):
           self.logger.debug(f"{dataset_name}: Skipped (user cancelled)")
-          self._mark_upload_failed(item.dataset_uuid, "User cancelled", self.db)
+          _mark_upload_failed(self.db, dataset_uuid, "User cancelled", self.config.hub_name, self.logger)
           skipped_count += 1
           pbar.update(1)
           continue
 
-        # Upload the dataset by temporarily setting root_path to hardlink's parent
-        try:
-          # Temporarily set root_path to the parent of the hardlink directory
-          # In order to bypass the definition of the parent type in LocalDsUtil.
-          self.root_path = hardlink_path.parent
+        # Upload dataset with temporary root_path change
+        success = self._upload_one_dataset_in_changed_root(hardlink_path, original_root_path)
 
-          # Upload from the already-validated hardlink folder
-          # Pass the actual hardlink folder name (with _hardlink suffix)
-          # _upload_dataset will automatically strip _hardlink for repo_id
-          success = self._upload_one_dataset(
-            hardlink=hardlink_path.name  # e.g., "realman_rmc_aidal_only_test_fix_hardlink"
-          )
-
-          if success:
-            self._mark_upload_completed(item.dataset_uuid, self.db)
-            uploaded_count += 1
-            self.logger.debug(f"{dataset_name}: Uploaded")
-          else:
-            self._mark_upload_failed(item.dataset_uuid, "Upload failed", self.db)
-            failed_count += 1
-            self.logger.debug(f"{dataset_name}: Failed")
-
-        except Exception as e:
-          error_msg = str(e)
-          self.logger.debug(f"{dataset_name}: {error_msg}")
-          self._mark_upload_failed(item.dataset_uuid, error_msg, self.db)
+        # Handle result
+        if success:
+          _mark_upload_completed(self.db, dataset_uuid, self.config.hub_name, self.logger)
+          uploaded_count += 1
+          self.logger.debug(f"{dataset_name}: Uploaded")
+        else:
+          _mark_upload_failed(self.db, dataset_uuid, "Upload failed", self.config.hub_name, self.logger)
           failed_count += 1
+          self.logger.debug(f"{dataset_name}: Failed")
 
-        finally:
-          # Restore original root_path after each upload
-          self.root_path = original_root_path
-          pbar.update(1)
+        pbar.update(1)
 
     finally:
-      # Ensure root_path is restored
+      # Ensure root_path is restored and progress bar is closed
       self.root_path = original_root_path
       pbar.close()
 
     # Final summary
-    status = f"✅ {uploaded_count}/{total_count}"
+    total_processed = uploaded_count + failed_count + skipped_count
+    if total_processed == 0:
+      self.logger.info("No datasets to upload")
+      return
+
+    status = f"✅ {uploaded_count}/{total_processed}"
     if failed_count > 0:
       status += f" | ❌ {failed_count}"
     if skipped_count > 0:
       status += f" | ⏭️  {skipped_count}"
     self.logger.info(status)
 
-  def _sync_datasets_upload_status(self, db: DatasetDatabase, retry_failed: bool = False) -> None:
+  def _upload_one_dataset_in_changed_root(self, hardlink_path: Path, original_root_path: Path) -> bool:
     """
-    Sync datasets upload status from database.
-    Set PENDING and increment the version,
-    sync the version_ps -> visualize_check_status.
+    Upload a dataset with temporarily changed root_path.
 
     Args:
-        db: Database instance.
-        retry_failed: If True, retry failed uploads. Otherwise only process pending ones.
+        hardlink_path: Path to the hardlink directory
+        original_root_path: Original root_path to restore after upload
+
+    Returns:
+        True if upload succeeded, False otherwise
     """
-    # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-    upload_status_field = self._get_hub_field_prefix("upload_status")
-    upload_version_field = self._get_hub_field_prefix("upload_version")
-    upload_version_ps_field = self._get_hub_field_prefix("upload_version_ps")
+    try:
+      # Temporarily change root_path to hardlink's parent
+      self.root_path = hardlink_path.parent
 
-    # Get column objects for dynamic field names
-    upload_status_col = getattr(DatasetDB, upload_status_field)
-    upload_version_ps_col = getattr(DatasetDB, upload_version_ps_field)
+      # Execute upload
+      return self._upload_one_dataset(hardlink=hardlink_path.name)
 
-    with db.with_session() as session:
-      if retry_failed:
-        status_list = [
-          TaskStatus.FAILED,
-          TaskStatus.PENDING,
-        ]
-      else:
-        status_list = [TaskStatus.PENDING]
-
-      query = session.query(DatasetDB).filter(
-        and_(
-          DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
-          or_(
-            upload_status_col.in_(status_list),
-            and_(
-              upload_status_col == TaskStatus.COMPLETED,
-              upload_version_ps_col < DatasetDB.visualize_check_version,
-            ),
-          ),
-        )
-      )
-
-      for item in query.all():
-        setattr(item, upload_status_field, TaskStatus.PENDING)
-        current_version = getattr(item, upload_version_field, 0) or 0
-        setattr(item, upload_version_field, current_version + 1)
-        setattr(item, upload_version_ps_field, item.visualize_check_version)
-      session.commit()
-
-  def _gen_one_dataset_upload_task(self) -> tuple[str | None, str | None]:
-      """
-      Generate one dataset upload task by finding a pending upload and marking it as PROCESSING.
-
-      Returns:
-          Tuple of (dataset_uuid, hardlink_path) if a task was found, (None, None) otherwise.
-          hardlink_path is queried from the dataset_hard_link table.
-      """
-      # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-      upload_status_field = self._get_hub_field_prefix("upload_status")
-
-      # Get column objects for dynamic field names
-      upload_status_col = getattr(DatasetDB, upload_status_field)
-
-      with self.db.with_session() as session:
-          query = session.query(DatasetDB).filter(
-              and_(
-                  DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
-                  upload_status_col == TaskStatus.PENDING,
-              )
-          )
-          item = query.first()
-          if not item:
-              return None, None
-
-          setattr(item, upload_status_field, TaskStatus.PROCESSING)
-          session.commit()
-
-          # Query hardlink_path from dataset_hard_link table
-          hardlink_item = session.query(DatasetHardLinkDB).filter(
-              DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
-          ).first()
-
-          hardlink_path = hardlink_item.hard_link_path if hardlink_item else None
-
-          return item.dataset_uuid, hardlink_path
-
-  def _mark_upload_failed(self, dataset_uuid: str, error_msg: str, db: DatasetDatabase) -> None:
-
-    # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-    upload_status_field = self._get_hub_field_prefix("upload_status")
-    upload_err_field = self._get_hub_field_prefix("upload_err_msg")
-
-    with db.with_session() as session:
-      item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-      if item:
-        setattr(item, upload_status_field, TaskStatus.FAILED)
-        setattr(item, upload_err_field, error_msg)
-        session.commit()
-
-  def _mark_upload_completed(self, dataset_uuid: str, db: DatasetDatabase) -> None:
-
-    # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-    upload_status_field = self._get_hub_field_prefix("upload_status")
-
-    with db.with_session() as session:
-      item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-      if item:
-        setattr(item, upload_status_field, TaskStatus.COMPLETED)
-        session.commit()
+    finally:
+      # Always restore original root_path
+      self.root_path = original_root_path
 
   def _check_repo_conflict(self, repo_id: str) -> bool:
     """
@@ -523,6 +442,40 @@ class LocalDsUploadUtil(LocalDsUtil):
     tqdm.write(f"\n⚠️  {repo_id} exists. Overwrite? (y/n): ", end="")
     response = input().strip().lower()
     return response in ["y", "yes"]
+
+
+######## HIGH-LEVEL ORCHESTRATION ########
+
+
+def upload_datasets(config: LocalDsUploadConfig, logger: logging.Logger | None = None) -> None:
+    """
+    Upload datasets to remote hub using database management.
+
+    This is the main business logic function that orchestrates the upload process.
+
+    Args:
+        config: Upload configuration
+        logger: Logger instance (optional)
+    """
+    _logger = logger or logging.getLogger(__name__)
+
+    try:
+        # Initialize uploader
+        _logger.info("Initializing uploader...")
+        uploader = LocalDsUploadUtil(config)
+
+        # Start upload process
+        _logger.info("Starting upload process...")
+        uploader.upload_datasets_from_db()
+
+        _logger.info("✅ Upload process completed successfully")
+
+    except KeyboardInterrupt:
+        _logger.warning("\n⚠️  Upload interrupted by user")
+        raise
+    except Exception as e:
+        _logger.error(f"❌ Upload failed: {e}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
