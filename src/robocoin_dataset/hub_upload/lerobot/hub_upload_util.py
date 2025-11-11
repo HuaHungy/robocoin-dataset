@@ -298,15 +298,12 @@ class LocalDsUploadUtil(LocalDsUtil):
             pbar.update(1)
             continue
 
-        # Prepare hardlink (validates convert_path, queries DB, creates if needed, updates DB)
-        from robocoin_dataset.hardlink.prepare_hardlink import (
-            query_existing_hardlink,
-            update_hardlink_path,
-        )
-        from robocoin_dataset.hardlink.validate_hardlink import (
-            create_or_validate_hardlinks,
-            validate_source_for_lerobot,
-        )
+        # get hardlink path from database
+        with self.db.with_session() as session:
+          hardlink_record = session.query(DatasetHardLinkDB).filter(
+            DatasetHardLinkDB.dataset_uuid == dataset_uuid
+          ).first()
+          hardlink_path = Path(hardlink_record.hard_link_path) if hardlink_record and hardlink_record.hard_link_path else None
 
         convert_path = Path(item.convert_path).expanduser().absolute()
 
@@ -314,22 +311,18 @@ class LocalDsUploadUtil(LocalDsUtil):
         pbar.set_description(f"📤 {dataset_name[:30]:30s}")
 
         try:
-          # Validate source files (fast, no DB)
-          validate_source_for_lerobot(convert_path)
+          # Validate hardlink path exists in database
+          if hardlink_path is None:
+            raise FileNotFoundError(
+              f"No hardlink found in database for dataset {dataset_uuid}. "
+              f"Hardlinks must be created before uploading."
+            )
 
-          # Query existing hardlink path (quick DB query)
-          with self.db.with_session() as session:
-            existing_path = query_existing_hardlink(dataset_uuid, session)
-
-          # Determine target path
-          dst = existing_path or convert_path.parent / f"{convert_path.name}_hardlink"
-
-          # Create/validate hardlinks (SLOW - no DB lock)
-          hardlink_path = create_or_validate_hardlinks(convert_path, dst)
-
-          # Update DB with hardlink path (quick DB update)
-          with self.db.with_session() as session:
-            update_hardlink_path(dataset_uuid, hardlink_path, session)
+          # Verify hardlink path exists on disk
+          if not hardlink_path.exists():
+            raise FileNotFoundError(
+              f"Hardlink path in database does not exist on disk: {hardlink_path}"
+            )
         except Exception as e:
           error_msg = f"Hardlink failed: {e}"
           self.logger.debug(f"{dataset_name}: {error_msg}")

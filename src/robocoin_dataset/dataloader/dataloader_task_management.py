@@ -91,7 +91,6 @@ def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, 
         FileNotFoundError: If hardlink path not found in database or doesn't exist on disk.
     """
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
-    from robocoin_dataset.hardlink.prepare_hardlink import query_existing_hardlink
 
     item = (
         session.query(DatasetDB)
@@ -102,9 +101,13 @@ def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, 
     if not item:
         return None, None
 
-    # Query and validate hardlink path before claiming task
-    hardlink_path = query_existing_hardlink(item.dataset_uuid, session)
+    # Query hardlink path before claiming task without validation
+    from robocoin_dataset.database.models import DatasetHardLinkDB
 
+    hardlink_record = session.query(DatasetHardLinkDB).filter(
+        DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
+    ).first()
+    hardlink_path = Path(hardlink_record.hard_link_path) if hardlink_record and hardlink_record.hard_link_path else None
     if hardlink_path is None:
         raise FileNotFoundError(
             f"No hardlink found in database for dataset {item.dataset_uuid}. "
