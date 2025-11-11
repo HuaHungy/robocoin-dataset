@@ -5,11 +5,11 @@ realman_rmc_aidal:
 
 - version: mcap_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
-  post_processor_class: RealmanRmcAidalProcessor
+  post_processor_class: RealmanRmcAidalMcapProcessor
 
-- version: mcap_simple_version
-  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
-  post_processor_class: RealmanRmcAidalProcessor
+# - version: mcap_simple_version
+#   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
+#   post_processor_class: RealmanRmcAidalProcessor
 
 galaxea_r1_lite:
 - version: default_version
