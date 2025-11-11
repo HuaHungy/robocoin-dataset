@@ -8,7 +8,7 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 class AlphaBot2LerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
-        / "mjcfs/ai2robotics/Bot1S_RM75_6FB_2Fgripper_A_description_with_sites.xml"
+        / "mjcfs/ai2robotics/meshes_simplified_simplified/Bot2_ZPF_L2Fgripper_R2Fgripper_A_description_with_sites.xml"
     )
 
     # fixed
@@ -18,21 +18,21 @@ class AlphaBot2LerobotSimReplayConfig(LerobotSimReplayConfig):
     # joint_names should be 1 v 1 assignment
     state_arm_joint_mjcf_names: list[str] = [
         # left arm
-        "RM75_6FB_l_joint_1",
-        "RM75_6FB_l_joint_2",
-        "RM75_6FB_l_joint_3",
-        "RM75_6FB_l_joint_4",
-        "RM75_6FB_l_joint_5",
-        "RM75_6FB_l_joint_6",
-        "RM75_6FB_l_joint7",
+        "ZPF_left_Joint1",
+        "ZPF_left_Joint2",
+        "ZPF_left_Joint3",
+        "ZPF_left_Joint4",
+        "ZPF_left_Joint5",
+        "ZPF_left_Joint6",
+        "ZPF_left_Joint7",
         # right arm
-        "RM75_6FB_r_joint_1",
-        "RM75_6FB_r_joint_2",
-        "RM75_6FB_r_joint_3",
-        "RM75_6FB_r_joint_4",
-        "RM75_6FB_r_joint_5",
-        "RM75_6FB_r_joint_6",
-        "RM75_6FB_r_joint7",
+        "ZPF_right_Joint1",
+        "ZPF_right_Joint2",
+        "ZPF_right_Joint3",
+        "ZPF_right_Joint4",
+        "ZPF_right_Joint5",
+        "ZPF_right_Joint6",
+        "ZPF_right_Joint7",
     ]
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [

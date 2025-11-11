@@ -58,18 +58,20 @@ def construce_target_file(
         target_size_kb: Target size for compressed videos in KB (default: 500)
         logger: Optional logger instance
     """
+    from robocoin_dataset.page_sync.page_sync_task import (
+        _gen_one_page_sync_task,
+        _get_dataset_name,
+        _mark_task_completed,
+        _mark_task_failed,
+        _sync_page_sync_status,
+    )
     from robocoin_dataset.page_sync.page_sync_utils import (
         _align_video_name_with_yaml,
         _compress_video_to_dst,
         _copy_yaml_file_from_db,
         _gen_consolidation,
         _gen_data_index,
-        _gen_one_page_sync_task,
-        _get_dataset_name,
-        _mark_task_completed,
-        _mark_task_failed,
         _sample_one_video_path,
-        _sync_page_sync_status,
         _validate_exist,
     )
 

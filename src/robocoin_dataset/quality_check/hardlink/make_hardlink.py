@@ -2,6 +2,8 @@ import logging
 import os
 from pathlib import Path
 
+import tqdm
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,7 +73,7 @@ def create_hardlinks_from_correspondence(
         dir_corresp:  {src_dir_path: dst_dir_path} —— 会递归为 src_dir 下所有文件创建硬链接到 dst_dir
     """
     # 处理文件硬链接
-    for src, dst in file_corresp.items():
+    for src, dst in tqdm.tqdm(file_corresp.items(), desc="Creating file hard links", unit="file"):
         src = Path(src).resolve()
         dst = Path(dst)
         if not src.is_file():
@@ -82,7 +84,9 @@ def create_hardlinks_from_correspondence(
         os.link(src, dst)
 
     # 处理目录硬链接（实际上是递归为每个文件建硬链接）
-    for src_dir, dst_dir in dir_corresp.items():
+    for src_dir, dst_dir in tqdm.tqdm(
+        dir_corresp.items(), desc="Creating directory hard links", unit="dir"
+    ):
         src_dir = Path(src_dir).resolve()
         dst_dir = Path(dst_dir)
         if not src_dir.is_dir():

@@ -2,12 +2,9 @@
 """Reset upload status for testing.
 
 This script prepares the database for upload testing by:
-1. Setting visualize_check_status = COMPLETED ONLY for datasets where data_merge_status = COMPLETED
-   (ensures only merged datasets are eligible for upload)
+1. Setting visualize_check_status = COMPLETED ONLY for datasets where they have hardlink_path
+   in dataset_hard_link table
 2. Resetting both ModelScope and HuggingFace upload statuses to PENDING (for all datasets)
-
-Usage:
-    python scripts/hub_upload/reset_for_upload_tst.py --db path/to/database.db
 """
 
 import argparse
@@ -16,7 +13,7 @@ import sys
 from pathlib import Path
 
 from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import DatasetDB, TaskStatus
+from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +22,8 @@ def reset_upload_status(db_file: Path) -> int:
     """Reset upload status for both ModelScope and HuggingFace.
 
     CRITICAL: Only sets visualize_check_status = COMPLETED for datasets where
-    data_merge_status = COMPLETED (ensures only merged datasets are eligible).
+    they have hardlink_path in dataset_hard_link table (ensures only datasets
+    with hardlinks are eligible).
     Always sets all upload statuses to PENDING.
 
     Args:
@@ -46,14 +44,23 @@ def reset_upload_status(db_file: Path) -> int:
                 print("⚠️  No datasets found in database", file=sys.stderr)
                 return 0
 
+            # Get all dataset_uuids that have hardlink_path (not null)
+            hardlink_records = session.query(DatasetHardLinkDB).filter(
+                DatasetHardLinkDB.hard_link_path.isnot(None),
+                DatasetHardLinkDB.hard_link_path != ""
+            ).all()
+
+            # Create a set of dataset_uuids that have hardlink_path
+            hardlink_uuids = {record.dataset_uuid for record in hardlink_records}
+
             # Reset status for all datasets
             updated_count = 0
             visualize_set_count = 0
 
             for dataset in datasets:
-                # CRITICAL: Only set visualize_check_status = COMPLETED if data_merge_status = COMPLETED
-                # This ensures only merged datasets are eligible for upload
-                if dataset.data_merge_status == TaskStatus.COMPLETED:
+                # CRITICAL: Only set visualize_check_status = COMPLETED if dataset has hardlink_path
+                # This ensures only datasets with hardlinks are eligible for upload
+                if dataset.dataset_uuid in hardlink_uuids:
                     dataset.visualize_check_status = TaskStatus.COMPLETED
                     visualize_set_count += 1
 
@@ -68,7 +75,7 @@ def reset_upload_status(db_file: Path) -> int:
 
             logger.info(f"Successfully reset {updated_count} datasets for upload testing")
             print(f"✅ Successfully reset {updated_count} datasets:", file=sys.stderr)
-            print(f"   - visualize_check_status → COMPLETED (for {visualize_set_count} datasets with data_merge_status=COMPLETED)", file=sys.stderr)
+            print(f"   - visualize_check_status → COMPLETED (for {visualize_set_count} datasets with hardlink_path)", file=sys.stderr)
             print("   - ms_upload_status → PENDING (all datasets)", file=sys.stderr)
             print("   - hf_upload_status → PENDING (all datasets)", file=sys.stderr)
 
@@ -83,7 +90,7 @@ def reset_upload_status(db_file: Path) -> int:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Reset upload status for testing (sets visualize_check_status=COMPLETED for merged datasets, upload_status=PENDING for all)"
+        description="Reset upload status for testing (sets visualize_check_status=COMPLETED for datasets with hardlink_path, upload_status=PENDING for all)"
     )
     parser.add_argument(
         "--db",

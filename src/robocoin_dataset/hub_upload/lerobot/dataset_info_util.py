@@ -13,10 +13,8 @@ import draccus
 import yaml
 
 from .constant import (
-    ANNOTATION_SOURCE_FILE,
+    ANNOTATIONS_DIR,
     DATASET_INFO_FILE,
-    DATASET_INFO_TEMPLATE_FILE,
-    IGNORED_SUBTASKS,
     LEROBOT_META_INFO_FILE,
     LEROBOT_META_TASKS_FILE,
 )
@@ -72,7 +70,8 @@ class LocalDsInfoUtil(LocalDsUtil):
         Raises:
             FileNotFoundError: If the info template file does not exist.
         """
-        path = Path(__file__).parent.resolve().joinpath(DATASET_INFO_TEMPLATE_FILE)
+        # Template is in the readmes module, go up to hub_upload, then to readmes
+        path = Path(__file__).parent.parent.parent.joinpath("readmes", "templates", "dataset_info.yml")
         if not path.exists():
             raise FileNotFoundError(f"info template file {path} does not exists")
         return path
@@ -120,68 +119,75 @@ class LocalDsInfoUtil(LocalDsUtil):
         episodes_num = 0
         frames_num = 0
         tasks_list: list[str] = []
-        tasks = ""
 
+        # Read episode and frame counts from meta/info.json
         try:
             with open(info_file, encoding="utf-8") as f:
                 data = json.load(f)
-                episodes_num = data.get("episodes_num", 0)
-                frames_num = data.get("frames_num", 0)
+                episodes_num = data.get("total_episodes", 0)
+                frames_num = data.get("total_frames", 0)
         except Exception as e:
+            self.logger.error(f"Failed to read meta info file {info_file}: {e}")
             raise e
 
+        # Read tasks from meta/tasks.jsonl
         try:
-            with open(info_file, encoding="utf-8") as f:
-                data = json.load(f)
-                episodes_num = data.get("episodes_num", 0)
-                frames_num = data.get("frames_num", 0)
+            with open(tasks_file, encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        task_data = json.loads(line)
+                        tasks_list.append(task_data.get("task", ""))
+                    except json.JSONDecodeError as e:
+                        self.logger.error(f"Failed to decode JSON from line: {line.strip()}")
+                        raise e
         except Exception as e:
+            self.logger.error(f"Failed to read tasks file {tasks_file}: {e}")
             raise e
 
-        with open(tasks_file, encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    task_data = json.loads(line)
-                    tasks_list.append(task_data.get("task", ""))
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to decode JSON from line: {line.strip()}")
-                    raise e
-            tasks = "\n".join(tasks_list)
-
+        tasks = "\n".join(tasks_list)
         return episodes_num, frames_num, tasks
 
     def _get_subtasks_from_annotation(self, ds_name: str) -> str:
         """
-        Extract subtasks from dataset annotation file.
+        Extract subtasks from dataset annotation files (new structure).
 
         Args:
             ds_name (str): Name of the dataset.
 
         Returns:
-            str: Subtasks list as string.
+            str: Subtasks list as string. Currently returns empty string as the new
+                 annotation format in annotations/*.jsonl is not yet standardized.
 
-        Raises:
-            FileNotFoundError: If annotation file does not exist.
+        Note:
+            New structure uses annotations/*.jsonl files (e.g., eef_acc_mag_annotation.jsonl,
+            gripper_activity_annotation.jsonl, etc.), but the format for extracting subtasks
+            is not yet defined. This returns empty string until the format is standardized.
         """
-        ds_path = self.root_path.joinpath(ds_name, ANNOTATION_SOURCE_FILE)
-        if not ds_path.exists():
-            raise FileNotFoundError(f"dataset {ds_path} does not exists")
+        annotations_dir = self.root_path.joinpath(ds_name, ANNOTATIONS_DIR)
 
-        sub_tasks_set = set()
-        with open(ds_path, encoding="utf-8") as f:
-            data = json.load(f)
-            for item in data:
-                annotation = item.get("annotation", {})
-                video_labels = annotation.get("videoLabels", [])
-                for video_label in video_labels:
-                    timeline_labels = video_label.get("timelinelabels", [])
-                    for timeline_label in timeline_labels:
-                        if timeline_label not in IGNORED_SUBTASKS:
-                            sub_tasks_set.add(timeline_label)
+        if not annotations_dir.exists():
+            self.logger.warning(
+                f"dataset {ds_name}: annotations directory '{ANNOTATIONS_DIR}' not found. "
+                "Subtasks will be empty."
+            )
+            return ""
 
-        return "\n".join(sub_tasks_set)
+        # TODO: Implement subtasks extraction from new annotations/*.jsonl format
+        # when the format is standardized. Current files include:
+        # - eef_acc_mag_annotation.jsonl
+        # - eef_direction_annotation.jsonl
+        # - eef_velocity_annotation.jsonl
+        # - gripper_activity_annotation.jsonl
+        # - gripper_mode_annotation.jsonl
+        # etc.
+
+        self.logger.info(
+            f"dataset {ds_name}: subtasks extraction from new annotation format not yet implemented. "
+            "Subtasks will be empty."
+        )
+        return ""
 
     def _generate_size_label(self, size: int) -> str:
         """
@@ -217,22 +223,20 @@ class LocalDsInfoUtil(LocalDsUtil):
 
     def _generate_tags(self, ds_name: str) -> list[str]:
         """
-        Generate tags for a dataset from YAML tag files.
+        Generate tags for a dataset from YAML tag files (optional).
 
         Args:
             ds_name (str): Name of the dataset.
 
         Returns:
-            list[str]: List of tags for the dataset.
+            list[str]: List of tags for the dataset. Empty list if no tags directory configured.
         """
         if not self.config.task_tags_yamls_dir:
-            self.logger.warning("Task tags directory path is not set, skipping tag generation.")
+            # This is optional - just return empty list without warning
             return []
         tags_file_path = Path(self.config.task_tags_yamls_dir).joinpath(f"{ds_name}.yml")
         if not tags_file_path.exists():
-            self.logger.warning(
-                f"Tags file {tags_file_path} does not exist, skipping tag generation."
-            )
+            # Tag file doesn't exist for this dataset - that's ok
             return []
         with open(tags_file_path, encoding="utf-8") as f:
             return yaml.safe_load(f)

@@ -143,6 +143,11 @@ class DatasetDB(Base):
     qc_version = Column(Integer, nullable=True, default=0)
     qc_err_msg = Column(Text, nullable=True)
 
+    qced_repo_gen_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True)
+    qced_repo_gen_err_msg = Column(Text, nullable=True)
+    qced_repo_gen_version = Column(Integer, nullable=True, default=0)
+    qced_repo_gen_version_ps = Column(Integer, nullable=True, default=0)
+
     # dataLoader 检测相关
     data_loader_detection_status = Column(
         Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True
