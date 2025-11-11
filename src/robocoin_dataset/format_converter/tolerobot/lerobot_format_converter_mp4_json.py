@@ -52,6 +52,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         # 🆕 时间戳对齐相关（必须在super().__init__之前初始化，因为父类初始化时会访问）
         self._alignment_maps = {}  # 对齐映射表缓存 {(task_path, ep_idx): alignment_maps}
         self._reference_camera = {}  # 基准相机缓存 {(task_path, ep_idx): reference_camera_key}
+        self._reference_length = {}  # 基准长度缓存 {(task_path, ep_idx): reference_length}
         
         super().__init__(
             dataset_path=dataset_path,
@@ -68,6 +69,8 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         )
         self._json_data_cache = {}  # 缓存JSON数据
         self._is_test_mode = False  # Test模式标志（限制加载帧数）
+        # 对齐模式：timestamp 或 frequency（通过配置控制，默认 timestamp 以兼容旧逻辑）
+        self._alignment_mode = str(self.converter_config.get("alignment_mode", "timestamp")).lower()
 
     def convert(self, is_test: bool = False):
         """重写父类方法以设置test模式标志
@@ -420,279 +423,46 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         
         return camera_keys
     
-    def _extract_timestamps(self, json_data: dict) -> dict[str, list[float]]:
-        """提取所有数据流的时间戳列表
+    def _extract_lengths(self, json_data: dict) -> dict[str, int]:
+        """提取所有数据流的长度（用于频率对齐）
         
         Args:
             json_data: 加载的JSON数据
-            
         Returns:
-            timestamps: {
-                'camera_front_head_rgb': [ts0, ts1, ts2, ...],
-                'state_left_arm_joint_position': [ts0, ts1, ts2, ...],
-                ...
-            }
+            lengths: { 'camera_front_head_rgb': N, 'state_left_arm_joint_position': M, ... }
         """
-        timestamps = {}
-        
-        if 'data' not in json_data:
-            return timestamps
-        
-        for key, stream in json_data['data'].items():
-            if isinstance(stream, list) and len(stream) > 0:
-                ts_list = []
-                for item in stream:
-                    if isinstance(item, dict) and 'timestamp' in item:
-                        ts = item['timestamp']
-                        if isinstance(ts, (int, float)):
-                            ts_list.append(float(ts))
-                
-                if ts_list:
-                    timestamps[key] = ts_list
-        
-        return timestamps
+        lengths: dict[str, int] = {}
+        data_obj = json_data.get("data", {})
+        if isinstance(data_obj, dict):
+            for key, stream in data_obj.items():
+                if isinstance(stream, list):
+                    lengths[key] = len(stream)
+        elif isinstance(data_obj, list):
+            # 简单格式，仅一个统一列表
+            lengths["data"] = len(data_obj)
+        return lengths
     
-    def _find_nearest_timestamp(self, target_ts: float, timestamps: list[float]) -> int:
-        """使用二分查找找到最接近的时间戳索引
-        
-        Args:
-            target_ts: 目标时间戳
-            timestamps: 排序的时间戳列表
-            
-        Returns:
-            最接近的时间戳索引
-        """
-        import bisect
-        
-        if not timestamps:
-            raise ValueError("Empty timestamps list")
-        
-        idx = bisect.bisect_left(timestamps, target_ts)
-        
-        # 处理边界情况
-        if idx == 0:
-            return 0
-        if idx == len(timestamps):
-            return len(timestamps) - 1
-        
-        # 比较左右两个时间戳，选择更接近的
-        if abs(timestamps[idx] - target_ts) < abs(timestamps[idx - 1] - target_ts):
-            return idx
-        else:
-            return idx - 1
-    
-    def _determine_reference_camera(
-        self, 
-        timestamps: dict[str, list[float]], 
-        camera_keys: list[str]
-    ) -> tuple[str, list[float], float, float]:
-        """确定基准相机（帧数最少的相机）和公共时间范围
-        
-        🆕 只计算相机、arm、gripper相关数据流的公共时间范围，避免过度裁剪基准相机数据
-        
-        Args:
-            timestamps: 所有数据流的时间戳字典
-            camera_keys: 相机数据流的键列表（如 ['camera_front_head_rgb', ...]）
-        
-        Returns:
-            (reference_camera_key, reference_timestamps, common_start, common_end):
-            - reference_camera_key: 基准相机的键
-            - reference_timestamps: 基准相机的时间戳列表（过滤到公共时间范围）
-            - common_start: 公共时间范围的开始时间
-            - common_end: 公共时间范围的结束时间
-        """
-        camera_frame_counts = {}
-        for cam_key in camera_keys:
-            if cam_key in timestamps:
-                camera_frame_counts[cam_key] = len(timestamps[cam_key])
-        
-        if not camera_frame_counts:
-            raise ValueError("No camera timestamps found")
-        
-        # 找到帧数最少的相机
-        reference_camera_key = min(camera_frame_counts, key=camera_frame_counts.get)
-        reference_timestamps_all = timestamps[reference_camera_key]
-        
-        # 🆕 从YAML配置中读取需要用于计算公共时间范围的字段列表
-        relevant_keys = []
-        timestamp_alignment_config = self.converter_config.get('timestamp_alignment', {})
-        configured_fields = timestamp_alignment_config.get('relevant_fields', [])
-        
-        if configured_fields:
-            # 使用YAML配置中指定的字段
-            for field in configured_fields:
-                if field in timestamps:
-                    relevant_keys.append(field)
-                else:
-                    if self.logger:
-                        self.logger.warning(
-                            f"⚠️  Configured timestamp alignment field '{field}' not found in timestamps, skipping"
-                        )
-        else:
-            # 如果YAML中没有配置，回退到字符串匹配（向后兼容）
-            if self.logger:
-                self.logger.warning(
-                    "⚠️  No 'timestamp_alignment.relevant_fields' in config, falling back to string matching"
-                )
-            for key in timestamps.keys():
-                key_lower = key.lower()
-                if ('camera' in key_lower or 
-                    'arm' in key_lower or 
-                    'gripper' in key_lower):
-                    relevant_keys.append(key)
-        
-        if not relevant_keys:
-            # 如果仍然没有找到相关数据流，使用所有数据流（向后兼容）
-            relevant_keys = list(timestamps.keys())
-            if self.logger:
-                self.logger.warning(
-                    "⚠️  No relevant data streams found, using all data streams for common time range"
-                )
-        
-        # 计算相关数据流的公共时间范围
-        relevant_starts = [timestamps[key][0] for key in relevant_keys if key in timestamps and timestamps[key]]
-        relevant_ends = [timestamps[key][-1] for key in relevant_keys if key in timestamps and timestamps[key]]
-        
-        if not relevant_starts or not relevant_ends:
-            # 如果没有相关数据流，使用基准相机的全部时间戳
-            if self.logger:
-                self.logger.warning(
-                    "⚠️  Cannot determine common time range, using all reference camera timestamps"
-                )
-            return reference_camera_key, reference_timestamps_all, reference_timestamps_all[0], reference_timestamps_all[-1]
-        
-        common_start = max(relevant_starts)
-        common_end = min(relevant_ends)
-        
-        # 🆕 过滤基准相机的时间戳到公共时间范围
-        reference_timestamps = [ts for ts in reference_timestamps_all if common_start <= ts <= common_end]
-        
-        if self.logger:
-            self.logger.info(
-                f"📹 Reference camera determined: {reference_camera_key} "
-                f"({len(reference_timestamps)} frames in common time range, "
-                f"from {len(reference_timestamps_all)} total frames)"
-            )
-            source = "YAML config" if configured_fields else "string matching"
-            self.logger.info(
-                f"⏱️  Common time range ({source}): {common_start:.6f} - {common_end:.6f} "
-                f"({common_end - common_start:.3f}s, {len(relevant_keys)} relevant fields)"
-            )
-            if len(reference_timestamps) < len(reference_timestamps_all):
-                reduction = (1 - len(reference_timestamps) / len(reference_timestamps_all)) * 100
-                self.logger.info(
-                    f"📊 Data reduction: {reduction:.1f}% "
-                    f"({len(reference_timestamps_all) - len(reference_timestamps)} frames removed)"
-                )
-        
-        return reference_camera_key, reference_timestamps, common_start, common_end
-    
-    def _build_alignment_maps(
-        self,
-        reference_timestamps: list[float],
-        all_timestamps: dict[str, list[float]],
-        tolerance: float = 0.01
-    ) -> dict[str, list[int]]:
-        """为所有数据流构建对齐映射表（以基准相机的时间戳为基准）
-        
-        Args:
-            reference_timestamps: 基准相机的时间戳列表
-            all_timestamps: 所有数据流的时间戳字典
-            tolerance: 最大时间差容忍度（秒），超过此值认为无法对齐
-        
-        Returns:
-            alignment_maps: {
-                'camera_left_wrist': [0, 1, 2, ...],  # 其他相机对齐到基准相机
-                'state_left_arm_joint_position': [8, 16, 24, ...],  # 关节数据对齐
-                'cmd_left_joint_state': [2, 4, 6, ...],  # 命令数据对齐
-                ...
-            }
-        """
-        alignment_maps = {}
-        
-        for key, timestamps in all_timestamps.items():
-            alignment_map = []
-            max_time_diff = 0.0
-            
-            # 使用二分查找加速（因为timestamps是排序的）
-            for ref_ts in reference_timestamps:
-                # 找到最接近的时间戳索引
-                idx = self._find_nearest_timestamp(ref_ts, timestamps)
-                
-                # 检查时间差是否在容忍范围内
-                time_diff = abs(timestamps[idx] - ref_ts)
-                max_time_diff = max(max_time_diff, time_diff)
-                
-                if time_diff > tolerance:
-                    raise ValueError(
-                        f"Cannot align {key}: reference timestamp {ref_ts} has no matching data "
-                        f"(nearest: {timestamps[idx]}, diff: {time_diff:.4f}s > tolerance: {tolerance:.4f}s)"
-                    )
-                
-                alignment_map.append(idx)
-            
-            alignment_maps[key] = alignment_map
-            
-            if self.logger:
-                self.logger.debug(
-                    f"✅ Built alignment map for {key}: "
-                    f"{len(alignment_map)} frames, max time diff: {max_time_diff:.4f}s"
-                )
-        
-        return alignment_maps
+    # 时间戳对齐相关方法已删除，仅保留长度/频率对齐
     
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """获取episode的帧数
-        
-        🆕 使用时间戳对齐方案：找到帧数最少的相机作为基准，返回基准相机的帧数
-        """
-        # 1. 加载JSON数据并提取时间戳
+        """获取episode的帧数（频率/长度对齐：以最短相机帧数为基准）"""
+        # 1. 加载JSON数据
         json_data = self._load_json_data(task_path, ep_idx)
-        all_timestamps = self._extract_timestamps(json_data)
-        
-        if not all_timestamps:
-            from .exceptions import CriticalDataError
-            raise CriticalDataError(
-                f"❌ Cannot extract timestamps from JSON data.\n"
-                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
-                f"   📋 Available keys: {list(json_data.get('data', {}).keys())}\n"
-                f"   💡 No valid timestamp data found in JSON file.\n"
-                f"   ⚠️  Skipping this episode due to missing timestamp data."
-            )
-        
-        # 2. 获取配置中的相机键列表
-        camera_keys = self._get_camera_keys_from_config(all_timestamps)
-        
-        if not camera_keys:
-            from .exceptions import CriticalDataError
-            raise CriticalDataError(
-                f"❌ No camera timestamps found in JSON data.\n"
-                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
-                f"   📋 Available timestamp keys: {list(all_timestamps.keys())}\n"
-                f"   💡 Expected camera data keys (e.g., 'camera_front_head_rgb').\n"
-                f"   ⚠️  Skipping this episode due to missing camera timestamp data."
-            )
-        
-        # 3. 确定基准相机（帧数最少的相机）和公共时间范围
-        try:
-            reference_camera_key, reference_timestamps, common_start, common_end = self._determine_reference_camera(
-                all_timestamps, camera_keys
-            )
-        except ValueError as e:
-            from .exceptions import CriticalDataError
-            raise CriticalDataError(
-                f"❌ Failed to determine reference camera.\n"
-                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
-                f"   ⚠️  Error: {e}\n"
-                f"   ⚠️  Skipping this episode."
-            ) from e
-        
-        # 4. 缓存基准相机信息（用于后续对齐）
         cache_key = (str(task_path), ep_idx)
+
+        # 频率/长度对齐：以实际视频帧数选择最短相机为参考
+        images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx)
+        if not images_buffer:
+            from .exceptions import CriticalDataError
+            raise CriticalDataError(
+                f"❌ No camera videos available to determine frame count.\n"
+                f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}"
+            )
+        frame_counts = {cam: len(reader) for cam, reader in images_buffer.items()}
+        reference_camera_key = min(frame_counts, key=frame_counts.get)
+        total_frames = int(frame_counts[reference_camera_key])
         self._reference_camera[cache_key] = reference_camera_key
-        
-        # 5. 返回基准相机的帧数
-        total_frames = len(reference_timestamps)
+        self._reference_length[cache_key] = total_frames
         
         # 🧪 Test模式：限制帧数
         if self._is_test_mode:
@@ -901,10 +671,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         return None
 
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int) -> list[dict]:
-        """准备episode的状态缓冲区
-        
-        🆕 同时构建时间戳对齐映射表
-        """
+        """准备episode的状态缓冲区（构建频率/长度比例对齐映射）"""
         json_data = self._load_json_data(task_path, ep_idx)
         
         if 'data' not in json_data:
@@ -917,90 +684,56 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                 f"   ⚠️  Skipping this episode due to missing 'data' key."
             )
         
-        # 🆕 构建时间戳对齐映射表
+        # 🆕 构建对齐映射表
         cache_key = (str(task_path), ep_idx)
         
         # 如果对齐映射表已存在，直接返回数据
         if cache_key in getattr(self, "_alignment_maps", {}):
             return json_data['data']
-        
-        # 提取所有时间戳
-        all_timestamps = self._extract_timestamps(json_data)
-        
-        if not all_timestamps:
-            if self.logger:
-                self.logger.warning(
-                    f"⚠️  No timestamps found in JSON data, falling back to direct indexing.\n"
-                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}"
-                )
-            return json_data['data']
-        
-        # 获取基准相机
-        if cache_key not in getattr(self, "_reference_camera", {}):
-            # 如果基准相机未确定，尝试确定（可能是在_get_episode_frames_num中已确定）
-            camera_keys = self._get_camera_keys_from_config(all_timestamps)
-            
-            if camera_keys:
-                try:
-                    reference_camera_key, reference_timestamps, common_start, common_end = self._determine_reference_camera(
-                        all_timestamps, camera_keys
-                    )
+
+        # 频率/长度对齐：依据参考相机帧数构建映射，仅限相关字段
+        reference_len = getattr(self, "_reference_length", {}).get(cache_key)
+        if not reference_len or reference_len <= 0:
+            try:
+                images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx)
+                if images_buffer:
+                    frame_counts = {cam: len(reader) for cam, reader in images_buffer.items()}
+                    reference_camera_key = min(frame_counts, key=frame_counts.get)
+                    reference_len = int(frame_counts[reference_camera_key])
                     self._reference_camera[cache_key] = reference_camera_key
-                except ValueError:
-                    if self.logger:
-                        self.logger.warning(
-                            f"⚠️  Failed to determine reference camera, falling back to direct indexing.\n"
-                            f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}"
-                        )
-                    return json_data['data']
+                    self._reference_length[cache_key] = reference_len
+            except Exception:
+                reference_len = None
+        if not reference_len or reference_len <= 0:
+            return json_data['data']
+        lengths = self._extract_lengths(json_data)
+        if not lengths:
+            return json_data['data']
+        relevant_fields = set(
+            self.converter_config.get("frequency_alignment", {}).get("relevant_fields", [])
+        )
+        keys_to_map = [k for k in lengths.keys() if (not relevant_fields or k in relevant_fields)]
+        alignment_maps: dict[str, list[int]] = {}
+        for key in keys_to_map:
+            stream_len = int(lengths.get(key, 0))
+            if stream_len <= 0:
+                continue
+            if reference_len == 1:
+                mapped = [0]
             else:
-                if self.logger:
-                    self.logger.warning(
-                        f"⚠️  No camera keys found, falling back to direct indexing.\n"
-                        f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}"
-                    )
-                return json_data['data']
-        
-        # 读取基准相机键（带安全回退）
-        reference_camera_key = getattr(self, "_reference_camera", {}).get(cache_key)
-        if reference_camera_key is None:
-            if self.logger:
-                self.logger.warning(
-                    f"⚠️  Reference camera cache missing, falling back to direct indexing.\n"
-                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}"
-                )
-            return json_data['data']
-        if reference_camera_key not in all_timestamps:
-            if self.logger:
-                self.logger.warning(
-                    f"⚠️  Reference camera '{reference_camera_key}' not in timestamps, falling back to direct indexing.\n"
-                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}"
-                )
-            return json_data['data']
-        
-        reference_timestamps = all_timestamps[reference_camera_key]
-        
-        # 构建对齐映射表
-        try:
-            alignment_maps = self._build_alignment_maps(
-                reference_timestamps, all_timestamps, tolerance=0.01
+                mapped = [
+                    int(round(i * (stream_len - 1) / (reference_len - 1)))
+                    for i in range(reference_len)
+                ]
+            alignment_maps[key] = mapped
+        self._alignment_maps[cache_key] = alignment_maps
+        if self.logger:
+            ref_cam = getattr(self, "_reference_camera", {}).get(cache_key, "?")
+            self.logger.info(
+                f"✅ Built frequency-based alignment maps for episode {ep_idx}: "
+                f"{len(alignment_maps)} streams, ref='{ref_cam}' len={reference_len}"
             )
-            self._alignment_maps[cache_key] = alignment_maps
-            
-            if self.logger:
-                self.logger.info(
-                    f"✅ Built timestamp alignment maps for episode {ep_idx}: "
-                    f"{len(alignment_maps)} data streams aligned to reference camera '{reference_camera_key}'"
-                )
-        except ValueError as e:
-            if self.logger:
-                self.logger.warning(
-                    f"⚠️  Failed to build alignment maps: {e}\n"
-                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
-                    f"   💡 Falling back to direct indexing."
-                )
-            # 回退到直接索引
-            return json_data['data']
+        return json_data['data']
         
         return json_data['data']
 
@@ -1017,10 +750,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         args_dict: dict, 
         images_buffer: dict[str, list[np.ndarray]] | None = None
     ) -> np.ndarray:
-        """获取指定帧的图像
-        
-        🆕 使用时间戳对齐：如果对齐映射表存在，使用对齐后的索引获取其他相机图像
-        """
+        """获取指定帧的图像"""
         if images_buffer is None:
             images_buffer = self._prepare_episode_images_buffer(task_path, ep_idx)
         
@@ -1045,7 +775,46 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         alignment_maps = getattr(self, "_alignment_maps", {}).get(cache_key, {})
         reference_camera = getattr(self, "_reference_camera", {}).get(cache_key, None)
         
-        # 确定实际使用的索引
+        # 基于长度比对齐相机帧
+        if reference_camera:
+            # 如果是参考相机，直接使用 frame_idx
+            if cam_name == reference_camera or any(ref_part in cam_name for ref_part in reference_camera.split('_')):
+        if frame_idx >= len(images_buffer[cam_name]):
+                    from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
+                    raise CriticalDataError(
+                        f"❌ Frame index out of range for reference camera (entire episode will be skipped).\n"
+                        f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                        f"   📹 Reference camera: '{cam_name}'\n"
+                        f"   🎯 Requested frame_idx: {frame_idx}\n"
+                        f"   📊 This camera has: {len(images_buffer[cam_name])} frames\n"
+                    )
+                return images_buffer[cam_name][frame_idx]
+            # 其他相机：按长度比例映射
+            # 参考相机在 images_buffer 的键（基于名称匹配）
+            ref_cam_in_images = None
+            for cname in images_buffer.keys():
+                if cname == reference_camera or any(ref_part in cname for ref_part in reference_camera.split('_')):
+                    ref_cam_in_images = cname
+                    break
+            ref_len = len(images_buffer[ref_cam_in_images]) if ref_cam_in_images else len(images_buffer[cam_name])
+            cur_len = len(images_buffer[cam_name])
+            if ref_len <= 1:
+                mapped_idx = 0
+            else:
+                mapped_idx = int(round(frame_idx * (cur_len - 1) / (ref_len - 1)))
+            if mapped_idx >= cur_len:
+                from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
+                raise CriticalDataError(
+                    f"❌ Aligned frame index out of range for camera (entire episode will be skipped).\n"
+                    f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
+                    f"   📹 Camera: '{cam_name}'\n"
+                    f"   🎯 Reference frame_idx: {frame_idx}\n"
+                    f"   🎯 Aligned index: {mapped_idx}\n"
+                    f"   📊 This camera has: {cur_len} frames\n"
+                )
+            return images_buffer[cam_name][mapped_idx]
+
+        # 时间戳模式：使用对齐表
         if alignment_maps and reference_camera:
             # 使用时间戳对齐
             # 找到JSON中对应的相机键（可能带camera_前缀）
@@ -1109,10 +878,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         args_dict: dict,
         sub_states_buffer: list[dict] | None = None
     ) -> np.ndarray:
-        """获取指定帧的子状态
-        
-        🆕 使用时间戳对齐：如果对齐映射表存在，使用对齐后的索引获取数据
-        """
+        """获取指定帧的子状态"""
         if sub_states_buffer is None:
             sub_states_buffer = self._prepare_episode_states_buffer(task_path, ep_idx)
         

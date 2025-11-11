@@ -218,7 +218,9 @@ features:
 
 # 🆕 时间戳对齐配置：指定用于计算公共时间范围的数据流字段
 # 这些字段必须都包含timestamp，用于确定所有数据流的公共时间范围
-timestamp_alignment:
+alignment_mode: frequency
+# 当 alignment_mode 为 frequency 时，仅基于长度/频率进行对齐与降采样（不使用时间戳）
+frequency_alignment:
   relevant_fields:
     - camera_front_head_rgb
     - camera_left_wrist
