@@ -51,6 +51,7 @@ def run_local_detection(
     db = DatasetDatabase(Path(db_file).expanduser().absolute())
 
     succeeded, failed, datasets_processed = [], [], 0
+    dataset_details = []  # Store detailed per-dataset statistics
     batch_start_time = time.perf_counter()
     total_frames = 0
 
@@ -97,9 +98,23 @@ def run_local_detection(
                 _mark_task_completed(session, dataset_uuid)
             succeeded.append(dataset_uuid)
             total_frames += result.get("total_frames_sampled", 0)
+
+            # Collect detailed statistics for summary
+            dataset_name = Path(hardlink_path).name
+            num_episodes_tested = len(result.get("episodes_tested", []))
+            dataset_details.append({
+                "uuid": dataset_uuid,
+                "dataset_name": dataset_name,
+                "total_time_sec": result.get("total_time_s", 0),
+                "num_episodes": num_episodes_tested,
+                "total_frames": result.get("total_frames_sampled", 0),
+                "time_per_episode_sec": result.get("time_per_episode_s", 0),
+                "frames_per_episode": result.get("total_frames_sampled", 0) / num_episodes_tested if num_episodes_tested > 0 else 0,
+            })
+
             summary_logger.info(
-                f"✅ {dataset_uuid}: {result.get('total_frames_sampled', 0)} frames, "
-                f"{result.get('total_time_s', 0):.2f}s"
+                f"✅ Detection succeeded for {dataset_uuid}: "
+                f"{result.get('total_frames_sampled', 0)} frames in {result.get('total_time_s', 0):.2f}s"
             )
             _logger.info(
                 f"✅ Detection succeeded for {dataset_uuid}: "
@@ -130,6 +145,7 @@ def run_local_detection(
         "total_time_s": batch_elapsed,
         "total_frames": total_frames,
         "avg_time_per_frame_s": avg_time_per_frame,
+        "dataset_details": dataset_details,  # Per-dataset statistics for detailed analysis
     }
 
 

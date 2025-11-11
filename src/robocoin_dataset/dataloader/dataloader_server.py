@@ -74,6 +74,12 @@ class DataloaderDbServer(TaskServer):
         self.batch_size = batch_size
         self.num_workers = num_workers
 
+        # Track aggregated statistics
+        self.total_frames_processed = 0
+        self.total_detection_time = 0.0
+        self.datasets_succeeded = 0
+        self.datasets_failed = 0
+
     def get_task_category(self) -> str:
         return TASK_CATEGORY
 
@@ -147,7 +153,27 @@ class DataloaderDbServer(TaskServer):
             if client_execution_status == TASK_FAILED:
                 error_message = task_result_content.get("err_msg", "Client execution failed")
                 _mark_task_failed(session, dataset_uuid, error_message)
+                self.datasets_failed += 1
+
+                # Calculate current average time per frame
+                avg_time_per_frame = (
+                    self.total_detection_time / self.total_frames_processed
+                    if self.total_frames_processed > 0
+                    else 0.0
+                )
+
                 self.summary_logger.info(f"❌ {dataset_uuid}: {error_message}")
+
+                # Log cumulative statistics
+                total_datasets = self.datasets_succeeded + self.datasets_failed
+                self.summary_logger.info(
+                    f"📊 Cumulative: {total_datasets} datasets "
+                    f"({self.datasets_succeeded} ✅, {self.datasets_failed} ❌), "
+                    f"{self.total_frames_processed} frames, "
+                    f"{self.total_detection_time:.2f}s total, "
+                    f"{avg_time_per_frame*1000:.1f}ms/frame avg"
+                )
+
                 self.logger.info(
                     f"Marked {item.convert_path} dataloader detection as FAILED: {error_message}"
                 )
@@ -161,20 +187,89 @@ class DataloaderDbServer(TaskServer):
                 _mark_task_completed(session, dataset_uuid)
                 # Log to summary
                 result = task_result_content.get(TASK_RESULT_CONTENT, {})
+
+                # Track aggregated statistics
+                self.total_frames_processed += result.get('total_frames_sampled', 0)
+                self.total_detection_time += result.get('total_time_s', 0)
+                self.datasets_succeeded += 1
+
+                # Calculate current average time per frame
+                avg_time_per_frame = (
+                    self.total_detection_time / self.total_frames_processed
+                    if self.total_frames_processed > 0
+                    else 0.0
+                )
+
                 self.summary_logger.info(
                     f"✅ {dataset_uuid}: {result.get('total_frames_sampled', 0)} frames, "
                     f"{result.get('total_time_s', 0):.2f}s, "
                     f"{len(result.get('episodes_tested', []))} episodes, "
                     f"backend={result.get('backend', 'unknown')}"
                 )
+
+                # Log cumulative statistics
+                total_datasets = self.datasets_succeeded + self.datasets_failed
+                self.summary_logger.info(
+                    f"📊 Cumulative: {total_datasets} datasets "
+                    f"({self.datasets_succeeded} ✅, {self.datasets_failed} ❌), "
+                    f"{self.total_frames_processed} frames, "
+                    f"{self.total_detection_time:.2f}s total, "
+                    f"{avg_time_per_frame*1000:.1f}ms/frame avg"
+                )
+
                 self.logger.info(f"Marked {item.convert_path} dataloader detection as COMPLETED")
             else:
                 error_message = dataset_validation_result.get("error_summary", "Dataset validation failed")
                 _mark_task_failed(session, dataset_uuid, error_message)
+                self.datasets_failed += 1
+
+                # Calculate current average time per frame
+                avg_time_per_frame = (
+                    self.total_detection_time / self.total_frames_processed
+                    if self.total_frames_processed > 0
+                    else 0.0
+                )
+
                 self.summary_logger.info(f"❌ {dataset_uuid}: {error_message}")
+
+                # Log cumulative statistics
+                total_datasets = self.datasets_succeeded + self.datasets_failed
+                self.summary_logger.info(
+                    f"📊 Cumulative: {total_datasets} datasets "
+                    f"({self.datasets_succeeded} ✅, {self.datasets_failed} ❌), "
+                    f"{self.total_frames_processed} frames, "
+                    f"{self.total_detection_time:.2f}s total, "
+                    f"{avg_time_per_frame*1000:.1f}ms/frame avg"
+                )
+
                 self.logger.info(
                     f"Marked {item.convert_path} dataloader detection as FAILED: {error_message}"
                 )
+
+    def get_statistics(self) -> dict:
+        """Get aggregated statistics for all processed tasks.
+
+        Returns:
+            Dictionary with keys:
+                - datasets_succeeded: Number of datasets that passed detection
+                - datasets_failed: Number of datasets that failed detection
+                - total_frames: Total frames processed across all datasets
+                - total_time_s: Total detection time across all datasets
+                - avg_time_per_frame_s: Average time per frame (0 if no frames)
+        """
+        avg_time_per_frame = (
+            self.total_detection_time / self.total_frames_processed
+            if self.total_frames_processed > 0
+            else 0.0
+        )
+
+        return {
+            "datasets_succeeded": self.datasets_succeeded,
+            "datasets_failed": self.datasets_failed,
+            "total_frames": self.total_frames_processed,
+            "total_time_s": self.total_detection_time,
+            "avg_time_per_frame_s": avg_time_per_frame,
+        }
 
 
 __all__ = [
