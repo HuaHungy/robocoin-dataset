@@ -779,7 +779,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
         if reference_camera:
             # 如果是参考相机，直接使用 frame_idx
             if cam_name == reference_camera or any(ref_part in cam_name for ref_part in reference_camera.split('_')):
-        if frame_idx >= len(images_buffer[cam_name]):
+                if frame_idx >= len(images_buffer[cam_name]):
                     from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
                     raise CriticalDataError(
                         f"❌ Frame index out of range for reference camera (entire episode will be skipped).\n"
@@ -814,41 +814,7 @@ class LerobotFormatConverterMp4Json(LerobotFormatConverter):
                 )
             return images_buffer[cam_name][mapped_idx]
 
-        # 时间戳模式：使用对齐表
-        if alignment_maps and reference_camera:
-            # 使用时间戳对齐
-            # 找到JSON中对应的相机键（可能带camera_前缀）
-            json_camera_key = self._match_camera_keys(cam_name, alignment_maps)
-            
-            if json_camera_key and json_camera_key in alignment_maps:
-                # 使用对齐映射表获取索引
-                aligned_idx = alignment_maps[json_camera_key][frame_idx]
-                
-                if aligned_idx >= len(images_buffer[cam_name]):
-                    from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
-                    raise CriticalDataError(
-                        f"❌ Aligned frame index out of range for camera (entire episode will be skipped).\n"
-                        f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
-                        f"   📹 Camera: '{cam_name}'\n"
-                        f"   🎯 Reference frame_idx: {frame_idx}\n"
-                        f"   🎯 Aligned index: {aligned_idx}\n"
-                        f"   📊 This camera has: {len(images_buffer[cam_name])} frames\n"
-                        f"   💡 Alignment map may be incorrect."
-                    )
-                
-                return images_buffer[cam_name][aligned_idx]
-            elif cam_name == reference_camera or any(ref_part in cam_name for ref_part in reference_camera.split('_')):
-                # 基准相机直接使用frame_idx
-                if frame_idx >= len(images_buffer[cam_name]):
-                    from robocoin_dataset.format_converter.tolerobot.exceptions import CriticalDataError
-                    raise CriticalDataError(
-                        f"❌ Frame index out of range for reference camera (entire episode will be skipped).\n"
-                        f"   📁 Location: task_path={task_path}, ep_idx={ep_idx}\n"
-                        f"   📹 Reference camera: '{cam_name}'\n"
-                        f"   🎯 Requested frame_idx: {frame_idx}\n"
-                        f"   📊 This camera has: {len(images_buffer[cam_name])} frames\n"
-                    )
-                return images_buffer[cam_name][frame_idx]
+        # 不存在参考相机时，继续走下面的直接索引回退
         
         # 回退到直接索引（没有对齐映射表或找不到对应的键）
         if frame_idx >= len(images_buffer[cam_name]):
