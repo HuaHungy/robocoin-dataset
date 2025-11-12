@@ -51,11 +51,14 @@ def reset_dataloader_detection_status(db_file: Path) -> int:
                 updated_count += 1
 
                 # Check if dataset has a hardlink record with valid path
+                # Only set COMPLETED if there's a DatasetHardLinkDB record with both:
+                # 1. dataset_uuid (matched by the query)
+                # 2. hard_link_path (non-empty string)
                 hardlink_record = session.query(DatasetHardLinkDB).filter(
                     DatasetHardLinkDB.dataset_uuid == dataset.dataset_uuid
                 ).first()
 
-                if hardlink_record and hardlink_record.hard_link_path:
+                if hardlink_record and hardlink_record.hard_link_path and hardlink_record.hard_link_path.strip():
                     dataset.qced_repo_gen_status = TaskStatus.COMPLETED
                     qced_updated_count += 1
 

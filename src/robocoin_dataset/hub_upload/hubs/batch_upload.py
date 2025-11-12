@@ -46,20 +46,22 @@ class BatchUploadMixin:
 
             # Check ignore patterns first
             should_ignore = False
-            for pattern in ignore_patterns:
-                if Path(relative_path_str).match(pattern):
-                    should_ignore = True
-                    break
+            if ignore_patterns:
+                for pattern in ignore_patterns:
+                    if Path(relative_path_str).match(pattern):
+                        should_ignore = True
+                        break
 
             if should_ignore:
                 continue
 
             # Check allow patterns
             should_allow = not allow_patterns  # If no allow patterns, allow all
-            for pattern in allow_patterns:
-                if Path(relative_path_str).match(pattern):
-                    should_allow = True
-                    break
+            if allow_patterns:
+                for pattern in allow_patterns:
+                    if Path(relative_path_str).match(pattern):
+                        should_allow = True
+                        break
 
             if should_allow:
                 files_to_upload.append(file_path)

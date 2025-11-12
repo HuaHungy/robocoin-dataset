@@ -247,7 +247,7 @@ def _run_detection(
             "error_message": str(e),
             "total_time_s": elapsed,
         })
-        _logger.error(f"❌ Detection failed after {elapsed:.2f}s: {e}", exc_info=_logger.isEnabledFor(logging.DEBUG))
+        _logger.error(f"❌ Detection failed after {elapsed:.2f}s: {e}", exc_info=True)
 
     finally:
         if ds:

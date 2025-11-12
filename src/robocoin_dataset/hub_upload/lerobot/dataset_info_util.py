@@ -157,13 +157,11 @@ class LocalDsInfoUtil(LocalDsUtil):
             ds_name (str): Name of the dataset.
 
         Returns:
-            str: Subtasks list as string. Currently returns empty string as the new
-                 annotation format in annotations/*.jsonl is not yet standardized.
+            str: Subtasks list as string representation (e.g., "['subtask1', 'subtask2']").
 
         Note:
-            New structure uses annotations/*.jsonl files (e.g., eef_acc_mag_annotation.jsonl,
-            gripper_activity_annotation.jsonl, etc.), but the format for extracting subtasks
-            is not yet defined. This returns empty string until the format is standardized.
+            Reads subtask_annotations.jsonl from the annotations directory and extracts
+            unique subtask values from the "subtask" field.
         """
         annotations_dir = self.root_path.joinpath(ds_name, ANNOTATIONS_DIR)
 
@@ -174,20 +172,35 @@ class LocalDsInfoUtil(LocalDsUtil):
             )
             return ""
 
-        # TODO: Implement subtasks extraction from new annotations/*.jsonl format
-        # when the format is standardized. Current files include:
-        # - eef_acc_mag_annotation.jsonl
-        # - eef_direction_annotation.jsonl
-        # - eef_velocity_annotation.jsonl
-        # - gripper_activity_annotation.jsonl
-        # - gripper_mode_annotation.jsonl
-        # etc.
+        subtask_file = annotations_dir / "subtask_annotations.jsonl"
 
-        self.logger.info(
-            f"dataset {ds_name}: subtasks extraction from new annotation format not yet implemented. "
-            "Subtasks will be empty."
-        )
-        return ""
+        if not subtask_file.exists():
+            self.logger.warning(
+                f"dataset {ds_name}: subtask_annotations.jsonl not found in '{ANNOTATIONS_DIR}'. "
+                "Subtasks will be empty."
+            )
+            return ""
+
+        # Extract unique subtasks from the JSONL file
+        subtasks = set()
+        try:
+            with open(subtask_file, encoding='utf-8') as f:
+                for line in f:
+                    if line := line.strip():
+                        data = json.loads(line)
+                        if "subtask" in data:
+                            subtasks.add(data["subtask"])
+
+            result = str(sorted(subtasks))
+            self.logger.info(f"dataset {ds_name}: extracted {len(subtasks)} unique subtasks from annotations.")
+            return result
+
+        except Exception as e:
+            self.logger.error(
+                f"dataset {ds_name}: error reading subtask_annotations.jsonl: {e}. "
+                "Subtasks will be empty."
+            )
+            return ""
 
     def _generate_size_label(self, size: int) -> str:
         """
