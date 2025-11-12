@@ -1184,12 +1184,6 @@ class LerobotFormatConverter(ABC):
                         for retry in range(max_retries):
                             try:
                                 dataset.save_episode()
-                                # 🔥 修复：每次成功保存后更新 num_episodes
-                                # 当某些 episode 被跳过时，实际保存的 parquet 文件数量会少于初始 num_episodes
-                                # 这会导致后续 save_episode() 中的断言失败
-                                if hasattr(dataset, 'num_episodes'):
-                                    # global_ep_idx + 1 是当前已保存的 episode 数量
-                                    dataset.num_episodes = global_ep_idx + 1
                                 break  # 成功则退出重试
                             except OSError as e:
                                 # Stale file handle (Errno 116) 或其他NAS错误
@@ -1324,19 +1318,6 @@ class LerobotFormatConverter(ABC):
                         f"Failed to process episode {task_ep_idx} (global: {global_ep_idx}) "
                         f"at task {task}"
                     ) from e
-        
-        # 🔥 修复：更新数据集的 num_episodes 为实际成功转换的数量
-        # 当某些 episode 被跳过时，实际保存的 parquet 文件数量会少于初始 num_episodes
-        # 这会导致 save_episode() 中的断言失败
-        if not is_test and self.lerobot_dataset is not None:
-            # global_ep_idx 是实际成功转换的 episode 数量
-            if hasattr(self.lerobot_dataset, 'num_episodes'):
-                self.lerobot_dataset.num_episodes = global_ep_idx
-                if self.logger:
-                    self.logger.info(
-                        f"✅ Updated dataset num_episodes to {global_ep_idx} "
-                        f"(actual successfully converted episodes)"
-                    )
         
         # 转换完成后打印统计信息
         self._print_conversion_summary(task_stats)
