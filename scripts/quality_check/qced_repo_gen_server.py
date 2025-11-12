@@ -3,8 +3,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+from robocoin_dataset.quality_check.qced_repo_generator import QualityCheckedRepoGeneratorServer
 from robocoin_dataset.utils.logger import setup_logger
-from robocoin_dataset.visualize_dataset.visualize_dataset import DatasetVisualizerServer
 
 
 async def main() -> None:
@@ -36,6 +36,30 @@ async def main() -> None:
         default=8768,
         help="Port to run the server",
     )
+    parser.add_argument(
+        "--qc_config_path",
+        type=str,
+        default="",
+        help="Path to the quality check config file",
+    )
+    parser.add_argument(
+        "--state_data_score_threshold",
+        type=float,
+        default=0.85,
+        help="State data score threshold",
+    )
+    parser.add_argument(
+        "--action_data_score_threshold",
+        type=float,
+        default=0.85,
+        help="Action data score threshold",
+    )
+    parser.add_argument(
+        "--video_score_threshold",
+        type=float,
+        default=0.9,
+        help="Video score threshold",
+    )
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
@@ -45,28 +69,31 @@ async def main() -> None:
         exit(1)
 
     logger = setup_logger(
-        name="dataset visualizer server",
+        name="quality checked repo generator server",
         log_dir=Path(args.log_dir),
         level=logging.INFO,
     )
 
-    visualizer_server = DatasetVisualizerServer(
+    server = QualityCheckedRepoGeneratorServer(
         db_file_path=db_file_path,
         host=args.host,
         port=args.port,
         logger=logger,
+        state_data_score_threshold=args.state_data_score_threshold,
+        action_data_score_threshold=args.action_data_score_threshold,
+        video_score_threshold=args.video_score_threshold,
     )
 
-    await visualizer_server.start()
+    await server.start()
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 
 """usage:
-python scripts/visualize_dataset/visualize_dataset_server.py \
+python scripts/quality_check/qced_repo_gen_server.py \
     --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
-    --port 2120 \
-    --log_dir ./logs/visualize_dataset_server
+    --port 2110 \
+    --log_dir ./logs/quality_checked_repo_generator_server 
 """

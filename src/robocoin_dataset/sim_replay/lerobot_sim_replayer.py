@@ -260,8 +260,8 @@ class LerobotSimReplayer:
             if episode_index >= len(self.parquet_file_paths):
                 raise ValueError(f"episode_index {episode_index} out of range")
             parquet_file_path = self.parquet_file_paths[episode_index]
-        
-        print(f"***[后台] 正在读取末端信息， episode 文件: {parquet_file_path}")
+
+        # print(f"***[后台] 正在读取末端信息， episode 文件: {parquet_file_path}")
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
         df = pd.read_parquet(str(parquet_file_path))
@@ -364,7 +364,7 @@ class LerobotSimReplayer:
 
         # 启动 MuJoCo 界面
         self.start_viewer()
-        
+
         # # 用于记录所有帧的EEF距离
         # eef_distance_history = []
 
@@ -385,7 +385,7 @@ class LerobotSimReplayer:
                     self.mjcf_data.qpos[mjcf_addr] = mjcf_data
 
                 mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
-                
+
                 # 收集所有EEF位置用于计算距离
                 eef_positions = []
                 for site_id in self.mjcf_site_ids:
@@ -397,7 +397,7 @@ class LerobotSimReplayer:
                         "xyz", degrees=False
                     )
                     eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
-                
+
                 # # 如果是双臂机器人（有2个EEF），计算并打印两个末端执行器之间的距离
                 # if len(eef_positions) == 2:
                 #     left_eef_pos = eef_positions[0]
@@ -431,7 +431,7 @@ class LerobotSimReplayer:
                 remaining = frame_duration - elapsed
                 if remaining > 0:
                     time.sleep(remaining)
-            
+
             # # 播放完成后，打印EEF距离统计信息
             # if len(eef_distance_history) > 0:
             #     mean_distance = np.mean(eef_distance_history)

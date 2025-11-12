@@ -252,7 +252,7 @@ def match_video_image_hash(
             min_dist = dist
             matched_id = url_idx
 
-    if min_dist > threashold:
+    if min_dist > 1 - threashold:
         return None
 
     return matched_id
