@@ -1,4 +1,6 @@
 # info_template.yaml
+# This YAML file serves as the data source for readme.j2 Jinja2 template
+# All fields marked as "auto_generated" will be populated by the generation script
 
 # License
 license: apache-2.0
@@ -12,7 +14,7 @@ language:
 task_categories:
   - robotics
 
-# Tags
+# Tags (used for dataset tagging and discovery)
 tags:
   - RoboCoin
   - LeRobot
@@ -30,39 +32,62 @@ authors:
   contributed_by:
     - name: RoboCoin
       url: https://RoboCoin.github.io
+      affiliation: RoboCoin Team  # Optional field
   annotated_by:
     - name: RoboCoin
       url: https://RoboCoin.github.io  # Optional field
+      affiliation: RoboCoin Team  # Optional field
 
 # Dataset Description
 dataset_description: This dataset uses an extended format based on [LeRobot](https://github.com/huggingface/lerobot) and is fully compatible with LeRobot.
 
 # External Links
 homepage: https://RoboCoin.github.io/
-paper: in comming
+paper: in comming  # Optional - Paper URL or text
+repository: https://github.com/RoboCoin/robocoin-dataset  # Optional - Code repository URL
+project_page: https://RoboCoin.github.io/  # Optional - Project website
 
 # Task Descriptions (Supports multiple task descriptions)
 tasks: auto_generated
-sub_tasks: auto_generated
+sub_tasks: auto_generated  # Optional
 
-episodes_num: auto_generated
-frames_num: auto_generated
+# Dataset Statistics
+statistics:
+  total_episodes: auto_generated
+  total_frames: auto_generated
+  total_duration: auto_generated
+  fps: auto_generated
+  video_resolution: auto_generated
+  state_dim: auto_generated
+  action_dim: auto_generated
+  camera_views: auto_generated
 
-# Dataset Tags (Optional, can be used for tag clouds, etc.)
-dataset_tags: auto_generated
+# Depth Camera Support
+depth_enabled: auto_generated  # Optional - Boolean flag
 
-# Dataset Structure (Supports files and inline content)
-structure:
-  file: auto_generated
-  content: auto_generated
+# Data Schema Description
+data_schema: auto_generated  # Optional - Text description or markdown
+
+# Contact Information
+contact_email: contact@robocoin.ai  # Optional
+contact_info: |  # Optional - Additional contact information
+  For questions, issues, or feedback regarding this dataset, please contact us.
+support_info: |  # Optional - Support information
+  For technical support, please open an issue on our GitHub repository.
+
+# License Details
+license_details: |  # Optional - Extended license information
+  Please refer to the LICENSE file for full license terms and conditions.
 
 # Citation
-citation: in comming
-  # example:
-  # bibtex: |
-  #   @inproceedings{fu2024mobile,
-  #       author    = {Fu, Zipeng and Zhao, Tony Z. and Finn, Chelsea},
-  #       title     = {Mobile ALOHA: Learning Bimanual Mobile Manipulation with Low-Cost Whole-Body Teleoperation},
-  #       booktitle = {arXiv},
-  #       year      = {2024},
-  #   }
+citation_bibtex: null
+
+# Additional Citations
+additional_citations: |  # Optional - Additional papers or references
+  If you use this dataset, please also consider citing:
+  - LeRobot Framework: https://github.com/huggingface/lerobot
+
+# Version Information
+version_info: |  # Optional - Version history and changelog
+  ## Version History
+  - v1.0.0 (2024): Initial release

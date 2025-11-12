@@ -157,11 +157,12 @@ class LocalDsInfoUtil(LocalDsUtil):
             ds_name (str): Name of the dataset.
 
         Returns:
-            str: Subtasks list as string representation (e.g., "['subtask1', 'subtask2']").
+            str: Subtasks list with each item on a new line (e.g., "subtask1\nsubtask2\n").
 
         Note:
             Reads subtask_annotations.jsonl from the annotations directory and extracts
-            unique subtask values from the "subtask" field.
+            unique subtask values from the "subtask" field. Deduplication is case-insensitive,
+            keeping the first occurrence of each unique subtask.
         """
         annotations_dir = self.root_path.joinpath(ds_name, ANNOTATIONS_DIR)
 
@@ -181,18 +182,29 @@ class LocalDsInfoUtil(LocalDsUtil):
             )
             return ""
 
-        # Extract unique subtasks from the JSONL file
-        subtasks = set()
+        # Extract unique subtasks from the JSONL file (case-insensitive)
+        # Use a dict to preserve the first occurrence of each unique subtask
+        subtasks_dict = {}
         try:
             with open(subtask_file, encoding='utf-8') as f:
                 for line in f:
                     if line := line.strip():
                         data = json.loads(line)
                         if "subtask" in data:
-                            subtasks.add(data["subtask"])
+                            subtask = data["subtask"]
+                            # Use lowercase as key for case-insensitive comparison
+                            # but store the original value
+                            subtask_lower = subtask.lower()
+                            if subtask_lower not in subtasks_dict:
+                                subtasks_dict[subtask_lower] = subtask
 
-            result = str(sorted(subtasks))
-            self.logger.info(f"dataset {ds_name}: extracted {len(subtasks)} unique subtasks from annotations.")
+            # Sort by the lowercase key and format with newlines
+            sorted_subtasks = [subtasks_dict[key] for key in sorted(subtasks_dict.keys())]
+            result = "\n".join(sorted_subtasks)
+            if result:
+                result += "\n"  # Add trailing newline
+
+            self.logger.info(f"dataset {ds_name}: extracted {len(sorted_subtasks)} unique subtasks from annotations.")
             return result
 
         except Exception as e:

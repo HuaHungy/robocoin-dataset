@@ -232,11 +232,12 @@ class LocalDsUploadUtil(LocalDsUtil):
           self.logger.debug(f"{repo_name}: Creating repo {repo_id}")
           self.hub.create_repo(repo_id=repo_id)
 
-        # Step 3: Upload files using hub's upload_repo method
+        # Step 3: Upload files using hub's upload_repo method (pass logger)
         commit_url = self.hub.upload_repo(
           folder_path=upload_path,
           repo_id=repo_id,
-          commit_msg=commit_msg
+          commit_msg=commit_msg,
+          logger=self.logger
         )
 
         self.logger.debug(f"{repo_name}: {commit_url}")

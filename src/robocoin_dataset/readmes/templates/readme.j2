@@ -18,38 +18,240 @@ configs:
   data_files: {{ configs[0].data_files }}
 ---
 
-## Dataset Authors
-This dataset is contributed by [{% for author in authors.contributed_by %}[{{ author.name }}]({{ author.url }}){% if not loop.last %}, {% endif %}{% endfor %}]
+# {{ dataset_name | default("Dataset") }}
 
-This dataset is annotated by [{% for annotator in authors.annotated_by %}[{{ annotator.name }}]({{ annotator.url }}){% if not loop.last %}, {% endif %}{% endfor %}]
+## 📋 Overview
 
-## Dataset Description
 {{ dataset_description }}
 
-- **Homepage:** {{ homepage }}
-- **Paper:** {{ paper }}
-- **License:** {{ license }}
+This dataset contains robot manipulation demonstrations for {{ tasks | default("various tasks") }}. The data is collected using high-quality sensors and provides comprehensive information for robot learning applications.
 
-## Dataset Tags
-{% for tag in tags %}
-- {{ tag }}
+{% if robot_type is defined -%}
+**Robot Type:** `{{ robot_type }}`
+{%- endif %}
+{% if codebase_version is defined -%} | **Codebase Version:** `{{ codebase_version }}`
+{%- endif %}
+
+## 📊 Dataset Statistics
+
+| Metric | Value |
+|--------|-------|
+{% if total_episodes is defined -%}
+| **Total Episodes** | {{ total_episodes }} |
+{% endif -%}
+{% if total_frames is defined -%}
+| **Total Frames** | {{ total_frames }} |
+{% endif -%}
+{% if total_tasks is defined -%}
+| **Total Tasks** | {{ total_tasks }} |
+{% endif -%}
+{% if total_chunks is defined -%}
+| **Total Chunks** | {{ total_chunks }} |
+{% endif -%}
+{% if total_videos is defined -%}
+| **Total Videos** | {{ total_videos }} |
+{% endif -%}
+{% if fps is defined -%}
+| **FPS** | {{ fps }} |
+{% endif -%}
+{% if statistics is defined -%}
+{% if statistics.total_duration is defined -%}
+| **Total Duration** | {{ statistics.total_duration }} |
+{% endif -%}
+{% if statistics.video_resolution is defined -%}
+| **Video Resolution** | {{ statistics.video_resolution }} |
+{% endif -%}
+{% if statistics.state_dim is defined -%}
+| **State Dimensions** | {{ statistics.state_dim }} |
+{% endif -%}
+{% if statistics.action_dim is defined -%}
+| **Action Dimensions** | {{ statistics.action_dim }} |
+{% endif -%}
+{% if statistics.camera_views is defined -%}
+| **Camera Views** | {{ statistics.camera_views }} |
+{% endif -%}
+{%- endif %}
+
+## 👥 Authors
+
+### Contributors
+{% if authors.contributed_by is defined -%}
+This dataset is contributed by:
+{% for author in authors.contributed_by -%}
+- [{{ author.name }}]({{ author.url }}){% if author.affiliation is defined %} - {{ author.affiliation }}{% endif %}
+{% endfor %}
+{%- else -%}
+No contributor information available.
+{%- endif %}
+
+## 🔗 Links
+
+{% if homepage is defined -%}
+- **🏠 Homepage:** [{{ homepage }}]({{ homepage }})
+{% endif -%}
+{% if paper is defined and paper -%}
+- **📄 Paper:** [{{ paper }}]({{ paper }})
+{% endif -%}
+{% if repository is defined -%}
+- **💻 Repository:** [{{ repository }}]({{ repository }})
+{% endif -%}
+{% if project_page is defined -%}
+- **🌐 Project Page:** [{{ project_page }}]({{ project_page }})
+{% endif -%}
+- **📜 License:** {{ license }}
+
+## 🏷️ Dataset Tags
+
+{% for tag in tags -%}
+- `{{ tag }}`
 {% endfor %}
 
-## Task Descriptions
-### tasks
+## 🎯 Task Descriptions
+
+### Primary Tasks
 {{ tasks }}
 
-### sub_tasks
+{% if sub_tasks is defined and sub_tasks -%}
+### Sub-Tasks
 {{ sub_tasks }}
+{%- endif %}
 
-## Dataset Structure
+{% if scene is defined -%}
+### Scene Descriptions
+{{ scene }}
+{%- endif %}
 
-[meta/info.json](meta/info.json):
+## 🏷️ Available Annotations
+
+This dataset includes rich annotations to support diverse learning approaches:
+
+{% if eef_direction is defined or eef_velocity is defined or eef_acc_mag is defined -%}
+### End-Effector Annotations
+{% if eef_direction is defined -%}
+- **Direction**: Movement direction classifications for robot end-effectors
+{% endif -%}
+{% if eef_velocity is defined -%}
+- **Velocity**: Velocity magnitude categorizations during manipulation
+{% endif -%}
+{% if eef_acc_mag is defined -%}
+- **Acceleration**: Acceleration magnitude classifications for motion analysis
+{% endif -%}
+{%- endif %}
+
+{% if gripper_mode is defined or gripper_activity is defined -%}
+### Gripper Annotations
+{% if gripper_mode is defined -%}
+- **Gripper Mode**: Open/close state annotations for gripper control
+{% endif -%}
+{% if gripper_activity is defined -%}
+- **Gripper Activity**: Activity state classifications (active/inactive)
+{% endif -%}
+{%- endif %}
+
+{% if features is defined -%}
+### Feature Annotations
+{% if features.scene_annotation is defined -%}
+- **Scene Annotations**: Scene-level semantic descriptions and classifications
+{% endif -%}
+{% if features.subtask_annotation is defined -%}
+- **Subtask Annotations**: Fine-grained subtask segmentation and labeling
+{% endif -%}
+{%- endif %}
+
+{% if splits is defined -%}
+## 📂 Data Splits
+
+The dataset is organized into the following splits:
+
+{% if splits.train is defined -%}
+- **Training**: Episodes {{ splits.train }}
+{% endif -%}
+{% if splits.val is defined -%}
+- **Validation**: Episodes {{ splits.val }}
+{% endif -%}
+{% if splits.test is defined -%}
+- **Test**: Episodes {{ splits.test }}
+{% endif -%}
+{%- endif %}
+
+## 📁 Dataset Structure
+
+This dataset follows the LeRobot format and contains the following components:
+
+### Data Files
+- **Videos**: Compressed video files containing RGB camera observations
+{% if depth_enabled is defined and depth_enabled -%}
+- **Depth Maps**: Depth information from depth cameras
+{% endif -%}
+- **State Data**: Robot joint positions, velocities, and other state information
+- **Action Data**: Robot action commands and trajectories
+- **Metadata**: Episode metadata, timestamps, and annotations
+
+### File Paths
+{% if data_path is defined -%}
+- **Data Path Pattern**: `{{ data_path }}`
+{% endif -%}
+{% if video_path is defined -%}
+- **Video Path Pattern**: `{{ video_path }}`
+{% endif -%}
+
+### Meta Information
+
+The complete dataset metadata is available in [meta/info.json](meta/info.json):
+
 ```json
 {{get_meta_info_content()}}
 ```
 
-## Citation
+{% if data_schema is defined -%}
+### Data Schema
+
+{{ data_schema }}
+{%- endif %}
+
+## 📞 Contact and Support
+
+{% if contact_email is defined -%}
+For questions, issues, or feedback regarding this dataset, please contact:
+- **Email:** {{ contact_email }}
+{% endif -%}
+{% if contact_info is defined -%}
+{{ contact_info }}
+{% endif -%}
+
+{% if support_info is defined -%}
+### Support
+{{ support_info }}
+{%- else -%}
+For technical issues or questions, please open an issue on the repository or contact the dataset authors.
+{%- endif %}
+
+## 📄 License
+
+This dataset is released under the **{{ license }}** license.
+
+{% if license_details is defined -%}
+{{ license_details }}
+{%- else -%}
+Please refer to the LICENSE file for full license terms and conditions.
+{%- endif %}
+
+## 📚 Citation
+
+If you use this dataset in your research, please cite:
+
 ```bibtex
 {{ citation_bibtex }}
 ```
+
+{% if additional_citations is defined -%}
+### Additional References
+
+{{ additional_citations }}
+{%- endif %}
+
+{% if version_info is defined -%}
+## 📌 Version Information
+
+{{ version_info }}
+{%- endif %}
