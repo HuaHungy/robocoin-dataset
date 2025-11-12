@@ -58,7 +58,7 @@ if __name__ == "__main__":
 # realman_rmc_aidal
 python scripts/visualize_dataset/visualize_dataset_client.py \
     --host=127.0.0.1 \
-    --port=2110\
+    --port=2120\
     --heartbeat-interval=10.0 \
     --log_dir ./logs/dataset_visualization_client
 """

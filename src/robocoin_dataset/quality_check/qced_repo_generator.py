@@ -352,7 +352,7 @@ def _gen_one_qced_repo_gen_task(
     item = query.first()
 
     if not item:
-        return None, None, None, None
+        return None, None
 
     item.qced_repo_gen_status = TaskStatus.PROCESSING
 
@@ -468,7 +468,6 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
     def __init__(
         self,
         db_file_path: str | Path,
-        qc_config_path: str | Path,
         host: str = "0.0.0.0",
         port: int = 2010,
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
@@ -491,16 +490,12 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
-        self.qc_config_path = Path(qc_config_path).expanduser().absolute()
-        if not self.qc_config_path.exists():
-            raise FileNotFoundError(f"QC config file {self.qc_config_path} not found.")
-
         self.state_data_score_threshold = state_data_score_threshold
         self.action_data_score_threshold = action_data_score_threshold
         self.video_score_threshold = video_score_threshold
 
     def get_task_category(self) -> str:
-        return "dataset quality check"
+        return "dataset quality checked repo generation"
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
@@ -513,6 +508,7 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
                 action_data_score_threshold=self.action_data_score_threshold,
                 video_score=self.video_score_threshold,
             )
+            bad_episodes = list(bad_episodes)
 
         if not dataset_uuid:
             return None
@@ -529,7 +525,7 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         task_status_msg = task_result_content.get(ERR_MSG)
 
         err_msg = task_result_content.get(ERR_MSG)
-        hardlink_path = task_result_content.get(TASK_RESULT_CONTENT)
+        hardlink_path = task_result_content.get(TASK_RESULT_CONTENT).get(HARD_LINK_PATH)
 
         if task_status == TASK_SUCCESS:
             with self.db.with_session() as session:
@@ -564,12 +560,12 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
                 session.commit()
 
             self.logger.info(
-                f"Upsert {item.convert_path} dataset quality check status to {item.qced_repo_gen_status}, "
+                f"Upsert {item.convert_path} dataset quality checked repo generation status to {item.qced_repo_gen_status}, "
                 f"update_message: {task_status_msg}"
             )
 
 
-class DatasetQualityCheckClient(TaskClient):
+class QualityCheckedRepoGeneratorClient(TaskClient):
     def __init__(
         self,
         server_uri: str = "ws://localhost:2010",
@@ -583,7 +579,7 @@ class DatasetQualityCheckClient(TaskClient):
         )
 
     def get_task_category(self) -> str:
-        return "dataset quality check"
+        return "dataset quality checked repo generation"
 
     def generate_task_request_desc(self) -> dict:
         """客户端可自定义任务请求参数"""
@@ -593,6 +589,7 @@ class DatasetQualityCheckClient(TaskClient):
         try:
             repo_path = task_content.get(LEFORMAT_PATH)
             bad_episodes = task_content.get(BAD_EPISODES)
+            bad_episodes = set(bad_episodes)
 
             hardlink_repo_path = gen_qced_repo(repo_path=repo_path, bad_episodes=bad_episodes)
 
