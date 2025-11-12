@@ -98,6 +98,11 @@ class LocalDsInfoUtil(LocalDsUtil):
         """
         Extract information from LeRobot metadata files.
 
+        IMPORTANT: This method reads from TWO specific files ONLY:
+        - meta/info.json: for total_episodes, total_frames
+        - meta/tasks.jsonl: for task descriptions
+        It does NOT read from any other files.
+
         Args:
             ds_name (str): Name of the dataset.
 
@@ -152,6 +157,9 @@ class LocalDsInfoUtil(LocalDsUtil):
     def _get_subtasks_from_annotation(self, ds_name: str) -> str:
         """
         Extract subtasks from dataset annotation files (new structure).
+
+        IMPORTANT: This method ONLY reads from annotations/subtask_annotations.jsonl.
+        It does NOT read from any other files (info.json, tasks.jsonl, etc.)
 
         Args:
             ds_name (str): Name of the dataset.
@@ -266,6 +274,85 @@ class LocalDsInfoUtil(LocalDsUtil):
         with open(tags_file_path, encoding="utf-8") as f:
             return yaml.safe_load(f)
 
+    def _extract_info_from_meta_json(self, ds_name: str) -> dict:
+        """
+        Extract comprehensive information from meta/info.json file.
+
+        IMPORTANT: This method ONLY reads from meta/info.json.
+        It does NOT read from any other files (tasks.jsonl, subtask_annotations.jsonl, etc.)
+
+        Args:
+            ds_name (str): Name of the dataset.
+
+        Returns:
+            dict: Dictionary containing extracted information from info.json.
+        """
+        info_file = self.root_path.joinpath(ds_name, LEROBOT_META_INFO_FILE)
+        if not info_file.exists():
+            self.logger.warning(f"dataset {ds_name}: info.json not found")
+            return {}
+
+        try:
+            with open(info_file, encoding="utf-8") as f:
+                meta_info = json.load(f)
+        except Exception as e:
+            self.logger.error(f"dataset {ds_name}: failed to read info.json: {e}")
+            return {}
+
+        # Extract all relevant fields
+        extracted = {}
+
+        # Robot information
+        if "robot_type" in meta_info:
+            extracted["robot_type"] = meta_info["robot_type"]
+        if "codebase_version" in meta_info:
+            extracted["codebase_version"] = meta_info["codebase_version"]
+
+        # Statistics
+        statistics = {}
+        if "total_episodes" in meta_info:
+            statistics["total_episodes"] = meta_info["total_episodes"]
+        if "total_frames" in meta_info:
+            statistics["total_frames"] = meta_info["total_frames"]
+        if "total_tasks" in meta_info:
+            statistics["total_tasks"] = meta_info["total_tasks"]
+        if "total_videos" in meta_info:
+            statistics["total_videos"] = meta_info["total_videos"]
+        if "total_chunks" in meta_info:
+            statistics["total_chunks"] = meta_info["total_chunks"]
+        if "chunks_size" in meta_info:
+            statistics["chunks_size"] = meta_info["chunks_size"]
+        if "fps" in meta_info:
+            statistics["fps"] = meta_info["fps"]
+
+        if statistics:
+            extracted["statistics"] = statistics
+
+        # Data organization
+        if "splits" in meta_info:
+            extracted["splits"] = meta_info["splits"]
+        if "data_path" in meta_info:
+            extracted["data_path"] = meta_info["data_path"]
+        if "video_path" in meta_info:
+            extracted["video_path"] = meta_info["video_path"]
+
+        # Features
+        if "features" in meta_info:
+            extracted["features"] = meta_info["features"]
+
+            # Check for depth cameras
+            features = meta_info["features"]
+            depth_enabled = False
+            for key, value in features.items():
+                if key.startswith("observation.images.") and isinstance(value, dict):
+                    info = value.get("info", {})
+                    if info.get("video.is_depth_map", False):
+                        depth_enabled = True
+                        break
+            extracted["depth_enabled"] = depth_enabled
+
+        return extracted
+
     def _get_auto_generate_info(self, ds_name: str) -> dict:
         """
         Automatically generate dataset information from dataset files.
@@ -283,19 +370,33 @@ class LocalDsInfoUtil(LocalDsUtil):
             self.logger.error(f"{log_prefix} dataset {ds_name} is not valid: {e}")
             return {}
 
+        # Extract comprehensive information from info.json
+        extracted_info = self._extract_info_from_meta_json(ds_name)
+
+        # Get legacy fields for backward compatibility
         episodes_num, frames_num, tasks = self._get_info_from_lerobot_meta(ds_name)
         sub_tasks = self._get_subtasks_from_annotation(ds_name)
         size_category = self._generate_size_label(frames_num)
         tags = self._generate_tags(ds_name)
 
-        return {
-            "episodes_num": episodes_num,
-            "frames_num": frames_num,
+        # Merge all information
+        auto_info = {
+            "size_categories": size_category,
             "tasks": tasks,
             "sub_tasks": sub_tasks,
-            "size_categories": size_category,
-            "dataset_tags": tags,
         }
+
+        # Add custom tags if provided
+        if tags:
+            if "tags" not in auto_info:
+                auto_info["tags"] = []
+            # Extend existing tags from template with custom tags
+            auto_info["dataset_tags"] = tags
+
+        # Merge extracted info (this will override any conflicts)
+        auto_info.update(extracted_info)
+
+        return auto_info
 
     def _generate_info(self, ds_name: str) -> dict:
         """
