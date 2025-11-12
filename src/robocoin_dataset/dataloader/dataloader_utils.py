@@ -84,13 +84,13 @@ class MultiEpisodeSampler(torch.utils.data.Sampler):  # type: ignore
 
 def create_episode_dataloader(
     dataset: "LeRobotDataset",
-    episode_index: int,
+    episode_indices: list[int],
     batch_size: int = 32,
     num_workers: int = 0,
     sample_ratio: float = 1.0,
 ) -> torch.utils.data.DataLoader:
 
-    episode_sampler = MultiEpisodeSampler(dataset, episode_index, sample_ratio)
+    episode_sampler = MultiEpisodeSampler(dataset, episode_indices, sample_ratio)
     return torch.utils.data.DataLoader(
         dataset,
         num_workers=num_workers,
@@ -142,6 +142,7 @@ def _run_detection(
     num_workers: int = 0,
     client_id: str | None = None,
     tqdm_position: int = 0,
+    logger: logging.Logger | None = None,
 ) -> dict:
     """Fast dataloader detection using multi-episode sampling."""
     import contextlib
@@ -150,7 +151,17 @@ def _run_detection(
 
     from tqdm import tqdm  # type: ignore
 
+    _logger = logger or logging.getLogger(__name__)
     repo_path = Path(repo_path)
+    dataset_name = repo_path.name
+
+    _logger.debug(f"🚀 Starting detection for dataset: {dataset_name}")
+    _logger.debug(f"   Path: {repo_path}")
+    _logger.debug(f"   Episodes: {episode_indices}")
+    _logger.debug(f"   Sample ratio: {sample_ratio:.1%}")
+    _logger.debug(f"   Batch size: {batch_size}")
+    _logger.debug(f"   Num workers: {num_workers}")
+
     start_time = time.perf_counter()
     result = {"success": False, "dataset_path": str(repo_path), "sample_ratio": sample_ratio,
               "backend": "pyav", "total_frames_sampled": 0}
@@ -158,9 +169,15 @@ def _run_detection(
     ds = None
     try:
         # Load dataset and parse episodes
+        _logger.debug(f"📂 Loading LeRobot dataset from {repo_path}...")
         ds = create_lerobot_dataset(repo_id=repo_path.name, root=repo_path, download_videos=False)
         total_episodes = len(ds.episode_data_index["from"])
+        _logger.debug(f"✅ Dataset loaded: {total_episodes} total episodes")
+
+        _logger.debug(f"🔍 Parsing episode specification: {episode_indices}")
         episodes_to_test = _parse_episode_specification(episode_indices, total_episodes)
+        _logger.info(f"📋 Will test {len(episodes_to_test)} episode(s) out of {total_episodes} total")
+        _logger.debug(f"   Episode indices: {episodes_to_test[:10]}{'...' if len(episodes_to_test) > 10 else ''}")
 
         result.update({
             "total_episodes_in_dataset": total_episodes,
@@ -168,25 +185,42 @@ def _run_detection(
         })
 
         if not episodes_to_test:
+            _logger.info("✅ No episodes to test, marking as success")
             result["success"] = True
             return result
 
         # Create sampler and dataloader
+        _logger.debug(f"🎲 Creating MultiEpisodeSampler (sample_ratio={sample_ratio:.1%})...")
         sampler = MultiEpisodeSampler(ds, episodes_to_test, sample_ratio)
+        total_frames = len(sampler)
+        _logger.info(f"📊 Sampler ready: {total_frames} frames sampled from {len(episodes_to_test)} episodes")
+
+        _logger.debug(f"⚙️  Creating DataLoader (batch_size={batch_size}, num_workers={num_workers})...")
         dl = torch.utils.data.DataLoader(
             ds, num_workers=num_workers, batch_size=batch_size, sampler=sampler,
             worker_init_fn=_worker_init_suppress_output if num_workers > 0 else None,
         )
+        num_batches = len(dl)
+        _logger.info(f"✅ DataLoader ready: {num_batches} batches to process")
 
         # Run detection with progress bar (suppress stdout to avoid LeRobot prints)
-        dataset_name = repo_path.name[:40]
+        dataset_name_short = dataset_name[:40]
         client_prefix = f"[{client_id}] " if client_id else ""
+        _logger.info("▶️  Starting batch iteration...")
 
         with contextlib.redirect_stdout(open(os.devnull, "w")):
-            for batch in tqdm(dl, total=len(dl), desc=f"{client_prefix}📦 {dataset_name}",
-                            unit="batch", file=sys.stderr, position=tqdm_position, leave=False):
-                result["total_frames_sampled"] += len(batch["index"]) if "index" in batch else batch_size
+            for batch_idx, batch in enumerate(tqdm(dl, total=num_batches, desc=f"{client_prefix}📦 {dataset_name_short}",
+                            unit="batch", file=sys.stderr, position=tqdm_position, leave=False)):
+                frames_in_batch = len(batch["index"]) if "index" in batch else batch_size
+                result["total_frames_sampled"] += frames_in_batch
 
+                # Log progress every 10% of batches (only in DEBUG mode)
+                if _logger.isEnabledFor(logging.DEBUG) and num_batches >= 10:
+                    if (batch_idx + 1) % max(1, num_batches // 10) == 0:
+                        progress_pct = (batch_idx + 1) / num_batches * 100
+                        _logger.debug(f"   Progress: {batch_idx + 1}/{num_batches} batches ({progress_pct:.0f}%)")
+
+        _logger.debug("🧹 Cleaning up DataLoader workers...")
         # Properly shutdown DataLoader workers to avoid semaphore leaks
         if hasattr(dl, '_iterator') and dl._iterator is not None:
             dl._iterator._shutdown_workers()
@@ -202,15 +236,22 @@ def _run_detection(
             "time_per_frame_s": elapsed / result["total_frames_sampled"] if result["total_frames_sampled"] else 0.0,
         })
 
+        _logger.info(
+            f"✅ Detection complete: {result['total_frames_sampled']} frames in {elapsed:.2f}s "
+            f"({elapsed/result['total_frames_sampled']*1000:.1f}ms/frame)"
+        )
+
     except Exception as e:
+        elapsed = time.perf_counter() - start_time
         result.update({
             "error_message": str(e),
-            "total_time_s": time.perf_counter() - start_time,
+            "total_time_s": elapsed,
         })
-        print(f"❌ Detection failed: {e}", file=sys.stderr)
+        _logger.error(f"❌ Detection failed after {elapsed:.2f}s: {e}", exc_info=_logger.isEnabledFor(logging.DEBUG))
 
     finally:
         if ds:
+            _logger.debug("🧹 Cleaning up dataset object...")
             del ds
         gc.collect()
 

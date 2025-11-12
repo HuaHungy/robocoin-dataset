@@ -13,8 +13,7 @@ def _sync_dataloader_detection_tasks(
     """Mark datasets requiring dataloader detection as pending and align versions.
 
     Trigger rules (STRICT REQUIREMENTS):
-      - data_merge_status must be COMPLETED
-      - convert_status must be COMPLETED
+      - qced_repo_gen_status must be COMPLETED
       - data_loader_detection_status is NULL (never tested), PENDING, or COMPLETED but outdated
 
     WARNING: NULL data_loader_detection_status is ILLEGAL but handled for robustness.
@@ -24,6 +23,7 @@ def _sync_dataloader_detection_tasks(
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
     _logger = logger or logging.getLogger(__name__)
+    _logger.debug("🔄 Syncing dataloader detection tasks...")
 
     query = session.query(DatasetDB).filter(
         and_(
@@ -42,20 +42,24 @@ def _sync_dataloader_detection_tasks(
 
     items = query.all()
     if not items:
+        _logger.debug("✅ No datasets need status update (all in sync)")
         return
 
-    if items:
-        _logger.info(f"Marked {len(items)} dataset(s) as PENDING for dataloader detection")
-
+    _logger.info(f"📝 Marking {len(items)} dataset(s) as PENDING for dataloader detection")
     for item in items:
+        _logger.debug(f"  - {item.dataset_uuid}: {item.data_loader_detection_status} → PENDING")
         item.data_loader_detection_status = TaskStatus.PENDING
         item.data_loader_detection_version_ps = item.qced_repo_gen_version
         item.data_loader_detection_version = (item.data_loader_detection_version or 0) + 1
 
     session.commit()
+    _logger.debug(f"✅ Sync complete: {len(items)} dataset(s) updated")
 
 
-def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, Path | None]:
+def _gen_one_dataloader_detection_task(
+    session: "Session",
+    logger: logging.Logger | None = None,
+) -> tuple[str | None, Path | None]:
     """Claim one pending dataset and transition it to PROCESSING.
 
     This function validates that the hardlink path exists before claiming the task.
@@ -69,48 +73,71 @@ def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, 
     """
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
+    _logger = logger or logging.getLogger(__name__)
+    _logger.debug("🔍 Querying for pending dataloader detection tasks...")
+
     item = (
         session.query(DatasetDB)
-        .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
+        .filter(DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED)
         .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
         .first()
     )
     if not item:
+        _logger.debug("📭 No pending tasks found in database")
         return None, None
 
     # Query hardlink path before claiming task and validate
     from robocoin_dataset.database.models import DatasetHardLinkDB
 
+    dataset_uuid = item.dataset_uuid
+    _logger.debug(f"📦 Found pending dataset: {dataset_uuid}")
+
     try:
+        _logger.debug(f"🔗 Validating hardlink for {dataset_uuid}...")
         hardlink_record = session.query(DatasetHardLinkDB).filter(
-            DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
+            DatasetHardLinkDB.dataset_uuid == dataset_uuid
         ).first()
         hardlink_path = Path(hardlink_record.hard_link_path) if hardlink_record and hardlink_record.hard_link_path else None
 
         if hardlink_path is None:
-            raise FileNotFoundError(
-                f"No hardlink found in database for dataset {item.dataset_uuid}. "
+            _logger.error(f"❌ No hardlink record found in database for {dataset_uuid}")
+            error = FileNotFoundError(
+                f"No hardlink found in database for dataset {dataset_uuid}. "
                 f"Hardlinks must be created before running dataloader detection."
             )
+            error.dataset_uuid = dataset_uuid
+            raise error
+
+        _logger.debug(f"🔗 Hardlink path from DB: {hardlink_path}")
 
         # Verify hardlink path exists on disk
         if not hardlink_path.exists():
-            raise FileNotFoundError(
+            _logger.error(f"❌ Hardlink path does not exist on disk: {hardlink_path}")
+            error = FileNotFoundError(
                 f"Hardlink path in database does not exist on disk: {hardlink_path}"
             )
+            error.dataset_uuid = dataset_uuid
+            raise error
+
+        _logger.debug(f"✅ Hardlink validation passed: {hardlink_path}")
     except FileNotFoundError:
-        # Re-raise FileNotFoundError as-is
+        # Re-raise FileNotFoundError as-is (now with dataset_uuid attribute)
         raise
     except Exception as e:
         # Wrap other exceptions as FileNotFoundError
-        raise FileNotFoundError(
-            f"Failed to retrieve or validate hardlink for dataset {item.dataset_uuid}: {e}"
-        ) from e
+        _logger.error(f"❌ Exception during hardlink validation for {dataset_uuid}: {e}")
+        error = FileNotFoundError(
+            f"Failed to retrieve or validate hardlink for dataset {dataset_uuid}: {e}"
+        )
+        error.dataset_uuid = dataset_uuid
+        raise error from e
 
     # All validations passed - claim the task
+    _logger.debug(f"🎯 Claiming task: {dataset_uuid} (PENDING → PROCESSING)")
     item.data_loader_detection_status = TaskStatus.PROCESSING
     session.commit()
-    return item.dataset_uuid, hardlink_path
+    _logger.info(f"✅ Task claimed: {dataset_uuid} at {hardlink_path}")
+    return dataset_uuid, hardlink_path
 
 
 def _mark_task_completed(session: "Session", dataset_uuid: str) -> None:

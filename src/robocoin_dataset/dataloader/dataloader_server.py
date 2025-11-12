@@ -11,7 +11,7 @@ from pathlib import Path
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB
-from robocoin_dataset.dataloader.dataloader_task_management import (
+from robocoin_dataset.dataloader.dataloader_task import (
     _gen_one_dataloader_detection_task,
     _mark_task_completed,
     _mark_task_failed,
@@ -80,6 +80,20 @@ class DataloaderDbServer(TaskServer):
         self.datasets_succeeded = 0
         self.datasets_failed = 0
 
+        # Log server initialization
+        self.logger.info("=" * 80)
+        self.logger.info("🚀 DATALOADER DETECTION SERVER INITIALIZING")
+        self.logger.info("=" * 80)
+        self.logger.info(f"Database: {self.db_file_path}")
+        self.logger.info(f"Bind address: {host}:{port}")
+        self.logger.info(f"Heartbeat interval: {heartbeat_interval}s")
+        self.logger.info(f"Timeout: {timeout}s")
+        self.logger.info(f"Episodes: {episodes}")
+        self.logger.info(f"Sample ratio: {sample_ratio:.1%}")
+        self.logger.info(f"Batch size: {batch_size}")
+        self.logger.info(f"Num workers: {num_workers}")
+        self.logger.info("=" * 80)
+
     def get_task_category(self) -> str:
         return TASK_CATEGORY
 
@@ -89,22 +103,33 @@ class DataloaderDbServer(TaskServer):
         max_retries = 100  # Safety limit to prevent infinite loops
         attempt = 0
 
+        self.logger.debug("🔍 Server: generate_task_content() called")
+
         while attempt < max_retries:
             attempt += 1
+            self.logger.debug(f"🔄 Task generation attempt {attempt}/{max_retries}")
 
             # Step 1: Sync and claim task (with DB session, includes hardlink validation)
             try:
                 with self.db.with_session() as session:
                     # pre-sync queue (only on first attempt to avoid redundant syncs)
                     if attempt == 1:
+                        self.logger.debug("📊 First attempt - syncing tasks...")
                         _sync_dataloader_detection_tasks(session, logger=self.logger)
 
                     # claim one (validates hardlink exists)
-                    dataset_uuid, hardlink_path = _gen_one_dataloader_detection_task(session)
+                    self.logger.debug("🎯 Attempting to claim a task...")
+                    dataset_uuid, hardlink_path = _gen_one_dataloader_detection_task(session, logger=self.logger)
                     if dataset_uuid is None:
+                        self.logger.info("📭 No more tasks available")
                         return None
 
-                self.logger.info(f"Using existing hardlink for client: {hardlink_path}")
+                self.logger.info(f"✅ Task prepared for client: {dataset_uuid}")
+                self.logger.debug(f"   Hardlink: {hardlink_path}")
+                self.logger.debug(f"   Episodes: {self.episodes}")
+                self.logger.debug(f"   Sample ratio: {self.sample_ratio}")
+                self.logger.debug(f"   Batch size: {self.batch_size}")
+                self.logger.debug(f"   Num workers: {self.num_workers}")
 
                 # Success! Return the task
                 return {
@@ -117,30 +142,40 @@ class DataloaderDbServer(TaskServer):
                 }
 
             except FileNotFoundError as e:
-                # Task was already claimed, so we have dataset_uuid
-                err_msg = f"Hardlink assertion failed: {e}"
-                self.logger.error(f"❌ {dataset_uuid}: {err_msg}")
+                # Extract dataset_uuid from exception (set by _gen_one_dataloader_detection_task)
+                dataset_uuid = getattr(e, 'dataset_uuid', None)
+                err_msg = f"Hardlink validation failed: {e}"
 
-                # Mark task as failed in database
-                with self.db.with_session() as session:
-                    _mark_task_failed(session, dataset_uuid, err_msg)
+                if dataset_uuid:
+                    self.logger.error(f"❌ {dataset_uuid}: {err_msg}")
+                    self.logger.debug("   Marking task as FAILED and continuing to next task...")
 
-                # Log to summary
-                self.summary_logger.info(f"❌ {dataset_uuid}: {err_msg}")
+                    # Mark task as failed in database
+                    with self.db.with_session() as session:
+                        _mark_task_failed(session, dataset_uuid, err_msg)
+
+                    # Log to summary
+                    self.summary_logger.info(f"❌ {dataset_uuid}: {err_msg}")
+                else:
+                    # Shouldn't happen, but log it
+                    self.logger.error(f"FileNotFoundError without dataset_uuid: {err_msg}")
 
                 # Continue to next iteration to try another task
-                self.logger.info("Attempting to fetch next task...")
+                self.logger.debug(f"🔄 Retrying with next task (attempt {attempt + 1}/{max_retries})...")
                 continue
 
         # Safety: should never reach here unless we hit max_retries
-        self.logger.warning(f"Reached max retry limit ({max_retries}) in generate_task_content")
+        self.logger.warning(f"⚠️  Reached max retry limit ({max_retries}) in generate_task_content")
         return None
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         """Handle task result from client and update database."""
         dataset_uuid = task_content.get(DATASET_UUID)
+        self.logger.debug(f"📥 Server: Received result for task {dataset_uuid}")
+
         # Client execution state: did the client process crash/throw exception?
         client_execution_status = task_result_content.get(TASK_RESULT_STATUS)
+        self.logger.debug(f"   Client execution status: {client_execution_status}")
 
         with self.db.with_session() as session:
             # Check if dataset exists before updating
