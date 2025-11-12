@@ -192,7 +192,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         tuple[bool, str]: (success status, error message if failed or empty string if success)
     """
 
-    repo_name = hardlink.removesuffix("_hardlink")
+    repo_name = hardlink.removesuffix("_qced_hardlink")
     # Remove "_hardlink" suffix from ds_name for clean repository name
 
     # Validate dataset structure using shared validation from LocalDsUtil
@@ -367,11 +367,11 @@ class LocalDsUploadUtil(LocalDsUtil):
           break
 
         # Get dataset name for logging
-        dataset_name = hardlink_path.name.removesuffix("_hardlink")
+        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink")
         pbar.set_description(f"📤 {dataset_name[:30]:30s}")
 
         # Check repo conflict
-        repo_name = hardlink_path.name.removesuffix("_hardlink")
+        repo_name = hardlink_path.name.removesuffix("_qced_hardlink")
         repo_id = f"{self.namespace}/{repo_name}"
         if not self._check_repo_conflict(repo_id):
           self.logger.debug(f"{dataset_name}: Skipped (user cancelled)")
@@ -512,7 +512,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         tuple[bool, str]: (success status, error message if failed or empty string if success)
     """
     try:
-      dataset_name = hardlink_path.name.removesuffix("_hardlink")
+      dataset_name = hardlink_path.name.removesuffix("_qced_hardlink")
 
       # Define output path for intermediate YAML file
       output_path = Path("./dataset_info").absolute()
