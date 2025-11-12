@@ -25,6 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("--state_data_score_threshold", type=float, default=0.85)
     parser.add_argument("--action_data_score_threshold", type=float, default=0.85)
     parser.add_argument("--video_score_threshold", type=float, default=0.9)
+    parser.add_argument("--min_episodes_num", type=int, default=10)
 
     args = parser.parse_args()
 
@@ -39,6 +40,7 @@ if __name__ == "__main__":
         state_data_score_threshold=args.state_data_score_threshold,
         action_data_score_threshold=args.action_data_score_threshold,
         video_score_threshold=args.video_score_threshold,
+        min_episodes_num=args.min_episodes_num,
         logger=logger,
     )
     generator.gen_one_qced_repo()
