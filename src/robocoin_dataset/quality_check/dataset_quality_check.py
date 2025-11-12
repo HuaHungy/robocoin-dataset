@@ -298,8 +298,6 @@ def _sync_quality_check_tasks(
         return
 
     for item in items:
-        if item.qc_status == TaskStatus.COMPLETED:
-            item.qc_version = item.qc_version + 1
         item.qc_status = TaskStatus.PENDING
         item.qc_version_ps = item.data_merge_version
 
@@ -323,6 +321,7 @@ def _gen_one_dataset_quality_check_task_without_sync(
 
     item.qc_status = TaskStatus.PROCESSING
 
+    item.qc_version = item.qc_version + 1
     session.commit()
 
     # 获取 sim_replay 配置
