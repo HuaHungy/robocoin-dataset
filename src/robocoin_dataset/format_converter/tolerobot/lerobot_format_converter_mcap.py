@@ -258,6 +258,7 @@ class LerobotFormatConverterRealmanRmcAidalMcap(LerobotFormatConverter):
         self._episode_data_cache = {}
         self._current_episode_cache_key = None  # 🆕 跟踪当前episode的缓存key
         self._current_episode_data = None  # 🆕 当前episode的完整数据（用于大文件的显式清理）
+        self._current_episode_key = None  # 🆕 跟踪当前episode的key (task_path, ep_idx)，用于检测episode切换
         
         # Test 模式标志（用于限制帧数）
         self._is_test_mode = False
@@ -988,9 +989,17 @@ int32 lift_pos
             return episode_data["images"]
         
         # 🔥 关键修复：只解析一次，避免重复调用
-        if not hasattr(self, '_current_episode_data') or self._current_episode_data is None:
+        # 🆕 检查episode是否切换，如果切换了需要清理旧数据
+        current_key = (str(task_path), ep_idx)
+        if (not hasattr(self, '_current_episode_data') or 
+            self._current_episode_data is None or 
+            self._current_episode_key != current_key):
+            # Episode切换了，先清理旧数据
+            if self._current_episode_data is not None:
+                self._cleanup_episode_resources()
             episode_data = self._get_episode_data(task_path, ep_idx)
             self._current_episode_data = episode_data
+            self._current_episode_key = current_key
         return self._current_episode_data["images"]
 
     def _prepare_episode_states_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
@@ -1008,9 +1017,17 @@ int32 lift_pos
             return episode_data["states"]
         
         # 🔥 关键修复：复用已解析的数据
-        if not hasattr(self, '_current_episode_data') or self._current_episode_data is None:
+        # 🆕 检查episode是否切换，如果切换了需要清理旧数据
+        current_key = (str(task_path), ep_idx)
+        if (not hasattr(self, '_current_episode_data') or 
+            self._current_episode_data is None or 
+            self._current_episode_key != current_key):
+            # Episode切换了，先清理旧数据
+            if self._current_episode_data is not None:
+                self._cleanup_episode_resources()
             episode_data = self._get_episode_data(task_path, ep_idx)
             self._current_episode_data = episode_data
+            self._current_episode_key = current_key
         return self._current_episode_data["states"]
 
     def _prepare_episode_actions_buffer(self, task_path: Path, ep_idx: int, is_test: bool = False) -> Any:  # noqa: ANN401
@@ -1028,9 +1045,17 @@ int32 lift_pos
             return episode_data["actions"]
         
         # 🔥 关键修复：复用已解析的数据
-        if not hasattr(self, '_current_episode_data') or self._current_episode_data is None:
+        # 🆕 检查episode是否切换，如果切换了需要清理旧数据
+        current_key = (str(task_path), ep_idx)
+        if (not hasattr(self, '_current_episode_data') or 
+            self._current_episode_data is None or 
+            self._current_episode_key != current_key):
+            # Episode切换了，先清理旧数据
+            if self._current_episode_data is not None:
+                self._cleanup_episode_resources()
             episode_data = self._get_episode_data(task_path, ep_idx)
             self._current_episode_data = episode_data
+            self._current_episode_key = current_key
         return self._current_episode_data["actions"]
     
     def _cleanup_episode_resources(self) -> None:
@@ -1085,9 +1110,30 @@ int32 lift_pos
                 
                 # 🆕 检查是否是chunked buffer
                 if ChunkedImagesBuffer is not None and isinstance(images_buffer, ChunkedImagesBuffer):
-                    # Chunked buffer: 清理底层buffer（如果有close方法）
-                    if hasattr(images_buffer.parent, 'close'):
-                        images_buffer.parent.close()
+                    # Chunked buffer: 清理底层buffer的消息索引（占用大量内存）
+                    parent_buffer = images_buffer.parent
+                    if hasattr(parent_buffer, '_topic_msgs_index') and parent_buffer._topic_msgs_index is not None:
+                        # 清理消息索引（可能占用几GB内存）
+                        for topic_msgs in parent_buffer._topic_msgs_index.values():
+                            topic_msgs.clear()
+                        parent_buffer._topic_msgs_index.clear()
+                        parent_buffer._topic_msgs_index = None
+                        if self.logger:
+                            self.logger.debug("🧹 清理ChunkedMcapBuffer的消息索引")
+                    # 清理当前chunk数据
+                    if hasattr(parent_buffer, '_current_chunk_data') and parent_buffer._current_chunk_data is not None:
+                        if 'images' in parent_buffer._current_chunk_data:
+                            for cam_images in parent_buffer._current_chunk_data['images'].values():
+                                cam_images.clear()
+                            parent_buffer._current_chunk_data['images'].clear()
+                        if 'states' in parent_buffer._current_chunk_data:
+                            parent_buffer._current_chunk_data['states'].clear()
+                        if 'actions' in parent_buffer._current_chunk_data:
+                            parent_buffer._current_chunk_data['actions'].clear()
+                        parent_buffer._current_chunk_data = None
+                    # 如果有close方法，也调用它
+                    if hasattr(parent_buffer, 'close'):
+                        parent_buffer.close()
                 else:
                     # 传统dict格式：清理每个相机的图像列表
                     for cam_images in images_buffer.values():
@@ -1109,6 +1155,7 @@ int32 lift_pos
             # 删除整个dict
             del self._current_episode_data
             self._current_episode_data = None
+            self._current_episode_key = None  # 🆕 重置episode key
         
         # 清理缓存
         self._clear_episode_cache()
