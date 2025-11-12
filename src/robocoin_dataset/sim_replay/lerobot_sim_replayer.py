@@ -45,6 +45,7 @@ class LerobotSimReplayer:
         self,
         replay_config: LerobotSimReplayConfig,
         repo_path: str | Path,
+        replay_source: str = "sa_dpp",
     ) -> None:
         self.mjcf_file_path = Path(replay_config.mjcf_path).expanduser().resolve()
         self.repo_path = Path(repo_path).expanduser().absolute()
@@ -146,8 +147,10 @@ class LerobotSimReplayer:
             self._get_mjcf_joint_addr(mjcf_joint_name)
             for mjcf_joint_name in self.action_gripper_joint_mjcf_names
         ]
-
-        meta_file_path = self.repo_path / "meta/state_action_info.json"
+        if replay_source == "sa_dpp":
+            meta_file_path = self.repo_path / "meta/state_action_info.json"
+        elif replay_source == "data":
+            meta_file_path = self.repo_path / "meta/info.json"
         if not meta_file_path.exists():
             raise Exception(f"Meta file not found: {meta_file_path}")
 
@@ -326,16 +329,25 @@ class LerobotSimReplayer:
         episode_index: int,
         is_state: bool = True,
         # sleep_time_ms: int = 0,
+        replay_source: str = "sa_dpp",
         enable_gripper_plot: bool = False,
         gripper_plot_callback=None,
         target_fps: int = 30,
     ) -> None:
-        parquet_file_path = (
-            self.repo_path
-            / "state_action_data"
-            / "chunk-000"
-            / f"episode_{episode_index:06d}.parquet"
-        )
+        if replay_source == "sa_dpp":
+            parquet_file_path = (
+                self.repo_path
+                / "state_action_data"
+                / f"chunk-{episode_index // 1000:03d}"
+                / f"episode_{episode_index:06d}.parquet"
+            )
+        elif replay_source == "data":
+            parquet_file_path = (
+                self.repo_path
+                / "data"
+                / f"chunk-{episode_index // 1000:03d}"
+                / f"episode_{episode_index:06d}.parquet"
+            )
         print(f"***[界面] 正在播放 episode 文件: {parquet_file_path}")
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
