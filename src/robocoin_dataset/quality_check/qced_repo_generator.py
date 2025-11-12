@@ -42,10 +42,12 @@ from robocoin_dataset.utils.path_utils import (
 
 BAD_EPISODES = "bad_episodes"
 HARD_LINK_PATH = "hard_link_path"
+MIN_EPISODES_NUM = "min_episodes_num"
 
 MERGED_FEATURE = "merged"
 QCED_FEATURE = "quality_checked"
 HL_SUFFIX = "qced_hardlink"
+DS_API_KEY = "ds_api_key"
 
 
 def gen_qced_repo_files(
@@ -281,14 +283,38 @@ def _gen_video_path_matching_dict(
     return matching_dict
 
 
+def _gen_optimized_tasks_jsonl(
+    src_path: str | Path, target_path: str | Path, ds_api_key: str | None = None
+) -> None:
+    return
+
+
 def gen_qced_repo(
     repo_path: str | Path,
     bad_episodes: set[int],
     input_feature: str = MERGED_FEATURE,
     qced_feature: str = QCED_FEATURE,
-    hl_suffix: str = HARD_LINK_PATH,
+    hl_suffix: str = HL_SUFFIX,
+    min_episodes_num: int = 10,
+    ds_api_key: str | None = None,
 ) -> str:
     repo_path = Path(repo_path).expanduser().absolute()
+
+    _, input_info_file_path = get_meta_info_file_path(repo_path, input_feature)
+    with open(input_info_file_path) as f:
+        data = json.load(f)
+        episodes_num = data.get("total_episodes")
+
+    if (episodes_num - len(bad_episodes)) < min_episodes_num:
+        raise ValueError(
+            f"The number of episodes after removing bad episodes is less than {min_episodes_num}"
+        )
+
+    src_tasks_jsonl_path = repo_path / "meta/tasks.jsonl"
+    target_tasks_jsonl_path = repo_path / f"meta/{input_feature}_tasks.jsonl"
+    _gen_optimized_tasks_jsonl(
+        src_path=src_tasks_jsonl_path, target_path=target_tasks_jsonl_path, ds_api_key=ds_api_key
+    )
 
     video_path_corresp = gen_qced_repo_files(
         repo_path=repo_path,
@@ -330,9 +356,6 @@ def _sync_qced_repo_gen_tasks(session: Session) -> None:
         return
 
     for item in items:
-        if item.qced_repo_gen_status == TaskStatus.COMPLETED:
-            item.qced_repo_gen_version = item.qced_repo_gen_version + 1
-            continue
         item.qced_repo_gen_status = TaskStatus.PENDING
         item.qced_repo_gen_version_ps = item.qc_version
 
@@ -356,6 +379,7 @@ def _gen_one_qced_repo_gen_task(
 
     item.qced_repo_gen_status = TaskStatus.PROCESSING
 
+    item.qced_repo_gen_version = item.qced_repo_gen_version + 1
     session.commit()
 
     return item.dataset_uuid, item.convert_path
@@ -402,6 +426,8 @@ class QualityCheckedRepoGenerator:
         state_data_score_threshold: float = 0.85,
         action_data_score_threshold: float = 0.85,
         video_score_threshold: float = 0.9,
+        min_episodes_num: int = 10,
+        ds_api_key: str | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
@@ -410,6 +436,8 @@ class QualityCheckedRepoGenerator:
         self.state_data_score_threshold = state_data_score_threshold
         self.action_data_score_threshold = action_data_score_threshold
         self.video_score_threshold = video_score_threshold
+        self.min_episodes_num = min_episodes_num
+        self.ds_api_key = ds_api_key
 
     def gen_one_qced_repo(self) -> None:
         with self.db.with_session() as session:
@@ -427,7 +455,12 @@ class QualityCheckedRepoGenerator:
             return
 
         try:
-            hardlink_repo_path = gen_qced_repo(repo_path=repo_path, bad_episodes=bad_episodes)
+            hardlink_repo_path = gen_qced_repo(
+                repo_path=repo_path,
+                bad_episodes=bad_episodes,
+                min_episodes_num=self.min_episodes_num,
+                ds_api_key=self.ds_api_key,
+            )
             with self.db.with_session() as session:
                 ds_item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
@@ -476,6 +509,8 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         state_data_score_threshold: float = 0.85,
         action_data_score_threshold: float = 0.85,
         video_score_threshold: float = 0.9,
+        min_episodes_num: int = 10,
+        ds_api_key: str | None = None,
     ) -> None:
         super().__init__(
             logger=logger,
@@ -493,6 +528,8 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         self.state_data_score_threshold = state_data_score_threshold
         self.action_data_score_threshold = action_data_score_threshold
         self.video_score_threshold = video_score_threshold
+        self.min_episodes_num = min_episodes_num
+        self.ds_api_key = ds_api_key
 
     def get_task_category(self) -> str:
         return "dataset quality checked repo generation"
@@ -516,6 +553,8 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
             DATASET_UUID: dataset_uuid,
             LEFORMAT_PATH: repo_path,
             BAD_EPISODES: bad_episodes,
+            MIN_EPISODES_NUM: self.min_episodes_num,
+            DS_API_KEY: self.ds_api_key,
         }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -590,8 +629,15 @@ class QualityCheckedRepoGeneratorClient(TaskClient):
             repo_path = task_content.get(LEFORMAT_PATH)
             bad_episodes = task_content.get(BAD_EPISODES)
             bad_episodes = set(bad_episodes)
+            min_episodes_num = task_content.get(MIN_EPISODES_NUM)
+            ds_api_key = task_content.get(DS_API_KEY)
 
-            hardlink_repo_path = gen_qced_repo(repo_path=repo_path, bad_episodes=bad_episodes)
+            hardlink_repo_path = gen_qced_repo(
+                repo_path=repo_path,
+                bad_episodes=bad_episodes,
+                min_episodes_num=min_episodes_num,
+                ds_api_key=ds_api_key,
+            )
 
             return {HARD_LINK_PATH: hardlink_repo_path}
         except Exception as e:

@@ -29,7 +29,7 @@ class RepoHardLinkCorresp:
             self.source_repo_path
             / f"meta/{input_feature}_episodes_stats.jsonl": self.hard_link_repo_path
             / "meta/episodes_stats.jsonl",
-            self.source_repo_path / "meta/tasks.jsonl": self.hard_link_repo_path
+            self.source_repo_path / f"meta/{input_feature}_tasks.jsonl": self.hard_link_repo_path
             / "meta/tasks.jsonl",
         }
         # _, source_episodes_paths = get_parquet_paths(self.source_repo_path, input_feature)

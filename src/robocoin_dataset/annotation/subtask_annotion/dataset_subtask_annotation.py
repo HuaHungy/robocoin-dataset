@@ -47,9 +47,6 @@ class DatasetSubtaskAnnotation:
 
             for item in query.all():
                 item.video_ori_subtask_annotation_status = TaskStatus.PENDING
-                item.video_ori_subtask_annotation_version = (
-                    item.video_ori_subtask_annotation_version + 1
-                )
                 item.video_ori_subtask_annotation_version_ps = item.video_match_version
             session.commit()
 
@@ -65,6 +62,9 @@ class DatasetSubtaskAnnotation:
             if not item:
                 return None
 
+            item.video_ori_subtask_annotation_version = (
+                item.video_ori_subtask_annotation_version + 1
+            )
             item.video_ori_subtask_annotation_status = TaskStatus.PROCESSING
             session.commit()
             return item.dataset_uuid
