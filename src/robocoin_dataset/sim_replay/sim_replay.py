@@ -282,15 +282,15 @@ def _sim_replay_dataset(
                             ymin, ymax = ymax, ymin
                         use_dynamic_ylim = False  # 使用固定y轴
                     else:
-                        # 动态范围：根据当前数据计算 min/max 并添加边距
+                        # 动态范围：根据当前数据计算 min/max 并添加边距（增加到20%）
                         col = arr[:, start_idx:end_idx]
                         vmin = float(col.min())
                         vmax = float(col.max())
                         if vmin == vmax:
                             # 单一值时给一个小范围
-                            margin = max(abs(vmin) * 0.1, 0.01)
+                            margin = max(abs(vmin) * 0.2, 0.02)
                         else:
-                            margin = (vmax - vmin) * 0.1
+                            margin = (vmax - vmin) * 0.2
                         ymin = vmin - margin
                         ymax = vmax + margin
                         use_dynamic_ylim = True  # 使用动态y轴
@@ -357,11 +357,11 @@ def _sim_replay_dataset(
                         vmin = float(col.min())
                         vmax = float(col.max())
                         
-                        # 添加边距
+                        # 添加边距（增加到20%以提供更多视觉冗余）
                         if vmin == vmax:
-                            margin = max(abs(vmin) * 0.1, 0.01)
+                            margin = max(abs(vmin) * 0.2, 0.02)
                         else:
-                            margin = (vmax - vmin) * 0.1
+                            margin = (vmax - vmin) * 0.2
                         
                         ymin = vmin - margin
                         ymax = vmax + margin

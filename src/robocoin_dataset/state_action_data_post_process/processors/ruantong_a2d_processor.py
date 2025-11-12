@@ -40,7 +40,9 @@ class RuantongA2dProcessor(StateActionDataPostProcessorBase):
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
         new_state_data = ori_state_data.copy()
         # 应用平滑滤波
-        new_state_data = self._smooth_data(new_state_data, window_size=8)
+        new_state_data = self._smooth_data(new_state_data, window_size=16)
+        new_state_data[:, 32] = (140.0 - new_state_data[:, 32]) / 105.0
+        new_state_data[:, 33] = (140.0 - new_state_data[:, 33]) / 105.0
         return new_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
@@ -48,6 +50,8 @@ class RuantongA2dProcessor(StateActionDataPostProcessorBase):
         new_action_data = ori_action_data.copy()
         # 应用平滑滤波
         new_action_data = self._smooth_data(new_action_data, window_size=8)
+        new_action_data[:, 32] = (1.0 - new_action_data[:, 32])
+        new_action_data[:, 33] = (1.0 - new_action_data[:, 33])
         return new_action_data
     def get_modified_feature_names(self):
         return super().get_modified_feature_names()
@@ -178,6 +182,11 @@ class RuantongA2dGt02Processor(StateActionDataPostProcessorBase):
         new_state_data = ori_state_data.copy()
         # 应用平滑滤波
         new_state_data = self._smooth_data(new_state_data, window_size=8)
+        # 将第16,17列(索引15,16)从140-0归一化到0-1
+        # left_gripper_open 和 right_gripper_open
+        # 范围: 140(闭合) -> 0, 0(打开) -> 1
+        new_state_data[:, 15] = (140.0 - new_state_data[:, 15]) / 145.0
+        new_state_data[:, 16] = (140.0 - new_state_data[:, 16]) / 145.0
         return new_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
@@ -185,6 +194,8 @@ class RuantongA2dGt02Processor(StateActionDataPostProcessorBase):
         new_action_data = ori_action_data.copy()
         # 应用平滑滤波
         new_action_data = self._smooth_data(new_action_data, window_size=8)
+        new_action_data[:, 15] = (140.0 - new_action_data[:, 15]) / 145.0
+        new_action_data[:, 16] = (140.0 - new_action_data[:, 16]) / 145.0
         return new_action_data
     def get_modified_feature_names(self):
         return super().get_modified_feature_names()

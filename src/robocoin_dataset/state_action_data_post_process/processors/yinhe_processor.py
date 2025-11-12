@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from .state_action_data_processor_base import StateActionDataPostProcessorBase
 
@@ -41,26 +42,45 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         except ValueError:
             self.right_gripper_action_idx = 15
 
-    def _smooth_gripper_open_data(self, data: np.ndarray) -> np.ndarray:
-        smoothed = data.copy()
-        return smoothed
+    def _smooth_data(self, data: np.ndarray, window_size: int = 4) -> np.ndarray:
+        """
+        对数据进行平滑滤波
+        
+        Args:
+            data: 输入数据，shape 为 (n_frames, n_features)
+            window_size: 滑动窗口大小
+            
+        Returns:
+            平滑后的数据
+        """
+        if data.shape[0] < window_size:
+            # 如果数据长度小于窗口大小，直接返回原数据
+            return data
+        
+        smoothed_data = np.zeros_like(data)
+        for i in range(data.shape[1]):
+            series = pd.Series(data[:, i])
+            smoothed_series = series.rolling(window=window_size, min_periods=1, center=True).mean()
+            smoothed_data[:, i] = smoothed_series.values
+        
+        return smoothed_data
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
         new_state_data = ori_state_data.copy()
+        # 应用平滑滤波
+        new_state_data = self._smooth_data(new_state_data, window_size=8)
         return new_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
         new_action_data = ori_action_data.copy()
+        # 应用平滑滤波
+        new_action_data = self._smooth_data(new_action_data, window_size=8)
         return new_action_data
     
     # 该方法将episode数据进行后处理，将 state 中的 gripper 数据复制到 action
     def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """
-        保留完整的 state 数据，将 state 中的 left_gripper_open 和 right_gripper_open 
-        复制到 action 对应列，其他 action 数据保持不变。
-        """
         state = ori_data.get("observation.state")
         action = ori_data.get("action")
 
@@ -73,9 +93,7 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         if state.shape[0] != action.shape[0]:
             raise ValueError("state and action must have same number of frames")
 
-        # 保持 state 不变
         out_state = self.process_episode_state_data(state)
-        # 复制 action 以便修改
         out_action = self.process_episode_action_data(action)
 
         # 将 state 中的 gripper 数据插入到 action 中
