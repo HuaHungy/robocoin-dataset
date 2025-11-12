@@ -62,9 +62,14 @@ class AlphaBot2LerobotSimReplayConfig(LerobotSimReplayConfig):
     state_gripper_joint_mjcf_names: list[str] = []
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
+    gripper_open_max = 1100
+    gripper_open_min = 0
 
     # eef_sim 配置
-    has_gripper = False
+    has_gripper = True
+
+    gripper_value_open = gripper_open_max
+    gripper_value_close = gripper_open_min
 
 
     state_gripper_lerobot_names: list[str] = ["left_gripper_open", "right_gripper_open"]
