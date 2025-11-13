@@ -9,7 +9,8 @@ from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetDB,
     TaskStatus,
-    VideoOptStAnnotationDB,
+    UrlVideoStAnnotationDB,
+    VideoMatchDB,
 )
 
 if __name__ == "__main__":
@@ -20,7 +21,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="high")
     args = parser.parse_args()
 
-    print(args.db_file_path)
     db = DatasetDatabase(args.db_file_path)
     with db.with_session() as session:
         query = session.query(DatasetDB).filter(DatasetDB.video_match_status == TaskStatus.FAILED)
@@ -34,8 +34,6 @@ if __name__ == "__main__":
         print("No items to process")
         exit(0)
 
-    print(f"output_dir: {args.output_dir}")
-
     for item in tqdm.tqdm(items, desc="Copying Datasets Files", unit="dataset"):
         repo_path = Path(item.convert_path)
         info_file_path = repo_path / "meta/info.json"
@@ -43,14 +41,14 @@ if __name__ == "__main__":
             info = json.load(f)
             total_episodes = info["total_episodes"]
         with db.with_session() as session:
-            anno_items = session.query(VideoOptStAnnotationDB).filter(
-                VideoOptStAnnotationDB.dataset_uuid == item.dataset_uuid
+            matched_items = session.query(VideoMatchDB).filter(
+                VideoMatchDB.dataset_uuid == item.dataset_uuid
             )
 
-        eps = {anno_item.episode_idx for anno_item in anno_items}
+        matched_eps = {matched_item.episode_idx for matched_item in matched_items}
 
-        lost_eps = set(range(total_episodes)) - eps
-        if not lost_eps:
+        unmatched_eps = set(range(total_episodes)) - matched_eps
+        if not unmatched_eps:
             continue
 
         output_repo_dir: Path = Path(args.output_dir) / Path(item.convert_path).name
@@ -59,31 +57,43 @@ if __name__ == "__main__":
             print(f"{output_repo_dir} exists, please select another output_dir")
             continue
 
-        anno_labels = {anno_item.annotation for anno_item in anno_items}
-        print(f"found {len(anno_labels)} labels: {anno_labels}")
+        with db.with_session() as session:
+            items = (
+                session.query(VideoMatchDB)
+                .filter(VideoMatchDB.dataset_uuid == item.dataset_uuid)
+                .all()
+            )
+
+        url_video_ids = [item.url_video_id for item in items]
+
+        with db.with_session() as session:
+            url_anno_items = (
+                session.query(UrlVideoStAnnotationDB)
+                .filter(UrlVideoStAnnotationDB.video_id.in_(url_video_ids))
+                .all()
+            )
+
+        url_anno_labels = set([url_anno_item.annotation for url_anno_item in url_anno_items])
+
         output_repo_dir.mkdir(parents=True)
 
         with open(output_repo_dir / "labels.txt", "w") as f:
-            for label in anno_labels:
+            for label in url_anno_labels:
                 f.write(label + "\n")
-
-        input("Copied labels.txt, press enter to continue")
 
         shutil.copytree(repo_path / "meta", output_repo_dir / "meta")
 
-        video_dirs: list[Path] = [
-            chunk_dir
-            for chunk_dir in (output_repo_dir / "videos").glob("chunk_*")
-            if chunk_dir.is_dir()
+        video_chunk_dirs: list[Path] = [
+            chunk_dir for chunk_dir in (repo_path / "videos").glob("chunk-*") if chunk_dir.is_dir()
         ]
-        input(f"found {len(video_dirs)} video dirs: {video_dirs}")
         featured_dirs = []
-        for video_dir in video_dirs:
-            for camera_dir in video_dir.glob():
+        for video_chunk_dir in video_chunk_dirs:
+            for camera_dir in video_chunk_dir.glob("*"):
                 if not camera_dir.is_dir():
                     continue
 
                 if args.cam_keyword in camera_dir.name:
+                    print(f"found {camera_dir}")
                     featured_dirs.append(camera_dir)
 
         if not featured_dirs:
@@ -92,9 +102,10 @@ if __name__ == "__main__":
 
         video_files: list[Path] = []
         for cam_dir in featured_dirs:
-            for lost_ep in lost_eps:
+            for lost_ep in unmatched_eps:
                 video_file = cam_dir / f"episode_{lost_ep:06d}.mp4"
                 if video_file.exists():
+                    print(f"found {video_file}")
                     video_files.append(video_file)
 
         new_video_files = [
@@ -102,9 +113,12 @@ if __name__ == "__main__":
             for video_file in video_files
         ]
 
-        input(f"found {len(video_files)} videos, press enter to copy them")
+        print(f"found {len(video_files)} videos, press enter to copy them")
         for video_file, new_video_file in tqdm.tqdm(
-            zip(video_files, new_video_files), desc="Copying videos", unit="video"
+            zip(video_files, new_video_files),
+            desc="Copying videos",
+            unit="video",
+            total=len(video_files),
         ):
             new_video_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(video_file, new_video_file)
