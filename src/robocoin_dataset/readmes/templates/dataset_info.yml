@@ -1,4 +1,6 @@
 # info_template.yaml
+# This YAML file serves as the data source for readme.j2 Jinja2 template
+# All fields marked as "auto_generated" will be populated by the generation script
 
 # License
 license: apache-2.0
@@ -12,7 +14,7 @@ language:
 task_categories:
   - robotics
 
-# Tags
+# Tags (used for dataset tagging and discovery)
 tags:
   - RoboCoin
   - LeRobot
@@ -30,39 +32,109 @@ authors:
   contributed_by:
     - name: RoboCoin
       url: https://RoboCoin.github.io
+      affiliation: RoboCoin Team  # Optional field
   annotated_by:
     - name: RoboCoin
       url: https://RoboCoin.github.io  # Optional field
+      affiliation: RoboCoin Team  # Optional field
 
 # Dataset Description
 dataset_description: This dataset uses an extended format based on [LeRobot](https://github.com/huggingface/lerobot) and is fully compatible with LeRobot.
 
 # External Links
 homepage: https://RoboCoin.github.io/
-paper: in comming
+paper: in comming  # Optional - Paper URL or text
+repository: https://github.com/RoboCoin/robocoin-dataset  # Optional - Code repository URL
+project_page: https://RoboCoin.github.io/  # Optional - Project website
+
+# Robot Information
+robot_type: auto_generated  # Robot type identifier
+codebase_version: auto_generated  # Codebase version used
 
 # Task Descriptions (Supports multiple task descriptions)
-tasks: auto_generated
-sub_tasks: auto_generated
+tasks: auto_generated  # List of tasks with task_index and task description
+sub_tasks: auto_generated  # Optional - subtask_index and subtask description
 
-episodes_num: auto_generated
-frames_num: auto_generated
+# Dataset Statistics
+statistics:
+  total_episodes: auto_generated
+  total_frames: auto_generated
+  total_tasks: auto_generated
+  total_videos: auto_generated
+  total_chunks: auto_generated
+  chunks_size: auto_generated
+  total_duration: auto_generated
+  fps: auto_generated
+  video_resolution: auto_generated
+  state_dim: auto_generated
+  action_dim: auto_generated
+  camera_views: auto_generated
 
-# Dataset Tags (Optional, can be used for tag clouds, etc.)
-dataset_tags: auto_generated
+# Data Splits
+splits:
+  train: auto_generated  # Training split range
+  val: auto_generated  # Optional - Validation split range
+  test: auto_generated  # Optional - Test split range
 
-# Dataset Structure (Supports files and inline content)
-structure:
-  file: auto_generated
-  content: auto_generated
+# Path Patterns
+data_path: auto_generated  # Pattern for data file paths
+video_path: auto_generated  # Pattern for video file paths
+
+# Features Schema
+features: auto_generated  # Complete features schema from info.json
+
+# Camera Information
+cameras: auto_generated  # List of camera views with specifications
+
+# Observation and Action Space
+observation_space:
+  images: auto_generated  # Image observations with shapes and info
+  state: auto_generated  # State vector with dimension names
+action_space: auto_generated  # Action vector with dimension names
+
+# Annotations
+annotations:
+  subtask_annotation: auto_generated  # Subtask segmentation annotations
+  scene_annotation: auto_generated  # Scene-level annotations
+  eef_direction: auto_generated  # End-effector direction annotations
+  eef_velocity: auto_generated  # End-effector velocity annotations
+  eef_acc_mag: auto_generated  # End-effector acceleration magnitude annotations
+  gripper_mode: auto_generated  # Gripper open/close mode annotations
+  gripper_activity: auto_generated  # Gripper activity state annotations
+
+# Additional State/Action Features
+eef_sim_pose: auto_generated  # End-effector simulation pose (state and action)
+gripper_open_scale: auto_generated  # Gripper opening scale (state and action)
+
+# Depth Camera Support
+depth_enabled: auto_generated  # Optional - Boolean flag
+
+# Data Schema Description
+data_schema: auto_generated  # Optional - Text description or markdown
+
+# Dataset Structure
+structure: auto_generated  # Optional - Folder tree structure (shows leaf directories with first 5 files only)
+
+# Contact Information
+contact_email: contact@robocoin.ai  # Optional
+contact_info: |  # Optional - Additional contact information
+  For questions, issues, or feedback regarding this dataset, please contact us.
+support_info: |  # Optional - Support information
+  For technical support, please open an issue on our GitHub repository.
+
+# License Details
+license_details: |  # Optional - Extended license information
+  Please refer to the LICENSE file for full license terms and conditions.
 
 # Citation
-citation: in comming
-  # example:
-  # bibtex: |
-  #   @inproceedings{fu2024mobile,
-  #       author    = {Fu, Zipeng and Zhao, Tony Z. and Finn, Chelsea},
-  #       title     = {Mobile ALOHA: Learning Bimanual Mobile Manipulation with Low-Cost Whole-Body Teleoperation},
-  #       booktitle = {arXiv},
-  #       year      = {2024},
-  #   }
+citation_bibtex: null
+
+# Additional Citations
+additional_citations: |  # Optional - Additional papers or references
+  If you use this dataset, please also consider citing:
+  - LeRobot Framework: https://github.com/huggingface/lerobot
+
+# Version Information
+version_info: |  # Optional - Version history and changelog
+  ## Version History
+  - v1.0.0 (2024): Initial release
