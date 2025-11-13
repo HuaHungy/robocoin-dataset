@@ -1,10 +1,12 @@
 import json
 import logging
+import re
 import traceback
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 import tqdm
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import and_, or_
@@ -283,9 +285,122 @@ def _gen_video_path_matching_dict(
     return matching_dict
 
 
+def _needs_hand_normalization(text: str) -> bool:
+    """检测是否包含左右手的限定"""
+    lowered = text.lower()
+    hand_keywords = [
+        "left hand",
+        "right hand",
+        "left arm",
+        "right arm",
+        "left side",
+        "right side",
+        "left glove",
+        "right glove",
+    ]
+    if any(kw in lowered for kw in hand_keywords):
+        return True
+    # 简单处理“左/右”中文描述
+    if re.search(r"[左右]手|[左右]臂|[左右]边", text):
+        return True
+    return False
+
+
+def normalize_task_hand_instructions(
+    src_jsonl_path: str | Path, target_jsonl_path: str | Path, ds_api_key: str
+) -> None:
+    """调用LLM将任务指令中的左右手限定改成无左右区分的描述，并写回JSONL"""
+    src_jsonl_path = Path(src_jsonl_path).expanduser().absolute()
+    if not src_jsonl_path.exists():
+        raise FileNotFoundError(f"任务文件不存在：{src_jsonl_path}")
+
+    lines = src_jsonl_path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        return
+
+    records: list[dict] = []
+    candidate_tasks: list[str] = []
+    candidate_indices: list[int] = []
+
+    for idx, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"第 {idx + 1} 行不是合法 JSON：{exc}") from exc
+        records.append(record)
+        task_text = record.get("task", "")
+        if isinstance(task_text, str) and _needs_hand_normalization(task_text):
+            candidate_tasks.append(task_text)
+            candidate_indices.append(idx)
+
+    if not candidate_tasks:
+        return
+
+    prompt_parts = [
+        "Please read the task descriptions below and rewrite EACH one into a single natural English sentence "
+        "that does NOT distinguish between left/right hand/arm/side while preserving the original meaning."
+        "Do NOT include any left/right wording in the rewritten sentence. The output MUST be in English."
+    ]
+    task_block = "\n".join(f"{i + 1}. {task}" for i, task in enumerate(candidate_tasks))
+    prompt_parts.append(task_block)
+    prompt_parts.append(
+        "Output the rewritten sentences in order, one per line, without numbering, and in English only."
+    )
+    prompt = "\n\n".join(prompt_parts)
+
+    api_url = "https://api.deepseek.com/v1/chat/completions"
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {ds_api_key}"}
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "max_tokens": 1024,
+        "stream": False,
+    }
+
+    try:
+        print("Trying to call DeepSeek API to normalize task hand instructions")
+        response = requests.post(api_url, headers=headers, data=json.dumps(payload), timeout=100)
+        if response.status_code != 200:
+            raise RuntimeError(f"API请求失败: {response.status_code} - {response.text}")
+
+        response_data = response.json()
+        processed_text = response_data["choices"][0]["message"]["content"].strip()
+        result_lines = [line.strip() for line in processed_text.splitlines() if line.strip()]
+        cleaned_results: list[str] = []
+        for line in result_lines:
+            if ". " in line and line.split(". ")[0].isdigit():
+                cleaned_results.append(line.split(". ", 1)[-1])
+            else:
+                cleaned_results.append(line)
+
+        if len(cleaned_results) != len(candidate_tasks):
+            raise ValueError(
+                f"改写结果数量({len(cleaned_results)})与待处理任务数量({len(candidate_tasks)})不匹配"
+            )
+
+        for idx, new_task in zip(candidate_indices, cleaned_results):
+            record = records[idx]
+            record["task"] = new_task
+
+        with target_jsonl_path.open("w", encoding="utf-8") as fp:
+            for record in records:
+                fp.write(json.dumps(record, ensure_ascii=False))
+                fp.write("\n")
+
+    except Exception as exc:
+        raise RuntimeError(f"调用AI接口改写任务描述失败: {exc}") from exc
+
+
 def _gen_optimized_tasks_jsonl(
     src_path: str | Path, target_path: str | Path, ds_api_key: str | None = None
 ) -> None:
+    normalize_task_hand_instructions(
+        src_jsonl_path=src_path, target_jsonl_path=target_path, ds_api_key=ds_api_key
+    )
     return
 
 
@@ -312,6 +427,9 @@ def gen_qced_repo(
 
     src_tasks_jsonl_path = repo_path / "meta/tasks.jsonl"
     target_tasks_jsonl_path = repo_path / f"meta/{input_feature}_tasks.jsonl"
+    print(f"src_tasks_jsonl_path: {src_tasks_jsonl_path}")
+    print(f"target_tasks_jsonl_path: {target_tasks_jsonl_path}")
+    input("Press Enter to continue...")
     _gen_optimized_tasks_jsonl(
         src_path=src_tasks_jsonl_path, target_path=target_tasks_jsonl_path, ds_api_key=ds_api_key
     )

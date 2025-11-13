@@ -207,7 +207,6 @@ def compute_video_hash(video_path: str | Path) -> tuple[str, int, str]:
         raise FileNotFoundError(f"文件不存在: {video_path}")
 
     file_hash = compute_sha256(video_path)
-    frame_num = get_frame_num(video_path=video_path)
 
     file_type = _is_video_file(video_path)
     if file_type == "video":
@@ -216,11 +215,13 @@ def compute_video_hash(video_path: str | Path) -> tuple[str, int, str]:
             video_path=video_path, frame_indices=image_frame_indices
         )
         phash = phashes[0]
+        frame_num = get_frame_num(video_path=video_path)
 
     elif file_type == "image":
         try:
             img = Image.open(video_path)
             phash = imagehash.phash(img, hash_size=16)
+            frame_num = 1
         except Exception:
             phash = None
     else:
@@ -254,12 +255,16 @@ def match_video_image_hash(
     image_phash: imagehash.ImageHash,
     video_image_phashes_lib: dict[int, dict[int, imagehash.ImageHash]],
     win_size: int = 1,
+    specific_frame_num: int | None = None,
     threashold: float = 0.95,
 ) -> int | None:
     if frame_num not in video_image_phashes_lib:
         return None
 
-    frame_num_scope = range(frame_num - win_size, frame_num + win_size + 1)
+    if specific_frame_num:
+        frame_num_scope = [1]
+    else:
+        frame_num_scope = range(frame_num - win_size, frame_num + win_size + 1)
 
     phashes: dict[int, imagehash.ImageHash] = {}
     for frame_num_in_scope in frame_num_scope:

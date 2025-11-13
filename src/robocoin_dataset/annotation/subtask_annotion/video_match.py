@@ -69,6 +69,8 @@ def match_episode_with_url_video(
     frame_num: int,
     file_hash_lib: dict[str, int],
     image_hashes_lib: dict[int, dict[int, imagehash.ImageHash]],
+    phash_win_size: int = 1,
+    specific_frame_num: int | None = None,
 ) -> int | None:
     for file_hash in ep_videos_file_hashes:
         matched_video_id = match_video_file_hash(file_hash, file_hash_lib)
@@ -79,6 +81,8 @@ def match_episode_with_url_video(
             frame_num=frame_num,
             image_phash=video_image_hash,
             video_image_phashes_lib=image_hashes_lib,
+            win_size=phash_win_size,
+            specific_frame_num=specific_frame_num,
         )
         if matched_video_id:
             return matched_video_id
@@ -91,6 +95,8 @@ def match_dataset_with_url_video(
     dataset_frame_nums: dict[int, int],
     file_hash_lib: dict[str, int],
     image_hashes_lib: dict[int, dict[int, imagehash.ImageHash]],
+    phash_win_size: int = 1,
+    specific_frame_num: int | None = None,
 ) -> dict[int, int | None]:
     results = {}
     for ep_idx in tqdm.tqdm(dataset_file_hashes.keys(), desc="match episodes", unit="episode"):
@@ -103,6 +109,8 @@ def match_dataset_with_url_video(
             frame_num,
             file_hash_lib,
             image_hashes_lib,
+            phash_win_size=phash_win_size,
+            specific_frame_num=specific_frame_num,
         )
         results[ep_idx] = matched_video_id
 
@@ -132,6 +140,9 @@ class VideoMatch:
     def __init__(
         self,
         db_file_path: str | Path,
+        phash_win_size: int = 1,
+        specific_frame_num: int | None = None,
+        device_model: str | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
@@ -140,6 +151,9 @@ class VideoMatch:
         with self.db.with_session() as session:
             self.file_hash_lib = prepare_video_filehash_lib(session)
             self.image_hash_lib = prepare_video_imagehashes_lib(session)
+        self.phash_win_size = phash_win_size
+        self.device_model = device_model
+        self.specific_frame_num = specific_frame_num
 
     def sync_video_match_status(self, match_failed_videos: bool = False) -> None:
         with self.db.with_session() as session:
@@ -166,6 +180,8 @@ class VideoMatch:
                     ),
                 )
             )
+            if self.device_model:
+                query = query.filter(DatasetDB.device_model == self.device_model)
 
             for item in query.all():
                 item.video_match_status = TaskStatus.PENDING
@@ -228,6 +244,8 @@ class VideoMatch:
                 dataset_frame_nums,
                 self.file_hash_lib,
                 self.image_hash_lib,
+                phash_win_size=self.phash_win_size,
+                specific_frame_num=self.specific_frame_num,
             )
 
             unmatched_ep_idxs = [k for k, v in match_results.items() if v is None]

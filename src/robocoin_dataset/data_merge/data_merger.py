@@ -258,7 +258,7 @@ def merge_dataset_stats_jsonl_files(
 
 
 def merge_dataset_data(root_dir: str | Path, patch_features: list[str], merge_feature: str) -> None:
-    # merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
+    merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
     merge_dataset_info_files(root_dir, patch_features, merge_feature)
     merge_dataset_stats_jsonl_files(root_dir, patch_features, merge_feature)
 

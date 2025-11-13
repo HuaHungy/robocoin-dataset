@@ -244,7 +244,7 @@ def enter_url_video_st_annotation_json_files(
                                     session.add(video_item)
                                     session.flush()
                                     video_item.local_video_path = str(
-                                        download_dir / f"{video_item.id}.mp4"
+                                        download_dir / f"{video_item.id}.{video_url.split('.')[-1]}"
                                     )
                                     video_item_id = video_item.id
                                 else:
@@ -331,12 +331,12 @@ if __name__ == "__main__":
         logger=logging.getLogger(__name__),
     )
 """Usage:
-python scripts/annotation/subtask_annotation/enter_url_video_st_annotation.py \
-    --db_file_path ./db/datasets_new.db \
+python scripts/annotation/subtask_annotation/enter_url_video_st_annotation_without_validate.py \
+    --db_file_path ./db/datasets_new2.db \
     --json_src_dir ./datas/annotation/subtask_annotation/json_files \
     --passed_json_dst_dir ./datas/annotation/subtask_annotation/passed_json_files_passed \
     --impassed_json_dst_dir ./datas/annotation/subtask_annotation/impassed_json_files \
-    --download_dir /mnt/nas/synnas/docker2/robocoin-datasets-subtask-annotations/download-videos \
+    --download_dir ./datas/annotation/subtask-annotations/download-videos \
     --logger_path ./logs
 """
 
