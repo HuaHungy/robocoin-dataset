@@ -6,7 +6,7 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 
 
 class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
-    mjcf_path = Path(__file__).parent / "mjcfs/tianqing/O2URDFC.SLDASM_with_sites.xml"
+    mjcf_path = Path(__file__).parent / "mjcfs/tianqing/o2_with_sites.xml"
 
     left_eef_mjcf_site_name: str = "left_eef_site"
     right_eef_mjcf_site_name: str = "right_eef_site"
@@ -14,13 +14,6 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
     # joint_names should be 1 v 1 assignment
     state_arm_joint_mjcf_names: list[str] = [
         # left arm
-        "11",
-        "12",
-        "13",
-        "14",
-        "15",
-        "16",
-        "17",
         # right arm
         "4",
         "5",
@@ -28,7 +21,15 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
         "7",
         "8",
         "9",
-        "10",       
+        "10",    
+           
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
     ]
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
@@ -54,7 +55,7 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
 
     # eef_sim 配置
     has_gripper = True
-    gripper_position_max = 130
+    gripper_position_max = 1.01
     gripper_position_min = 0
 
     gripper_value_open = gripper_position_max

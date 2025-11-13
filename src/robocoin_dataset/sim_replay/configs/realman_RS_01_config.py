@@ -5,10 +5,10 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 )
 
 
-class A2DLerobotSimReplayConfig(LerobotSimReplayConfig):
+class RealmanRS01LerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
-        / "mjcfs/A2D/G1_roh_roh_with_sites.xml"
+        / "mjcfs/realman_RS-01/realman_WR75S_with_sites.xml"
     )
 
     # fixed
@@ -18,21 +18,21 @@ class A2DLerobotSimReplayConfig(LerobotSimReplayConfig):
     # joint_names should be 1 v 1 assignment
     state_arm_joint_mjcf_names: list[str] = [
         # left arm
-        "idx21_arm_l_joint1",
-        "idx22_arm_l_joint2",
-        "idx23_arm_l_joint3",
-        "idx24_arm_l_joint4",
-        "idx25_arm_l_joint5",
-        "idx26_arm_l_joint6",
-        "idx27_arm_l_joint7",
+        "l_joint1",
+        "l_joint2",
+        "l_joint3",
+        "l_joint4",
+        "l_joint5",
+        "l_joint6",
+        "l_joint7",
         # right arm
-        "idx61_arm_r_joint1",
-        "idx62_arm_r_joint2",
-        "idx63_arm_r_joint3",
-        "idx64_arm_r_joint4",
-        "idx65_arm_r_joint5",
-        "idx66_arm_r_joint6",
-        "idx67_arm_r_joint7",
+        "r_joint1",
+        "r_joint2",
+        "r_joint3",
+        "r_joint4",
+        "r_joint5",
+        "r_joint6",
+        "r_joint7",
     ]
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
@@ -56,14 +56,6 @@ class A2DLerobotSimReplayConfig(LerobotSimReplayConfig):
 
 
     action_arm_joint_lerobot_names= state_arm_joint_lerobot_names
-
-    gripper_position_max = 0.0
-    gripper_position_min = 1.02
-    # eef_sim 配置
-    has_gripper = True
-    gripper_value_open = gripper_position_max
-    gripper_value_close = gripper_position_min
-
     
      # gripper names allow not 1v1 assignment
     state_gripper_joint_mjcf_names: list[str] = []

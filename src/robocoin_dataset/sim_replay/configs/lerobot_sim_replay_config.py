@@ -23,5 +23,7 @@ class LerobotSimReplayConfig:
     gripper_value_open: float = 1.0
     gripper_value_close: float = 0.0
 
+    has_gripper = False
+
     def get_mjcf_gripper_joint_data(self, lerobot_gripper_data: list[float]) -> list[float]:
         raise NotImplementedError

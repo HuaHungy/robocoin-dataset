@@ -377,6 +377,8 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
     ) -> dict[str, np.ndarray | None]:
         win_size = self.motion_annotation_config.win_size
 
+        if not self.sim_replay_config.has_gripper:
+            return {}
         if sim_gripper_data is None:
             return {}
         gripper_mode_annotation = np.zeros((len(sim_gripper_data), 2), dtype=np.int32)
@@ -443,9 +445,13 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
         gripper_open_scale_state_dict = {
             "gripper_open_scale_state": gripper_open_scale_state,
         }
+
         gripper_open_scale_action_dict = {
             "gripper_open_scale_action": gripper_open_scale_action,
         }
+        # gripper_open_scale_action_dict = {
+        #     "gripper_open_scale_action": gripper_open_scale_action,
+        # }
 
         eef_annotation = self._annotate_eef_motion(eef_sim_data_state)
         eef_annotation_state = {
@@ -477,16 +483,33 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
                 "gripper_activity_action": gripper_annotation["gripper_activity"],
             }
 
-        return (
+        result = (
             eef_annotation_state
             | eef_annotation_action
-            | gripper_annotation_state
-            | gripper_annotation_action
             | eef_sim_data_state_dict
             | eef_sim_data_action_dict
+        )
+        if not self.sim_replay_config.has_gripper:
+            return result
+
+        return (
+            result
+            | gripper_annotation_state
+            | gripper_annotation_action
             | gripper_open_scale_state_dict
             | gripper_open_scale_action_dict
         )
+
+        # return (
+        #     eef_annotation_state
+        #     | eef_annotation_action
+        #     | gripper_annotation_state
+        #     | gripper_annotation_action
+        #     | eef_sim_data_state_dict
+        #     | eef_sim_data_action_dict
+        #     | gripper_open_scale_state_dict
+        #     | gripper_open_scale_action_dict
+        # )
 
     def get_output_feature_keys(self) -> set[str]:
         """返回输出数据的特征键（与输入可能不同）"""

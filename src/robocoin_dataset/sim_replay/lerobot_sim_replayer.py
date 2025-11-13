@@ -45,6 +45,7 @@ class LerobotSimReplayer:
         self,
         replay_config: LerobotSimReplayConfig,
         repo_path: str | Path,
+        replay_source: str = "sa_dpp",
     ) -> None:
         self.mjcf_file_path = Path(replay_config.mjcf_path).expanduser().resolve()
         self.repo_path = Path(repo_path).expanduser().absolute()
@@ -146,8 +147,10 @@ class LerobotSimReplayer:
             self._get_mjcf_joint_addr(mjcf_joint_name)
             for mjcf_joint_name in self.action_gripper_joint_mjcf_names
         ]
-
-        meta_file_path = self.repo_path / "meta/state_action_info.json"
+        if replay_source == "sa_dpp":
+            meta_file_path = self.repo_path / "meta/state_action_info.json"
+        elif replay_source == "data":
+            meta_file_path = self.repo_path / "meta/info.json"
         if not meta_file_path.exists():
             raise Exception(f"Meta file not found: {meta_file_path}")
 
@@ -260,8 +263,8 @@ class LerobotSimReplayer:
             if episode_index >= len(self.parquet_file_paths):
                 raise ValueError(f"episode_index {episode_index} out of range")
             parquet_file_path = self.parquet_file_paths[episode_index]
-        
-        print(f"***[后台] 正在读取末端信息， episode 文件: {parquet_file_path}")
+
+        # print(f"***[后台] 正在读取末端信息， episode 文件: {parquet_file_path}")
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
         df = pd.read_parquet(str(parquet_file_path))
@@ -326,16 +329,25 @@ class LerobotSimReplayer:
         episode_index: int,
         is_state: bool = True,
         # sleep_time_ms: int = 0,
+        replay_source: str = "sa_dpp",
         enable_gripper_plot: bool = False,
         gripper_plot_callback=None,
         target_fps: int = 30,
     ) -> None:
-        parquet_file_path = (
-            self.repo_path
-            / "state_action_data"
-            / "chunk-000"
-            / f"episode_{episode_index:06d}.parquet"
-        )
+        if replay_source == "sa_dpp":
+            parquet_file_path = (
+                self.repo_path
+                / "state_action_data"
+                / f"chunk-{episode_index // 1000:03d}"
+                / f"episode_{episode_index:06d}.parquet"
+            )
+        elif replay_source == "data":
+            parquet_file_path = (
+                self.repo_path
+                / "data"
+                / f"chunk-{episode_index // 1000:03d}"
+                / f"episode_{episode_index:06d}.parquet"
+            )
         print(f"***[界面] 正在播放 episode 文件: {parquet_file_path}")
         if not parquet_file_path.exists():
             raise Exception(f"Parquet file not found: {parquet_file_path}")
@@ -364,7 +376,7 @@ class LerobotSimReplayer:
 
         # 启动 MuJoCo 界面
         self.start_viewer()
-        
+
         # # 用于记录所有帧的EEF距离
         # eef_distance_history = []
 
@@ -385,7 +397,7 @@ class LerobotSimReplayer:
                     self.mjcf_data.qpos[mjcf_addr] = mjcf_data
 
                 mujoco.mj_forward(self.mjcf_model, self.mjcf_data)
-                
+
                 # 收集所有EEF位置用于计算距离
                 eef_positions = []
                 for site_id in self.mjcf_site_ids:
@@ -397,7 +409,7 @@ class LerobotSimReplayer:
                         "xyz", degrees=False
                     )
                     eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
-                
+
                 # # 如果是双臂机器人（有2个EEF），计算并打印两个末端执行器之间的距离
                 # if len(eef_positions) == 2:
                 #     left_eef_pos = eef_positions[0]
@@ -431,7 +443,7 @@ class LerobotSimReplayer:
                 remaining = frame_duration - elapsed
                 if remaining > 0:
                     time.sleep(remaining)
-            
+
             # # 播放完成后，打印EEF距离统计信息
             # if len(eef_distance_history) > 0:
             #     mean_distance = np.mean(eef_distance_history)

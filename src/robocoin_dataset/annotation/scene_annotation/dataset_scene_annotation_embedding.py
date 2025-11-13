@@ -42,11 +42,25 @@ class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
         return {self.feature_key: None} # type: ignore
 
     def write_scene_jsonl_file(self) -> None:
+        if  (self.convert_path / "annotations/scene_annotation.jsonl").exists():
+            # delete old file
+            (self.convert_path / "annotations/scene_annotation.jsonl").unlink()
+
         scene_jsonl_file_path = self.convert_path / "annotations/scene_annotations.jsonl"
         scene_jsonl_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(scene_jsonl_file_path, "w") as f:
             for i, annotation in enumerate(self.scene_annotations):
-                annotation = annotation.replace('\r', ' ').replace('\n', ' ')
+                annotation = (
+                    annotation
+                    .replace('\\', ' ')  # 处理反斜杠
+                    .replace('\t', ' ')  # 制表符
+                    .replace('\b', ' ')  # 退格符
+                    .replace('\f', ' ')  # 换页符
+                    .replace('\r', ' ')  # 回车符
+                    .replace('\n', ' ')  # 换行符
+                    .replace('"', ' ')   # 双引号
+                    .replace("'", ' ')   # 单引号
+                )
                 f.write(f'{{"scene_index": {i}, "scene": "{annotation}"}}\n')
 
 

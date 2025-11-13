@@ -121,8 +121,7 @@ def _gen_one_motion_annotation_data_post_processing_task(
     item = query.first()
     if not item:
         return None, None, None, None
-    if item.motion_annotation_status == TaskStatus.COMPLETED:
-        item.motion_annotation_version = item.motion_annotation_version + 1
+    item.motion_annotation_version = item.motion_annotation_version + 1
     item.motion_annotation_status = TaskStatus.PROCESSING
     item.motion_annotation_version_ps = item.sim_replay_version
     session.commit()

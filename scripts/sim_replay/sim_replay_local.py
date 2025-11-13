@@ -11,6 +11,7 @@ def main():
     p.add_argument("--config_module", required=True, help="Python module path for replay config, e.g. mypkg.configs.my_cfg_module")
     p.add_argument("--config_class", required=True, help="Class name inside module, e.g. MySimReplayConfig")
     # p.add_argument("--episode_path", help="Optional path to a single episode parquet file to replay")
+    p.add_argument("--replay_source", default="sa_dpp", help="Index of the episode to replay within the dataset")
     p.add_argument("--episode_idx", type=int, default=0, help="Index of the episode to replay within the dataset")
     args = p.parse_args()
 
@@ -20,7 +21,7 @@ def main():
     if not args.repo_path:
         p.error("--repo_path is required")
     repo = Path(args.repo_path).expanduser().absolute()
-    _sim_replay_dataset(repo, cfg, episode_idx=args.episode_idx)
+    _sim_replay_dataset(repo, cfg,replay_source=args.replay_source,episode_idx=args.episode_idx)
 
 if __name__ == '__main__':
     main()

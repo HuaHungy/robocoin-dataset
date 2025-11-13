@@ -210,7 +210,7 @@ def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float
     return 1.0 if static_dim_count >= static_joints else 0.0
 
 
-def detect_jump_frames(
+def detect_stable_then_jump_frames(
     video_path: str,
     hash_size: int = 16,
     stable_distance_threshold: int = 1,  # 静止期：phash 距离 <= 1
@@ -293,12 +293,26 @@ def detect_jump_frames(
     return max_jump, frame_idx
 
 
-@episode_video_checker_registry("max_frame_jump_rate")
-def dectect_max_frame_jump(video_paths: list[str | Path]) -> float:
+@episode_video_checker_registry("max_frame_stable_then_jump_rate")
+def dectect_max_frame_stable_then_jump(video_paths: list[str | Path]) -> float:
     max_jump = 0
     for video_path in video_paths:
         if not Path(video_path).exists() or not Path(video_path).is_file():
-            return 100.0
-        current_jump, _ = detect_jump_frames(str(video_path))
+            return 1
+        current_jump, _ = detect_stable_then_jump_frames(str(video_path))
         max_jump = max(max_jump, current_jump)
     return max_jump / 100
+
+
+@episode_video_checker_registry("max_frame_jump_dist")
+def detect_max_frame_jump_dist(
+    video_paths: list[str | Path], max_dist_threshold: int = 50
+) -> float:
+    max_jump = 0
+    for video_path in video_paths:
+        if not Path(video_path).exists() or not Path(video_path).is_file():
+            return 1
+        current_jump, _ = detect_stable_then_jump_frames(str(video_path))
+        max_jump = max(max_jump, current_jump)
+
+    return 1 if max_jump > max_dist_threshold else 0

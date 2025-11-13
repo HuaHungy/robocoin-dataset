@@ -47,9 +47,6 @@ class DatasetSubtaskAnnotation:
 
             for item in query.all():
                 item.video_ori_subtask_annotation_status = TaskStatus.PENDING
-                item.video_ori_subtask_annotation_version = (
-                    item.video_ori_subtask_annotation_version + 1
-                )
                 item.video_ori_subtask_annotation_version_ps = item.video_match_version
             session.commit()
 
@@ -65,6 +62,9 @@ class DatasetSubtaskAnnotation:
             if not item:
                 return None
 
+            item.video_ori_subtask_annotation_version = (
+                item.video_ori_subtask_annotation_version + 1
+            )
             item.video_ori_subtask_annotation_status = TaskStatus.PROCESSING
             session.commit()
             return item.dataset_uuid
@@ -81,7 +81,7 @@ class DatasetSubtaskAnnotation:
                 session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).update(
                     {
                         DatasetDB.video_ori_subtask_annotation_status: TaskStatus.FAILED,
-                        DatasetDB.video_ori_subtask_annotation_err_msg: "No video match result found",
+                        DatasetDB.video_ori_subtask_annotation_err_msg: f"No video match result found for dataset {dataset_uuid}",
                     }
                 )
                 session.commit()

@@ -131,7 +131,7 @@ class DatasetSubtaskAnnotationEmbedding:
                         and_(
                             DatasetDB.video_embed_subtask_annotation_status == TaskStatus.COMPLETED,
                             DatasetDB.video_embed_subtask_annotation_version_ps
-                            < DatasetDB.video_opt_subtask_annotation_version,
+                            != DatasetDB.video_opt_subtask_annotation_version,
                         ),
                     ),
                 )
@@ -139,9 +139,6 @@ class DatasetSubtaskAnnotationEmbedding:
 
             for item in query.all():
                 item.video_embed_subtask_annotation_status = TaskStatus.PENDING
-                item.video_embed_subtask_annotation_version = (
-                    item.video_embed_subtask_annotation_version + 1
-                )
                 item.video_embed_subtask_annotation_version_ps = (
                     item.video_opt_subtask_annotation_version
                 )
@@ -159,6 +156,9 @@ class DatasetSubtaskAnnotationEmbedding:
             if not item:
                 return None, None
 
+            item.video_embed_subtask_annotation_version = (
+                item.video_embed_subtask_annotation_version + 1
+            )
             item.video_embed_subtask_annotation_status = TaskStatus.PROCESSING
             session.commit()
             return item.dataset_uuid, item.convert_path

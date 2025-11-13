@@ -258,7 +258,7 @@ def merge_dataset_stats_jsonl_files(
 
 
 def merge_dataset_data(root_dir: str | Path, patch_features: list[str], merge_feature: str) -> None:
-    # merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
+    merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
     merge_dataset_info_files(root_dir, patch_features, merge_feature)
     merge_dataset_stats_jsonl_files(root_dir, patch_features, merge_feature)
 
@@ -380,9 +380,7 @@ def _sync_data_merge_tasks(
     if not items:
         return
     for item in items:
-        if item.data_merge_status == TaskStatus.COMPLETED:
-            item.data_merge_version = item.data_merge_version + 1
-        item.data_merge_status = TaskStatus.PROCESSING
+        item.data_merge_status = TaskStatus.PENDING
         item.data_merge_version_ps_ma = item.motion_annotation_version
         item.data_merge_version_ps_sa = item.scene_annotation_version
         item.data_merge_version_ps_sta = item.video_embed_subtask_annotation_version
@@ -412,6 +410,7 @@ def _gen_one_dataset_data_merge_task(
     if not item:
         return None, None
     item.data_merge_status = TaskStatus.PROCESSING
+    item.data_merge_version = item.data_merge_version + 1
     session.commit()
     return item.dataset_uuid, item.convert_path
 

@@ -212,6 +212,7 @@ class DatasetVisualizerServer(TaskServer):
         port: int = 2110,
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
+        device_model: str | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         super().__init__(
@@ -225,6 +226,7 @@ class DatasetVisualizerServer(TaskServer):
 
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
+        self.device_model = device_model
         self.logger = logger or logging.getLogger(__name__)
 
     def get_task_category(self) -> str:
@@ -249,6 +251,10 @@ class DatasetVisualizerServer(TaskServer):
                     ),
                 )
             )
+            if self.device_model:
+                query = query.filter(
+                    DatasetDB.device_model == self.device_model,
+                )
 
             item = query.first()
 

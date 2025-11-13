@@ -48,7 +48,7 @@ agilex_cobot_decoupled_magic:
 unitree_g1:
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
-  post_processor_class: UnitreeG1FiveFingerHandProcessor
+  post_processor_class: UnitreeG1Processor
 
 - version: threecam_dex3v1_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
