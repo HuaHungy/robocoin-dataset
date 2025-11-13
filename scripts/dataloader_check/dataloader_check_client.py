@@ -129,9 +129,9 @@ if __name__ == "__main__":
 
 """Usage:
 python scripts/dataloader_check/dataloader_check_client.py \
-    --host=127.0.0.1 \
+    --host=172.16.13.140 \
     --port=2120 \
     --heartbeat-interval=10.0 \
     --log_dir=./logs/dataloader_check_client \
-    --num-clients=4
+    --num-clients=2
 """

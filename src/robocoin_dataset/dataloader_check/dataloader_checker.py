@@ -115,7 +115,7 @@ def load_repo(
     sample_rate: float = 0.1,
 ) -> None:
     dataset = LeRobotDataset(
-        repo_id="test/dataloader_check_repo",
+        repo_id="test/test_repo",
         root=repo_hardlink,
         video_backend="pyav",  # torchcodec is not supported.(2.0)
     )
@@ -233,7 +233,7 @@ class DataLoaderCheckerServer(TaskServer):
             with self.db.with_session() as session:
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
                 if item:
-                    item.data_loader_detection_err_msg = TaskStatus.COMPLETED
+                    item.data_loader_detection_status = TaskStatus.COMPLETED
                     item.data_loader_detection_err_msg = None
                 else:
                     return
@@ -242,16 +242,16 @@ class DataLoaderCheckerServer(TaskServer):
             with self.db.with_session() as session:
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
                 if item:
-                    item.data_loader_detection_err_msg = TaskStatus.FAILED
+                    item.data_loader_detection_status = TaskStatus.FAILED
                     item.data_loader_detection_err_msg = err_msg
                 else:
                     return
-                session.commit()
 
-            self.logger.info(
-                f"Upsert {item.convert_path} dataset dataloader check status to {item.qced_repo_gen_status}, "
-                f"update_message: {task_status_msg}"
-            )
+                self.logger.info(
+                    f"Upsert {item.convert_path} dataset dataloader check status to {item.qced_repo_gen_status}, "
+                    f"update_message: {task_status_msg}"
+                )
+                session.commit()
 
 
 class DataLoaderCheckerClient(TaskClient):
