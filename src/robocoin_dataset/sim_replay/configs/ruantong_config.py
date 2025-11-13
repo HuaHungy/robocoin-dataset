@@ -6,7 +6,7 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 
 
 class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
-    mjcf_path = Path(__file__).parent / "mjcfs/tianqing/O2URDFC.SLDASM_with_sites.xml"
+    mjcf_path = Path(__file__).parent / "mjcfs/tianqing/o2_with_sites.xml"
 
     left_eef_mjcf_site_name: str = "left_eef_site"
     right_eef_mjcf_site_name: str = "right_eef_site"
