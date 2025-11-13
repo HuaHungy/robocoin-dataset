@@ -36,6 +36,7 @@ async def main() -> None:
         default=8768,
         help="Port to run the server",
     )
+    parser.add_argument("--device_model", type=str, default="")
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
@@ -54,6 +55,7 @@ async def main() -> None:
         db_file_path=db_file_path,
         host=args.host,
         port=args.port,
+        device_model=args.device_model,
         logger=logger,
     )
 
