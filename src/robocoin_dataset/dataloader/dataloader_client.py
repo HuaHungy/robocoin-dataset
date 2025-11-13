@@ -91,10 +91,6 @@ class DataloaderDbClient(TaskClient):
 
         return result
 
-    def _process_one_task(self, task_content: dict) -> dict:
-        """Alias for _sync_process_task for backward compatibility."""
-        return self._sync_process_task(task_content)
-
 
 async def run_one_client_async(
     server_uri: str, heartbeat_interval: float, logger: logging.Logger, tqdm_position: int = 0
