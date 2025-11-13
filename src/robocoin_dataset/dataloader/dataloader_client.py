@@ -19,8 +19,6 @@ from robocoin_dataset.distribution_computation.constant import (
     MSG_TYPE,
     TASK_ID,
     TASK_RESULT,
-    TASK_RESULT_STATUS,
-    TASK_SUCCESS,
 )
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.format_converter.tolerobot.constant import LEFORMAT_PATH
@@ -51,14 +49,15 @@ class DataloaderDbClient(TaskClient):
     def generate_task_request_desc(self) -> dict:
         return {}
 
-    def _process_one_task(self, task_content: dict) -> dict:
-        """Process a single task synchronously.
+    def _sync_process_task(self, task_content: dict) -> dict:
+        """Process a single task synchronously (implements abstract method from TaskClient).
 
         Client receives the dataset path from server (already prepared with hardlinks).
         Client just runs detection on the provided path.
         """
         # Server provides the dataset path (already prepared with hardlinks)
         test_path = task_content.get(LEFORMAT_PATH)
+        dataset_uuid = task_content.get("dataset_uuid", "unknown")
 
         # Get configurable parameters (with defaults)
         episodes = task_content.get("episodes", "all")
@@ -66,10 +65,15 @@ class DataloaderDbClient(TaskClient):
         batch_size = task_content.get("batch_size", 32)
         num_workers = task_content.get("num_workers", 0)
 
-        self.logger.debug(f"Processing dataset: {test_path}")
+        self.logger.info(f"🚀 Client [{self.client_id}]: Processing task {dataset_uuid}")
+        self.logger.debug(f"   Dataset path: {test_path}")
+        self.logger.debug(f"   Episodes: {episodes}")
+        self.logger.debug(f"   Sample ratio: {sample_ratio}")
+        self.logger.debug(f"   Batch size: {batch_size}")
+        self.logger.debug(f"   Num workers: {num_workers}")
 
         # Run detection with downsampling (pass client_id for progress bar positioning)
-        return _run_detection(
+        result = _run_detection(
             test_path,
             episode_indices=episodes,
             sample_ratio=sample_ratio,
@@ -80,6 +84,13 @@ class DataloaderDbClient(TaskClient):
             logger=self.logger,
         )
 
+        if result.get("success"):
+            self.logger.info(f"✅ Client [{self.client_id}]: Task {dataset_uuid} completed successfully")
+        else:
+            self.logger.error(f"❌ Client [{self.client_id}]: Task {dataset_uuid} failed: {result.get('error_message', 'Unknown error')}")
+
+        return result
+
 
 async def run_one_client_async(
     server_uri: str, heartbeat_interval: float, logger: logging.Logger, tqdm_position: int = 0
@@ -89,6 +100,13 @@ async def run_one_client_async(
     Returns:
         Statistics dictionary with keys: tasks_processed, tasks_succeeded, tasks_failed
     """
+    logger.info("=" * 80)
+    logger.info("🚀 CLIENT STARTING")
+    logger.info("=" * 80)
+    logger.info(f"Server URI: {server_uri}")
+    logger.info(f"Heartbeat interval: {heartbeat_interval}s")
+    logger.info("")
+
     client = DataloaderDbClient(
         server_uri=server_uri, heartbeat_interval=heartbeat_interval, logger=logger, tqdm_position=tqdm_position
     )
@@ -101,40 +119,76 @@ async def run_one_client_async(
     # Connect to server
     try:
         if not client.connected:
-            await client.connect_to_server()
-            client._receiver_task = asyncio.create_task(client._message_receiver())
-            await client.register()
-            if not client.client_id:
-                if logger:
-                    logger.error("❌ Registration failed, exiting")
+            logger.info(f"🔌 Connecting to server at {server_uri}...")
+            try:
+                await client.connect_to_server()
+                logger.info("✅ WebSocket connection established")
+            except ConnectionError as e:
+                logger.error(f"❌ Connection failed: {e}")
+                logger.error(f"   Make sure the server is running at {server_uri}")
+                logger.error("   Start server with: python scripts/dataloader/run_dataloader_detection.py --server --db <db_file> --host <host> --port <port>")
                 return {
                     "tasks_processed": 0,
                     "tasks_succeeded": 0,
                     "tasks_failed": 0,
                 }
+            except Exception as e:
+                logger.error(f"❌ Unexpected connection error: {e}", exc_info=True)
+                return {
+                    "tasks_processed": 0,
+                    "tasks_succeeded": 0,
+                    "tasks_failed": 0,
+                }
+
+            logger.info("📡 Starting message receiver...")
+            client._receiver_task = asyncio.create_task(client._message_receiver())
+
+            logger.info("📝 Registering with server...")
+            registration_success = await client.register()
+            if not registration_success or not client.client_id:
+                logger.error("❌ Registration failed - no client_id received from server")
+                logger.error("   This may indicate:")
+                logger.error("   - Server is not ready to accept connections")
+                logger.error("   - Network connectivity issues")
+                logger.error("   - Server and client version mismatch")
+                logger.info("🔌 Client shutting down")
+                return {
+                    "tasks_processed": 0,
+                    "tasks_succeeded": 0,
+                    "tasks_failed": 0,
+                }
+            logger.info(f"✅ Registration successful - Client ID: {client.client_id}")
+
+            logger.info("💓 Starting heartbeat...")
             await client._start_heartbeat()
-            if logger:
-                logger.debug(f"✅ Client {client.client_id} is ready, starting task loop")
+            logger.info(f"✅ Client {client.client_id} is ready and connected")
+            logger.info("")
+            logger.info("📋 Entering task processing loop...")
+            logger.info("")
 
         # Process tasks until none remain
         while True:
+            logger.info(f"🔍 [{client.client_id}] Requesting task from server...")
             task = await client.request_task()
             if task is None:
-                if logger:
-                    logger.debug("📭 No task from server, client exiting")
+                logger.info(f"📭 [{client.client_id}] No more tasks available from server")
+                logger.info(f"✅ [{client.client_id}] Task loop completed normally")
                 break
 
-            if logger:
-                logger.debug(f"🚀 Starting to process task: {task.get(TASK_ID)}")
+            task_id = task.get(TASK_ID)
+            dataset_uuid = task.get("dataset_uuid", "unknown")
+            logger.info(f"📦 [{client.client_id}] Received task {task_id} (dataset: {dataset_uuid})")
 
             result_content = client._process_one_task(task)
             tasks_processed += 1
 
             # Check if task succeeded or failed
-            if result_content.get(TASK_RESULT_STATUS) == TASK_SUCCESS:
+            if result_content.get("success"):
                 tasks_succeeded += 1
+                logger.info(f"✅ [{client.client_id}] Task {task_id} completed successfully")
             else:
                 tasks_failed += 1
+                logger.error(f"❌ [{client.client_id}] Task {task_id} failed")
 
             result = {
                 MSG_TYPE: TASK_RESULT,
@@ -142,15 +196,28 @@ async def run_one_client_async(
             }
             result[TASK_ID] = task.get(TASK_ID)
             result[CLIENT_ID] = client.client_id
-            await client.submit_result(result)
-            if logger:
-                logger.debug("📤 Task result submitted, preparing to request next task...")
 
+            logger.info(f"📤 [{client.client_id}] Submitting result for task {task_id}...")
+            await client.submit_result(result)
+            logger.info(f"✅ [{client.client_id}] Result submitted")
+            logger.info("")
+
+    except KeyboardInterrupt:
+        logger.info(f"⚠️  [{client.client_id if client.client_id else 'unregistered'}] Interrupted by user")
     except Exception as e:
-        if logger:
-            logger.exception(f"Client runtime exception: {e}")
+        logger.error(f"❌ [{client.client_id if client.client_id else 'unregistered'}] Client runtime exception: {e}", exc_info=True)
     finally:
+        logger.info(f"🔌 [{client.client_id if client.client_id else 'unregistered'}] Cleaning up and disconnecting...")
         await client._cleanup()
+        logger.info(f"✅ [{client.client_id if client.client_id else 'unregistered'}] Client shutdown complete")
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("📊 CLIENT SUMMARY")
+        logger.info("=" * 80)
+        logger.info(f"Tasks processed: {tasks_processed}")
+        logger.info(f"✅ Succeeded: {tasks_succeeded}")
+        logger.info(f"❌ Failed: {tasks_failed}")
+        logger.info("=" * 80)
 
     return {
         "tasks_processed": tasks_processed,
@@ -168,29 +235,36 @@ def run_one_client_process_main(
     stats_queue: "mp.Queue | None" = None,
 ) -> int:
     """Entry point for each client process in multi-client mode."""
+    import sys
+    import traceback
+
     from robocoin_dataset.utils.logger import setup_logger
 
-    # Suppress console output for client processes
-    # Remove all handlers from root logger
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
+    # Enable console output for DEBUG mode, otherwise suppress it
+    enable_console = (log_level == "DEBUG")
 
-    logging.basicConfig(
-        level=logging.CRITICAL + 1,  # Disable console output
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=[],  # No handlers
-    )
+    if not enable_console:
+        # Suppress console output for client processes in non-DEBUG mode
+        # Remove all handlers from root logger
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+
+        logging.basicConfig(
+            level=logging.CRITICAL + 1,  # Disable console output
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            handlers=[],  # No handlers
+        )
 
     # Create per-process logger with unique file name
     logger = setup_logger(
         name=f"client_{process_id:02d}",
         log_dir=Path(log_dir),
         level=getattr(logging, log_level, logging.INFO),
-        console_output=False,
+        console_output=enable_console,
     )
 
-    logger.debug(f"Client process {process_id} started, connecting to {server_uri}")
+    logger.info(f"Client process {process_id} started, connecting to {server_uri}")
 
     # Run async client (use process_id as tqdm_position for multi-client progress bars)
     try:
@@ -207,7 +281,15 @@ def run_one_client_process_main(
             stats_queue.put({"process_id": process_id, **stats})
         return 0 if stats["tasks_failed"] == 0 else 1
     except Exception as e:
-        logger.exception(f"Client process {process_id} failed: {e}")
+        # Always show critical errors to console, regardless of log level
+        error_msg = f"❌ Client process {process_id} failed: {e}"
+        logger.error(error_msg, exc_info=(log_level == "DEBUG"))
+
+        # Always print critical errors to stderr so user sees them
+        print(f"\n{error_msg}", file=sys.stderr)
+        if log_level == "DEBUG":
+            print(traceback.format_exc(), file=sys.stderr)
+
         if stats_queue is not None:
             stats_queue.put(
                 {
@@ -215,6 +297,7 @@ def run_one_client_process_main(
                     "tasks_processed": 0,
                     "tasks_succeeded": 0,
                     "tasks_failed": 0,
+                    "error": str(e),
                 }
             )
         return 1
@@ -239,7 +322,7 @@ def run_multi_clients(
     Returns:
         Exit code: 0 if all processes succeeded, 1 otherwise
     """
-    # Create a simple logger for console output
+    # Create console logger for user-facing messages
     console_logger = logging.getLogger("multi_client_console")
     console_logger.setLevel(logging.INFO)
     if not console_logger.handlers:
@@ -376,6 +459,7 @@ def run_multi_clients(
             code = exit_codes[proc_id]
             stats = process_stats.get(proc_id, {})
             tasks_processed = stats.get("tasks_processed", 0)
+            error_msg = stats.get("error")
 
             if code == 0:
                 status = "✅ SUCCESS"
@@ -387,6 +471,19 @@ def run_multi_clients(
                 status = f"❌ FAILED (exit {code})"
 
             console_logger.info(f"  {proc_id:<6} {status:<18} {tasks_processed:<10}")
+
+            # Show error message if present
+            if error_msg:
+                console_logger.info(f"         Error: {error_msg}")
+
+    # Show any error details
+    errors_found = [s for s in process_stats.values() if s.get("error")]
+    if errors_found:
+        console_logger.info(f"\n{'ERROR DETAILS'}")
+        for stats in errors_found:
+            proc_id = stats["process_id"]
+            error = stats["error"]
+            console_logger.info(f"  Process {proc_id}: {error}")
 
     console_logger.info("\n" + "=" * 80 + "\n")
 
