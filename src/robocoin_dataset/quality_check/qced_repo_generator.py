@@ -336,6 +336,9 @@ def normalize_task_hand_instructions(
             candidate_indices.append(idx)
 
     if not candidate_tasks:
+        with open(target_jsonl_path, "w", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
         return
 
     prompt_parts = [
@@ -426,10 +429,7 @@ def gen_qced_repo(
         )
 
     src_tasks_jsonl_path = repo_path / "meta/tasks.jsonl"
-    target_tasks_jsonl_path = repo_path / f"meta/{input_feature}_tasks.jsonl"
-    print(f"src_tasks_jsonl_path: {src_tasks_jsonl_path}")
-    print(f"target_tasks_jsonl_path: {target_tasks_jsonl_path}")
-    input("Press Enter to continue...")
+    target_tasks_jsonl_path = repo_path / f"meta/{qced_feature}_tasks.jsonl"
     _gen_optimized_tasks_jsonl(
         src_path=src_tasks_jsonl_path, target_path=target_tasks_jsonl_path, ds_api_key=ds_api_key
     )
@@ -711,7 +711,7 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
                 if item:
                     item.qced_repo_gen_status = TaskStatus.FAILED
-                    item.qced_repo_gen_status = err_msg
+                    item.qced_repo_gen_err_msg = err_msg
                 else:
                     return
                 session.commit()
