@@ -246,7 +246,7 @@ class DatasetVisualizerServer(TaskServer):
                         and_(
                             DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
                             DatasetDB.visualize_check_version_ps
-                            < DatasetDB.data_loader_detection_version,
+                            != DatasetDB.data_loader_detection_version,
                         ),
                     ),
                 )
