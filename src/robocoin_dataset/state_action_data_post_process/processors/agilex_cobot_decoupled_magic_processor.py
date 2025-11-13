@@ -77,14 +77,18 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
         return swapped_data
 
     def _scale_columns(self, data: np.ndarray) -> np.ndarray:
-        """如果第7或第20列的最大值 > 0.8，则该列整体除以10"""
+        """如果第7或第20列的最大值 > 0.8，则该列递归除以10直到 <= 0.8"""
         scaled_data = data.copy()
         for col_idx in (6, 19):
             try:
                 col_max = float(np.max(scaled_data[:, col_idx]))
-                if col_max > 0.8:
-                    logger.info(f"Episode {self.episode_index}: Column {col_idx} max value is {col_max} > 0.8, scaling it by dividing by 10.")
+                division_count = 0
+                while col_max > 0.8:
                     scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
+                    division_count += 1
+                    col_max = float(np.max(scaled_data[:, col_idx]))
+                if division_count > 0:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} divided by 10 {division_count} time(s), final max value: {col_max:.6f}")
             except (IndexError, ValueError) as e:
                 logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
                 continue
@@ -296,14 +300,18 @@ class AgilexCobotDecoupledRealsenseMagicProcessor(StateActionDataPostProcessorBa
         return swapped_data
 
     def _scale_columns(self, data: np.ndarray) -> np.ndarray:
-        """如果第7或第20列的最大值 > 0.8，则该列整体除以10"""
+        """如果第7或第20列的最大值 > 0.8，则该列递归除以10直到 <= 0.8"""
         scaled_data = data.copy()
         for col_idx in (6, 19):
             try:
                 col_max = float(np.max(scaled_data[:, col_idx]))
-                if col_max > 0.8:
-                    logger.info(f"Episode {self.episode_index}: Column {col_idx} max value is {col_max} > 0.8, scaling it by dividing by 10.")
+                division_count = 0
+                while col_max > 0.8:
                     scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
+                    division_count += 1
+                    col_max = float(np.max(scaled_data[:, col_idx]))
+                if division_count > 0:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} divided by 10 {division_count} time(s), final max value: {col_max:.6f}")
             except (IndexError, ValueError) as e:
                 logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
                 continue
@@ -656,14 +664,18 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
         return swapped_data
 
     def _scale_columns(self, data: np.ndarray) -> np.ndarray:
-        """如果第7或第20列的最大值 > 0.8，则该列整体除以10"""
+        """如果第7或第20列的最大值 > 0.8，则该列递归除以10直到 <= 0.8"""
         scaled_data = data.copy()
         for col_idx in (6, 19):
             try:
                 col_max = float(np.max(scaled_data[:, col_idx]))
-                if col_max > 0.8:
-                    logger.info(f"Episode {self.episode_index}: Column {col_idx} max value is {col_max} > 0.8, scaling it by dividing by 10.")
+                division_count = 0
+                while col_max > 0.8:
                     scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
+                    division_count += 1
+                    col_max = float(np.max(scaled_data[:, col_idx]))
+                if division_count > 0:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} divided by 10 {division_count} time(s), final max value: {col_max:.6f}")
             except (IndexError, ValueError) as e:
                 logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
                 continue

@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         self.right_gripper_state_idx = None
         self.left_gripper_action_idx = None
         self.right_gripper_action_idx = None
+        self.episode_index = 0
 
     def prepare_processing(self) -> None:
         # 获取原始的 state 和 action 特征名称
@@ -65,22 +67,51 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         
         return smoothed_data
 
+    def _scale_gripper_columns(self, data: np.ndarray, gripper_indices: list[int]) -> np.ndarray:
+        """如果 gripper 列的最大值 > 0.05，则递归除以10直到 <= 0.05"""
+        scaled_data = data.copy()
+        logger = logging.getLogger("state action data post process server")
+        for col_idx in gripper_indices:
+            if col_idx is None:
+                continue
+            try:
+                col_max = float(np.max(scaled_data[:, col_idx]))
+                division_count = 0
+                while col_max > 0.05:
+                    scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
+                    division_count += 1
+                    col_max = float(np.max(scaled_data[:, col_idx]))
+                if division_count > 0:
+                    logger.info(f"Episode {self.episode_index}: Column {col_idx} divided by 10 {division_count} time(s), final max value: {col_max:.6f}")
+            except (IndexError, ValueError) as e:
+                logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
+                continue
+        return scaled_data
+
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
         new_state_data = ori_state_data.copy()
+        # 先缩放 gripper 列
+        if self.left_gripper_state_idx is not None or self.right_gripper_state_idx is not None:
+            gripper_indices = [self.left_gripper_state_idx, self.right_gripper_state_idx]
+            new_state_data = self._scale_gripper_columns(new_state_data, gripper_indices)
         # 应用平滑滤波
-        new_state_data = self._smooth_data(new_state_data, window_size=8)
+        new_state_data = self._smooth_data(new_state_data, window_size=5)
         return new_state_data
 
     # 该方法将ori_action_data进行后处理，返回结果为后处理后的数据
     def process_episode_action_data(self, ori_action_data: np.ndarray) -> np.ndarray:
         new_action_data = ori_action_data.copy()
         # 应用平滑滤波
-        new_action_data = self._smooth_data(new_action_data, window_size=8)
+        new_action_data = self._smooth_data(new_action_data, window_size=5)
         return new_action_data
     
     # 该方法将episode数据进行后处理，将 state 中的 gripper 数据复制到 action
     def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        # 从基类获取当前正在处理的 episode 索引
+        if self.episode_idx is not None:
+            self.episode_index = self.episode_idx
+        
         state = ori_data.get("observation.state")
         action = ori_data.get("action")
 
@@ -100,8 +131,8 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         # 按照 action 的特征顺序重新构建数组
         if self.left_gripper_state_idx is not None and self.right_gripper_state_idx is not None:
             # 提取 gripper 数据
-            left_gripper_data = state[:, self.left_gripper_state_idx:self.left_gripper_state_idx+1]
-            right_gripper_data = state[:, self.right_gripper_state_idx:self.right_gripper_state_idx+1]
+            left_gripper_data = out_state[:, self.left_gripper_state_idx:self.left_gripper_state_idx+1]
+            right_gripper_data = out_state[:, self.right_gripper_state_idx:self.right_gripper_state_idx+1]
             
             # 在索引 7 和 15 位置插入 gripper 数据
             # left_gripper_open 插入到索引 7 (在 left_arm_joint_7_rad 之后)
@@ -197,3 +228,4 @@ class YinheProcessor(StateActionDataPostProcessorBase):
                 "right_arm_joint_7_rad",
                 "right_gripper_open"
             ]
+    

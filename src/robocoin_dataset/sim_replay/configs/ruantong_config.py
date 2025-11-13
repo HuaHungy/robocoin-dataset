@@ -55,7 +55,7 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
 
     # eef_sim 配置
     has_gripper = True
-    gripper_position_max = 130
+    gripper_position_max = 1.01
     gripper_position_min = 0
 
     gripper_value_open = gripper_position_max
