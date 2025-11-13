@@ -142,6 +142,7 @@ def _run_detection(
     num_workers: int = 0,
     client_id: str | None = None,
     tqdm_position: int = 0,
+    logger: logging.Logger | None = None,
 ) -> dict:
     """Fast dataloader detection using multi-episode sampling."""
     import contextlib
@@ -150,6 +151,7 @@ def _run_detection(
 
     from tqdm import tqdm  # type: ignore
 
+    _logger = logger or logging.getLogger(__name__)
     repo_path = Path(repo_path)
     start_time = time.perf_counter()
     result = {"success": False, "dataset_path": str(repo_path), "sample_ratio": sample_ratio,
@@ -207,7 +209,8 @@ def _run_detection(
             "error_message": str(e),
             "total_time_s": time.perf_counter() - start_time,
         })
-        print(f"❌ Detection failed: {e}", file=sys.stderr)
+        # Log error with full traceback unconditionally
+        _logger.exception(f"❌ Detection failed: {e}")
 
     finally:
         if ds:

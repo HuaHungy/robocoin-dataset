@@ -11,7 +11,7 @@ from pathlib import Path
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB
-from robocoin_dataset.dataloader.dataloader_task_management import (
+from robocoin_dataset.dataloader.dataloader_task import (
     _gen_one_dataloader_detection_task,
     _mark_task_completed,
     _mark_task_failed,
@@ -104,7 +104,7 @@ class DataloaderDbServer(TaskServer):
                     if dataset_uuid is None:
                         return None
 
-                self.logger.info(f"Using existing hardlink for client: {hardlink_path}")
+                self.logger.debug(f"Using existing hardlink for client: {hardlink_path}")
 
                 # Success! Return the task
                 return {
@@ -119,17 +119,17 @@ class DataloaderDbServer(TaskServer):
             except FileNotFoundError as e:
                 # Task was already claimed, so we have dataset_uuid
                 err_msg = f"Hardlink assertion failed: {e}"
-                self.logger.error(f"❌ {dataset_uuid}: {err_msg}")
+                self.logger.exception(f"❌ {dataset_uuid}: {err_msg}")
 
                 # Mark task as failed in database
                 with self.db.with_session() as session:
                     _mark_task_failed(session, dataset_uuid, err_msg)
 
                 # Log to summary
-                self.summary_logger.info(f"❌ {dataset_uuid}: {err_msg}")
+                self.summary_logger.debug(f"❌ {dataset_uuid}: {err_msg}")
 
                 # Continue to next iteration to try another task
-                self.logger.info("Attempting to fetch next task...")
+                self.logger.debug("Attempting to fetch next task...")
                 continue
 
         # Safety: should never reach here unless we hit max_retries
@@ -162,11 +162,11 @@ class DataloaderDbServer(TaskServer):
                     else 0.0
                 )
 
-                self.summary_logger.info(f"❌ {dataset_uuid}: {error_message}")
+                self.summary_logger.debug(f"❌ {dataset_uuid}: {error_message}")
 
                 # Log cumulative statistics
                 total_datasets = self.datasets_succeeded + self.datasets_failed
-                self.summary_logger.info(
+                self.summary_logger.debug(
                     f"📊 Cumulative: {total_datasets} datasets "
                     f"({self.datasets_succeeded} ✅, {self.datasets_failed} ❌), "
                     f"{self.total_frames_processed} frames, "
@@ -174,7 +174,7 @@ class DataloaderDbServer(TaskServer):
                     f"{avg_time_per_frame*1000:.1f}ms/frame avg"
                 )
 
-                self.logger.info(
+                self.logger.debug(
                     f"Marked {item.convert_path} dataloader detection as FAILED: {error_message}"
                 )
                 return
@@ -200,7 +200,7 @@ class DataloaderDbServer(TaskServer):
                     else 0.0
                 )
 
-                self.summary_logger.info(
+                self.summary_logger.debug(
                     f"✅ {dataset_uuid}: {result.get('total_frames_sampled', 0)} frames, "
                     f"{result.get('total_time_s', 0):.2f}s, "
                     f"{len(result.get('episodes_tested', []))} episodes, "
@@ -209,7 +209,7 @@ class DataloaderDbServer(TaskServer):
 
                 # Log cumulative statistics
                 total_datasets = self.datasets_succeeded + self.datasets_failed
-                self.summary_logger.info(
+                self.summary_logger.debug(
                     f"📊 Cumulative: {total_datasets} datasets "
                     f"({self.datasets_succeeded} ✅, {self.datasets_failed} ❌), "
                     f"{self.total_frames_processed} frames, "
@@ -217,7 +217,7 @@ class DataloaderDbServer(TaskServer):
                     f"{avg_time_per_frame*1000:.1f}ms/frame avg"
                 )
 
-                self.logger.info(f"Marked {item.convert_path} dataloader detection as COMPLETED")
+                self.logger.debug(f"Marked {item.convert_path} dataloader detection as COMPLETED")
             else:
                 error_message = dataset_validation_result.get("error_summary", "Dataset validation failed")
                 _mark_task_failed(session, dataset_uuid, error_message)
@@ -230,11 +230,11 @@ class DataloaderDbServer(TaskServer):
                     else 0.0
                 )
 
-                self.summary_logger.info(f"❌ {dataset_uuid}: {error_message}")
+                self.summary_logger.debug(f"❌ {dataset_uuid}: {error_message}")
 
                 # Log cumulative statistics
                 total_datasets = self.datasets_succeeded + self.datasets_failed
-                self.summary_logger.info(
+                self.summary_logger.debug(
                     f"📊 Cumulative: {total_datasets} datasets "
                     f"({self.datasets_succeeded} ✅, {self.datasets_failed} ❌), "
                     f"{self.total_frames_processed} frames, "
@@ -242,7 +242,7 @@ class DataloaderDbServer(TaskServer):
                     f"{avg_time_per_frame*1000:.1f}ms/frame avg"
                 )
 
-                self.logger.info(
+                self.logger.debug(
                     f"Marked {item.convert_path} dataloader detection as FAILED: {error_message}"
                 )
 

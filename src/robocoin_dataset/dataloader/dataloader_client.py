@@ -66,7 +66,7 @@ class DataloaderDbClient(TaskClient):
         batch_size = task_content.get("batch_size", 32)
         num_workers = task_content.get("num_workers", 0)
 
-        self.logger.info(f"Processing dataset: {test_path}")
+        self.logger.debug(f"Processing dataset: {test_path}")
 
         # Run detection with downsampling (pass client_id for progress bar positioning)
         return _run_detection(
@@ -77,6 +77,7 @@ class DataloaderDbClient(TaskClient):
             num_workers=num_workers,
             client_id=self.client_id,
             tqdm_position=self.tqdm_position,
+            logger=self.logger,
         )
 
 
@@ -113,18 +114,18 @@ async def run_one_client_async(
                 }
             await client._start_heartbeat()
             if logger:
-                logger.info(f"✅ Client {client.client_id} is ready, starting task loop")
+                logger.debug(f"✅ Client {client.client_id} is ready, starting task loop")
 
         # Process tasks until none remain
         while True:
             task = await client.request_task()
             if task is None:
                 if logger:
-                    logger.info("📭 No task from server, client exiting")
+                    logger.debug("📭 No task from server, client exiting")
                 break
 
             if logger:
-                logger.info(f"🚀 Starting to process task: {task.get(TASK_ID)}")
+                logger.debug(f"🚀 Starting to process task: {task.get(TASK_ID)}")
 
             result_content = client._process_one_task(task)
             tasks_processed += 1
@@ -143,11 +144,11 @@ async def run_one_client_async(
             result[CLIENT_ID] = client.client_id
             await client.submit_result(result)
             if logger:
-                logger.info("📤 Task result submitted, preparing to request next task...")
+                logger.debug("📤 Task result submitted, preparing to request next task...")
 
     except Exception as e:
         if logger:
-            logger.error(f"Client runtime exception: {e}")
+            logger.exception(f"Client runtime exception: {e}")
     finally:
         await client._cleanup()
 
@@ -189,7 +190,7 @@ def run_one_client_process_main(
         console_output=False,
     )
 
-    logger.info(f"Client process {process_id} started, connecting to {server_uri}")
+    logger.debug(f"Client process {process_id} started, connecting to {server_uri}")
 
     # Run async client (use process_id as tqdm_position for multi-client progress bars)
     try:
@@ -206,7 +207,7 @@ def run_one_client_process_main(
             stats_queue.put({"process_id": process_id, **stats})
         return 0 if stats["tasks_failed"] == 0 else 1
     except Exception as e:
-        logger.error(f"Client process {process_id} failed: {e}")
+        logger.exception(f"Client process {process_id} failed: {e}")
         if stats_queue is not None:
             stats_queue.put(
                 {
@@ -238,15 +239,23 @@ def run_multi_clients(
     Returns:
         Exit code: 0 if all processes succeeded, 1 otherwise
     """
-    print("\n" + "=" * 80)
-    print("🚀 STARTING MULTI-CLIENT EXECUTION".center(80))
-    print("=" * 80)
-    print(f"\n{'CONFIGURATION'}")
-    print(f"  Clients            : {num_clients}")
-    print(f"  Server URI         : {server_uri}")
-    print(f"  Heartbeat interval : {heartbeat_interval}s")
-    print(f"  Log directory      : {log_dir}")
-    print(f"\n{'SPAWNING PROCESSES'}")
+    # Create a simple logger for console output
+    console_logger = logging.getLogger("multi_client_console")
+    console_logger.setLevel(logging.INFO)
+    if not console_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        console_logger.addHandler(handler)
+
+    console_logger.info("\n" + "=" * 80)
+    console_logger.info("🚀 STARTING MULTI-CLIENT EXECUTION".center(80))
+    console_logger.info("=" * 80)
+    console_logger.info(f"\n{'CONFIGURATION'}")
+    console_logger.info(f"  Clients            : {num_clients}")
+    console_logger.info(f"  Server URI         : {server_uri}")
+    console_logger.info(f"  Heartbeat interval : {heartbeat_interval}s")
+    console_logger.info(f"  Log directory      : {log_dir}")
+    console_logger.info(f"\n{'SPAWNING PROCESSES'}")
 
     # Create queue for collecting statistics from child processes
     stats_queue = mp.Queue()
@@ -268,16 +277,16 @@ def run_multi_clients(
         )
         proc.start()
         processes.append(proc)
-        print(f"  ✓ Process {i:>2} spawned (PID: {proc.pid})")
+        console_logger.info(f"  ✓ Process {i:>2} spawned (PID: {proc.pid})")
 
         # Add startup delay to avoid thundering herd
         if i < num_clients - 1:
             time.sleep(0.8)
 
-    print(f"\n{'EXECUTION'}")
-    print(f"  ⏳ Waiting for {num_clients} client(s) to complete...")
-    print("  💡 Press Ctrl+C to interrupt")
-    print()
+    console_logger.info(f"\n{'EXECUTION'}")
+    console_logger.info(f"  ⏳ Waiting for {num_clients} client(s) to complete...")
+    console_logger.info("  💡 Press Ctrl+C to interrupt")
+    console_logger.info("")
 
     exit_codes = {}
 
@@ -288,16 +297,16 @@ def run_multi_clients(
             exit_codes[i] = proc.exitcode
 
     except KeyboardInterrupt:
-        print("\n\n" + "=" * 80)
-        print("⚠️  INTERRUPTION DETECTED - SHUTTING DOWN".center(80))
-        print("=" * 80 + "\n")
+        console_logger.info("\n\n" + "=" * 80)
+        console_logger.info("⚠️  INTERRUPTION DETECTED - SHUTTING DOWN".center(80))
+        console_logger.info("=" * 80 + "\n")
         for i, proc in enumerate(processes):
             if proc.is_alive():
-                print(f"  ⏹  Terminating process {i:>2} (PID: {proc.pid})")
+                console_logger.info(f"  ⏹  Terminating process {i:>2} (PID: {proc.pid})")
                 proc.terminate()
                 proc.join(timeout=5.0)
                 if proc.is_alive():
-                    print(f"  ⚠️  Force-killing process {i:>2} (PID: {proc.pid})")
+                    console_logger.info(f"  ⚠️  Force-killing process {i:>2} (PID: {proc.pid})")
                     proc.kill()
                     proc.join()
                 exit_codes[i] = -2  # Mark as interrupted
@@ -337,31 +346,31 @@ def run_multi_clients(
         time_str = f"{hours}h {minutes}m"
 
     # Summary header
-    print("\n" + "=" * 80)
-    print("📊 MULTI-CLIENT EXECUTION SUMMARY".center(80))
-    print("=" * 80)
+    console_logger.info("\n" + "=" * 80)
+    console_logger.info("📊 MULTI-CLIENT EXECUTION SUMMARY".center(80))
+    console_logger.info("=" * 80)
 
     # Configuration section
-    print(f"\n{'CONFIGURATION'}")
-    print(f"  Clients spawned    : {num_clients}")
-    print(f"  Elapsed time       : {time_str}")
+    console_logger.info(f"\n{'CONFIGURATION'}")
+    console_logger.info(f"  Clients spawned    : {num_clients}")
+    console_logger.info(f"  Elapsed time       : {time_str}")
 
     # Task results section
-    print(f"\n{'TASK RESULTS'}")
-    print(f"  Total processed    : {total_tasks_processed}")
-    print(f"  ✅ Succeeded       : {total_tasks_succeeded}")
-    print(f"  ❌ Failed          : {total_tasks_failed}")
+    console_logger.info(f"\n{'TASK RESULTS'}")
+    console_logger.info(f"  Total processed    : {total_tasks_processed}")
+    console_logger.info(f"  ✅ Succeeded       : {total_tasks_succeeded}")
+    console_logger.info(f"  ❌ Failed          : {total_tasks_failed}")
 
     # Process status section
-    print(f"\n{'PROCESS STATUS'}")
-    print(f"  ✅ Completed       : {process_success_count}")
-    print(f"  ❌ Failed          : {process_fail_count}")
+    console_logger.info(f"\n{'PROCESS STATUS'}")
+    console_logger.info(f"  ✅ Completed       : {process_success_count}")
+    console_logger.info(f"  ❌ Failed          : {process_fail_count}")
 
     # Per-process details table
     if exit_codes:
-        print(f"\n{'PROCESS DETAILS'}")
-        print(f"  {'ID':<6} {'Status':<18} {'Tasks':<10}")
-        print(f"  {'-'*6} {'-'*18} {'-'*10}")
+        console_logger.info(f"\n{'PROCESS DETAILS'}")
+        console_logger.info(f"  {'ID':<6} {'Status':<18} {'Tasks':<10}")
+        console_logger.info(f"  {'-'*6} {'-'*18} {'-'*10}")
 
         for proc_id in sorted(exit_codes.keys()):
             code = exit_codes[proc_id]
@@ -377,9 +386,9 @@ def run_multi_clients(
             else:
                 status = f"❌ FAILED (exit {code})"
 
-            print(f"  {proc_id:<6} {status:<18} {tasks_processed:<10}")
+            console_logger.info(f"  {proc_id:<6} {status:<18} {tasks_processed:<10}")
 
-    print("\n" + "=" * 80 + "\n")
+    console_logger.info("\n" + "=" * 80 + "\n")
 
     return 0 if total_tasks_failed == 0 else 1
 

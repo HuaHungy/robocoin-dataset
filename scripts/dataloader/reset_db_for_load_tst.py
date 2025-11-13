@@ -37,7 +37,6 @@ def reset_dataloader_detection_status(db_file: Path) -> int:
 
             if not datasets:
                 logger.warning("No datasets found in database")
-                print("⚠️  No datasets found in database", file=sys.stderr)
                 return 0
 
             # Reset status for all datasets
@@ -50,13 +49,11 @@ def reset_dataloader_detection_status(db_file: Path) -> int:
             session.commit()
 
             logger.info(f"Successfully reset {updated_count} datasets to PENDING")
-            print(f"✅ Successfully reset {updated_count} datasets to PENDING", file=sys.stderr)
 
             return 0
 
     except Exception as e:
-        logger.error(f"Failed to reset dataloader detection status: {e}", exc_info=True)
-        print(f"❌ Failed to reset dataloader detection status: {e}", file=sys.stderr)
+        logger.exception(f"Failed to reset dataloader detection status: {e}")
         return 1
 
 
@@ -97,16 +94,13 @@ def main() -> int:
 
     if not db_file.exists():
         logger.error(f"Database not found: {db_file}")
-        print(f"❌ Database not found: {db_file}", file=sys.stderr)
         return 2
 
     if not db_file.is_file():
         logger.error(f"Not a file: {db_file}")
-        print(f"❌ Not a file: {db_file}", file=sys.stderr)
         return 2
 
     logger.info(f"Resetting dataloader detection status in: {db_file}")
-    print(f"🔄 Resetting dataloader detection status in: {db_file}", file=sys.stderr)
 
     return reset_dataloader_detection_status(db_file)
 
