@@ -61,6 +61,8 @@ async def main() -> None:
         help="Video score threshold",
     )
 
+    parser.add_argument("--ds_api_key", type=str, default="sk-a3c8736391cf43809957329f28cac287")
+
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
 
@@ -82,6 +84,7 @@ async def main() -> None:
         state_data_score_threshold=args.state_data_score_threshold,
         action_data_score_threshold=args.action_data_score_threshold,
         video_score_threshold=args.video_score_threshold,
+        ds_api_key=args.ds_api_key,
     )
 
     await server.start()

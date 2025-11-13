@@ -24,6 +24,7 @@ if __name__ == "__main__":
     db = DatasetDatabase(args.db_file_path)
     with db.with_session() as session:
         query = session.query(DatasetDB).filter(DatasetDB.video_match_status == TaskStatus.FAILED)
+        query = query.filter(DatasetDB.convert_status == TaskStatus.COMPLETED)
         if args.device_model != "all":
             print(f"Processing {args.device_model} datasets")
             query = query.filter(DatasetDB.device_model == args.device_model)
@@ -93,7 +94,6 @@ if __name__ == "__main__":
                     continue
 
                 if args.cam_keyword in camera_dir.name:
-                    print(f"found {camera_dir}")
                     featured_dirs.append(camera_dir)
 
         if not featured_dirs:
@@ -105,7 +105,6 @@ if __name__ == "__main__":
             for lost_ep in unmatched_eps:
                 video_file = cam_dir / f"episode_{lost_ep:06d}.mp4"
                 if video_file.exists():
-                    print(f"found {video_file}")
                     video_files.append(video_file)
 
         new_video_files = [
@@ -124,5 +123,5 @@ if __name__ == "__main__":
             shutil.copy(video_file, new_video_file)
 
 """
-python scripts/annotation/subtask_annotation/download_st_unannotated_episodes.py --db_file_path /mnt/nas/db/datasets_new.db --device_model realman_rmc_aidal --cam-keyword high_rgb --output_dir datas/unannotated_episodes
+python scripts/annotation/subtask_annotation/download_st_unannotated_episodes.py --db_file_path db/datasets_new.db --device_model ruantong_a2d --cam-keyword high_rgb --output_dir datas/unannotated_episodes
 """
