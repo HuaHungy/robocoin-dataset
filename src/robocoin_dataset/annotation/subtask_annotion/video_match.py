@@ -169,7 +169,6 @@ class VideoMatch:
 
             for item in query.all():
                 item.video_match_status = TaskStatus.PENDING
-                item.video_match_version = item.video_match_version + 1
                 item.video_match_version_ps = item.video_hash_version
             session.commit()
 
@@ -186,6 +185,7 @@ class VideoMatch:
                 return None
 
             item.video_match_status = TaskStatus.PROCESSING
+            item.video_match_version = item.video_match_version + 1
             session.commit()
             return item.dataset_uuid
 
@@ -248,6 +248,21 @@ class VideoMatch:
                         raise ValueError(f"Dataset {dataset_uuid} not found")
                     item.video_match_status = TaskStatus.FAILED
                     item.video_match_err_msg = unmactched_ep_idxs_str
+                    session.query(VideoMatchDB).filter(
+                        VideoMatchDB.dataset_uuid == dataset_uuid,
+                    ).delete()
+
+                    for ep_idx, url_video_id in match_results.items():
+                        if url_video_id is None:
+                            continue
+                        session.add(
+                            VideoMatchDB(
+                                dataset_uuid=dataset_uuid,
+                                episode_idx=ep_idx,
+                                url_video_id=url_video_id,
+                            )
+                        )
+
                     session.commit()
             else:
                 with self.db.with_session() as session:

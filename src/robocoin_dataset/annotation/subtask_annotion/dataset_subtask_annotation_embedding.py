@@ -131,7 +131,7 @@ class DatasetSubtaskAnnotationEmbedding:
                         and_(
                             DatasetDB.video_embed_subtask_annotation_status == TaskStatus.COMPLETED,
                             DatasetDB.video_embed_subtask_annotation_version_ps
-                            < DatasetDB.video_opt_subtask_annotation_version,
+                            != DatasetDB.video_opt_subtask_annotation_version,
                         ),
                     ),
                 )
