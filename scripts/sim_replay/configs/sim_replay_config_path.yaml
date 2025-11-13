@@ -108,8 +108,8 @@ ruantong_a2d:
   mujoco_sim_replay_config_class: A2DLerobotSimReplayConfig
 
 - version: gt02_new_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.A2D_config
-  mujoco_sim_replay_config_class: A2DLerobotSimReplayConfig
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.ruantong_config
+  mujoco_sim_replay_config_class: RuantongA2dLerobotSimReplayConfig
 
 # unitree_g1
 unitree_g1: 

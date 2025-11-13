@@ -14,13 +14,6 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
     # joint_names should be 1 v 1 assignment
     state_arm_joint_mjcf_names: list[str] = [
         # left arm
-        "11",
-        "12",
-        "13",
-        "14",
-        "15",
-        "16",
-        "17",
         # right arm
         "4",
         "5",
@@ -28,7 +21,15 @@ class RuantongA2dLerobotSimReplayConfig(LerobotSimReplayConfig):
         "7",
         "8",
         "9",
-        "10",       
+        "10",    
+           
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
     ]
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [

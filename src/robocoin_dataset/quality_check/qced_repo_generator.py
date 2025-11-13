@@ -18,8 +18,6 @@ from robocoin_dataset.database.models import (
 )
 from robocoin_dataset.distribution_computation.constant import (
     DATASET_UUID,
-    DEVICE_MODEL,
-    DEVICE_MODEL_VERSION,
     ERR_MSG,
     TASK_RESULT_CONTENT,
     TASK_RESULT_STATUS,
@@ -41,6 +39,15 @@ from robocoin_dataset.utils.path_utils import (
     get_episodes_stats_jsonl_file_paths,
     get_meta_info_file_path,
 )
+
+BAD_EPISODES = "bad_episodes"
+HARD_LINK_PATH = "hard_link_path"
+MIN_EPISODES_NUM = "min_episodes_num"
+
+MERGED_FEATURE = "merged"
+QCED_FEATURE = "quality_checked"
+HL_SUFFIX = "qced_hardlink"
+DS_API_KEY = "ds_api_key"
 
 
 def gen_qced_repo_files(
@@ -276,14 +283,38 @@ def _gen_video_path_matching_dict(
     return matching_dict
 
 
+def _gen_optimized_tasks_jsonl(
+    src_path: str | Path, target_path: str | Path, ds_api_key: str | None = None
+) -> None:
+    return
+
+
 def gen_qced_repo(
     repo_path: str | Path,
     bad_episodes: set[int],
-    input_feature: str = "merged",
-    qced_feature: str = "quality_checked",
-    hl_suffix: str = "qced_hardlink",
+    input_feature: str = MERGED_FEATURE,
+    qced_feature: str = QCED_FEATURE,
+    hl_suffix: str = HL_SUFFIX,
+    min_episodes_num: int = 10,
+    ds_api_key: str | None = None,
 ) -> str:
     repo_path = Path(repo_path).expanduser().absolute()
+
+    _, input_info_file_path = get_meta_info_file_path(repo_path, input_feature)
+    with open(input_info_file_path) as f:
+        data = json.load(f)
+        episodes_num = data.get("total_episodes")
+
+    if (episodes_num - len(bad_episodes)) < min_episodes_num:
+        raise ValueError(
+            f"The number of episodes after removing bad episodes is less than {min_episodes_num}"
+        )
+
+    src_tasks_jsonl_path = repo_path / "meta/tasks.jsonl"
+    target_tasks_jsonl_path = repo_path / f"meta/{input_feature}_tasks.jsonl"
+    _gen_optimized_tasks_jsonl(
+        src_path=src_tasks_jsonl_path, target_path=target_tasks_jsonl_path, ds_api_key=ds_api_key
+    )
 
     video_path_corresp = gen_qced_repo_files(
         repo_path=repo_path,
@@ -325,9 +356,6 @@ def _sync_qced_repo_gen_tasks(session: Session) -> None:
         return
 
     for item in items:
-        if item.qced_repo_gen_status == TaskStatus.COMPLETED:
-            item.qced_repo_gen_version = item.qced_repo_gen_version + 1
-            continue
         item.qced_repo_gen_status = TaskStatus.PENDING
         item.qced_repo_gen_version_ps = item.qc_version
 
@@ -347,10 +375,11 @@ def _gen_one_qced_repo_gen_task(
     item = query.first()
 
     if not item:
-        return None, None, None, None
+        return None, None
 
     item.qced_repo_gen_status = TaskStatus.PROCESSING
 
+    item.qced_repo_gen_version = item.qced_repo_gen_version + 1
     session.commit()
 
     return item.dataset_uuid, item.convert_path
@@ -397,6 +426,8 @@ class QualityCheckedRepoGenerator:
         state_data_score_threshold: float = 0.85,
         action_data_score_threshold: float = 0.85,
         video_score_threshold: float = 0.9,
+        min_episodes_num: int = 10,
+        ds_api_key: str | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
@@ -405,6 +436,8 @@ class QualityCheckedRepoGenerator:
         self.state_data_score_threshold = state_data_score_threshold
         self.action_data_score_threshold = action_data_score_threshold
         self.video_score_threshold = video_score_threshold
+        self.min_episodes_num = min_episodes_num
+        self.ds_api_key = ds_api_key
 
     def gen_one_qced_repo(self) -> None:
         with self.db.with_session() as session:
@@ -422,7 +455,12 @@ class QualityCheckedRepoGenerator:
             return
 
         try:
-            hardlink_repo_path = gen_qced_repo(repo_path=repo_path, bad_episodes=bad_episodes)
+            hardlink_repo_path = gen_qced_repo(
+                repo_path=repo_path,
+                bad_episodes=bad_episodes,
+                min_episodes_num=self.min_episodes_num,
+                ds_api_key=self.ds_api_key,
+            )
             with self.db.with_session() as session:
                 ds_item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
@@ -463,12 +501,16 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
     def __init__(
         self,
         db_file_path: str | Path,
-        qc_config_path: str | Path,
         host: str = "0.0.0.0",
         port: int = 2010,
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
         logger: logging.Logger | None = None,
+        state_data_score_threshold: float = 0.85,
+        action_data_score_threshold: float = 0.85,
+        video_score_threshold: float = 0.9,
+        min_episodes_num: int = 10,
+        ds_api_key: str | None = None,
     ) -> None:
         super().__init__(
             logger=logger,
@@ -483,35 +525,36 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
 
-        self.qc_config_path = Path(qc_config_path).expanduser().absolute()
-        if not self.qc_config_path.exists():
-            raise FileNotFoundError(f"QC config file {self.qc_config_path} not found.")
+        self.state_data_score_threshold = state_data_score_threshold
+        self.action_data_score_threshold = action_data_score_threshold
+        self.video_score_threshold = video_score_threshold
+        self.min_episodes_num = min_episodes_num
+        self.ds_api_key = ds_api_key
 
     def get_task_category(self) -> str:
-        return "dataset quality check"
+        return "dataset quality checked repo generation"
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
-            _sync_quality_check_tasks(session=session)
-            dataset_uuid, repo_path, device_model, device_model_version = (
-                _gen_one_dataset_quality_check_task_without_sync(session=session)
+            _sync_qced_repo_gen_tasks(session=session)
+            dataset_uuid, repo_path = _gen_one_qced_repo_gen_task(session=session)
+            bad_episodes = _get_bad_episodes(
+                session=session,
+                dataset_uuid=dataset_uuid,
+                state_data_score_threshold=self.state_data_score_threshold,
+                action_data_score_threshold=self.action_data_score_threshold,
+                video_score=self.video_score_threshold,
             )
+            bad_episodes = list(bad_episodes)
 
         if not dataset_uuid:
-            self.logger.info("No dataset quality check task available.")
             return None
-
-        checker_config = get_checker_config(
-            device_model,
-            device_model_version,
-            self.qc_config_path,
-        )
         return {
             DATASET_UUID: dataset_uuid,
             LEFORMAT_PATH: repo_path,
-            DEVICE_MODEL: device_model,
-            DEVICE_MODEL_VERSION: device_model_version,
-            QC_CONFIG: checker_config,
+            BAD_EPISODES: bad_episodes,
+            MIN_EPISODES_NUM: self.min_episodes_num,
+            DS_API_KEY: self.ds_api_key,
         }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -520,46 +563,48 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         task_status = task_result_content.get(TASK_RESULT_STATUS)
         task_status_msg = task_result_content.get(ERR_MSG)
 
-        qc_results = task_result_content.get(TASK_RESULT_CONTENT).get(QC_RESULT)
-
         err_msg = task_result_content.get(ERR_MSG)
+        hardlink_path = task_result_content.get(TASK_RESULT_CONTENT).get(HARD_LINK_PATH)
 
         if task_status == TASK_SUCCESS:
             with self.db.with_session() as session:
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
                 if item:
-                    item.qc_status = TaskStatus.COMPLETED
+                    item.qced_repo_gen_status = TaskStatus.COMPLETED
                 else:
                     return
-                session.query(EpisodeQcDB).filter(EpisodeQcDB.dataset_uuid == ds_uuid).delete()
-                for episode_idx, summary in qc_results.items():
-                    episode_qc_item = EpisodeQcDB(
-                        dataset_uuid=ds_uuid,
-                        episode_idx=int(episode_idx),
-                        is_bad_episode=summary["is_bad"],
-                        state_data_score=summary["state_data_score"],
-                        action_data_score=summary["action_data_score"],
-                        video_score=summary["video_score"],
+                hl_item = (
+                    session.query(DatasetHardLinkDB)
+                    .filter(DatasetHardLinkDB.dataset_uuid == ds_uuid)
+                    .first()
+                )
+                if hl_item:
+                    hl_item.hard_link_path = hardlink_path
+                else:
+                    session.add(
+                        DatasetHardLinkDB(
+                            dataset_uuid=ds_uuid,
+                            hard_link_path=hardlink_path,
+                        )
                     )
-                    session.add(episode_qc_item)
                 session.commit()
         else:
             with self.db.with_session() as session:
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
                 if item:
-                    item.qc_status = TaskStatus.FAILED
-                    item.qc_err_msg = err_msg
+                    item.qced_repo_gen_status = TaskStatus.FAILED
+                    item.qced_repo_gen_status = err_msg
                 else:
                     return
                 session.commit()
 
             self.logger.info(
-                f"Upsert {item.convert_path} dataset quality check status to {item.qc_status}, "
+                f"Upsert {item.convert_path} dataset quality checked repo generation status to {item.qced_repo_gen_status}, "
                 f"update_message: {task_status_msg}"
             )
 
 
-class DatasetQualityCheckClient(TaskClient):
+class QualityCheckedRepoGeneratorClient(TaskClient):
     def __init__(
         self,
         server_uri: str = "ws://localhost:2010",
@@ -573,7 +618,7 @@ class DatasetQualityCheckClient(TaskClient):
         )
 
     def get_task_category(self) -> str:
-        return "dataset quality check"
+        return "dataset quality checked repo generation"
 
     def generate_task_request_desc(self) -> dict:
         """客户端可自定义任务请求参数"""
@@ -582,13 +627,18 @@ class DatasetQualityCheckClient(TaskClient):
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
             repo_path = task_content.get(LEFORMAT_PATH)
+            bad_episodes = task_content.get(BAD_EPISODES)
+            bad_episodes = set(bad_episodes)
+            min_episodes_num = task_content.get(MIN_EPISODES_NUM)
+            ds_api_key = task_content.get(DS_API_KEY)
 
-            results = _check_repo(
-                repo_path,
-                task_content.get(QC_CONFIG),
+            hardlink_repo_path = gen_qced_repo(
+                repo_path=repo_path,
+                bad_episodes=bad_episodes,
+                min_episodes_num=min_episodes_num,
+                ds_api_key=ds_api_key,
             )
-            results_send = {str(episode_idx): v for episode_idx, v in results.items()}
 
-            return {QC_RESULT: results_send}
+            return {HARD_LINK_PATH: hardlink_repo_path}
         except Exception as e:
-            raise RuntimeError(f"dataset quality check {repo_path} failed") from e
+            raise RuntimeError(f"dataset quality checked repo generation {repo_path} failed") from e

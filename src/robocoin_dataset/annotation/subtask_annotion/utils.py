@@ -1,4 +1,5 @@
 import base64
+import mimetypes
 import os
 import pickle
 import re
@@ -188,6 +189,18 @@ def extract_frame_phashes_ffmpeg(
         return phash_list
 
 
+def _is_video_file(file_path: str | Path) -> bool:
+    mime, _ = mimetypes.guess_type(file_path)
+    if mime is None:
+        return "other"
+
+    if mime.startswith("image/"):
+        return "image"
+    if mime.startswith("video/"):
+        return "video"
+    return "other"
+
+
 def compute_video_hash(video_path: str | Path) -> tuple[str, int, str]:
     video_path = Path(video_path).expanduser().absolute()
     if not video_path.exists():
@@ -196,12 +209,22 @@ def compute_video_hash(video_path: str | Path) -> tuple[str, int, str]:
     file_hash = compute_sha256(video_path)
     frame_num = get_frame_num(video_path=video_path)
 
-    # image_frame_indices = gen_frame_indices_from_framenum(frame_num=frame_num)
-    image_frame_indices = [0]
-    phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
-        video_path=video_path, frame_indices=image_frame_indices
-    )
-    phash = phashes[0]
+    file_type = _is_video_file(video_path)
+    if file_type == "video":
+        image_frame_indices = [0]
+        phashes: list[imagehash.ImageHash] = extract_frame_phashes_ffmpeg(
+            video_path=video_path, frame_indices=image_frame_indices
+        )
+        phash = phashes[0]
+
+    elif file_type == "image":
+        try:
+            img = Image.open(video_path)
+            phash = imagehash.phash(img, hash_size=16)
+        except Exception:
+            phash = None
+    else:
+        phash = None
     serialized_phash = pickle.dumps(phash)
     serialized_phash = base64.b64encode(serialized_phash).decode("ascii")
 
@@ -252,7 +275,7 @@ def match_video_image_hash(
             min_dist = dist
             matched_id = url_idx
 
-    if min_dist > threashold:
+    if min_dist > 1 - threashold:
         return None
 
     return matched_id

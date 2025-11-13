@@ -203,13 +203,14 @@ def plot_gripper_values(gripper_values, title="Gripper Values"):
 def _sim_replay_dataset(
     repo_path: str | Path,
     sim_replay_config: LerobotSimReplayConfig,
+    replay_source: str = "sa_dpp",
     episode_idx: int = 0,
 ) -> None:
     if sim_replay_config is None:
         raise ValueError("sim_replay_config_class is None")
     
 
-    simulator = LerobotSimReplayer(sim_replay_config, repo_path)
+    simulator = LerobotSimReplayer(sim_replay_config, repo_path, replay_source=replay_source)
 
     def gripper_plot_callback(gripper_history, ax, lines) -> None:
         import matplotlib.pyplot as plt
@@ -282,15 +283,15 @@ def _sim_replay_dataset(
                             ymin, ymax = ymax, ymin
                         use_dynamic_ylim = False  # 使用固定y轴
                     else:
-                        # 动态范围：根据当前数据计算 min/max 并添加边距
+                        # 动态范围：根据当前数据计算 min/max 并添加边距（增加到20%）
                         col = arr[:, start_idx:end_idx]
                         vmin = float(col.min())
                         vmax = float(col.max())
                         if vmin == vmax:
                             # 单一值时给一个小范围
-                            margin = max(abs(vmin) * 0.1, 0.01)
+                            margin = max(abs(vmin) * 0.2, 0.02)
                         else:
-                            margin = (vmax - vmin) * 0.1
+                            margin = (vmax - vmin) * 0.2
                         ymin = vmin - margin
                         ymax = vmax + margin
                         use_dynamic_ylim = True  # 使用动态y轴
@@ -357,11 +358,11 @@ def _sim_replay_dataset(
                         vmin = float(col.min())
                         vmax = float(col.max())
                         
-                        # 添加边距
+                        # 添加边距（增加到20%以提供更多视觉冗余）
                         if vmin == vmax:
-                            margin = max(abs(vmin) * 0.1, 0.01)
+                            margin = max(abs(vmin) * 0.2, 0.02)
                         else:
-                            margin = (vmax - vmin) * 0.1
+                            margin = (vmax - vmin) * 0.2
                         
                         ymin = vmin - margin
                         ymax = vmax + margin
@@ -426,7 +427,12 @@ def _sim_replay_dataset(
             if cfg_has_gripper:
                 # 读取第一个 parquet 文件来获取 gripper 数据的维度
                 import pandas as pd
-                first_parquet = Path(repo_path) / "state_action_data" / "chunk-000" / "episode_000000.parquet"
+                if self.replay_source == "sa_dpp":
+                    first_parquet = Path(repo_path) / "state_action_data" / "chunk-000" / "episode_000000.parquet"
+                elif self.replay_source == "data":
+                    first_parquet = Path(repo_path) / "data" / "chunk-000" / "episode_000000.parquet"
+                else:
+                    raise ValueError(f"未知的 replay_source: {self.replay_source}")
                 print(f"[数据集回放] 读取数据文件: {first_parquet}")
                 if first_parquet.exists():
                     df = pd.read_parquet(str(first_parquet))
@@ -465,6 +471,7 @@ def _sim_replay_dataset(
                 simulator.replay_episode(
                     episode_idx,
                     is_state=True,
+                    replay_source=replay_source,
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
                     target_fps=int(fps_from_meta) if fps_from_meta else 30,
@@ -508,6 +515,7 @@ def _sim_replay_dataset(
                 simulator.replay_episode(
                     episode_idx,
                     is_state=False,
+                    replay_source=replay_source,
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
                     target_fps=int(fps_from_meta) if fps_from_meta else 30,

@@ -149,15 +149,10 @@ class DatasetSubtaskAnnotationOptimization:
             print(query.count())
 
             for item in query.all():
-                print(item.dataset_uuid)
                 item.video_opt_subtask_annotation_status = TaskStatus.PENDING
-                item.video_opt_subtask_annotation_version = (
-                    item.video_opt_subtask_annotation_version + 1
-                )
                 item.video_opt_subtask_annotation_version_ps = (
                     item.video_ori_subtask_annotation_version
                 )
-                print(item.video_opt_subtask_annotation_version)
             session.commit()
 
     def gen_one_dataset_subtask_annotation_optimization_task(self) -> str:
@@ -172,6 +167,9 @@ class DatasetSubtaskAnnotationOptimization:
             if not item:
                 return None
 
+            item.video_opt_subtask_annotation_version = (
+                item.video_opt_subtask_annotation_version + 1
+            )
             item.video_opt_subtask_annotation_status = TaskStatus.PROCESSING
             return item.dataset_uuid
 

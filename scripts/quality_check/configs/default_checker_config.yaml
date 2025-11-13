@@ -32,6 +32,11 @@ episode_data_checkers:
     score_weight: 1.0   
 
 # episode_video_checkers:
-#   - name: "max_frame_jump_rate"
+#   - name: "max_frame_stable_then_jump_rate"
 #     should_check: True  
+#     score_weight: 1.0   
+
+#   - name: "max_frame_jump_dist"
+#     should_check: True  
+#     max_dist_threshold: 50
 #     score_weight: 1.0   

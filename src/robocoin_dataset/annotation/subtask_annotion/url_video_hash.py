@@ -96,9 +96,6 @@ class UrlVideoDownload:
 
     def _download_or_copy_video(self, url: str, file_path: Path) -> bool:
         file_path = Path(file_path).expanduser().absolute()
-        # if file_path.exists():
-        #     self.logger.info(f"{file_path} 已存在, passing")
-        #     return True
         try:
             tmp_file_path = file_path.parent / f"{file_path.name}.tmp"
             response = requests.get(url, stream=True, timeout=30)
