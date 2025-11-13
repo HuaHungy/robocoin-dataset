@@ -90,8 +90,8 @@ realman_rmc_aidal:
   mujoco_sim_replay_config_class: RealmanRmcAidalLerobotSimReplayConfig
 
 - version: mcap_version
-  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.realman_rmc_aidal_config
-  mujoco_sim_replay_config_class: RealmanRmcAidalLerobotSimReplayConfig
+  mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.realman_RS_01_config
+  mujoco_sim_replay_config_class: RealmanRS01LerobotSimReplayConfig
 
 - version: mcap_simple_version
   mujoco_sim_replay_config_module: robocoin_dataset.sim_replay.configs.realman_rmc_aidal_config
