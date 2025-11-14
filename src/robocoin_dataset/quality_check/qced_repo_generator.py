@@ -220,7 +220,7 @@ def _gen_output_parquet_files(
     repo_path = Path(repo_path).expanduser().absolute()
 
     def get_output_parquet_path(out_ep_idx: int) -> Path:
-        chunk_idx = ep_idx // chunk_size
+        chunk_idx = out_ep_idx // chunk_size
         output_parquet_path = (
             repo_path
             / f"{output_feature}_data"
