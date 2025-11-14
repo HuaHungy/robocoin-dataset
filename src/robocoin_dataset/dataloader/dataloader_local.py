@@ -29,24 +29,7 @@ def run_local_detection(
     num_workers: int = 0,
     logger: logging.Logger | None = None,
 ) -> dict:
-    """Run dataloader detection in local batch mode (sequential processing).
 
-    Args:
-        db_file: Path to the database file
-        summary_logger: Logger for summary output
-        episodes: Episode specification (e.g., "all", "0-5", "0,2,4")
-        sample_ratio: Ratio of frames to sample (0.0-1.0)
-        batch_size: Batch size for dataloader
-        num_workers: Number of dataloader workers
-        logger: Optional logger instance
-
-    Returns:
-        Dictionary with processing statistics
-
-    Note:
-        Hardlinks must be pre-created in the database before running detection.
-        Use the hardlink preparation script to create them first.
-    """
     _logger = logger or logging.getLogger(__name__)
     db = DatasetDatabase(Path(db_file).expanduser().absolute())
 
