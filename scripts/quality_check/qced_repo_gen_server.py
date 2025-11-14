@@ -61,6 +61,13 @@ async def main() -> None:
         help="Video score threshold",
     )
 
+    parser.add_argument(
+        "--min_episodes_num",
+        type=int,
+        default=5,
+        help="Minimum episodes number",
+    )
+
     parser.add_argument("--ds_api_key", type=str, default="sk-a3c8736391cf43809957329f28cac287")
 
     args = parser.parse_args()
@@ -85,6 +92,7 @@ async def main() -> None:
         action_data_score_threshold=args.action_data_score_threshold,
         video_score_threshold=args.video_score_threshold,
         ds_api_key=args.ds_api_key,
+        min_episodes_num=args.min_episodes_num,
     )
 
     await server.start()
@@ -98,5 +106,6 @@ python scripts/quality_check/qced_repo_gen_server.py \
     --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
     --port 2110 \
+    --min_episodes_num 5 \
     --log_dir ./logs/quality_checked_repo_generator_server 
 """
