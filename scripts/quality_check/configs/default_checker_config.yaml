@@ -20,13 +20,13 @@ episode_data_checkers:
   - name: "static_frame_rate"
     params:
       window_size: 5
-      threshold: 0.05
+      threshold: 0.01
     should_check: True  
     score_weight: 1.0   
 
   - name: "static_joint"
     params:
-      static_joints: 2
+      static_joints: 5
       epsilon: 0.001
     should_check: True  
     score_weight: 1.0   
