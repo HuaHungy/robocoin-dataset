@@ -50,7 +50,8 @@ class DataloaderDbClient(TaskClient):
         return {}
 
     def _sync_process_task(self, task_content: dict) -> dict:
-        """Process a single task synchronously (implements abstract method from TaskClient).
+        """
+        Process a single task synchronously (implements abstract method from TaskClient).
 
         Client receives the dataset path from server (already prepared with hardlinks).
         Client just runs detection on the provided path.
@@ -100,9 +101,7 @@ async def run_one_client_async(
     Returns:
         Statistics dictionary with keys: tasks_processed, tasks_succeeded, tasks_failed
     """
-    logger.info("=" * 80)
     logger.info("🚀 CLIENT STARTING")
-    logger.info("=" * 80)
     logger.info(f"Server URI: {server_uri}")
     logger.info(f"Heartbeat interval: {heartbeat_interval}s")
     logger.info("")
@@ -210,14 +209,10 @@ async def run_one_client_async(
         logger.info(f"🔌 [{client.client_id if client.client_id else 'unregistered'}] Cleaning up and disconnecting...")
         await client._cleanup()
         logger.info(f"✅ [{client.client_id if client.client_id else 'unregistered'}] Client shutdown complete")
-        logger.info("")
-        logger.info("=" * 80)
         logger.info("📊 CLIENT SUMMARY")
-        logger.info("=" * 80)
         logger.info(f"Tasks processed: {tasks_processed}")
         logger.info(f"✅ Succeeded: {tasks_succeeded}")
         logger.info(f"❌ Failed: {tasks_failed}")
-        logger.info("=" * 80)
 
     return {
         "tasks_processed": tasks_processed,
