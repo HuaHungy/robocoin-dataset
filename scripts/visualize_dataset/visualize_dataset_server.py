@@ -67,9 +67,9 @@ if __name__ == "__main__":
 
 """usage:
 python scripts/visualize_dataset/visualize_dataset_server.py \
-    --db_file_path ./db/datasets_new.db \
+    --db_file_path /mnt/db/datasets_new.db \
     --host 0.0.0.0 \
     --port 2122 \
-    --device_model sdfsdfsdf \
+    --device_model realman_rmc_aidal \
     --log_dir ./logs/visualize_dataset_server
 """

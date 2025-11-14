@@ -188,6 +188,8 @@ class AgilexCobotMagicLerobotSimReplayConfig(LerobotSimReplayConfig):
 
     left_eef_mjcf_site_name: str = "left_eef_site"
     right_eef_mjcf_site_name: str = "right_eef_site"
+    left_gripper_mjcf_site_name: str = "left_gripper_site"
+    right_gripper_mjcf_site_name: str = "right_gripper_site"
 
     # joint_names should be 1 v 1 assignment
     state_arm_joint_mjcf_names: list[str] = [
