@@ -50,8 +50,14 @@ def run_local_detection(
                 _sync_dataloader_detection_tasks(session, logger=_logger)
                 dataset_uuid, hardlink_path = _gen_one_dataloader_detection_task(session)
 
-            if not dataset_uuid or not hardlink_path:
+            if not dataset_uuid:
                 break
+
+            if hardlink_path is None:
+                raise FileNotFoundError(f"No hard_link_path found for dataset {dataset_uuid}")
+
+            if not hardlink_path.exists():
+                raise FileNotFoundError(f"No such hardlink found in {hardlink_path}")
 
             datasets_processed += 1
             _logger.debug(f"Processing dataset {datasets_processed}: {dataset_uuid}")

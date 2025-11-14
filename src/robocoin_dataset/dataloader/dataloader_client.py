@@ -179,7 +179,7 @@ async def run_one_client_async(
             dataset_uuid = task.get("dataset_uuid", "unknown")
             logger.info(f"📦 [{client.client_id}] Received task {task_id} (dataset: {dataset_uuid})")
 
-            result_content = client._sync_process_task(task)
+            result_content = await asyncio.to_thread(client._sync_process_task, task)
             tasks_processed += 1
 
             # Check if task succeeded or failed
