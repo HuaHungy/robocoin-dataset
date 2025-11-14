@@ -75,7 +75,7 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
             "eef_acc_mag_state",
             "eef_acc_mag_action",
         }
-        if self.sim_replay_config.state_gripper_lerobot_names:
+        if self.sim_replay_config.has_gripper:
             gripper_state_feature_keys = {
                 "gripper_open_scale_state",
                 "gripper_mode_state",
@@ -84,7 +84,7 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
         else:
             gripper_state_feature_keys = {}
 
-        if self.sim_replay_config.action_gripper_lerobot_names:
+        if self.sim_replay_config.has_gripper:
             gripper_action_feature_keys = {
                 "gripper_open_scale_action",
                 "gripper_mode_action",

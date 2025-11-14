@@ -307,9 +307,15 @@ class LerobotSimReplayer:
                 for site_id in self.mjcf_site_ids:
                     site_pos = self.mjcf_data.site_xpos[site_id]
                     site_rot = self.mjcf_data.site_xmat[site_id]
-                    site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
-                        "xyz", degrees=False
-                    )
+                    try:
+                        site_rot_euler = R.from_matrix(site_rot.reshape(3, 3)).as_euler(
+                            "xyz", degrees=False
+                        )
+                    except:
+                        print(
+                            f"[ERROR] 获取 site_rot_euler 失败，site_rot: {site_rot}, episode_index: {episode_index}"
+                        )
+                        raise
                     # 拼接当前site的 EEF 位置和姿态
                     frame_eef_results.extend(site_pos)
                     frame_eef_results.extend(site_rot_euler)

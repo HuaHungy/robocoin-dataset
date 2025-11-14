@@ -246,17 +246,19 @@ class DatasetVisualizerServer(TaskServer):
                         and_(
                             DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
                             DatasetDB.visualize_check_version_ps
-                            < DatasetDB.data_loader_detection_version,
+                            != DatasetDB.data_loader_detection_version,
                         ),
                     ),
                 )
             )
+            print(f"device_model: {self.device_model}")
             if self.device_model:
                 query = query.filter(
                     DatasetDB.device_model == self.device_model,
                 )
 
             item = query.first()
+            print(item.dataset_uuid)
 
             if not item:
                 return None
