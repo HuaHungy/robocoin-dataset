@@ -159,10 +159,7 @@ class DataPostProcessorBase:
         with open(self.new_info_file_path, "w") as f:
             json.dump(json_dict, f)
 
-        input("Press Enter to continue...")
-
     def process(self) -> None:
-        input("Prepare to write new info file, press Enter to continue...")
         self.write_new_info_file()
         self.prepare_processing()
         self.episodes_stats = []
