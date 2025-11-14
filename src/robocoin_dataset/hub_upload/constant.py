@@ -25,8 +25,6 @@ class DatasetsHubEnum(str, Enum):
 
 # Platform configuration
 DS_PLATFORM_NAME = "robocoin-dataset" # SHOULD be : robocoin or robocoin-dataset.
-# TEST : RogersPyke - hf
-# test : rogerspyke - ms
 """str: Name of the dataset platform."""
 
 

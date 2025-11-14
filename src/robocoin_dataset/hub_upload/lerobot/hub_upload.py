@@ -48,10 +48,10 @@ def generate_dataset_info(
     # Set default output path if not provided
     if output_path is None:
         output_path = "./dataset_info"
-        _logger.info(f"Using default info output path: {output_path}")
+        _logger.debug(f"Using default info output path: {output_path}")
 
     try:
-        _logger.info(f"📝 Generating dataset info YAML files to: {output_path}")
+        _logger.debug(f"📝 Generating dataset info YAML files to: {output_path}")
 
         # Create info generator config (no task_tags_yamls_dir needed)
         info_config = LocalDsInfoConfig(
@@ -91,10 +91,10 @@ def generate_dataset_readmes(
     # Set default dataset info path if not provided
     if dataset_info_root_path is None:
         dataset_info_root_path = "./dataset_info"
-        _logger.info(f"Using default dataset info path: {dataset_info_root_path}")
+        _logger.debug(f"Using default dataset info path: {dataset_info_root_path}")
 
     try:
-        _logger.info(f"📝 Generating dataset README files from: {dataset_info_root_path}")
+        _logger.debug(f"📝 Generating dataset README files from: {dataset_info_root_path}")
 
         # Create readme generator config
         readme_config = LocalDsReadmeConfig(
@@ -123,11 +123,13 @@ def upload_datasets(config: LocalDsUploadConfig, logger: logging.Logger | None =
         config: Upload configuration
         logger: Logger instance (optional)
     """
+    from tqdm import tqdm
+
     _logger = logger or logging.getLogger(__name__)
 
     try:
         # Initialize uploader
-        _logger.info("Initializing uploader...")
+        _logger.debug("Initializing uploader...")
         uploader = LocalDsUploadUtil(config)
 
         # Start upload process
@@ -135,10 +137,13 @@ def upload_datasets(config: LocalDsUploadConfig, logger: logging.Logger | None =
         uploader._upload_datasets_from_db()
 
         _logger.info("✅ Upload process completed successfully")
+        tqdm.write("\n✅ Upload process completed successfully")
 
     except KeyboardInterrupt:
         _logger.warning("\n⚠️  Upload interrupted by user")
+        tqdm.write("\n⚠️  Upload interrupted by user")
         raise
     except Exception as e:
         _logger.error(f"❌ Upload failed: {e}", exc_info=True)
+        tqdm.write(f"\n❌ Upload failed: {e}")
         raise
