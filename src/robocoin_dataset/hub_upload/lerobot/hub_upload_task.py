@@ -80,19 +80,12 @@ def _sync_datasets_upload_status(
     upload_version_ps_col = getattr(DatasetDB, upload_version_ps_field)
 
     with db.with_session() as session:
-        if retry_failed:
-            status_list = [
-                TaskStatus.FAILED,
-                TaskStatus.PENDING,
-            ]
-        else:
-            status_list = [TaskStatus.PENDING]
 
         query = session.query(DatasetDB).filter(
             and_(
                 DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
                 or_(
-                    upload_status_col.in_(status_list),
+                    upload_status_col == TaskStatus.PENDING,
                     and_(
                         upload_status_col == TaskStatus.COMPLETED,
                         upload_version_ps_col < DatasetDB.visualize_check_version,

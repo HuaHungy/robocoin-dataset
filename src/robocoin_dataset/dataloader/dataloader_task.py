@@ -32,7 +32,7 @@ def _sync_dataloader_detection_tasks(
                     DatasetDB.data_loader_detection_version_ps < DatasetDB.qced_repo_gen_version,
                 ),
             ),
-        )
+        ),
     )
 
     items = query.all()

@@ -36,20 +36,18 @@ def _sync_page_sync_status(
 
   # Query datasets that need page sync
   query = session.query(DatasetDB).filter(
-      and_(
-          getattr(DatasetDB, ms_upload_status_field) == TaskStatus.COMPLETED,
-          getattr(DatasetDB, hf_upload_status_field) == TaskStatus.COMPLETED, # and: must two.
-          or_(
-              DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
-              and_(
-                  DatasetDB.dataset_info_sync_status == TaskStatus.COMPLETED,
-                  or_(
-                      DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, ms_upload_version_field), # or: if one
-                      DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, hf_upload_version_field),
-                  ),
-              ),
-          ),
-      )
+    and_(
+        getattr(DatasetDB, ms_upload_status_field) == TaskStatus.COMPLETED,
+        getattr(DatasetDB, hf_upload_status_field) == TaskStatus.COMPLETED, # and: must two.
+        or_(
+            DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
+            and_( # or: if one
+                DatasetDB.dataset_info_sync_status == TaskStatus.COMPLETED,
+                DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, ms_upload_version_field),
+                DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, hf_upload_version_field),
+            ),
+        ),
+    ),
   )
 
   items = query.all()
@@ -63,10 +61,10 @@ def _sync_page_sync_status(
   for item in items:
       item.dataset_info_sync_status = TaskStatus.PENDING
 
-      # Set dataset_info_sync_status_ps to min of ms and hf upload versions
+      # Set dataset_info_sync_version_ps to min of ms and hf upload versions
       ms_version = getattr(item, ms_upload_version_field) if hasattr(item, ms_upload_version_field) else 0
       hf_version = getattr(item, hf_upload_version_field) if hasattr(item, hf_upload_version_field) else 0
-      item.dataset_info_sync_status_ps = min(ms_version, hf_version)
+      item.dataset_info_sync_version_ps = min(ms_version, hf_version)
 
       # Increment dataset_info_sync_version
       current_version = item.dataset_info_sync_version if hasattr(item, 'dataset_info_sync_version') and item.dataset_info_sync_version else 0
@@ -86,14 +84,25 @@ def _gen_one_page_sync_task(session: "Session") -> tuple[str | None, str | None,
   dataset_uuid -> to identify which record should be COMPLETED or FAILED.
   '''
 
+  from sqlalchemy.sql.expression import and_
+
   from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB, TaskStatus
 
   _logger = logging.getLogger(__name__)
 
+  hf_prefix, ms_prefix = _get_hub_field_prefix(DatasetDB)
+  ms_upload_status_field = f"{ms_prefix}_upload_status"
+  hf_upload_status_field = f"{hf_prefix}_upload_status"
+
   _logger.debug("Querying for PENDING tasks...")
   query = session.query(DatasetDB).filter(
-      DatasetDB.dataset_info_sync_status == TaskStatus.PENDING
+      and_(
+          DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
+          getattr(DatasetDB, ms_upload_status_field) == TaskStatus.COMPLETED,
+          getattr(DatasetDB, hf_upload_status_field) == TaskStatus.COMPLETED,
+      )
   )
+
   item = query.first()
   if not item:
       _logger.debug("No PENDING tasks found")
