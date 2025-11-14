@@ -71,7 +71,7 @@ def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, 
 
     item = (
         session.query(DatasetDB)
-        .filter(DatasetDB.data_merge_status == TaskStatus.COMPLETED)
+        .filter(DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED)
         .filter(DatasetDB.data_loader_detection_status == TaskStatus.PENDING)
         .first()
     )
