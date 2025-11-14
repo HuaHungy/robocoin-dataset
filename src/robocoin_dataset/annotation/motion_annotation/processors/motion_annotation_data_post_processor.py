@@ -75,29 +75,29 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
             "eef_acc_mag_state",
             "eef_acc_mag_action",
         }
-        if self.sim_replay_config.has_gripper:
-            gripper_state_feature_keys = {
-                "gripper_open_scale_state",
-                "gripper_mode_state",
-                "gripper_activity_state",
-            }
-        else:
-            gripper_state_feature_keys = {}
-
-        if self.sim_replay_config.has_gripper:
-            gripper_action_feature_keys = {
-                "gripper_open_scale_action",
-                "gripper_mode_action",
-                "gripper_activity_action",
-            }
-        else:
-            gripper_action_feature_keys = {}
-
+        gripper_state_feature_keys = {
+            "gripper_open_scale_state",
+            "gripper_mode_state",
+            "gripper_activity_state",
+        }
+        gripper_action_feature_keys = {
+            "gripper_open_scale_action",
+            "gripper_mode_action",
+            "gripper_activity_action",
+        }
         data_feature_keys = (
             eef_data_feature_keys | gripper_state_feature_keys | gripper_action_feature_keys
             if self.sim_replay_config.has_gripper
             else eef_data_feature_keys
         )
+        if self.sim_replay_config.has_gripper:
+            print(f"Dataset: {convert_path} has gripper, the features are:")
+        else:
+            print(f"Dataset: {convert_path} does not have gripper, the features are:")
+
+        for feature_key in data_feature_keys:
+            print(feature_key)
+
         # 所以这里 data_feature_keys 使用输入数据的键名
         super().__init__(
             convert_path=convert_path,
@@ -554,7 +554,7 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
             "left_gripper_activity",
             "right_gripper_activity",
         ]
-        return {
+        eef_feature_names = {
             "eef_sim_pose_state": eef_sim_pose_names,
             "eef_sim_pose_action": eef_sim_pose_names,
             "eef_direction_state": eef_direction_names,
@@ -563,13 +563,19 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
             "eef_velocity_action": eef_velocity_names,
             "eef_acc_mag_state": eef_acc_mag_names,
             "eef_acc_mag_action": eef_acc_mag_names,
-            "gripper_open_scale_state": gripper_open_scale_names,
-            "gripper_open_scale_action": gripper_open_scale_names,
-            "gripper_mode_state": gripper_mode_names,
-            "gripper_mode_action": gripper_mode_names,
-            "gripper_activity_state": gripper_activity_names,
-            "gripper_activity_action": gripper_activity_names,
         }
+        if self.sim_replay_config.has_gripper:
+            gripper_feature_names = {
+                "gripper_open_scale_state": gripper_open_scale_names,
+                "gripper_open_scale_action": gripper_open_scale_names,
+                "gripper_mode_state": gripper_mode_names,
+                "gripper_mode_action": gripper_mode_names,
+                "gripper_activity_state": gripper_activity_names,
+            }
+        else:
+            gripper_feature_names = {}
+        print(eef_feature_names | gripper_feature_names)
+        return eef_feature_names | gripper_feature_names
 
     def write_new_info_file(self) -> None:
         """重写 write_new_info_file 方法，添加 has_gripper 信息"""

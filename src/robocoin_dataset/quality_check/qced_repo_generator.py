@@ -427,7 +427,7 @@ def gen_qced_repo(
 
     if (episodes_num - len(bad_episodes)) < min_episodes_num:
         raise ValueError(
-            f"The number of episodes after removing bad episodes is less than {min_episodes_num}"
+            f"Dataset {repo_path}: The number of episodes after removing bad episodes is less than {min_episodes_num}, original episodes num: {episodes_num}"
         )
 
     src_tasks_jsonl_path = repo_path / "meta/tasks.jsonl"
@@ -571,7 +571,6 @@ class QualityCheckedRepoGenerator:
                 action_data_score_threshold=self.action_data_score_threshold,
                 video_score=self.video_score_threshold,
             )
-            print(f"bad_episodes: {bad_episodes}")
 
         if not dataset_uuid:
             return
