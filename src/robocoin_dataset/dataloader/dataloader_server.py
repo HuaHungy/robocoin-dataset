@@ -7,6 +7,7 @@ This module provides the server-side orchestration for:
 """
 
 import logging
+import traceback
 from pathlib import Path
 
 from robocoin_dataset.database.database import DatasetDatabase
@@ -91,6 +92,7 @@ class DataloaderDbServer(TaskServer):
 
         while attempt < max_retries:
             attempt += 1
+            dataset_uuid = None  # Initialize to avoid NameError in exception handlers
 
             # Step 1: Sync and claim task (with DB session, includes hardlink validation)
             try:
@@ -117,17 +119,29 @@ class DataloaderDbServer(TaskServer):
                 }
 
             except FileNotFoundError as e:
-                # Task was already claimed, so we have dataset_uuid
-                err_msg = f"Hardlink assertion failed: {e}"
+                # Task was claimed before validation, so dataset_uuid is always set
+                err_msg = f"Hardlink assertion failed: {e}\n{traceback.format_exc()}"
                 self.logger.exception(f"❌ {dataset_uuid}: {err_msg}")
-
                 # Mark task as failed in database
                 with self.db.with_session() as session:
                     _mark_task_failed(session, dataset_uuid, err_msg)
-
                 # Log to summary
                 self.summary_logger.debug(f"❌ {dataset_uuid}: {err_msg}")
-
+                self.datasets_failed += 1
+                # Continue to next iteration to try another task
+                self.logger.debug("Attempting to fetch next task...")
+                continue
+            except Exception as e:
+                # Catch any unexpected exceptions during task generation/claiming
+                if dataset_uuid:
+                    err_msg = f"Unexpected error during task generation: {e}\n{traceback.format_exc()}"
+                    self.logger.exception(f"❌ {dataset_uuid}: {err_msg}")
+                    with self.db.with_session() as session:
+                        _mark_task_failed(session, dataset_uuid, err_msg)
+                    self.summary_logger.debug(f"❌ {dataset_uuid}: {err_msg}")
+                    self.datasets_failed += 1
+                else:
+                    self.logger.exception(f"❌ Unexpected error before task claimed: {e}")
                 # Continue to next iteration to try another task
                 self.logger.debug("Attempting to fetch next task...")
                 continue

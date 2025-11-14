@@ -56,18 +56,15 @@ def _sync_dataloader_detection_tasks(
 
 
 def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, Path | None]:
-    """Claim one pending dataset and transition it to PROCESSING.
-
-    This function validates that the hardlink path exists before claiming the task.
-    If hardlink doesn't exist, raises FileNotFoundError.
+    """Claim one pending dataset and transition it to PROCESSING, then get hardlink path.
 
     Returns:
         (dataset_uuid, hardlink_path) or (None, None) if no task available.
 
     Raises:
-        FileNotFoundError: If hardlink path not found in database or doesn't exist on disk.
+        Any exception that occurs during task claiming or hardlink validation.
     """
-    from robocoin_dataset.database.models import DatasetDB, TaskStatus
+    from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB, TaskStatus
 
     item = (
         session.query(DatasetDB)
@@ -78,38 +75,29 @@ def _gen_one_dataloader_detection_task(session: "Session") -> tuple[str | None, 
     if not item:
         return None, None
 
-    # Query hardlink path before claiming task and validate
-    from robocoin_dataset.database.models import DatasetHardLinkDB
-
-    try:
-        hardlink_record = session.query(DatasetHardLinkDB).filter(
-            DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
-        ).first()
-        hardlink_path = Path(hardlink_record.hard_link_path) if hardlink_record and hardlink_record.hard_link_path else None
-
-        if hardlink_path is None:
-            raise FileNotFoundError(
-                f"No hardlink found in database for dataset {item.dataset_uuid}. "
-                f"Hardlinks must be created before running dataloader detection."
-            )
-
-        # Verify hardlink path exists on disk
-        if not hardlink_path.exists():
-            raise FileNotFoundError(
-                f"Hardlink path in database does not exist on disk: {hardlink_path}"
-            )
-    except FileNotFoundError:
-        # Re-raise FileNotFoundError as-is
-        raise
-    except Exception as e:
-        # Wrap other exceptions as FileNotFoundError
-        raise FileNotFoundError(
-            f"Failed to retrieve or validate hardlink for dataset {item.dataset_uuid}: {e}"
-        ) from e
-
-    # All validations passed - claim the task
+    # Claim the task (transition to PROCESSING) so it won't be picked up by other workers
     item.data_loader_detection_status = TaskStatus.PROCESSING
     session.commit()
+
+    # Get and validate hardlink path
+    hardlink_record = session.query(DatasetHardLinkDB).filter(
+        DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
+    ).first()
+
+    if not hardlink_record or not hardlink_record.hard_link_path:
+        raise FileNotFoundError(
+            f"No hardlink found in database for dataset {item.dataset_uuid}. "
+            f"Hardlinks must be created before running dataloader detection."
+        )
+
+    hardlink_path = Path(hardlink_record.hard_link_path)
+
+    # Verify hardlink path exists on disk
+    if not hardlink_path.exists():
+        raise FileNotFoundError(
+            f"Hardlink path in database does not exist on disk: {hardlink_path}"
+        )
+
     return item.dataset_uuid, hardlink_path
 
 
@@ -139,11 +127,14 @@ def _mark_task_failed(session: "Session", dataset_uuid: str, error_message: str)
     """
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
-    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-    if item:
-        item.data_loader_detection_status = TaskStatus.FAILED
-        item.data_loader_detection_err_msg = error_message
-        session.commit()
+    try:
+        item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+        if item:
+            item.data_loader_detection_status = TaskStatus.FAILED
+            item.data_loader_detection_err_msg = error_message
+            session.commit()
+    except Exception as e:
+        raise RuntimeError(f"Failed to mark task as failed: {e}") from e
 
 
 __all__ = [
