@@ -563,6 +563,7 @@ class QualityCheckedRepoGenerator:
         with self.db.with_session() as session:
             _sync_qced_repo_gen_tasks(session=session)
             dataset_uuid, repo_path = _gen_one_qced_repo_gen_task(session=session)
+
             bad_episodes = _get_bad_episodes(
                 session=session,
                 dataset_uuid=dataset_uuid,
@@ -570,6 +571,7 @@ class QualityCheckedRepoGenerator:
                 action_data_score_threshold=self.action_data_score_threshold,
                 video_score=self.video_score_threshold,
             )
+            print(f"bad_episodes: {bad_episodes}")
 
         if not dataset_uuid:
             return

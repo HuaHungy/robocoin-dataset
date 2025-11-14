@@ -4,8 +4,10 @@ from robocoin_dataset.quality_check.dataset_quality_check import (
 )
 
 if __name__ == "__main__":
-    repo_path = "/mnt/nas/synnas/docker2/robocoin-datasets/galaxea_r1_lite_stack_baskets"
-    device_model = "galaxea_r1_lite"
+    repo_path = (
+        "/mnt/nas/synnas/docker2/robocoin-datasets/agilex_cobot_decoupled_magic_prepare_breakfast"
+    )
+    device_model = "agilex_cobot_decoupled_magic"
     device_model_version = "default_version"
     device_version_config_file = "scripts/quality_check/configs/device_version_checker_config.yaml"
     checker_config = get_checker_config(

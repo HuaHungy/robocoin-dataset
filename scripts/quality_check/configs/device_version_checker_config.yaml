@@ -8,3 +8,8 @@ yinhe:
 - version: default_version
   base_config_path: default_checker_config.yaml
   specific_config_path: yinhe.yaml
+
+agilex_cobot_decoupled_magic:
+- version: default_version
+  base_config_path: default_checker_config.yaml
+  specific_config_path: agilex_cobot_decoupled_magic.yaml
