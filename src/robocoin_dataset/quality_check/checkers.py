@@ -122,7 +122,7 @@ def normalize_per_dimension(data: np.ndarray) -> np.ndarray:
     return normalized
 
 
-def is_window_static(window_data: np.ndarray, threshold: float = 0.05) -> bool:
+def is_window_static(window_data: np.ndarray, threshold: float = 0.01) -> bool:
     if window_data.shape[0] <= 1:
         return True
     stds = np.std(window_data, axis=0)
@@ -130,12 +130,15 @@ def is_window_static(window_data: np.ndarray, threshold: float = 0.05) -> bool:
     with np.errstate(divide="ignore", invalid="ignore"):
         rel_stds = np.divide(stds, rms_vals)
         rel_stds[rms_vals == 0] = 0.0
-    return np.all(rel_stds < threshold)
+    count = np.sum(rel_stds > threshold)
+    if count >= 1:
+        return False
+    return True
 
 
 @episode_data_checker_registry("static_frame_rate")
 def count_total_static_frames_rate(
-    data: np.ndarray, window_size: int = 5, threshold: float = 0.05
+    data: np.ndarray, window_size: int = 5, threshold: float = 0.01
 ) -> float:
     """
     统计所有被判定为静止的帧的总数量（去重，每帧只算一次）。

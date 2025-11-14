@@ -160,11 +160,13 @@ def _gen_output_meta_info_file(
             input_total_episodes = data.get("total_episodes")
             chunks_size = data.get("chunks_size")
             videos_per_episode = input_total_videos // input_total_episodes
+            output_train_split = f"0:{total_episodes - 1}"
 
             data["total_frames"] = total_frames
             data["total_episodes"] = total_episodes
             data["total_videos"] = total_episodes * videos_per_episode
             data["total_chunks"] = (total_episodes + chunks_size - 1) // chunks_size
+            data["splits"]["train"] = output_train_split
             json.dump(data, out_f)
 
 
@@ -220,7 +222,7 @@ def _gen_output_parquet_files(
     repo_path = Path(repo_path).expanduser().absolute()
 
     def get_output_parquet_path(out_ep_idx: int) -> Path:
-        chunk_idx = ep_idx // chunk_size
+        chunk_idx = out_ep_idx // chunk_size
         output_parquet_path = (
             repo_path
             / f"{output_feature}_data"

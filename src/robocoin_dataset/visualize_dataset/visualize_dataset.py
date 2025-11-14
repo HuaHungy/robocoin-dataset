@@ -251,12 +251,14 @@ class DatasetVisualizerServer(TaskServer):
                     ),
                 )
             )
+            print(f"device_model: {self.device_model}")
             if self.device_model:
                 query = query.filter(
                     DatasetDB.device_model == self.device_model,
                 )
 
             item = query.first()
+            print(item.dataset_uuid)
 
             if not item:
                 return None

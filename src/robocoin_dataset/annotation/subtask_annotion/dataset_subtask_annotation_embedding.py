@@ -225,6 +225,7 @@ class DatasetSubtaskAnnotationEmbedding:
                         DatasetDB.video_embed_subtask_annotation_err_msg: traceback.format_exc(),
                     }
                 )
+                session.commit()
 
     def embed_subtask_annotation(self) -> None:
         self.sync_dataset_subtask_annotation_embedding_status()
