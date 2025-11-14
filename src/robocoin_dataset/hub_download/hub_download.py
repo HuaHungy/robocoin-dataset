@@ -98,34 +98,114 @@ def _resolve_token(hub: Literal["huggingface", "modelscope"], explicit: str | No
 def _download_from_hf(repo_id: str, target_dir: Path, token: str | None, max_workers: int) -> Path:
     try:
         from huggingface_hub import snapshot_download
+        from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
     except ImportError as exc:  # pragma: no cover - dependency error
         raise RuntimeError("huggingface_hub is missing: pip install huggingface_hub") from exc
 
     def _run() -> Path:
-        path = snapshot_download(
-            repo_id=repo_id,
-            repo_type="dataset",
-            local_dir=str(target_dir),
-            token=token,
-            resume_download=True,
-            max_workers=max_workers,
-        )
-        return Path(path)
+        try:
+            path = snapshot_download(
+                repo_id=repo_id,
+                repo_type="dataset",
+                local_dir=str(target_dir),
+                token=token,
+                resume_download=True,
+                max_workers=max_workers,
+            )
+            return Path(path)
+        except RepositoryNotFoundError as exc:
+            raise RuntimeError(
+                f"Repository not found: {repo_id}\n"
+                f"  - Check the dataset name and namespace are correct\n"
+                f"  - Verify the repo exists at https://huggingface.co/datasets/{repo_id}\n"
+                f"  - If the repo is private, ensure you have access and a valid token"
+            ) from exc
+        except HfHubHTTPError as exc:
+            if exc.response.status_code == 401:
+                raise RuntimeError(
+                    f"Authentication failed for {repo_id}\n"
+                    f"  - The repo may be private and require authentication\n"
+                    f"  - Set HF_TOKEN or HUGGING_FACE_HUB_TOKEN environment variable\n"
+                    f"  - Or pass --token with a valid HuggingFace token\n"
+                    f"  - Get your token from: https://huggingface.co/settings/tokens"
+                ) from exc
+            if exc.response.status_code == 403:
+                raise RuntimeError(
+                    f"Access forbidden to {repo_id}\n"
+                    f"  - You may not have permission to access this dataset\n"
+                    f"  - If this is a private dataset, request access from the owner"
+                ) from exc
+            raise
 
     return _run()
 
 
 def _download_from_modelscope(repo_id: str, target_dir: Path, token: str | None) -> Path:
     try:
+        from modelscope import dataset_snapshot_download
         from modelscope.hub.api import HubApi
     except ImportError as exc:  # pragma: no cover - dependency error
         raise RuntimeError("modelscope is missing: pip install modelscope") from exc
 
     def _run() -> Path:
-        if token:
-            HubApi().login(token)
-        # MsDataset.load returns a dataset object; the actual files are in cache_dir
-        return target_dir
+        LOGGER.info("ModelScope: attempting to download dataset_id=%s", repo_id)
+        LOGGER.debug("  local_dir=%s", target_dir)
+
+        try:
+            if token:
+                LOGGER.info("Logging in to ModelScope with provided token")
+                HubApi().login(token)
+
+            # Use dataset_snapshot_download for downloading dataset files
+            # This downloads all raw files from the dataset repository
+            LOGGER.info("Downloading dataset using dataset_snapshot_download...")
+            path = dataset_snapshot_download(
+                dataset_id=repo_id,
+                local_dir=str(target_dir),
+            )
+
+            # The dataset files are now downloaded to target_dir
+            LOGGER.info("Dataset downloaded successfully to %s", path)
+            return Path(path)
+
+        except Exception as exc:
+            # Log the full exception details for debugging
+            LOGGER.error("ModelScope exception type: %s", type(exc).__name__)
+            LOGGER.error("ModelScope exception details: %s", exc)
+
+            # ModelScope exceptions are less standardized, provide helpful context
+            # But only when we're confident about the error type to avoid false positives
+            error_msg = str(exc).lower()
+
+            # Only treat as "not found" if it's clearly a repo/model not found error
+            # Be more specific to avoid false positives from file path errors
+            if ("not found" in error_msg and ("repository" in error_msg or "model" in error_msg or "dataset" in error_msg)) or \
+               ("404" in error_msg and "http" in error_msg):
+                raise RuntimeError(
+                    f"Dataset not found: {repo_id}\n"
+                    f"  - Check the dataset name and namespace are correct\n"
+                    f"  - Verify the dataset exists at https://modelscope.cn/datasets/{repo_id}\n"
+                    f"  - If the dataset is private, ensure you have access and a valid token\n"
+                    f"  - Original error: {type(exc).__name__}: {exc}"
+                ) from exc
+            if ("unauthorized" in error_msg or "401" in error_msg) or \
+                 ("forbidden" in error_msg or "403" in error_msg and "http" in error_msg):
+                raise RuntimeError(
+                    f"Authentication/authorization failed for {repo_id}\n"
+                    f"  - The dataset may be private and require authentication\n"
+                    f"  - Set MODELSCOPE_TOKEN or MODELSCOPE_API_TOKEN environment variable\n"
+                    f"  - Or pass --token with a valid ModelScope token\n"
+                    f"  - You can get your token from: https://modelscope.cn/my/account\n"
+                    f"  - Original error: {type(exc).__name__}: {exc}"
+                ) from exc
+            # For all other errors, preserve the original exception with context
+            raise RuntimeError(
+                f"ModelScope dataset download failed for {repo_id}\n"
+                f"  - Exception type: {type(exc).__name__}\n"
+                f"  - Error details: {exc}\n"
+                f"  - This may be a network issue, file system error, or other problem\n"
+                f"  - Verify the dataset exists at: https://modelscope.cn/datasets/{repo_id}"
+            ) from exc
 
     return _run()
 
@@ -143,6 +223,10 @@ def download_dataset(
     repo_id = f"{namespace}/{dataset_name}"
     dataset_path = output_dir / dataset_name
     dataset_path.mkdir(parents=True, exist_ok=True)
+
+    LOGGER.info("Downloading repo_id: %s from %s", repo_id, hub)
+    LOGGER.debug("Target path: %s", dataset_path)
+    LOGGER.debug("Token provided: %s", bool(token))
 
     def _perform_download() -> Path:
         if hub == "huggingface":
