@@ -177,7 +177,9 @@ def count_total_static_frames_rate(
 
 
 @episode_data_checker_registry("static_joint")
-def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float = 1e-3) -> float:
+def detect_static_joint(
+    data: np.ndarray, static_joints_percent: float = 0.4, epsilon: float = 1e-3
+) -> float:
     """
     检测机械臂数据是否处于“静态”状态（全局判断，非滑动窗口）。
 
@@ -198,6 +200,7 @@ def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float
         raise ValueError("Input data must be 2D array of shape (time_steps, dimensions).")
 
     frame_num, dim = data.shape
+    static_joint_threshold = int(dim * static_joints_percent)
     if dim == 0:
         return 1.0  # 无维度，默认静态
 
@@ -210,7 +213,7 @@ def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float
         is_static_dim = stds < epsilon
         static_dim_count = np.sum(is_static_dim)
 
-    return 1.0 if static_dim_count >= static_joints else 0.0
+    return 1.0 if static_dim_count >= static_joint_threshold else 0.0
 
 
 def detect_stable_then_jump_frames(
