@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+'''
+python scripts/sim_replay/sim_replay_local.py \
+  --repo_path /mnt/nas/synnas/docker2/robocoin-datasets-test/realman_rmc_aidal_place_the_book \
+  --config_module robocoin_dataset.sim_replay.configs.realman_RS_01_config \
+  --config_class RealmanRS01LerobotSimReplayConfig \
+  --replay_source data
+'''
 import argparse
 from pathlib import Path
 from importlib import import_module
