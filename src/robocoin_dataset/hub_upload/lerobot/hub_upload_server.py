@@ -158,7 +158,7 @@ class HubUploadServer(TaskServer):
             if upload_success:
                 _mark_upload_completed(session, dataset_uuid, self.hub_name, logger=self.logger)
                 self.datasets_succeeded += 1
-
+                self.logger.info(f"Task result: SUCCESS | UUID: {dataset_uuid}")
                 self.summary_logger.debug(f"✅ {dataset_uuid}: Upload completed successfully")
 
                 # Log cumulative statistics
@@ -174,7 +174,7 @@ class HubUploadServer(TaskServer):
                 error_message = upload_result.get("error_message") or "Upload failed"
                 _mark_upload_failed(session, dataset_uuid, error_message, self.hub_name, logger=self.logger)
                 self.datasets_failed += 1
-
+                self.logger.info(f"Task result: FAILED | UUID: {dataset_uuid} | Error: {error_message}")
                 self.summary_logger.debug(f"❌ {dataset_uuid}: {error_message}")
 
                 # Log cumulative statistics

@@ -134,12 +134,8 @@ class HubUploadClient(TaskClient):
         hardlink_path = Path(hardlink_path_str)
         dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
 
-        self.logger.info(f"🚀 Client [{self.client_id}]: Processing upload task {dataset_uuid}")
-        self.logger.debug(f"   Dataset name: {dataset_name}")
-        self.logger.debug(f"   Hardlink path: {hardlink_path}")
-        self.logger.debug(f"   Hub: {effective_hub_name.value}")
-        self.logger.debug(f"   Namespace: {effective_namespace}")
-        self.logger.debug(f"   Using config from: {'task' if client_config else 'client default'}")
+        self.logger.info(f"Processing task | UUID: {dataset_uuid} | Dataset: {dataset_name}")
+        self.logger.debug(f"Task details | UUID: {dataset_uuid} | Path: {hardlink_path} | Hub: {effective_hub_name.value} | Namespace: {effective_namespace}")
 
         try:
             # Create upload utility with effective configuration from task
@@ -155,14 +151,13 @@ class HubUploadClient(TaskClient):
             )
             task_upload_util = LocalDsUploadUtil(task_upload_config)
 
-            self.logger.info(f"🚀 [{self.client_id}] Processing upload for {dataset_name}...")
             upload_success, upload_error = task_upload_util._upload_one_dataset(hardlink_path)
             if upload_success:
-                self.logger.info(f"✅ Client [{self.client_id}]: Upload task {dataset_uuid} completed successfully")
+                self.logger.info(f"Task completed | UUID: {dataset_uuid} | Success: True")
                 return {
                     "success": True
                 }
-            self.logger.error(f"❌ Client [{self.client_id}]: Upload task {dataset_uuid} failed: {upload_error}")
+            self.logger.error(f"Task failed | UUID: {dataset_uuid} | Error: {upload_error}")
             return {
                 "success": False,
                 "error_message": upload_error
@@ -170,7 +165,7 @@ class HubUploadClient(TaskClient):
         except Exception as e:
             tb = traceback.format_exc()
             error_msg = f"Unexpected error during upload: {e}\n\nFull traceback:\n{tb}"
-            self.logger.error(f"❌ Client [{self.client_id}]: {error_msg}")
+            self.logger.error(f"Task exception | UUID: {dataset_uuid} | Error: {e}", exc_info=True)
             return {
                 "success": False,
                 "error_message": error_msg
@@ -204,12 +199,8 @@ async def run_one_client_async(
     Returns:
         Statistics dictionary with keys: tasks_processed, tasks_succeeded, tasks_failed
     """
-    logger.info("🚀 HUB UPLOAD CLIENT STARTING")
-    logger.info(f"Server URI: {server_uri}")
-    logger.info(f"Hub: {hub_name.value}")
-    logger.info(f"Namespace: {namespace}")
-    logger.info(f"Heartbeat interval: {heartbeat_interval}s")
-    logger.info("")
+    logger.info(f"Client starting | Server: {server_uri} | Hub: {hub_name.value} | Namespace: {namespace}")
+    logger.debug(f"Configuration | Heartbeat: {heartbeat_interval}s")
 
     client = HubUploadClient(
         server_uri=server_uri,
@@ -231,65 +222,46 @@ async def run_one_client_async(
     # Connect to server
     try:
         if not client.connected:
-            logger.info(f"🔌 Connecting to server at {server_uri}...")
+            logger.debug(f"Connecting to server at {server_uri}...")
             try:
                 await client.connect_to_server()
-                logger.info("✅ WebSocket connection established")
             except ConnectionError as e:
-                logger.error(f"❌ Connection failed: {e}")
-                logger.error(f"   Make sure the server is running at {server_uri}")
-                logger.error("   Start server with: python scripts/hub_upload/run_hub_upload.py --server --db <db_file> --host <host> --port <port>")
+                logger.error(f"Connection failed: {e}")
                 return {
                     "tasks_processed": 0,
                     "tasks_succeeded": 0,
                     "tasks_failed": 0,
                 }
             except Exception as e:
-                logger.error(f"❌ Unexpected connection error: {e}", exc_info=True)
+                logger.error(f"Connection error: {e}", exc_info=True)
                 return {
                     "tasks_processed": 0,
                     "tasks_succeeded": 0,
                     "tasks_failed": 0,
                 }
 
-            logger.info("📡 Starting message receiver...")
-            client._receiver_task = asyncio.create_task(client._message_receiver())
+        logger.debug("Starting message receiver...")
+        client._receiver_task = asyncio.create_task(client._message_receiver())
 
-            logger.info("📝 Registering with server...")
-            registration_success = await client.register()
-            if not registration_success or not client.client_id:
-                logger.error("❌ Registration failed - no client_id received from server")
-                logger.error("   This may indicate:")
-                logger.error("   - Server is not ready to accept connections")
-                logger.error("   - Network connectivity issues")
-                logger.error("   - Server and client version mismatch")
-                logger.info("🔌 Client shutting down")
-                return {
-                    "tasks_processed": 0,
-                    "tasks_succeeded": 0,
-                    "tasks_failed": 0,
-                }
-            logger.info(f"✅ Registration successful - Client ID: {client.client_id}")
+        registration_success = await client.register()
+        if not registration_success or not client.client_id:
+            logger.error("Registration failed - no client_id received")
+            return {
+                "tasks_processed": 0,
+                "tasks_succeeded": 0,
+                "tasks_failed": 0,
+            }
 
-            logger.info("💓 Starting heartbeat...")
-            await client._start_heartbeat()
-            logger.info(f"✅ Client {client.client_id} is ready and connected")
-            logger.info("")
-            logger.info("📋 Entering task processing loop...")
-            logger.info("")
+        await client._start_heartbeat()
+        logger.info(f"Client ready | ID: {client.client_id}")
 
         # Process tasks until none remain
         while True:
-            logger.info(f"🔍 [{client.client_id}] Requesting task from server...")
+            logger.debug("Requesting task...")
             task = await client.request_task()
             if task is None:
-                logger.info(f"📭 [{client.client_id}] No more tasks available from server")
-                logger.info(f"✅ [{client.client_id}] Task loop completed normally")
+                logger.info("No more tasks available")
                 break
-
-            task_id = task.get(TASK_ID)
-            dataset_uuid = task.get(DATASET_UUID, "unknown")
-            logger.info(f"📦 [{client.client_id}] Received task {task_id} (dataset: {dataset_uuid})")
 
             result_content = await asyncio.to_thread(client._sync_process_task, task)
             tasks_processed += 1
@@ -297,10 +269,8 @@ async def run_one_client_async(
             # Check if task succeeded or failed
             if result_content.get("success"):
                 tasks_succeeded += 1
-                logger.info(f"✅ [{client.client_id}] Task {task_id} completed successfully")
             else:
                 tasks_failed += 1
-                logger.error(f"❌ [{client.client_id}] Task {task_id} failed")
 
             result = {
                 MSG_TYPE: TASK_RESULT,
@@ -309,23 +279,18 @@ async def run_one_client_async(
             result[TASK_ID] = task.get(TASK_ID)
             result[CLIENT_ID] = client.client_id
 
-            logger.info(f"📤 [{client.client_id}] Submitting result for task {task_id}...")
+            logger.debug(f"Submitting result for task {task.get(TASK_ID)}...")
             await client.submit_result(result)
-            logger.info(f"✅ [{client.client_id}] Result submitted")
-            logger.info("")
 
     except KeyboardInterrupt:
-        logger.info(f"⚠️  [{client.client_id if client.client_id else 'unregistered'}] Interrupted by user")
+        logger.info("Interrupted by user")
     except Exception as e:
-        logger.error(f"❌ [{client.client_id if client.client_id else 'unregistered'}] Client runtime exception: {e}", exc_info=True)
+        logger.error(f"Client runtime exception: {e}", exc_info=True)
     finally:
-        logger.info(f"🔌 [{client.client_id if client.client_id else 'unregistered'}] Cleaning up and disconnecting...")
+        logger.debug("Cleaning up and disconnecting...")
         await client._cleanup()
-        logger.info(f"✅ [{client.client_id if client.client_id else 'unregistered'}] Client shutdown complete")
-        logger.info("📊 CLIENT SUMMARY")
-        logger.info(f"Tasks processed: {tasks_processed}")
-        logger.info(f"✅ Succeeded: {tasks_succeeded}")
-        logger.info(f"❌ Failed: {tasks_failed}")
+        logger.info("Client shutdown complete")
+        logger.info(f"Summary | Processed: {tasks_processed} | Succeeded: {tasks_succeeded} | Failed: {tasks_failed}")
 
     return {
         "tasks_processed": tasks_processed,
@@ -350,7 +315,6 @@ def run_one_client_process_main(
     """Entry point for each client process in multi-client mode."""
     import sys
 
-    from robocoin_dataset.utils.logger import setup_logger
 
     # Enable console output for DEBUG mode, otherwise suppress it
     enable_console = (log_level == "DEBUG")
@@ -368,13 +332,34 @@ def run_one_client_process_main(
             handlers=[],  # No handlers
         )
 
-    # Create per-process logger with unique file name
-    logger = setup_logger(
-        name=f"hub_upload_client_{process_id:02d}",
-        log_dir=Path(log_dir),
-        level=getattr(logging, log_level, logging.INFO),
-        console_output=enable_console,
-    )
+    # Create per-process logger with fixed file name (client_00.log, client_01.log, etc.)
+    log_dir_path = Path(log_dir)
+    log_dir_path.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir_path / f"client_{process_id:02d}.log"
+
+    logger = logging.getLogger(f"hub_upload_client_{process_id:02d}")
+    logger.setLevel(logging.DEBUG)  # File gets DEBUG level
+    logger.propagate = False
+
+    # Remove existing handlers
+    logger.handlers.clear()
+
+    # File handler - DEBUG level for detailed logs
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(log_format, datefmt=date_format)
+
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)  # File gets all DEBUG logs
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Console handler - only if DEBUG mode
+    if enable_console:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(getattr(logging, log_level, logging.INFO))
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
 
     logger.info(f"Hub upload client process {process_id} started, connecting to {server_uri}")
 

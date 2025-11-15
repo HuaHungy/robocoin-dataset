@@ -171,26 +171,69 @@ def _prepare_upload_config_dict(config: dict) -> dict:
     return prepared
 
 
-def setup_logging(log_level: str = "INFO") -> logging.Logger:
+def _generate_log_folder_name(
+    mode: str,
+    hub_name: DatasetsHubEnum | str,
+    namespace: str,
+    timestamp: str | None = None,
+) -> str:
+    """
+    Generate a log folder name with timestamp and key parameters.
+
+    Args:
+        mode: Mode prefix ('local' or 'dist')
+        hub_name: Hub platform name (huggingface/modelscope)
+        namespace: Namespace/username
+        timestamp: Timestamp string in YYYYMMDD_HHMMSS format. If None, generates current timestamp.
+
+    Returns:
+        Folder name string (e.g., 'local_20240115_143022_huggingface_robocoin')
+    """
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Normalize hub_name to string
+    if isinstance(hub_name, DatasetsHubEnum):
+        hub_str = hub_name.value
+    else:
+        hub_str = str(hub_name)
+
+    # Sanitize namespace (remove special characters that might cause issues in folder names)
+    namespace_safe = namespace.replace("/", "_").replace("\\", "_").replace(" ", "_")
+
+    return f"{mode}_{timestamp}_{hub_str}_{namespace_safe}"
+
+
+def setup_logging(
+    log_level: str = "INFO",
+    log_folder: Path | str | None = None,
+    log_filename: str = "local.log",
+) -> tuple[logging.Logger, Path]:
     """
     Set up logging configuration for CLI.
 
-    File: Contains all detailed logs at the specified level
-    Console: Only shows critical errors (all task info shown via tqdm.write)
+    File: Contains all detailed logs at DEBUG level
+    Console: Only shows INFO level and above (reduced output)
 
     Args:
-        log_level: Logging level for file output (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_level: Logging level for console output (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_folder: Optional folder path for logs. If None, uses default logs/hub_upload
+        log_filename: Name of the log file within the folder (default: local.log)
 
     Returns:
-        Logger instance
+        Tuple of (Logger instance, log_file_path)
     """
-    # Create logs directory
-    log_dir = Path("logs/hub_upload")
+    # Determine log directory
+    if log_folder is None:
+        base_log_dir = Path("logs/hub_upload")
+        log_dir = base_log_dir
+    else:
+        log_dir = Path(log_folder)
+
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate timestamped log filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"upload_{timestamp}.log"
+    # Generate log file path
+    log_file = log_dir / log_filename
 
     # Configure root logger
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -199,17 +242,17 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     # Remove any existing handlers
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
-    root_logger.setLevel(getattr(logging, log_level.upper()))
+    root_logger.setLevel(logging.DEBUG)  # Set root to DEBUG to capture all
 
-    # File handler - detailed logs at specified level
+    # File handler - detailed logs at DEBUG level
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(getattr(logging, log_level.upper()))
+    file_handler.setLevel(logging.DEBUG)  # File gets all DEBUG logs
     file_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
     root_logger.addHandler(file_handler)
 
-    # Console handler - only CRITICAL errors (task info via tqdm.write)
+    # Console handler - INFO level (reduced output)
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.CRITICAL)  # Only show critical errors
+    console_handler.setLevel(getattr(logging, log_level.upper()))  # Console uses specified level
     console_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
     root_logger.addHandler(console_handler)
 
@@ -222,7 +265,7 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     from tqdm import tqdm
     tqdm.write(f"📝 Logging to: {log_file}")
 
-    return logger
+    return logger, log_file
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -411,14 +454,6 @@ def run_server_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     from robocoin_dataset.hub_upload.lerobot.hub_upload_server import HubUploadServer
     from robocoin_dataset.utils.logger import setup_logger
 
-    # Create summary logger for server status updates
-    summary_logger = setup_logger(
-        name="hub_upload_server_summary",
-        log_dir=Path("logs/hub_upload"),
-        level=logging.INFO,
-        console_output=False,
-    )
-
     hub_name = _normalize_hub_name(config.get("hub_name"))
     db_file_path = _resolve_required_path(
         config.get("db_file_path"),
@@ -431,6 +466,25 @@ def run_server_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     namespace = config.get("namespace", DS_PLATFORM_NAME)
     output_path = config.get("output_path", "./dataset_info")
     force_overwrite = config.get("force_overwrite", False)
+
+    # Create timestamped log folder for distributed mode
+    folder_name = _generate_log_folder_name("dist", hub_name, namespace)
+    log_folder = Path("logs/hub_upload") / folder_name
+
+    # Reconfigure logging with timestamped folder
+    logger, log_file = setup_logging(
+        log_level=args.log_level,
+        log_folder=log_folder,
+        log_filename="server.log"
+    )
+
+    # Create summary logger for server status updates in the same folder
+    summary_logger = setup_logger(
+        name="hub_upload_server_summary",
+        log_dir=log_folder,
+        level=logging.DEBUG,  # File gets DEBUG level
+        console_output=False,
+    )
 
     logger.info("=" * 80)
     logger.info("🖥️  STARTING HUB UPLOAD SERVER")
@@ -516,6 +570,17 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
 
     server_uri = f"ws://{args.host}:{args.port}"
 
+    # Create timestamped log folder for distributed mode (shared by all clients)
+    folder_name = _generate_log_folder_name("dist", hub_name, namespace)
+    log_folder = Path("logs/hub_upload") / folder_name
+
+    # Reconfigure logging with timestamped folder
+    logger, log_file = setup_logging(
+        log_level=args.log_level,
+        log_folder=log_folder,
+        log_filename="client_main.log"
+    )
+
     logger.info("=" * 80)
     logger.info("🔌 STARTING HUB UPLOAD CLIENT(S)")
     logger.info("=" * 80)
@@ -524,6 +589,7 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     logger.info(f"Hub: {hub_name.value}")
     logger.info(f"Namespace: {namespace}")
     logger.info(f"Heartbeat interval: {args.heartbeat_interval}s")
+    logger.info(f"Log folder: {log_folder}")
     logger.info("=" * 80)
     tqdm.write("=" * 80)
     tqdm.write("🔌 STARTING HUB UPLOAD CLIENT(S)")
@@ -532,9 +598,10 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     tqdm.write(f"Number of clients: {args.num_clients}")
     tqdm.write(f"Hub: {hub_name.value}")
     tqdm.write(f"Namespace: {namespace}")
+    tqdm.write(f"Log folder: {log_folder}")
     tqdm.write("=" * 80)
 
-    # Run client(s)
+    # Run client(s) - all clients will use the same log folder
     exit_code = run_multi_clients(
         server_uri=server_uri,
         num_clients=args.num_clients,
@@ -544,7 +611,7 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
         output_path=output_path,
         force_overwrite=force_overwrite,
         heartbeat_interval=args.heartbeat_interval,
-        log_dir=Path("logs/hub_upload"),
+        log_dir=log_folder,
         log_level=args.log_level,
     )
 
@@ -571,8 +638,8 @@ def main() -> None:
     # Parse arguments
     args = parse_arguments()
 
-    # Setup logging
-    logger = setup_logging(args.log_level)
+    # Setup logging - will be reconfigured per mode with timestamped folders
+    logger, _ = setup_logging(args.log_level)
 
     try:
         # Validate mode selection
@@ -629,6 +696,19 @@ def main() -> None:
             _ensure_required_config_fields(config_dict, ["db_file_path", "root_path", "token"])
 
             prepared_config_dict = _prepare_upload_config_dict(config_dict)
+
+            # Create timestamped log folder for local mode
+            hub_name = prepared_config_dict.get("hub_name", DatasetsHubEnum.huggingface)
+            namespace = prepared_config_dict.get("namespace", DS_PLATFORM_NAME)
+            folder_name = _generate_log_folder_name("local", hub_name, namespace)
+            log_folder = Path("logs/hub_upload") / folder_name
+
+            # Reconfigure logging with timestamped folder
+            logger, log_file = setup_logging(
+                log_level=args.log_level,
+                log_folder=log_folder,
+                log_filename="local.log"
+            )
 
             # Create upload config
             config = create_upload_config(prepared_config_dict)

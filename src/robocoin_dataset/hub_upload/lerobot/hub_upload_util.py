@@ -6,8 +6,6 @@ It contains the business logic for dataset upload operations.
 """
 
 import random
-import select
-import sys
 import time
 import traceback
 from dataclasses import dataclass
@@ -298,62 +296,62 @@ class LocalDsUploadUtil(LocalDsUtil):
     ) -> tuple[bool, str]:
         return gen_readme(hardlink_path, dataset_info_root_path, self.logger)
 
-    def _check_repo_conflict(self, repo_id: str, timeout: float = 5.0) -> bool:
-        """
-        Check if repository exists and prompt user for confirmation.
+    # def _check_repo_conflict(self, repo_id: str, timeout: float = 5.0) -> bool:
+    #     """
+    #     Check if repository exists and prompt user for confirmation.
 
-        Args:
-            repo_id: Repository identifier.
-            timeout: Timeout in seconds for user input (default: 5.0)
+    #     Args:
+    #         repo_id: Repository identifier.
+    #         timeout: Timeout in seconds for user input (default: 5.0)
 
-        Returns:
-            True if user confirms to proceed, False otherwise.
-        """
-        self.logger.debug(f"Checking repo: {repo_id}")
-        repo_exists = self.hub.repo_exists(repo_id=repo_id)
-        self.logger.debug(f"Exists: {repo_exists}")
+    #     Returns:
+    #         True if user confirms to proceed, False otherwise.
+    #     """
+    #     self.logger.debug(f"Checking repo: {repo_id}")
+    #     repo_exists = self.hub.repo_exists(repo_id=repo_id)
+    #     self.logger.debug(f"Exists: {repo_exists}")
 
-        if not repo_exists:
-            return True
+    #     if not repo_exists:
+    #         return True
 
-        # Repo exists - check force_overwrite flag
-        if self.config.force_overwrite:
-            self.logger.debug(f"{repo_id}: Force overwrite enabled")
-            return True
+    #     # Repo exists - check force_overwrite flag
+    #     if self.config.force_overwrite:
+    #         self.logger.debug(f"{repo_id}: Force overwrite enabled")
+    #         return True
 
-        # Prompt user for confirmation with timeout
-        tqdm.write("")  # Blank line for spacing
-        tqdm.write(f"⚠️  Repository already exists: {repo_id}")
-        tqdm.write(f"   Overwrite? (y/n) [default: y in {timeout}s]: ", end="")
-        sys.stdout.flush()
+    #     # Prompt user for confirmation with timeout
+    #     tqdm.write("")  # Blank line for spacing
+    #     tqdm.write(f"⚠️  Repository already exists: {repo_id}")
+    #     tqdm.write(f"   Overwrite? (y/n) [default: y in {timeout}s]: ", end="")
+    #     sys.stdout.flush()
 
-        # Use select for timeout input
-        try:
-            # Check if stdin has input ready within timeout
-            ready, _, _ = select.select([sys.stdin], [], [], timeout)
+    #     # Use select for timeout input
+    #     try:
+    #         # Check if stdin has input ready within timeout
+    #         ready, _, _ = select.select([sys.stdin], [], [], timeout)
 
-            if ready:
-                # Input available
-                response = sys.stdin.readline().strip().lower()
-                if response in ["y", "yes", ""]:
-                    return True
-                if response in ["n", "no"]:
-                    return False
-                tqdm.write("   Invalid input, defaulting to 'yes'")
-                return True
-            # Timeout - default to yes
-            tqdm.write("   (timeout - defaulting to 'yes')")
-            return True
+    #         if ready:
+    #             # Input available
+    #             response = sys.stdin.readline().strip().lower()
+    #             if response in ["y", "yes", ""]:
+    #                 return True
+    #             if response in ["n", "no"]:
+    #                 return False
+    #             tqdm.write("   Invalid input, defaulting to 'yes'")
+    #             return True
+    #         # Timeout - default to yes
+    #         tqdm.write("   (timeout - defaulting to 'yes')")
+    #         return True
 
-        except (OSError, ValueError):
-            # select not supported (e.g., Windows) or other issues
-            # Fall back to regular input
-            try:
-                response = input().strip().lower()
-                return response in ["y", "yes", ""]
-            except (EOFError, KeyboardInterrupt):
-                # No input or Ctrl+C - default to no
-                return False
+    #     except (OSError, ValueError):
+    #         # select not supported (e.g., Windows) or other issues
+    #         # Fall back to regular input
+    #         try:
+    #             response = input().strip().lower()
+    #             return response in ["y", "yes", ""]
+    #         except (EOFError, KeyboardInterrupt):
+    #             # No input or Ctrl+C - default to no
+    #             return False
 
 
 if __name__ == "__main__":
