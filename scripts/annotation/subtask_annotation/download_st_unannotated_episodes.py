@@ -14,26 +14,23 @@ from robocoin_dataset.database.models import (
 )
 from robocoin_dataset.utils.logger import setup_logger
 
-logger = setup_logger(name=__name__, log_dir="logs")
+logger = setup_logger(name="download_unannotated_episodes", log_dir="logs")
 
-device_camera_keywords = {
-    "agilex_cobot_decoupled_magic": "high_rgb",
-    "alpha_bot_2": "head_rgb",
-    "discover_robotics_aitbot_mmk2": "high_rgb",
-    "galaxea_r1_lite": "high_rgb",
-    "leju_robot": "head_rgb",
-    "realman_rmc_aidal": "high_rgb",
-    "ruantong_a2d": "high_rgb",
-    "unitree_g1": "high_rgb",
-    "yinhe": "high_rgb",
-}
+main_camera_keywords = [
+    "high_rgb",
+    "head_rgb",
+    "front_rgb",
+    "egg_view",
+    "left_high",
+    "right_high",
+    "ego_view",
+]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--db_file_path", type=str, default="db/datasets_new.db")
     parser.add_argument("--device_model", type=str, default="all")
-    parser.add_argument("--cam-keyword", type=str, default="high")
-    parser.add_argument("--output_dir", type=str, default="high")
+    parser.add_argument("--output_dir", type=str, default="./data/unannotated_episodes")
     args = parser.parse_args()
 
     db = DatasetDatabase(args.db_file_path)
@@ -67,7 +64,9 @@ if __name__ == "__main__":
         if not unmatched_eps:
             continue
 
-        output_repo_dir: Path = Path(args.output_dir) / Path(item.convert_path).name
+        output_repo_dir: Path = (
+            Path(args.output_dir) / args.device_model / Path(item.convert_path).name
+        )
 
         if output_repo_dir.exists():
             logger.info(f"{output_repo_dir} exists, please select another output_dir")
@@ -108,11 +107,13 @@ if __name__ == "__main__":
                 if not camera_dir.is_dir():
                     continue
 
-                if device_camera_keywords[args.device_model] in camera_dir.name:
-                    featured_dirs.append(camera_dir)
+                for main_camera_keyword in main_camera_keywords:
+                    if main_camera_keyword in camera_dir.name:
+                        featured_dirs.append(camera_dir)
+                        break
 
         if not featured_dirs:
-            logger.info(f"No {args.cam_keyword} camera found in {repo_path}")
+            logger.error(f"No camera keywork found in {repo_path}")
             continue
 
         video_files: list[Path] = []
@@ -127,7 +128,7 @@ if __name__ == "__main__":
             for video_file in video_files
         ]
 
-        logger.info(f"found {len(video_files)} videos, press enter to copy them")
+        logger.info(f"found {len(video_files)} videos")
         for video_file, new_video_file in tqdm.tqdm(
             zip(video_files, new_video_files),
             desc="Copying videos",
