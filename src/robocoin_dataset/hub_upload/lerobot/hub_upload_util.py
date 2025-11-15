@@ -6,29 +6,22 @@ It contains the business logic for dataset upload operations.
 """
 
 import random
+import select
+import sys
 import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-from sqlalchemy.sql.expression import and_
 from tqdm import tqdm
 
-from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.database.models import DatasetDB, TaskStatus
 from robocoin_dataset.hub_upload.gen_file.gen_info import gen_info
 from robocoin_dataset.hub_upload.gen_file.gen_readme import gen_readme
 
 from .constant import (
-  README_FILE,
-  DatasetsHubEnum,
-)
-from .hub_upload_task import (
-  _gen_one_dataset_upload_task,
-  _mark_upload_completed,
-  _mark_upload_failed,
-  _sync_datasets_upload_status,
+    README_FILE,
+    DatasetsHubEnum,
 )
 from .local_datasets_util import LocalDsConfig, LocalDsUtil
 
@@ -37,26 +30,27 @@ from .local_datasets_util import LocalDsConfig, LocalDsUtil
 
 @dataclass
 class LocalDsUploadConfig(LocalDsConfig):
-  """
-  Configuration class for local dataset uploading.
+    """
+    Configuration class for local dataset uploading.
 
-  Attributes:
-      hub_name (DatasetsHubEnum): Target hub platform for uploading datasets.
-          Defaults to DatasetsHubEnum.HUGGINGFACE.
-      token (str): Authentication token for the target hub platform. Defaults to empty string.
-      namespace (str): Username/namespace on the target hub platform.
-      output_path (str): Path to the output directory for commit history files. Defaults to empty string.
-      db_file_path (str): Path to the database file for dataset tracking. Defaults to empty string.
-      skip_missing (bool): Skip datasets with missing paths instead of aborting.
-      force_overwrite (bool): Force overwrite existing repositories without prompting. Defaults to False.
-  """
-  hub_name: DatasetsHubEnum = DatasetsHubEnum.huggingface
-  token: str = ""
-  namespace: str = ""
-  output_path: str = ""
-  db_file_path: str = ""
-  skip_missing: bool = True
-  force_overwrite: bool = False
+    Attributes:
+        hub_name (DatasetsHubEnum): Target hub platform for uploading datasets.
+            Defaults to DatasetsHubEnum.HUGGINGFACE.
+        token (str): Authentication token for the target hub platform. Defaults to empty string.
+        namespace (str): Username/namespace on the target hub platform.
+        output_path (str): Path to the output directory for commit history files. Defaults to empty string.
+        db_file_path (str): Path to the database file for dataset tracking. Defaults to empty string.
+        skip_missing (bool): Skip datasets with missing paths instead of aborting.
+        force_overwrite (bool): Force overwrite existing repositories without prompting. Defaults to False.
+    """
+
+    hub_name: DatasetsHubEnum = DatasetsHubEnum.huggingface
+    token: str = ""
+    namespace: str = ""
+    output_path: str = ""
+    db_file_path: str = ""
+    skip_missing: bool = True
+    force_overwrite: bool = False
 
 
 def load_config_from_yaml(config_path: str | Path) -> dict:
@@ -117,296 +111,142 @@ def create_upload_config(config_dict: dict) -> LocalDsUploadConfig:
 
 
 class LocalDsUploadUtil(LocalDsUtil):
-  """
-  Utility class for uploading local datasets to remote hubs.
-
-  This class handles the process of validating local datasets, checking commit history,
-  and uploading datasets to either Hugging Face or ModelScope platforms.
-
-  Attributes:
-      config (LocalDsUploadConfig): Configuration object for the uploader.
-      hub: Hub-specific upload implementation (HuggingfaceUploadHub or ModelscopeUploadHub).
-      logger: Logger instance for the uploader.
-  """
-
-  def __init__(self, config: LocalDsUploadConfig) -> None:
     """
-    Initialize the uploader with configuration.
+    Utility class for uploading local datasets to remote hubs.
 
-    Args:
+    This class handles the process of validating local datasets, checking commit history,
+    and uploading datasets to either Hugging Face or ModelScope platforms.
+
+    Attributes:
         config (LocalDsUploadConfig): Configuration object for the uploader.
-
-    Raises:
-        ValueError: If the specified hub platform is not supported.
+        hub: Hub-specific upload implementation (HuggingfaceUploadHub or ModelscopeUploadHub).
+        logger: Logger instance for the uploader.
     """
-    super().__init__(config)
-    self.config = config
 
-    # Determine namespace
-    self.namespace = config.namespace
+    def __init__(self, config: LocalDsUploadConfig) -> None:
+        """
+        Initialize the uploader with configuration.
 
-    # specify the hub to method use
-    if config.hub_name == DatasetsHubEnum.modelscope:
-      from ..hubs.ms_hub import ModelscopeUploadHub
-      self.hub = ModelscopeUploadHub(self.config.token)
-    elif config.hub_name == DatasetsHubEnum.huggingface:
-      from ..hubs.hf_hub import HuggingfaceUploadHub
-      self.hub = HuggingfaceUploadHub(self.config.token)
-    else:
-      raise ValueError(f"hub {config.hub_name} is not supported.")
-    pass
+        Args:
+            config (LocalDsUploadConfig): Configuration object for the uploader.
 
-    self.logger = self.setup_logger(logger_name="UPLOAD_DATASETS")
+        Raises:
+            ValueError: If the specified hub platform is not supported.
+        """
+        super().__init__(config)
+        self.config = config
+        self.namespace = config.namespace
+        if config.hub_name == DatasetsHubEnum.modelscope:
+            from ..hubs.ms_hub import ModelscopeUploadHub
 
+            self.hub = ModelscopeUploadHub(self.config.token)
+        elif config.hub_name == DatasetsHubEnum.huggingface:
+            from ..hubs.hf_hub import HuggingfaceUploadHub
 
-  def _upload_datasets_from_database(self) -> None:
-    """
-    Upload datasets from database one-by-one.
-    """
-    # Start timing
-    start_time = time.time()
-
-    # Validate and resolve database path
-    db_path = Path(self.config.db_file_path).expanduser().absolute()
-
-    # Print initial configuration
-    self.logger.info(f"🚀 Upload: {self.config.hub_name.value}/{self.namespace}")
-    tqdm.write(f"🚀 Upload: {self.config.hub_name.value}/{self.namespace}")
-
-    # Connect to database and store it as instance attribute for helper methods
-    self.db = DatasetDatabase(db_path)
-    # Store original root_path to restore later
-    original_root_path = self.root_path
-
-    # Process datasets with progress bar
-    uploaded_count = 0
-    failed_count = 0
-    skipped_count = 0
-
-    # Create progress bar (will be updated after first sync)
-    pbar = tqdm(
-      desc="📤 Uploading",
-      unit="ds",
-      bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
-    )
-
-    ##### MAIN LOOP #####
-    try:
-      while True:
-        # Sync datasets upload status from database
-        _sync_datasets_upload_status(self.db, self.config.hub_name, self.logger, retry_failed=False)
-
-        # Count remaining datasets to upload
-        from .hub_upload_task import _get_hub_field_prefix
-        upload_status_field = _get_hub_field_prefix(self.config.hub_name, DatasetDB, "upload_status")
-        upload_status_col = getattr(DatasetDB, upload_status_field)
-        with self.db.with_session() as session:
-          pending_count = session.query(DatasetDB).filter(
-            and_(
-              DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
-              upload_status_col == TaskStatus.PENDING,
-            )
-          ).count()
-
-        if pending_count == 0:
-          break
-
-        # Update progress bar total if needed
-        if pbar.total is None or pbar.total != pending_count + uploaded_count + failed_count + skipped_count:
-          pbar.total = pending_count + uploaded_count + failed_count + skipped_count
-
-        # Get next dataset to upload from database (with validation)
-        try:
-          dataset_uuid, hardlink_path = _gen_one_dataset_upload_task(
-            self.db, self.config.hub_name, self.logger, self.config.skip_missing
-          )
-        except FileNotFoundError:
-          # Error was raised and not skipped
-          pbar.close()
-          raise
-
-        if dataset_uuid is None or hardlink_path is None:
-          # No more tasks
-          break
-
-        # Get dataset name for logging
-        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink")
-        pbar.set_description(f"📤 {dataset_name[:30]:30s}")
-
-        # Check repo conflict
-        repo_name = hardlink_path.name.removesuffix("_qced_hardlink")
-        repo_id = f"{self.namespace}/{repo_name}"
-        if not self._check_repo_conflict(repo_id):
-          self.logger.debug(f"{dataset_name}: Skipped (user cancelled)")
-          _mark_upload_failed(self.db, dataset_uuid, "User cancelled", self.config.hub_name, self.logger)
-          skipped_count += 1
-          pbar.update(1)
-          continue
-
-        # Print status to console (in addition to log file)
-        tqdm.write(f"  📦 Processing: {dataset_name}")
-        tqdm.write(f"     UUID: {dataset_uuid}")
-        tqdm.write(f"     Path: {hardlink_path}")
-
-        ##### UPLOAD DATASET CALLING #####
-        success, error_msg = self._upload_one_dataset(hardlink_path, original_root_path)
-
-        # Handle result
-        if success:
-          _mark_upload_completed(self.db, dataset_uuid, self.config.hub_name, self.logger)
-          uploaded_count += 1
-          self.logger.info(f"{dataset_name}: ✅ Successfully uploaded")
+            self.hub = HuggingfaceUploadHub(self.config.token)
         else:
-          _mark_upload_failed(self.db, dataset_uuid, error_msg, self.config.hub_name, self.logger)
-          failed_count += 1
-          tqdm.write(f"  ❌ Failed: {error_msg}")
-          self.logger.error(f"{dataset_name}: {error_msg}")
+            raise ValueError(f"hub {config.hub_name} is not supported.")
+        pass
 
-        pbar.update(1)
+        self.logger = self.setup_logger(logger_name="UPLOAD_DATASETS")
 
-    finally:
-      # Ensure root_path is restored and progress bar is closed
-      self.root_path = original_root_path
-      pbar.close()
 
-    # Calculate elapsed time
-    end_time = time.time()
-    elapsed_seconds = end_time - start_time
-    hours, remainder = divmod(int(elapsed_seconds), 3600)
-    minutes, seconds = divmod(remainder, 60)
-
-    if hours > 0:
-      time_str = f"{hours}h {minutes}m {seconds}s"
-    elif minutes > 0:
-      time_str = f"{minutes}m {seconds}s"
-    else:
-      time_str = f"{seconds}s"
-
-    # Final summary
-    total_processed = uploaded_count + failed_count + skipped_count
-    if total_processed == 0:
-      self.logger.info("No datasets to upload")
-      tqdm.write("No datasets to upload")
-      return
-
-    status = f"✅ {uploaded_count}/{total_processed}"
-    if failed_count > 0:
-      status += f" | ❌ {failed_count}"
-    if skipped_count > 0:
-      status += f" | ⏭️  {skipped_count}"
-    status += f" | ⏱️  {time_str}"
-
-    self.logger.info(status)
-    self.logger.info(f"Total upload time: {elapsed_seconds:.2f}s ({time_str})")
-    tqdm.write("")  # Blank line for spacing
-    tqdm.write(status)
-
-  def _do_upload(
-    self, hardlink: str,
-    commit_msg: str = "",
-    max_retries: int = 3
+    def _do_upload(
+        self, hardlink_path: Path, commit_msg: str = "", max_retries: int = 3
     ) -> tuple[bool, str]:
-    """
-    Upload a single dataset to the remote hub according to the hardlink.
-    local function without db: just upload the dataset to the remote hub.
+        """
+        Upload a single dataset to the remote hub.
+        local function without db: just upload the dataset to the remote hub.
 
-    Args:
-        hardlink (str): Path of the hardlink folder to upload.
-        commit_msg (str): Commit message for the upload. Defaults to auto-generated message.
-        max_retries (int): Maximum number of retry attempts. Defaults to 3.
-    Returns: tuple[bool, str]: (success status, error message if failed)
-    """
+        Args:
+            hardlink_path (Path): Path to the hardlink folder to upload.
+            commit_msg (str): Commit message for the upload. Defaults to auto-generated message.
+            max_retries (int): Maximum number of retry attempts. Defaults to 3.
+        Returns: tuple[bool, str]: (success status, error message if failed)
+        """
 
-    repo_name = hardlink.removesuffix("_qced_hardlink")
-    # Remove "_qced_hardlink" suffix from ds_name for clean repository name
+        # Extract dataset name from hardlink path
+        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
 
-    # Validate dataset structure using shared validation from LocalDsUtil
-    # (same validation used in dataset_info_util.py for info generation)
-    try:
-      self.check_dataset_dir_valid(
-        ds_name=hardlink,
-        additional_check_list=[README_FILE]  # Upload requires README.md
-      )
-    except Exception as e:
-      tb = traceback.format_exc()
-      error_msg = f"Validation failed: {e}\n\nFull traceback:\n{tb}"
-      self.logger.debug(f"{repo_name}: {error_msg}")
-      return False, error_msg
+        # Validate dataset structure using shared validation from LocalDsUtil
+        try:
+            self.check_dataset_dir_valid(
+                ds_name=hardlink_path.name,
+                additional_check_list=[README_FILE],  # Upload requires README.md
+            )
+        except Exception as e:
+            tb = traceback.format_exc()
+            error_msg = f"Validation failed: {e}\n\nFull traceback:\n{tb}"
+            self.logger.debug(f"{dataset_name}: {error_msg}")
+            return False, error_msg
+        if not hardlink_path.exists():
+            raise FileNotFoundError(f"dataset path {hardlink_path} does not exist")
 
-    hardlink_path = self.root_path.joinpath(hardlink)
-    if not hardlink_path.exists():
-      raise FileNotFoundError(f"dataset path {hardlink_path} does not exist")
+        upload_path = hardlink_path
+        self.logger.debug(f"{dataset_name}: Using {upload_path}")
 
-    upload_path = hardlink_path
-    self.logger.debug(f"{repo_name}: Using {upload_path}")
+        # Repository ID uses clean name (without _hardlink suffix)
+        repo_id = f"{self.namespace}/{dataset_name}"
 
-    # Repository ID uses clean name (without _hardlink suffix)
-    repo_id = f"{self.namespace}/{repo_name}"
+        # Generate commit message if not provided
+        if not commit_msg:
+            commit_msg = f"Upload dataset {dataset_name}"
 
-    # Generate commit message if not provided
-    if not commit_msg:
-      commit_msg = f"Upload dataset {repo_name}"
+        # Retry logic with random delays
+        for attempt in range(1, max_retries + 1):
+            try:  # noqa: PERF203 - retry logic requires try-except in loop
+                if not self.hub.repo_exists(repo_id=repo_id):
+                    self.logger.debug(f"{dataset_name}: repo not exists, creating repo {repo_id}")
+                    self.hub.create_repo(repo_id=repo_id)
 
-    # Retry logic with random delays
-    for attempt in range(1, max_retries + 1):
-      try:  # noqa: PERF203 - retry logic requires try-except in loop
-        # Step 1: Check if repo exists
-        repo_exists = self.hub.repo_exists(repo_id=repo_id)
+                ### UPLOAD: CALL API ###
+                commit_url = self.hub.upload_repo(
+                    folder_path=upload_path,
+                    repo_id=repo_id,
+                    commit_msg=commit_msg,
+                    logger=self.logger,
+                )
 
-        # Step 2: Create repo if it doesn't exist
-        if not repo_exists:
-          self.logger.debug(f"{repo_name}: Creating repo {repo_id}")
-          self.hub.create_repo(repo_id=repo_id)
+                self.logger.debug(f"{dataset_name}: {commit_url}")
+                return True, ""
 
-        # Step 3: Upload files using hub's upload_repo method (pass logger)
-        commit_url = self.hub.upload_repo(
-          folder_path=upload_path,
-          repo_id=repo_id,
-          commit_msg=commit_msg,
-          logger=self.logger
-        )
+            except Exception as e:  # noqa: PERF203
+                if attempt < max_retries:
+                    # Random delay before retry
+                    delay = random.uniform(2, 10)
+                    self.logger.debug(
+                        f"{dataset_name}: Retry {attempt}/{max_retries} in {delay:.1f}s: {e}"
+                    )
+                    # Countdown display
+                    for remaining in range(int(delay), 0, -1):
+                        print(f"\r  ⏳ {remaining}s...   ", end="", flush=True)
+                        time.sleep(1)
+                    # Sleep remaining fractional seconds
+                    time.sleep(delay - int(delay))
+                    print("\r" + " " * 20 + "\r", end="", flush=True)  # Clear the countdown line
+                else:
+                    tb = traceback.format_exc()
+                    error_msg = f"Failed after {max_retries} attempts: {e}\n\nFull traceback:\n{tb}"
+                    self.logger.debug(f"{dataset_name}: {error_msg}")
+                    return False, error_msg
 
-        self.logger.debug(f"{repo_name}: {commit_url}")
-        return True, ""
+        return False, "Upload failed with unknown error"
 
-      except Exception as e:  # noqa: PERF203
-        if attempt < max_retries:
-          # Random delay before retry
-          delay = random.uniform(2, 10)
-          self.logger.debug(f"{repo_name}: Retry {attempt}/{max_retries} in {delay:.1f}s: {e}")
-          # Countdown display
-          for remaining in range(int(delay), 0, -1):
-            print(f"\r  ⏳ {remaining}s...   ", end="", flush=True)
-            time.sleep(1)
-          # Sleep remaining fractional seconds
-          time.sleep(delay - int(delay))
-          print("\r" + " " * 20 + "\r", end="", flush=True)  # Clear the countdown line
-        else:
-          tb = traceback.format_exc()
-          error_msg = f"Failed after {max_retries} attempts: {e}\n\nFull traceback:\n{tb}"
-          self.logger.debug(f"{repo_name}: {error_msg}")
-          return False, error_msg
+    def _upload_one_dataset(self, hardlink_path: Path) -> tuple[bool, str]:
+        """
+        Upload a dataset to the hub with YAML and README generation.
+        is an enhanced version of _upload_one_dataset in LocalDsUtil.
 
-    return False, "Upload failed with unknown error"
+        Args:
+            hardlink_path: Path to the hardlink directory
 
-
-  def _upload_one_dataset(self, hardlink_path: Path, original_root_path: Path) -> tuple[bool, str]:
-      """
-      Upload a dataset with temporarily changed root_path.
-      Generates YAML and README files on-demand before upload.
-
-      Args:
-          hardlink_path: Path to the hardlink directory
-          original_root_path: Original root_path to restore after upload
-
-      Returns:
-          tuple[bool, str]: (success status, error message if failed or empty string if success)
-      """
-      try:
+        Returns:
+            tuple[bool, str]: (success status, error message if failed or empty string if success)
+        """
         # Start timing for this dataset
         dataset_start_time = time.time()
 
-        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink")
+        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
 
         # Define output path for intermediate YAML file
         output_path = Path(self.config.output_path or "./dataset_info").expanduser().absolute()
@@ -417,98 +257,102 @@ class LocalDsUploadUtil(LocalDsUtil):
         self.logger.info(f"{dataset_name}: Generating YAML...")
         yaml_success, yaml_error = self._generate_yaml_for_dataset(hardlink_path, output_path)
         if not yaml_success:
-          return False, yaml_error
+            return False, yaml_error
 
         # Step 2: Generate README file for this dataset
         tqdm.write("    📝 Generating README...")
         self.logger.info(f"{dataset_name}: Generating README...")
         readme_success, readme_error = self._generate_readme_for_dataset(hardlink_path, output_path)
         if not readme_success:
-          return False, readme_error
+            return False, readme_error
 
-        # Step 3: Temporarily change root_path to hardlink's parent
-        self.root_path = hardlink_path.parent
-
-        # Step 4: Execute upload
+        # Step 3: Execute upload
         tqdm.write("    ⬆️  Uploading to hub (this may take several minutes for large datasets)...")
         self.logger.info(f"{dataset_name}: Uploading to hub...")
-        result = self._do_upload(hardlink=hardlink_path.name)
+        result = self._do_upload(hardlink_path)
 
         # Calculate elapsed time for this dataset
         dataset_elapsed = time.time() - dataset_start_time
 
         if result[0]:  # success
-          tqdm.write(f"    ✅ Upload completed successfully! (took {dataset_elapsed:.1f}s)")
-          self.logger.info(f"{dataset_name}: Upload completed in {dataset_elapsed:.2f}s")
+            tqdm.write(f"    ✅ Upload completed successfully! (took {dataset_elapsed:.1f}s)")
+            self.logger.info(f"{dataset_name}: Upload completed in {dataset_elapsed:.2f}s")
         else:
-          self.logger.info(f"{dataset_name}: Upload failed after {dataset_elapsed:.2f}s")
+            self.logger.info(f"{dataset_name}: Upload failed after {dataset_elapsed:.2f}s")
 
         return result
 
-      finally:
-        # Always restore original root_path
-        self.root_path = original_root_path
+    def _generate_yaml_for_dataset(
+        self,
+        hardlink_path: Path,
+        output_path: Path,
+    ) -> tuple[bool, str]:
+        return gen_info(hardlink_path, output_path, self.logger)
 
+    def _generate_readme_for_dataset(
+        self,
+        hardlink_path: Path,
+        dataset_info_root_path: Path,
+    ) -> tuple[bool, str]:
+        return gen_readme(hardlink_path, dataset_info_root_path, self.logger)
 
-  def _generate_yaml_for_dataset(self, hardlink_path: Path, output_path: Path) -> tuple[bool, str]:
-    """
-    Generate dataset info YAML for a single dataset.
+    def _check_repo_conflict(self, repo_id: str, timeout: float = 5.0) -> bool:
+        """
+        Check if repository exists and prompt user for confirmation.
 
-    Args:
-        hardlink_path: Path to the hardlink directory
-        output_path: Output path for the YAML file
+        Args:
+            repo_id: Repository identifier.
+            timeout: Timeout in seconds for user input (default: 5.0)
 
-    Returns:
-        tuple[bool, str]: (success status, error message if failed or empty string if success)
-    """
-    return gen_info(hardlink_path, output_path, self.logger)
+        Returns:
+            True if user confirms to proceed, False otherwise.
+        """
+        self.logger.debug(f"Checking repo: {repo_id}")
+        repo_exists = self.hub.repo_exists(repo_id=repo_id)
+        self.logger.debug(f"Exists: {repo_exists}")
 
-  def _generate_readme_for_dataset(self, hardlink_path: Path, dataset_info_root_path: Path) -> tuple[bool, str]:
-    """
-    Generate README.md for a single dataset.
+        if not repo_exists:
+            return True
 
-    Args:
-        hardlink_path: Path to the hardlink directory
-        dataset_info_root_path: Path containing the dataset info YAML files
+        # Repo exists - check force_overwrite flag
+        if self.config.force_overwrite:
+            self.logger.debug(f"{repo_id}: Force overwrite enabled")
+            return True
 
-    Returns:
-        tuple[bool, str]: (success status, error message if failed or empty string if success)
-    """
-    return gen_readme(hardlink_path, dataset_info_root_path, self.logger)
+        # Prompt user for confirmation with timeout
+        tqdm.write("")  # Blank line for spacing
+        tqdm.write(f"⚠️  Repository already exists: {repo_id}")
+        tqdm.write(f"   Overwrite? (y/n) [default: y in {timeout}s]: ", end="")
+        sys.stdout.flush()
 
+        # Use select for timeout input
+        try:
+            # Check if stdin has input ready within timeout
+            ready, _, _ = select.select([sys.stdin], [], [], timeout)
 
-  def _check_repo_conflict(self, repo_id: str) -> bool:
-    """
-    Check if repository exists and prompt user for confirmation.
+            if ready:
+                # Input available
+                response = sys.stdin.readline().strip().lower()
+                if response in ["y", "yes", ""]:
+                    return True
+                if response in ["n", "no"]:
+                    return False
+                tqdm.write("   Invalid input, defaulting to 'yes'")
+                return True
+            # Timeout - default to yes
+            tqdm.write("   (timeout - defaulting to 'yes')")
+            return True
 
-    Args:
-        repo_id: Repository identifier.
-
-    Returns:
-        True if user confirms to proceed, False otherwise.
-    """
-    self.logger.debug(f"Checking repo: {repo_id}")
-    repo_exists = self.hub.repo_exists(repo_id=repo_id)
-    self.logger.debug(f"Exists: {repo_exists}")
-
-    if not repo_exists:
-      return True
-
-    # Repo exists - check force_overwrite flag
-    if self.config.force_overwrite:
-      self.logger.debug(f"{repo_id}: Force overwrite enabled")
-      return True
-
-    # Prompt user for confirmation
-    import sys
-    # Use tqdm.write to avoid breaking progress bar if it exists
-    tqdm.write("")  # Blank line for spacing
-    tqdm.write(f"⚠️  Repository already exists: {repo_id}")
-    tqdm.write("   Overwrite? (y/n): ", end="")
-    sys.stdout.flush()  # Ensure prompt is displayed
-    response = input().strip().lower()
-    return response in ["y", "yes"]
+        except (OSError, ValueError):
+            # select not supported (e.g., Windows) or other issues
+            # Fall back to regular input
+            try:
+                response = input().strip().lower()
+                return response in ["y", "yes", ""]
+            except (EOFError, KeyboardInterrupt):
+                # No input or Ctrl+C - default to no
+                return False
 
 
 if __name__ == "__main__":
-  pass
+    pass

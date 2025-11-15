@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-    from robocoin_dataset.database.database import DatasetDatabase
     from robocoin_dataset.database.models import DatasetDB
 
 
@@ -13,7 +12,6 @@ if TYPE_CHECKING:
 
 
 def _sync_page_sync_status(
-    db: "DatasetDatabase",
     session: "Session",
     logger: logging.Logger | None = None,
 ) -> None:
@@ -67,7 +65,8 @@ def _sync_page_sync_status(
   _logger.info(f"Successfully marked {len(items)} datasets as PENDING")
 
 
-def _gen_one_page_sync_task(session: "Session") -> tuple[str | None, str | None, str | None]:
+def _gen_one_page_sync_task(session: "Session"
+) -> tuple[str | None, str | None, str | None]:
     '''Mark first PENDING -> PROCESSING, and return the yaml_path, hardlink_path, and dataset_uuid
     I: Database session.
     O: yaml_path, -> read the metadata.
