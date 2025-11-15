@@ -38,10 +38,10 @@ def _sync_page_sync_status(
   query = session.query(DatasetDB).filter(
     and_(
         getattr(DatasetDB, ms_upload_status_field) == TaskStatus.COMPLETED,
-        getattr(DatasetDB, hf_upload_status_field) == TaskStatus.COMPLETED, # and: must two.
+        getattr(DatasetDB, hf_upload_status_field) == TaskStatus.COMPLETED,
         or_(
             DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
-            and_( # or: if one
+            and_(
                 DatasetDB.dataset_info_sync_status == TaskStatus.COMPLETED,
                 DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, ms_upload_version_field),
                 DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, hf_upload_version_field),
