@@ -13,6 +13,18 @@ from robocoin_dataset.database.models import (
     VideoMatchDB,
 )
 
+device_camera_keywords = {
+    "agilex_cobot_decoupled_magic": "high_rgb",
+    "alpha_bot_2": "head_rgb",
+    "discover_robotics_aitbot_mmk2": "high_rgb",
+    "galaxea_r1_lite": "high_rgb",
+    "leju_robot": "head_rgb",
+    "realman_rmc_aidal": "high_rgb",
+    "ruantong_a2d": "high_rgb",
+    "unitree_g1": "high_rgb",
+    "yinhe": "high_rgb",
+}
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--db_file_path", type=str, default="db/datasets_new.db")
@@ -93,7 +105,7 @@ if __name__ == "__main__":
                 if not camera_dir.is_dir():
                     continue
 
-                if args.cam_keyword in camera_dir.name:
+                if device_camera_keywords[args.device_model] in camera_dir.name:
                     featured_dirs.append(camera_dir)
 
         if not featured_dirs:
