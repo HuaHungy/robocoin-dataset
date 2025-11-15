@@ -72,7 +72,6 @@ def _sync_datasets_upload_status(
 
     # Get correct field names (tries ms/hf first, then modelscope/huggingface)
     upload_status_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
-    upload_version_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version")
     upload_version_ps_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
 
     # Get column objects for dynamic field names
@@ -103,9 +102,6 @@ def _sync_datasets_upload_status(
 
         for item in items:
             setattr(item, upload_status_field, TaskStatus.PENDING)
-            current_version = getattr(item, upload_version_field, 0) or 0
-            setattr(item, upload_version_field, current_version + 1)
-            setattr(item, upload_version_ps_field, item.visualize_check_version)
         session.commit()
 
 
@@ -143,6 +139,8 @@ def _gen_one_dataset_upload_task(
 
     # Get column objects for dynamic field names
     upload_status_col = getattr(DatasetDB, upload_status_field)
+    upload_version_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version")
+    upload_version_ps_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
 
     with db.with_session() as session:
         query = session.query(DatasetDB).filter(
@@ -158,6 +156,9 @@ def _gen_one_dataset_upload_task(
         dataset_uuid = item.dataset_uuid
 
         setattr(item, upload_status_field, TaskStatus.PROCESSING)
+        current_version = getattr(item, upload_version_field, 0) or 0
+        setattr(item, upload_version_field, current_version + 1)
+        setattr(item, upload_version_ps_field, item.visualize_check_version)
         session.commit()
 
         # Query hardlink_path from dataset_hard_link table
