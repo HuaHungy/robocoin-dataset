@@ -56,6 +56,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import logging
 import sys
 from datetime import datetime
@@ -276,7 +277,6 @@ Examples:
     parser.add_argument(
         "--config", "-c",
         type=str,
-        required=True,
         help="Path to YAML configuration file"
     )
 
@@ -324,6 +324,14 @@ Examples:
         type=str,
         help="Namespace (username) on the hub platform where datasets will be uploaded. "
              "If not provided, uses default value from constant.py (DS_PLATFORM_NAME)"
+    )
+
+    parser.add_argument(
+        "--hub",
+        type=str,
+        choices=["huggingface", "modelscope"],
+        default="huggingface",
+        help="Target hub platform for client mode (default: huggingface)"
     )
 
     parser.add_argument(
@@ -467,7 +475,7 @@ def run_server_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     try:
         logger.info("🚀 Server starting...")
         tqdm.write("🚀 Server starting...")
-        server.run()
+        asyncio.run(server.start())
     except KeyboardInterrupt:
         logger.info("\n⚠️  Server interrupted by user")
         tqdm.write("\n⚠️  Server interrupted by user")
@@ -575,9 +583,21 @@ def main() -> None:
             sys.exit(1)
 
         # Load configuration
-        logger.info(f"Loading configuration from: {args.config}")
-
-        config_dict = load_config_from_yaml(args.config)
+        config_dict = {}
+        if args.config:
+            logger.info(f"Loading configuration from: {args.config}")
+            config_dict = load_config_from_yaml(args.config)
+        elif args.client:
+            logger.info("Using default configuration for client mode")
+            config_dict.setdefault("hub_name", args.hub)
+            config_dict.setdefault("namespace", DS_PLATFORM_NAME)
+            config_dict.setdefault("output_path", "./dataset_info")
+            config_dict.setdefault("force_overwrite", False)
+        else:
+            # Server and local modes require configuration file
+            logger.error("❌ --config/-c is required for server and local modes")
+            tqdm.write("❌ --config/-c is required for server and local modes")
+            sys.exit(1)
 
         # Override config with command line arguments if provided
         if args.skip_missing:
@@ -592,6 +612,9 @@ def main() -> None:
             config_dict["output_path"] = args.info_output_path
         if args.token:
             config_dict["token"] = args.token
+        if hasattr(args, 'hub') and args.client:
+            # Only set hub_name for client mode from command line
+            config_dict["hub_name"] = args.hub
 
         # Handle different modes
         if args.server:
@@ -599,8 +622,6 @@ def main() -> None:
             _ensure_required_config_fields(config_dict, ["db_file_path", "token"])
             run_server_mode(config_dict, args, logger)
         elif args.client:
-            # Client mode - needs token, namespace, hub_name
-            _ensure_required_config_fields(config_dict, ["token"])
             run_client_mode(config_dict, args, logger)
         else:
             # Local mode (default if no mode specified)

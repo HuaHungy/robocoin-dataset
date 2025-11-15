@@ -20,7 +20,6 @@ from robocoin_dataset.hub_upload.gen_file.gen_info import gen_info
 from robocoin_dataset.hub_upload.gen_file.gen_readme import gen_readme
 
 from .constant import (
-    README_FILE,
     DatasetsHubEnum,
 )
 from .local_datasets_util import LocalDsConfig, LocalDsUtil
@@ -169,18 +168,21 @@ class LocalDsUploadUtil(LocalDsUtil):
         dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
 
         # Validate dataset structure using shared validation from LocalDsUtil
-        try:
-            self.check_dataset_dir_valid(
-                ds_name=hardlink_path.name,
-                additional_check_list=[README_FILE],  # Upload requires README.md
-            )
-        except Exception as e:
-            tb = traceback.format_exc()
-            error_msg = f"Validation failed: {e}\n\nFull traceback:\n{tb}"
-            self.logger.debug(f"{dataset_name}: {error_msg}")
-            return False, error_msg
-        if not hardlink_path.exists():
-            raise FileNotFoundError(f"dataset path {hardlink_path} does not exist")
+        # TODO: we no longer use root_path but keep it for compatibility.
+        # here we just skip the validation of the dataset structure.
+        # ORI code:
+        # try:
+        #     self.check_dataset_dir_valid(
+        #         ds_name=hardlink_path.name,
+        #         additional_check_list=[README_FILE],  # Upload requires README.md
+        #     )
+        # except Exception as e:
+        #     tb = traceback.format_exc()
+        #     error_msg = f"Validation failed: {e}\n\nFull traceback:\n{tb}"
+        #     self.logger.debug(f"{dataset_name}: {error_msg}")
+        #     return False, error_msg
+        # if not hardlink_path.exists():
+        #     raise FileNotFoundError(f"dataset path {hardlink_path} does not exist")
 
         upload_path = hardlink_path
         self.logger.debug(f"{dataset_name}: Using {upload_path}")
