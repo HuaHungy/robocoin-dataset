@@ -37,6 +37,8 @@ import argparse
 import getpass
 import logging
 import sys
+from datetime import datetime
+from pathlib import Path
 
 from robocoin_dataset.hub_upload.lerobot.hub_upload import (
     upload_datasets,
@@ -57,16 +59,42 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     Returns:
         Logger instance
     """
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    # Create logs directory
+    log_dir = Path("logs/hub_upload")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate timestamped log filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_dir / f"upload_{timestamp}.log"
+
+    # Configure root logger
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+
+    # Remove any existing handlers
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(getattr(logging, log_level.upper()))
+
+    # File handler - detailed logs
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(getattr(logging, log_level.upper()))
+    file_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
+    root_logger.addHandler(file_handler)
+
+    # Console handler - same level
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(getattr(logging, log_level.upper()))
+    console_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
+    root_logger.addHandler(console_handler)
 
     # Reduce verbosity of HTTP request logs
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    return logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
+    logger.info(f"📝 Logging to: {log_file}")
+
+    return logger
 
 
 def parse_arguments() -> argparse.Namespace:

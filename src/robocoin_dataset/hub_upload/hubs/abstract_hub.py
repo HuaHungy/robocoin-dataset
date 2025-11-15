@@ -56,7 +56,7 @@ class AbstractUploadHub(ABC):
     pass
 
   @abstractmethod
-  def upload_repo(self, folder_path: Path, repo_id: str, commit_msg: str) -> str:
+  def upload_repo(self, folder_path: Path, repo_id: str, commit_msg: str, logger: logging.Logger = None) -> str:
     """
     Upload a local folder to a remote repository.
 
@@ -64,6 +64,7 @@ class AbstractUploadHub(ABC):
         folder_path (Path): Path to the local folder to upload.
         repo_id (str): Identifier of the target repository.
         commit_msg (str): Commit message for the upload.
+        logger (logging.Logger): Logger for progress messages (optional).
 
     Returns:
         str: Result or identifier of the upload operation.

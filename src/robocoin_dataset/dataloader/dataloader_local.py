@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from robocoin_dataset.database.database import DatasetDatabase
-from robocoin_dataset.dataloader.dataloader_task_management import (
+from robocoin_dataset.dataloader.dataloader_task import (
     _gen_one_dataloader_detection_task,
     _mark_task_completed,
     _mark_task_failed,
@@ -67,19 +67,19 @@ def run_local_detection(
                 break
 
             datasets_processed += 1
-            _logger.info(f"Processing dataset {datasets_processed}: {dataset_uuid}")
-            _logger.info(f"Using existing hardlink: {hardlink_path}")
+            _logger.debug(f"Processing dataset {datasets_processed}: {dataset_uuid}")
+            _logger.debug(f"Using existing hardlink: {hardlink_path}")
 
         except FileNotFoundError as e:
             # Task was already claimed, so we have dataset_uuid
             error_msg = f"Hardlink assertion failed: {e}"
-            _logger.error(error_msg)
+            _logger.exception(error_msg)
 
             # Mark task as failed in database
             with db.with_session() as session:
                 _mark_task_failed(session, dataset_uuid, error_msg)
             failed.append((dataset_uuid, error_msg))
-            summary_logger.info(f"❌ {dataset_uuid}: {error_msg}")
+            summary_logger.debug(f"❌ {dataset_uuid}: {error_msg}")
             continue
 
         # Run detection with configurable parameters
@@ -89,6 +89,7 @@ def run_local_detection(
             sample_ratio=sample_ratio,
             batch_size=batch_size,
             num_workers=num_workers,
+            logger=_logger,
         )
 
         # Update database based on detection result
@@ -112,11 +113,11 @@ def run_local_detection(
                 "frames_per_episode": result.get("total_frames_sampled", 0) / num_episodes_tested if num_episodes_tested > 0 else 0,
             })
 
-            summary_logger.info(
+            summary_logger.debug(
                 f"✅ Detection succeeded for {dataset_uuid}: "
                 f"{result.get('total_frames_sampled', 0)} frames in {result.get('total_time_s', 0):.2f}s"
             )
-            _logger.info(
+            _logger.debug(
                 f"✅ Detection succeeded for {dataset_uuid}: "
                 f"{result.get('total_frames_sampled', 0)} frames in {result.get('total_time_s', 0):.2f}s"
             )
@@ -126,14 +127,14 @@ def run_local_detection(
             with db.with_session() as session:
                 _mark_task_failed(session, dataset_uuid, error_msg)
             failed.append((dataset_uuid, error_msg))
-            summary_logger.info(f"❌ {dataset_uuid}: {error_msg}")
+            summary_logger.debug(f"❌ {dataset_uuid}: {error_msg}")
             _logger.error(f"❌ Detection failed for {dataset_uuid}: {error_msg}")
 
     # Calculate batch statistics
     batch_elapsed = time.perf_counter() - batch_start_time
     avg_time_per_frame = batch_elapsed / total_frames if total_frames > 0 else 0.0
 
-    _logger.info(
+    _logger.debug(
         f"Batch processing complete: {len(succeeded)} succeeded, {len(failed)} failed | "
         f"{batch_elapsed:.2f}s total, {total_frames} frames, {avg_time_per_frame*1000:.1f}ms/frame avg"
     )

@@ -115,7 +115,7 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
             try:
                 # 假设 replayer 已经配置好，直接调用
                 self.replayer.mjcf_model.opt.gravity[2] = -9.81 # 确保重力正确
-                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True)
+                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True, is_eef=False)
                 
                 if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
                     eef_data = np.array(eef_data_list_state)
@@ -123,13 +123,14 @@ class AgilexCobotDecoupledMagicProcessor(StateActionDataPostProcessorBase):
                     left_eef_positions = eef_data[:, :3]
                     right_eef_positions = eef_data[:, 6:9]
                     
-                    # 计算每一帧双臂末端执行器之间的距离
-                    eef_distances = np.linalg.norm(left_eef_positions - right_eef_positions, axis=1)
-                    mean_eef_distance = np.mean(eef_distances)
+                    # 计算双臂末端执行器y轴平均位置的差
+                    mean_left_y = np.mean(left_eef_positions[:, 1])
+                    mean_right_y = np.mean(right_eef_positions[:, 1])
+                    mean_eef_distance = np.abs(mean_left_y - mean_right_y)
                     
-                    DISTANCE_THRESHOLD = 0.67
+                    DISTANCE_THRESHOLD = 0.6
                     
-                    central_logger.info(f"Episode {self.episode_index}: Mean EEF distance: {mean_eef_distance:.4f}m {'>=' if mean_eef_distance >= DISTANCE_THRESHOLD else '<'} Threshold: {DISTANCE_THRESHOLD}m, ")
+                    central_logger.info(f"Episode {self.episode_index}: Mean EEF Y-axis distance: {mean_eef_distance:.4f}m {'>=' if mean_eef_distance >= DISTANCE_THRESHOLD else '<'} Threshold: {DISTANCE_THRESHOLD}m, ")
 
                     if mean_eef_distance >= DISTANCE_THRESHOLD:
                         # central_logger.info(f"Episode {self.episode_index}: Mean EEF distance >= threshold. Arms need to be swapped.")
@@ -338,7 +339,7 @@ class AgilexCobotDecoupledRealsenseMagicProcessor(StateActionDataPostProcessorBa
             try:
                 # 假设 replayer 已经配置好，直接调用
                 self.replayer.mjcf_model.opt.gravity[2] = -9.81 # 确保重力正确
-                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True)
+                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True, is_eef=False)
                 
                 if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
                     eef_data = np.array(eef_data_list_state)
@@ -346,13 +347,14 @@ class AgilexCobotDecoupledRealsenseMagicProcessor(StateActionDataPostProcessorBa
                     left_eef_positions = eef_data[:, :3]
                     right_eef_positions = eef_data[:, 6:9]
                     
-                    # 计算每一帧双臂末端执行器之间的距离
-                    eef_distances = np.linalg.norm(left_eef_positions - right_eef_positions, axis=1)
-                    mean_eef_distance = np.mean(eef_distances)
+                    # 计算双臂末端执行器y轴平均位置的差
+                    mean_left_y = np.mean(left_eef_positions[:, 1])
+                    mean_right_y = np.mean(right_eef_positions[:, 1])
+                    mean_eef_distance = np.abs(mean_left_y - mean_right_y)
                     
-                    DISTANCE_THRESHOLD = 0.67
+                    DISTANCE_THRESHOLD = 0.6
                     
-                    central_logger.info(f"Episode {self.episode_index}: Mean EEF distance: {mean_eef_distance:.4f}m {'>=' if mean_eef_distance >= DISTANCE_THRESHOLD else '<'} Threshold: {DISTANCE_THRESHOLD}m")
+                    central_logger.info(f"Episode {self.episode_index}: Mean EEF Y-axis distance: {mean_eef_distance:.4f}m {'>=' if mean_eef_distance >= DISTANCE_THRESHOLD else '<'} Threshold: {DISTANCE_THRESHOLD}m")
 
                     if mean_eef_distance >= DISTANCE_THRESHOLD:
                         need_swap = True
@@ -717,7 +719,7 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
             try:
                 # 假设 replayer 已经配置好，直接调用
                 self.replayer.mjcf_model.opt.gravity[2] = -9.81 # 确保重力正确
-                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True)
+                eef_data_list_state = self.replayer.replay_episode_background(self.episode_index, is_state=True, is_sa_dpp=True, is_eef=False)
                 
                 if eef_data_list_state and len(eef_data_list_state) > 0 and eef_data_list_state[0].shape[0] >= 12:
                     eef_data = np.array(eef_data_list_state)
@@ -725,14 +727,15 @@ class AgilexCobotDecoupledMagicMultSensorProcessor(StateActionDataPostProcessorB
                     left_eef_positions = eef_data[:, :3]
                     right_eef_positions = eef_data[:, 6:9]
                     
-                    # 计算每一帧双臂末端执行器之间的欧几里得距离
-                    eef_distances = np.linalg.norm(left_eef_positions - right_eef_positions, axis=1)
-                    mean_eef_distance = np.mean(eef_distances)
+                    # 计算双臂末端执行器y轴平均位置的差
+                    mean_left_y = np.mean(left_eef_positions[:, 1])
+                    mean_right_y = np.mean(right_eef_positions[:, 1])
+                    mean_eef_distance = np.abs(mean_left_y - mean_right_y)
                     
                     # 设定距离阈值（单位：米），可根据实际情况调整
-                    DISTANCE_THRESHOLD = 0.67
+                    DISTANCE_THRESHOLD = 0.6
                     
-                    central_logger.info(f"Episode {self.episode_index}: Mean EEF distance: {mean_eef_distance:.4f}m, Threshold: {DISTANCE_THRESHOLD}m")
+                    central_logger.info(f"Episode {self.episode_index}: Mean EEF Y-axis distance: {mean_eef_distance:.4f}m, Threshold: {DISTANCE_THRESHOLD}m")
 
                     if mean_eef_distance >= DISTANCE_THRESHOLD:
                         central_logger.info(f"Episode {self.episode_index}: Mean EEF distance >= threshold. Arms need to be swapped.")

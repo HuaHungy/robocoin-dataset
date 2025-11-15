@@ -3,8 +3,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+from robocoin_dataset.dataloader_check.dataloader_checker import DataLoaderCheckerServer
 from robocoin_dataset.utils.logger import setup_logger
-from robocoin_dataset.visualize_dataset.visualize_dataset import DatasetVisualizerServer
 
 
 async def main() -> None:
@@ -36,7 +36,20 @@ async def main() -> None:
         default=8768,
         help="Port to run the server",
     )
-    parser.add_argument("--device_model", type=str, default="")
+
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=8,
+        help="",
+    )
+
+    parser.add_argument(
+        "--sample_rate",
+        type=float,
+        default=0.1,
+        help="",
+    )
 
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
@@ -46,30 +59,32 @@ async def main() -> None:
         exit(1)
 
     logger = setup_logger(
-        name="dataset visualizer server",
+        name="dataloader check server",
         log_dir=Path(args.log_dir),
         level=logging.INFO,
     )
 
-    visualizer_server = DatasetVisualizerServer(
+    checker = DataLoaderCheckerServer(
         db_file_path=db_file_path,
         host=args.host,
         port=args.port,
-        device_model=args.device_model,
         logger=logger,
+        num_workers=args.num_workers,
+        sample_rate=args.sample_rate,
     )
 
-    await visualizer_server.start()
+    await checker.start()
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 
 """usage:
-python scripts/visualize_dataset/visualize_dataset_server.py \
-    --db_file_path /mnt/db/datasets_new.db \
+python scripts/dataloader_check/dataloader_check_server.py \
+    --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
-    --port 2122 \
-    --device_model realman_rmc_aidal \
-    --log_dir ./logs/visualize_dataset_server
+    --port 2120\
+    --log_dir ./logs/dataloader_check_server/ \
+    --num_workers 8 \
+    --sample_rate 0.1
 """

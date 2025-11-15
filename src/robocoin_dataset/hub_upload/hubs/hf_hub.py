@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from huggingface_hub import HfApi
@@ -65,7 +66,7 @@ class HuggingfaceUploadHub(AbstractUploadHub):
                 exist_ok=True,
             )
 
-    def upload_repo(self, folder_path: Path, repo_id: str, commit_msg: str) -> str:
+    def upload_repo(self, folder_path: Path, repo_id: str, commit_msg: str, logger: logging.Logger = None) -> str:
         """
         Upload a local folder to a Hugging Face dataset repository.
 
@@ -76,6 +77,7 @@ class HuggingfaceUploadHub(AbstractUploadHub):
             folder_path (Path): Path to the local folder to upload.
             repo_id (str): Identifier of the target repository.
             commit_msg (str): Commit message for the upload.
+            logger (logging.Logger): Logger for progress messages (optional).
 
         Returns:
             str: URL of the commit on Hugging Face Hub.
@@ -83,7 +85,12 @@ class HuggingfaceUploadHub(AbstractUploadHub):
         Raises:
             Exception: If upload fails for any reason.
         """
+        # Use provided logger or fall back to module logger
+        if logger is None:
+            logger = logging.getLogger(__name__)
+
         try:
+            logger.info(f"Uploading folder to {repo_id}...")
             commit_info = self.hub.upload_folder(
                 repo_id=repo_id,
                 folder_path=folder_path,
@@ -96,8 +103,11 @@ class HuggingfaceUploadHub(AbstractUploadHub):
 
             # Handle both single CommitInfo object and Future[CommitInfo]
             if hasattr(commit_info, 'commit_url'):
+                logger.info(f"✅ Upload completed: {commit_info.commit_url}")
                 return commit_info.commit_url
+            logger.info(f"✅ Successfully uploaded to {repo_id}")
             return f"Successfully uploaded to {repo_id}"
         except Exception as e:
+            logger.error(f"Upload failed: {e}")
             print(e)
             raise e

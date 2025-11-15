@@ -205,6 +205,7 @@ def _sim_replay_dataset(
     sim_replay_config: LerobotSimReplayConfig,
     replay_source: str = "sa_dpp",
     episode_idx: int = 0,
+    is_eef: bool = False
 ) -> None:
     if sim_replay_config is None:
         raise ValueError("sim_replay_config_class is None")
@@ -475,6 +476,7 @@ def _sim_replay_dataset(
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
                     target_fps=int(fps_from_meta) if fps_from_meta else 30,
+                    is_eef=is_eef,
                 )
                 print("[State Replay] 状态数据播放完成")
             except Exception as e:
@@ -519,6 +521,7 @@ def _sim_replay_dataset(
                     enable_gripper_plot=cfg_has_gripper,
                     gripper_plot_callback=gripper_plot_callback if cfg_has_gripper else None,
                     target_fps=int(fps_from_meta) if fps_from_meta else 30,
+                    is_eef=is_eef,
                 )
                 print("[Action Replay] 动作数据播放完成")
             except Exception as e:

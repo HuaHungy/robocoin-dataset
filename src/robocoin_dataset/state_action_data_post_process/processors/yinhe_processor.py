@@ -74,18 +74,19 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         for col_idx in gripper_indices:
             if col_idx is None:
                 continue
-            try:
-                col_max = float(np.max(scaled_data[:, col_idx]))
-                division_count = 0
-                while col_max > 0.05:
-                    scaled_data[:, col_idx] = scaled_data[:, col_idx] / 10.0
-                    division_count += 1
-                    col_max = float(np.max(scaled_data[:, col_idx]))
-                if division_count > 0:
-                    logger.info(f"Episode {self.episode_index}: Column {col_idx} divided by 10 {division_count} time(s), final max value: {col_max:.6f}")
-            except (IndexError, ValueError) as e:
-                logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
-                continue
+            # try:
+            col_max = float(np.max(scaled_data[:, col_idx]))
+            division_count = 0
+            while col_max > 0.05:
+                raise ValueError("Max value too large, scaling down.")
+                # scaled_data[:, col_idx] = scaled_data[:, col_idx] / 2.0
+                # division_count += 1
+                # col_max = float(np.max(scaled_data[:, col_idx]))
+            if division_count > 0:
+                logger.info(f"Episode {self.episode_index}: Column {col_idx} divided by 2 {division_count} time(s), final max value: {col_max:.6f}")
+            # except (IndexError, ValueError) as e:
+            #     logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
+            #     continue
         return scaled_data
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据

@@ -332,7 +332,16 @@ if __name__ == "__main__":
     )
 """Usage:
 python scripts/annotation/subtask_annotation/enter_url_video_st_annotation_without_validate.py \
-    --db_file_path ./db/datasets_new2.db \
+    --db_file_path ./db/datasets_new.db \
+    --json_src_dir ./datas/annotation/subtask_annotation/json_files \
+    --passed_json_dst_dir ./datas/annotation/subtask_annotation/passed_json_files_passed \
+    --impassed_json_dst_dir ./datas/annotation/subtask_annotation/impassed_json_files \
+    --download_dir ./datas/annotation/subtask-annotations/download-videos \
+    --logger_path ./logs
+
+
+python scripts/annotation/subtask_annotation/enter_url_video_st_annotation_without_validate.py \
+    --db_file_path ./db/datasets_new.db \
     --json_src_dir ./datas/annotation/subtask_annotation/json_files \
     --passed_json_dst_dir ./datas/annotation/subtask_annotation/passed_json_files_passed \
     --impassed_json_dst_dir ./datas/annotation/subtask_annotation/impassed_json_files \

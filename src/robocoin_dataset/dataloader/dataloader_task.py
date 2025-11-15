@@ -45,7 +45,7 @@ def _sync_dataloader_detection_tasks(
         return
 
     if items:
-        _logger.info(f"Marked {len(items)} dataset(s) as PENDING for dataloader detection")
+        _logger.debug(f"Marked {len(items)} dataset(s) as PENDING for dataloader detection")
 
     for item in items:
         item.data_loader_detection_status = TaskStatus.PENDING

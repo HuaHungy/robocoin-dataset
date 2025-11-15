@@ -50,3 +50,19 @@ if __name__ == "__main__":
 """Usage:
 python scripts/quality_check/qced_repo_gen.py --db_file_path ./db/datasets_new.db --log_dir ./logs/qced_repo_gen
 """
+from robocoin_dataset.quality_check.qced_repo_generator import _get_bad_episodes, gen_qced_repo
+
+    bad_episodes = _get_bad_episodes(
+                session=session,
+                dataset_uuid=dataset_uuid,
+                state_data_score_threshold=self.state_data_score_threshold,
+                action_data_score_threshold=self.action_data_score_threshold,
+                video_score=self.video_score_threshold,
+            )
+
+    hardlink_repo_path = gen_qced_repo(
+                repo_path=repo_path,
+                bad_episodes=bad_episodes,
+                min_episodes_num=self.min_episodes_num,
+                ds_api_key=self.ds_api_key,
+            )

@@ -14,6 +14,18 @@ def quat_xyzw_2_euler_xyz(input: np.ndarray) -> np.ndarray:
     return r.from_quat(input).as_euler("xyz")
 
 
+def quat_xyzw_to_wxyz(input: np.ndarray) -> np.ndarray:
+    """
+    将 ROS 四元数 (x, y, z, w) 转换为 (w, x, y, z) 顺序
+    """
+    if input.ndim == 1:
+        return np.concatenate([input[-1:], input[:-1]])
+    # 批量输入
+    w = input[..., -1:]
+    xyz = input[..., :-1]
+    return np.concatenate([w, xyz], axis=-1)
+
+
 def quat_wxyz_2_euler_xyz(input: np.ndarray) -> np.ndarray:
     quat_xyzw = np.roll(input, -1)
     return r.from_quat(quat_xyzw).as_euler("xyz")
@@ -71,6 +83,7 @@ def to_float32(input: np.ndarray) -> np.ndarray:
 spatial_covertor_funcs = {
     "mm2m": mm2m,
     "cm2m": cm2m,
+    "quat_xyzw_to_wxyz": quat_xyzw_to_wxyz,
     "quat_wxyz_2_euler_xyz": quat_wxyz_2_euler_xyz,
     "quat_xyzw_2_euler_xyz": quat_xyzw_2_euler_xyz,
     "rot6d_to_euler_xyz": rot6d_to_euler_xyz,
