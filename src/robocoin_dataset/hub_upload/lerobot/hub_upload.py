@@ -113,7 +113,7 @@ def generate_dataset_readmes(
         raise
 
 
-def upload_datasets(config: LocalDsUploadConfig, logger: logging.Logger | None = None) -> None:
+def upload_datasets_main(config: LocalDsUploadConfig, logger: logging.Logger | None = None) -> None:
     """
     Upload datasets to remote hub using database management.
 
@@ -134,7 +134,7 @@ def upload_datasets(config: LocalDsUploadConfig, logger: logging.Logger | None =
 
         # Start upload process
         _logger.info("Starting upload process...")
-        uploader._upload_datasets_from_db()
+        uploader._upload_datasets_from_database()
 
         _logger.info("✅ Upload process completed successfully")
         tqdm.write("\n✅ Upload process completed successfully")

@@ -39,19 +39,116 @@ Usage:
 """
 
 import argparse
-import getpass
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from robocoin_dataset.hub_upload.lerobot.hub_upload import (
-    upload_datasets,
+from robocoin_dataset.hub_upload.lerobot.constant import (
+    DS_PLATFORM_NAME,
+    DatasetsHubEnum,
 )
+from robocoin_dataset.hub_upload.lerobot.hub_upload import upload_datasets_main
 from robocoin_dataset.hub_upload.lerobot.hub_upload_util import (
     create_upload_config,
     load_config_from_yaml,
 )
+
+
+def _ensure_required_config_fields(config: dict, required_fields: list[str]) -> None:
+    """
+    Raise ValueError if any required field is missing or empty-ish in config dict.
+    """
+    missing: list[str] = []
+    for field in required_fields:
+        value = config.get(field)
+        if value is None:
+            missing.append(field)
+            continue
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"", "null", "none", "default"}:
+                missing.append(field)
+    if missing:
+        missing_str = ", ".join(missing)
+        raise ValueError(f"Missing required config field(s): {missing_str}")
+
+
+def _resolve_required_path(
+    value: str | Path | None,
+    field_name: str,
+    *,
+    must_be_dir: bool,
+) -> Path:
+    """
+    Resolve and validate a user-provided path.
+    """
+    if value is None:
+        raise ValueError(f"{field_name} is required")
+
+    resolved = Path(value).expanduser().absolute()
+    if not resolved.exists():
+        raise ValueError(f"{field_name} does not exist: {resolved}")
+    if must_be_dir and not resolved.is_dir():
+        raise ValueError(f"{field_name} must be a directory: {resolved}")
+    if not must_be_dir and not resolved.is_file():
+        raise ValueError(f"{field_name} must be a file: {resolved}")
+    return resolved
+
+
+def _normalize_hub_name(value: str | DatasetsHubEnum | None) -> DatasetsHubEnum:
+    """
+    Convert CLI/config hub_name into a DatasetsHubEnum.
+    """
+    if isinstance(value, DatasetsHubEnum):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        try:
+            return DatasetsHubEnum[normalized]
+        except KeyError as exc:
+            raise ValueError(
+                f"Invalid hub_name '{value}'. Must be one of: "
+                f"{', '.join(member.name for member in DatasetsHubEnum)}"
+            ) from exc
+    if value is None:
+        return DatasetsHubEnum.huggingface
+    raise ValueError(f"Unsupported hub_name type: {type(value)!r}")
+
+
+def _prepare_upload_config_dict(config: dict) -> dict:
+    """
+    Normalize and validate configuration values before constructing the dataclass.
+    """
+    prepared: dict = dict(config)
+
+    root_path = _resolve_required_path(
+        prepared.get("root_path"),
+        "root_path",
+        must_be_dir=True,
+    )
+    prepared["root_path"] = str(root_path)
+
+    db_file_path = _resolve_required_path(
+        prepared.get("db_file_path"),
+        "db_file_path",
+        must_be_dir=False,
+    )
+    prepared["db_file_path"] = str(db_file_path)
+
+    namespace = prepared.get("namespace")
+    namespace = namespace.strip() if isinstance(namespace, str) else ""
+    prepared["namespace"] = namespace or DS_PLATFORM_NAME
+
+    output_path = prepared.get("output_path") or "./dataset_info"
+    prepared["output_path"] = str(Path(output_path).expanduser().absolute())
+
+    prepared["skip_missing"] = bool(prepared.get("skip_missing", False))
+    prepared["force_overwrite"] = bool(prepared.get("force_overwrite", False))
+
+    prepared["hub_name"] = _normalize_hub_name(prepared.get("hub_name"))
+
+    return prepared
 
 
 def setup_logging(log_level: str = "INFO") -> logging.Logger:
@@ -121,44 +218,6 @@ def parse_arguments() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic upload (uses default info output path: ./dataset_info)
-  python scripts/hub_upload/upload2hub.py --config configs/upload.yaml
-
-  # With custom info output path
-  python scripts/hub_upload/upload2hub.py \\
-      --config configs/upload.yaml \\
-      --info-output-path ./outputs/dataset_infos
-
-  # With authentication token
-  python scripts/hub_upload/upload2hub.py \\
-      --config configs/upload.yaml \\
-      --token YOUR_TOKEN
-
-  # With custom log level
-  python scripts/hub_upload/upload2hub.py \\
-      --config configs/upload.yaml \\
-      --log-level DEBUG
-
-  # Skip datasets with missing files
-  python scripts/hub_upload/upload2hub.py \\
-      --config configs/upload.yaml \\
-      --skip-missing
-
-  # Force overwrite existing repos without prompting
-  python scripts/hub_upload/upload2hub.py \\
-      --config configs/upload.yaml \\
-      --force
-
-  # Override database path
-  python scripts/hub_upload/upload2hub.py \\
-      --config configs/upload.yaml \\
-      --db-file-path /path/to/db.db
-
-  # Specify custom namespace
-  python scripts/hub_upload/upload2hub.py \\
-      --config configs/upload.yaml \\
-      --name-space YourUsername
-
   # All options combined
   python scripts/hub_upload/upload2hub.py \\
       --config configs/upload.yaml \\
@@ -168,7 +227,7 @@ Examples:
       --db-file-path /path/to/db.db \\
       --log-level DEBUG \\
       --skip-missing \\
-      --force
+      --force ### i.e. force overwrite.
         """
     )
 
@@ -228,32 +287,6 @@ Examples:
     return parser.parse_args()
 
 
-def prompt_for_token(hub_name: str, token_from_config: str = "") -> str:
-    """
-    Prompt user for authentication token.
-
-    Args:
-        hub_name: Name of the hub platform
-        token_from_config: Token from config file (if any)
-
-    Returns:
-        Authentication token
-    """
-    # Prompt for token
-    token = getpass.getpass(f"🔑 {hub_name} token: ").strip()
-    if token:
-        return token
-
-    # Fall back to config token with confirmation
-    if token_from_config and token_from_config.upper() not in ["NULL", "NONE", ""]:
-        response = input("⚠️  Use token from config? (y/n): ").strip().lower()
-        if response in ["y", "yes"]:
-            return token_from_config
-
-    print("❌ No valid token provided")
-    sys.exit(1)
-
-
 def main() -> None:
     """
     Main entry point for the hub upload CLI.
@@ -286,16 +319,18 @@ def main() -> None:
             config_dict["db_file_path"] = args.db_file_path
         if args.name_space:
             config_dict["namespace"] = args.name_space
-
-        # Handle token (from CLI, config, or prompt)
+        if args.info_output_path:
+            config_dict["output_path"] = args.info_output_path
         if args.token:
             config_dict["token"] = args.token
-        elif not config_dict.get("token") or config_dict["token"].upper() in ["NULL", "NONE", ""]:
-            hub_name = config_dict.get("hub_name", "hub")
-            config_dict["token"] = prompt_for_token(hub_name, config_dict.get("token", ""))
+
+        # Ensure required configuration entries before creating the dataclass
+        _ensure_required_config_fields(config_dict, ["db_file_path", "root_path","token"])
+
+        prepared_config_dict = _prepare_upload_config_dict(config_dict)
 
         # Create upload config
-        config = create_upload_config(config_dict)
+        config = create_upload_config(prepared_config_dict)
 
         # Validate required fields
         if not config.root_path:
@@ -319,7 +354,9 @@ def main() -> None:
         logger.info("=" * 80)
         tqdm.write("🚀 Starting upload process with on-demand file generation")
         tqdm.write("=" * 80)
-        upload_datasets(config, logger)
+
+        ##### UPLOAD DATASET CALLING #####
+        upload_datasets_main(config, logger)
 
         # Calculate total script execution time
         script_elapsed = time.time() - script_start_time
