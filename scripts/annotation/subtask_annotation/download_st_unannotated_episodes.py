@@ -12,6 +12,21 @@ from robocoin_dataset.database.models import (
     UrlVideoStAnnotationDB,
     VideoMatchDB,
 )
+from robocoin_dataset.utils.logger import setup_logger
+
+logger = setup_logger(name=__name__, log_dir="logs")
+
+device_camera_keywords = {
+    "agilex_cobot_decoupled_magic": "high_rgb",
+    "alpha_bot_2": "head_rgb",
+    "discover_robotics_aitbot_mmk2": "high_rgb",
+    "galaxea_r1_lite": "high_rgb",
+    "leju_robot": "head_rgb",
+    "realman_rmc_aidal": "high_rgb",
+    "ruantong_a2d": "high_rgb",
+    "unitree_g1": "high_rgb",
+    "yinhe": "high_rgb",
+}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -26,13 +41,13 @@ if __name__ == "__main__":
         query = session.query(DatasetDB).filter(DatasetDB.video_match_status == TaskStatus.FAILED)
         query = query.filter(DatasetDB.convert_status == TaskStatus.COMPLETED)
         if args.device_model != "all":
-            print(f"Processing {args.device_model} datasets")
+            logger.info(f"Processing {args.device_model} datasets")
             query = query.filter(DatasetDB.device_model == args.device_model)
 
         items = query.all()
 
     if not items:
-        print("No items to process")
+        logger.info("No items to process")
         exit(0)
 
     for item in tqdm.tqdm(items, desc="Copying Datasets Files", unit="dataset"):
@@ -55,7 +70,7 @@ if __name__ == "__main__":
         output_repo_dir: Path = Path(args.output_dir) / Path(item.convert_path).name
 
         if output_repo_dir.exists():
-            print(f"{output_repo_dir} exists, please select another output_dir")
+            logger.info(f"{output_repo_dir} exists, please select another output_dir")
             continue
 
         with db.with_session() as session:
@@ -93,11 +108,11 @@ if __name__ == "__main__":
                 if not camera_dir.is_dir():
                     continue
 
-                if args.cam_keyword in camera_dir.name:
+                if device_camera_keywords[args.device_model] in camera_dir.name:
                     featured_dirs.append(camera_dir)
 
         if not featured_dirs:
-            print(f"No {args.cam_keyword} camera found in {repo_path}")
+            logger.info(f"No {args.cam_keyword} camera found in {repo_path}")
             continue
 
         video_files: list[Path] = []
@@ -112,7 +127,7 @@ if __name__ == "__main__":
             for video_file in video_files
         ]
 
-        print(f"found {len(video_files)} videos, press enter to copy them")
+        logger.info(f"found {len(video_files)} videos, press enter to copy them")
         for video_file, new_video_file in tqdm.tqdm(
             zip(video_files, new_video_files),
             desc="Copying videos",

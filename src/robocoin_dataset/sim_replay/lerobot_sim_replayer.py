@@ -438,13 +438,13 @@ class LerobotSimReplayer:
                     eef_results = np.concatenate([eef_results, site_pos, site_rot_euler], axis=0)
 
                 # 如果是双臂机器人（有2个EEF），记录y轴坐标并打印当前帧的y轴距离
-                if len(eef_positions) == 2:
-                    left_eef_pos = eef_positions[0]
-                    right_eef_pos = eef_positions[1]
-                    left_y_history.append(left_eef_pos[1])
-                    right_y_history.append(right_eef_pos[1])
-                    eef_distance = np.abs(left_eef_pos[1] - right_eef_pos[1])
-                    print(f"[Frame {i:04d}] EEF Y-axis Distance: {eef_distance:.4f}m | Left: [{left_eef_pos[0]:.3f}, {left_eef_pos[1]:.3f}, {left_eef_pos[2]:.3f}] | Right: [{right_eef_pos[0]:.3f}, {right_eef_pos[1]:.3f}, {right_eef_pos[2]:.3f}]")
+                # if len(eef_positions) == 2:
+                #     left_eef_pos = eef_positions[0]
+                #     right_eef_pos = eef_positions[1]
+                #     left_y_history.append(left_eef_pos[1])
+                #     right_y_history.append(right_eef_pos[1])
+                #     eef_distance = np.abs(left_eef_pos[1] - right_eef_pos[1])
+                #     print(f"[Frame {i:04d}] EEF Y-axis Distance: {eef_distance:.4f}m | Left: [{left_eef_pos[0]:.3f}, {left_eef_pos[1]:.3f}, {left_eef_pos[2]:.3f}] | Right: [{right_eef_pos[0]:.3f}, {right_eef_pos[1]:.3f}, {right_eef_pos[2]:.3f}]")
 
                 # 实时gripper曲线刷新
                 # Only plot gripper data when:
