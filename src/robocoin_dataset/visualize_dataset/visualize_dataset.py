@@ -337,4 +337,4 @@ class DatasetVisualizerClient(TaskClient):
 
             return {}
         except Exception as e:
-            raise RuntimeError(f"visualize dataset{hard_link_path} found error") from e
+            raise e
