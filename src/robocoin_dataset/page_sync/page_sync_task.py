@@ -41,8 +41,8 @@ def _sync_page_sync_status(
             DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
             and_(
                 DatasetDB.dataset_info_sync_status == TaskStatus.COMPLETED,
-                DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, ms_upload_version_field),
-                DatasetDB.dataset_info_sync_version_ps < getattr(DatasetDB, hf_upload_version_field),
+                DatasetDB.dataset_info_sync_version_ps_ms < getattr(DatasetDB, ms_upload_version_field),
+                DatasetDB.dataset_info_sync_version_ps_hf < getattr(DatasetDB, hf_upload_version_field),
             ),
         ),
     ),
@@ -101,10 +101,11 @@ def _gen_one_page_sync_task(session: "Session"
 
     _logger.debug("Found PENDING task, marking as PROCESSING...")
     item.dataset_info_sync_status = TaskStatus.PROCESSING
-    # Set dataset_info_sync_version_ps to min of ms and hf upload versions
+
     ms_version = getattr(item, ms_upload_version_field) if hasattr(item, ms_upload_version_field) else 0
     hf_version = getattr(item, hf_upload_version_field) if hasattr(item, hf_upload_version_field) else 0
-    item.dataset_info_sync_version_ps = min(ms_version, hf_version)
+    item.dataset_info_sync_version_ps_hf = hf_version
+    item.dataset_info_sync_version_ps_ms = ms_version
 
     # Increment dataset_info_sync_version
     current_version = item.dataset_info_sync_version if hasattr(item, 'dataset_info_sync_version') and item.dataset_info_sync_version else 0
