@@ -22,7 +22,7 @@ def _get_hub_field_prefix(hub_name_enum: "DatasetsHubEnum", dataset_table: "type
         field_suffix: The field suffix (e.g., "upload_status", "upload_version")
 
     Returns:
-        The field name with correct prefix
+        The field name with correct prefix i.e. prefix + field_suffix
 
     Raises:
         AttributeError: If neither short nor long field name exists
@@ -51,7 +51,6 @@ def _sync_datasets_upload_status(
     db: "DatasetDatabase",
     hub_name_enum: "DatasetsHubEnum",
     logger: logging.Logger | None = None,
-    retry_failed: bool = False
 ) -> None:
     """
     Sync datasets upload status from database.
@@ -62,7 +61,6 @@ def _sync_datasets_upload_status(
         db: Database instance.
         hub_name_enum: The hub name enum (DatasetsHubEnum.modelscope or DatasetsHubEnum.huggingface)
         logger: Logger instance
-        retry_failed: If True, retry failed uploads. Otherwise only process pending ones.
     """
     from sqlalchemy.sql.expression import and_, or_
 
@@ -70,24 +68,21 @@ def _sync_datasets_upload_status(
 
     _logger = logger or logging.getLogger(__name__)
 
-    # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-    upload_status_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
-    upload_version_ps_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
-
-    # Get column objects for dynamic field names
-    upload_status_col = getattr(DatasetDB, upload_status_field)
-    upload_version_ps_col = getattr(DatasetDB, upload_version_ps_field)
+    # Get correct field names and values
+    upload_status_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
+    upload_version_ps_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
+    upload_status_value = getattr(DatasetDB, upload_status_field_name)
+    upload_version_ps_value = getattr(DatasetDB, upload_version_ps_field_name)
 
     with db.with_session() as session:
-
         query = session.query(DatasetDB).filter(
             and_(
                 DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
                 or_(
-                    upload_status_col == TaskStatus.PENDING,
+                    upload_status_value == TaskStatus.PENDING,
                     and_(
-                        upload_status_col == TaskStatus.COMPLETED,
-                        upload_version_ps_col < DatasetDB.visualize_check_version,
+                        upload_status_value == TaskStatus.COMPLETED,
+                        upload_version_ps_value < DatasetDB.visualize_check_version,
                     ),
                 ),
             )
@@ -101,7 +96,7 @@ def _sync_datasets_upload_status(
         _logger.debug(f"Found {len(items)} datasets to sync for upload")
 
         for item in items:
-            setattr(item, upload_status_field, TaskStatus.PENDING)
+            setattr(item, upload_status_field_name, TaskStatus.PENDING)
         session.commit()
 
 
@@ -109,11 +104,12 @@ def _gen_one_dataset_upload_task(
     db: "DatasetDatabase",
     hub_name_enum: "DatasetsHubEnum",
     logger: logging.Logger | None = None,
-    skip_missing: bool = False
 ) -> tuple[str | None, Path | None]:
     """
     Generate one dataset upload task by finding a pending upload, marking it as PROCESSING,
     and validating the hardlink path.
+    #### MUST return uuid so that the uploader can mark the task as completed/failed
+    #### SO never raise any error, just return None if no task found
 
     Args:
         db: Database instance
@@ -126,7 +122,7 @@ def _gen_one_dataset_upload_task(
         hardlink_path is a validated Path object.
 
     Raises:
-        FileNotFoundError: If hardlink is missing and skip_missing is False
+        NONE. Just return None if no task found.
     """
     from sqlalchemy.sql.expression import and_
 
@@ -134,19 +130,17 @@ def _gen_one_dataset_upload_task(
 
     _logger = logger or logging.getLogger(__name__)
 
-    # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-    upload_status_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
-
-    # Get column objects for dynamic field names
-    upload_status_col = getattr(DatasetDB, upload_status_field)
-    upload_version_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version")
-    upload_version_ps_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
+    # Get correct field names and values
+    upload_status_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
+    upload_status_value = getattr(DatasetDB, upload_status_field_name)
+    upload_version_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version")
+    upload_version_ps_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
 
     with db.with_session() as session:
         query = session.query(DatasetDB).filter(
             and_(
                 DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
-                upload_status_col == TaskStatus.PENDING,
+                upload_status_value == TaskStatus.PENDING,
             )
         )
         item = query.first()
@@ -155,10 +149,10 @@ def _gen_one_dataset_upload_task(
 
         dataset_uuid = item.dataset_uuid
 
-        setattr(item, upload_status_field, TaskStatus.PROCESSING)
-        current_version = getattr(item, upload_version_field, 0) or 0
-        setattr(item, upload_version_field, current_version + 1)
-        setattr(item, upload_version_ps_field, item.visualize_check_version)
+        setattr(item, upload_status_field_name, TaskStatus.PROCESSING)
+        current_version = getattr(item, upload_version_field_name, 0) or 0
+        setattr(item, upload_version_field_name, current_version + 1)
+        setattr(item, upload_version_ps_field_name, item.visualize_check_version)
         session.commit()
 
         # Query hardlink_path from dataset_hard_link table
@@ -173,9 +167,7 @@ def _gen_one_dataset_upload_task(
         error_msg = f"No hardlink found in database for dataset {dataset_uuid}"
         _logger.error(f"❌ {error_msg}")
         _mark_upload_failed(db, dataset_uuid, error_msg, hub_name_enum, logger)
-        if not skip_missing:
-            raise FileNotFoundError(f"{error_msg}. Hardlinks must be created before uploading.")
-        return None, None
+        return dataset_uuid, None
 
     hardlink_path = Path(hardlink_path_str)
 
@@ -184,9 +176,7 @@ def _gen_one_dataset_upload_task(
         error_msg = f"Hardlink path does not exist on disk: {hardlink_path}"
         _logger.error(f"❌ {error_msg}")
         _mark_upload_failed(db, dataset_uuid, error_msg, hub_name_enum, logger)
-        if not skip_missing:
-            raise FileNotFoundError(error_msg)
-        return None, None
+        return dataset_uuid, None
 
     return dataset_uuid, hardlink_path
 
@@ -212,16 +202,16 @@ def _mark_upload_failed(
 
     _logger = logger or logging.getLogger(__name__)
 
-    # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-    upload_status_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
-    upload_err_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_err_msg")
+    # Get correct field names
+    upload_status_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
+    upload_err_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_err_msg")
 
     with db.with_session() as session:
         item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
         if item:
             from robocoin_dataset.database.models import TaskStatus
-            setattr(item, upload_status_field, TaskStatus.FAILED)
-            setattr(item, upload_err_field, error_msg)
+            setattr(item, upload_status_field_name, TaskStatus.FAILED)
+            setattr(item, upload_err_field_name, error_msg)
             session.commit()
             _logger.debug(f"Marked dataset {dataset_uuid} as FAILED: {error_msg}")
 
@@ -245,14 +235,14 @@ def _mark_upload_completed(
 
     _logger = logger or logging.getLogger(__name__)
 
-    # Get correct field names (tries ms/hf first, then modelscope/huggingface)
-    upload_status_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
+    # Get correct field names
+    upload_status_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
 
     with db.with_session() as session:
         item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
         if item:
             from robocoin_dataset.database.models import TaskStatus
-            setattr(item, upload_status_field, TaskStatus.COMPLETED)
+            setattr(item, upload_status_field_name, TaskStatus.COMPLETED)
             session.commit()
             _logger.debug(f"Marked dataset {dataset_uuid} as COMPLETED")
 
