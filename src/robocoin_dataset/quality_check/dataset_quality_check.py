@@ -264,12 +264,14 @@ def _build_episode_qc_summary(
                 "video_score": video_scores.get(episode_idx, 1),
             }
         )
-    for episode_idx in state_data_scores.keys():
+    for episode_idx in (
+        set(state_data_scores.keys()) | set(action_data_scores.keys()) | set(video_scores.keys())
+    ):
         episode_summary[episode_idx].update(
             {
                 "is_bad": episode_idx in bad_set,
-                "state_data_score": state_data_scores.get(episode_idx, 0),
-                "action_data_score": action_data_scores.get(episode_idx, 0),
+                "state_data_score": state_data_scores.get(episode_idx, 1),
+                "action_data_score": action_data_scores.get(episode_idx, 1),
                 "video_score": video_scores.get(episode_idx, 1),
             }
         )
@@ -545,6 +547,7 @@ class DatasetQualityCheckClient(TaskClient):
                 task_content.get(QC_CONFIG),
                 data_feature=MERGED_DATA_FEATURE,
             )
+
             results_send = {str(episode_idx): v for episode_idx, v in results.items()}
 
             return {QC_RESULT: results_send}

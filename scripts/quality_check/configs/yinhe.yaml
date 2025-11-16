@@ -4,19 +4,18 @@ episode_data_checkers:
     params:
       window_size: 5
       threshold: 0.05
-    should_check: False
+    should_check: True
     score_weight: 1.0   
 
   - name: "static_joint"
     params:
       static_joints_percent: 0.4
       epsilon: 0.001
-    should_check: False
+    should_check: True
     score_weight: 1.0   
 
 
 episode_video_checkers:
-  - name: "max_frame_jump_dist"
+  - name: "max_frame_jump_dist_and_max_static_frames"
     should_check: True  
-    max_dist_threshold: 50
     score_weight: 1.0   

@@ -95,6 +95,7 @@ def _upsert_video_hashes(
     hashes: dict[str, tuple[int, int, str, bytes]],
     dataset_uuid: str,
 ) -> None:
+    session.query(VideoHashDB).filter(VideoHashDB.dataset_uuid == dataset_uuid).delete()
     query = session.query(VideoHashDB).filter(VideoHashDB.video_path.in_(hashes.keys()))
     items = query.all()
     for item in items:
