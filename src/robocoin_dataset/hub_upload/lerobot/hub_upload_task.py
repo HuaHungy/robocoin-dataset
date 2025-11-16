@@ -185,7 +185,8 @@ def _mark_upload_failed(
     dataset_uuid: str,
     error_msg: str,
     hub_name_enum: "DatasetsHubEnum",
-    logger: logging.Logger | None = None
+    logger: logging.Logger | None = None,
+    item: "DatasetDB | None" = None
 ) -> None:
     """
     Mark upload task as failed with error message.
@@ -196,6 +197,7 @@ def _mark_upload_failed(
         error_msg: Error message describing the failure
         hub_name_enum: The hub name enum (DatasetsHubEnum.modelscope or DatasetsHubEnum.huggingface)
         logger: Logger instance
+        item: Optional pre-queried DatasetDB item to avoid redundant queries
     """
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
@@ -205,7 +207,10 @@ def _mark_upload_failed(
     upload_status_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
     upload_err_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_err_msg")
 
-    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+    # Only query if item not provided
+    if item is None:
+        item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+
     if item:
         setattr(item, upload_status_field_name, TaskStatus.FAILED)
         setattr(item, upload_err_field_name, error_msg)
@@ -217,7 +222,8 @@ def _mark_upload_completed(
     session: Session,
     dataset_uuid: str,
     hub_name_enum: "DatasetsHubEnum",
-    logger: logging.Logger | None = None
+    logger: logging.Logger | None = None,
+    item: "DatasetDB | None" = None
 ) -> None:
     """
     Mark upload task as completed.
@@ -227,6 +233,7 @@ def _mark_upload_completed(
         dataset_uuid: UUID of the dataset to mark as completed
         hub_name_enum: The hub name enum (DatasetsHubEnum.modelscope or DatasetsHubEnum.huggingface)
         logger: Logger instance
+        item: Optional pre-queried DatasetDB item to avoid redundant queries
     """
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
@@ -235,7 +242,10 @@ def _mark_upload_completed(
     # Get correct field names
     upload_status_field_name = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_status")
 
-    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+    # Only query if item not provided
+    if item is None:
+        item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+
     if item:
         setattr(item, upload_status_field_name, TaskStatus.COMPLETED)
         session.commit()
@@ -245,13 +255,30 @@ def _mark_upload_completed(
 def _verify_upload_consistency(
     session: Session,
     dataset_uuid: str,
-    hub_name_enum: "DatasetsHubEnum"
+    hub_name_enum: "DatasetsHubEnum",
+    item: "DatasetDB | None" = None
 ) -> str | None:
-    """Verify upload consistency in one line. Returns error message or None."""
+    """Verify upload consistency. Returns error message or None.
+
+    Args:
+        session: SQLAlchemy session instance
+        dataset_uuid: UUID of the dataset to verify
+        hub_name_enum: The hub name enum
+        item: Optional pre-queried DatasetDB item to avoid redundant queries
+
+    Returns:
+        Error message string if consistency check fails, None if passes
+    """
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
-    item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-    if not item or not hasattr(item, 'visualize_check_status'):
-        return None
+
+    # Only query if item not provided
+    if item is None:
+        item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
+
+    if not item:
+        return f"Dataset {dataset_uuid} not found in database"
+    if not hasattr(item, 'visualize_check_status'):
+        return f"Dataset {dataset_uuid} missing visualize_check_status field"
     upload_version_ps_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
     return (f"visualize_check_status={item.visualize_check_status}" if item.visualize_check_status != TaskStatus.COMPLETED
             else f"version_ps={getattr(item, upload_version_ps_field)}!={item.visualize_check_version}"
