@@ -160,9 +160,10 @@ class HubUploadServer(TaskServer):
 
 
                 #### TEMP: Verify consistency before marking as completed
-                consistency_err = _verify_upload_consistency(session, dataset_uuid, self.hub_name)
+                # Pass the already-queried item to avoid redundant database queries
+                consistency_err = _verify_upload_consistency(session, dataset_uuid, self.hub_name, item=item)
                 if consistency_err:
-                    _mark_upload_failed(session, dataset_uuid, f"Consistency check failed: {consistency_err}", self.hub_name, logger=self.logger)
+                    _mark_upload_failed(session, dataset_uuid, f"Consistency check failed: {consistency_err}", self.hub_name, logger=self.logger, item=item)
                     self.datasets_failed += 1
                     self.logger.warning(f"Task result: REJECTED | UUID: {dataset_uuid} | Reason: {consistency_err}")
                     self.summary_logger.debug(f"⚠️ {dataset_uuid}: {consistency_err}")
@@ -171,7 +172,7 @@ class HubUploadServer(TaskServer):
 
 
                 else:
-                    _mark_upload_completed(session, dataset_uuid, self.hub_name, logger=self.logger)
+                    _mark_upload_completed(session, dataset_uuid, self.hub_name, logger=self.logger, item=item)
                     self.datasets_succeeded += 1
                     self.logger.info(f"Task result: SUCCESS | UUID: {dataset_uuid}")
                     self.summary_logger.debug(f"✅ {dataset_uuid}: Upload completed successfully")
@@ -187,7 +188,7 @@ class HubUploadServer(TaskServer):
             # in case of failure:
             else:
                 error_message = upload_result.get("error_message") or "Upload failed"
-                _mark_upload_failed(session, dataset_uuid, error_message, self.hub_name, logger=self.logger)
+                _mark_upload_failed(session, dataset_uuid, error_message, self.hub_name, logger=self.logger, item=item)
                 self.datasets_failed += 1
                 self.logger.info(f"Task result: FAILED | UUID: {dataset_uuid} | Error: {error_message}")
                 self.summary_logger.debug(f"❌ {dataset_uuid}: {error_message}")
