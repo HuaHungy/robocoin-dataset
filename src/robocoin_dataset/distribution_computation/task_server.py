@@ -12,6 +12,7 @@ from robocoin_dataset.utils.logger import setup_logger
 from .constant import (
     CLIENT_ID,
     CLIENT_IP,
+    DATASET_UUID,
     ERROR,
     ERROR_MSG,
     LAST_PING,
@@ -101,7 +102,7 @@ class TaskServer(ABC):
         await websocket.send(msg)
 
         self.logger.info(
-            f"Client registered successfully | ID: {client_id} | IP: {client_ip} | Current connections: {len(self.clients)}"
+            f"Client connected | ID: {client_id} | IP: {client_ip} | Connections: {len(self.clients)}"
         )
 
     async def unregister_client(self, websocket: WebSocketServerProtocol) -> None:
@@ -109,7 +110,11 @@ class TaskServer(ABC):
             self.clients.discard(websocket)
             info = self.client_info.pop(websocket, None)
             if info:
-                self.logger.info(f"Client disconnected | ID: {info[CLIENT_ID]}")
+                client_id = info[CLIENT_ID]
+                reason = "closed" if websocket.closed else "unregister"
+                self.logger.info(
+                    f"Client disconnected | ID: {client_id} | Reason: {reason} | Connections: {len(self.clients)}"
+                )
         return
 
     @abstractmethod
@@ -124,7 +129,7 @@ class TaskServer(ABC):
         task_content = await asyncio.to_thread(self.generate_task_content)
         if not task_content:
             await websocket.send(json.dumps({MSG_TYPE: NO_TASK}))
-            self.logger.info(f"No task available for client {info[CLIENT_ID]}")
+            self.logger.debug(f"No tasks available | Client: {info[CLIENT_ID]}")
             return
 
         async with self._lock:
@@ -132,19 +137,28 @@ class TaskServer(ABC):
             self._current_task_idx += 1
 
         task_content[TASK_ID] = task_id
+        client_id = info[CLIENT_ID]
+        dataset_uuid = task_content.get(DATASET_UUID, "")
+        # Try common hardlink path keys
+        hardlink_path = task_content.get("leformat_path") or task_content.get("hardlink_path") or ""
 
         msg = json.dumps(
             {
                 MSG_TYPE: TASK,
                 MSG_CONTENT: task_content,
                 TASK_ID: task_id,
-                CLIENT_ID: info[CLIENT_ID],
+                CLIENT_ID: client_id,
             }
         )
 
         self._task_content_dict[task_id] = task_content
         await websocket.send(msg)
-        self.logger.info(f"Assigned task {TASK_ID} to client {info[CLIENT_ID]}")
+        if dataset_uuid or hardlink_path:
+            self.logger.info(
+                f"Task assigned | Task: {task_id} | UUID: {dataset_uuid} | Path: {hardlink_path} | Client: {client_id}"
+            )
+        else:
+            self.logger.info(f"Task assigned | Task: {task_id} | Client: {client_id}")
 
     @abstractmethod
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -166,9 +180,7 @@ class TaskServer(ABC):
                 client_id = msg.get(CLIENT_ID)
                 task_id = msg.get(TASK_ID)
 
-                self.logger.info(
-                    f"Received task result | Client ID: {client_id} | Task ID: {task_id}"
-                )
+                self.logger.debug(f"Received task result | Task: {task_id} | Client: {client_id}")
                 try:
                     task_result_content = msg.get(MSG_CONTENT)
                     task_content = self.get_task_content(task_id)
@@ -178,14 +190,8 @@ class TaskServer(ABC):
                         task_content=task_content,
                         task_result_content=task_result_content,
                     )
-                    # ✅ 成功后记录日志
-                    self.logger.info(f"✅ Successfully handled task result for {task_id}")
                 except Exception as e:
-                    # ✅ 详细的错误日志，包含完整堆栈
-                    self.logger.error(
-                        f"❌ Error handling task result for {task_id}: {e}",
-                        exc_info=True,  # 打印完整堆栈跟踪
-                    )
+                    self.logger.error(f"Error handling task result | Task: {task_id} | Error: {e}", exc_info=True)
 
             elif msg_type == PONG:
                 ctx = self.client_info.get(websocket)

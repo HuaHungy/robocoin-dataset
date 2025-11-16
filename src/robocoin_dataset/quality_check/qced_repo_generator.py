@@ -160,11 +160,13 @@ def _gen_output_meta_info_file(
             input_total_episodes = data.get("total_episodes")
             chunks_size = data.get("chunks_size")
             videos_per_episode = input_total_videos // input_total_episodes
+            output_train_split = f"0:{total_episodes - 1}"
 
             data["total_frames"] = total_frames
             data["total_episodes"] = total_episodes
             data["total_videos"] = total_episodes * videos_per_episode
             data["total_chunks"] = (total_episodes + chunks_size - 1) // chunks_size
+            data["splits"]["train"] = output_train_split
             json.dump(data, out_f)
 
 
@@ -220,7 +222,7 @@ def _gen_output_parquet_files(
     repo_path = Path(repo_path).expanduser().absolute()
 
     def get_output_parquet_path(out_ep_idx: int) -> Path:
-        chunk_idx = ep_idx // chunk_size
+        chunk_idx = out_ep_idx // chunk_size
         output_parquet_path = (
             repo_path
             / f"{output_feature}_data"
@@ -425,7 +427,7 @@ def gen_qced_repo(
 
     if (episodes_num - len(bad_episodes)) < min_episodes_num:
         raise ValueError(
-            f"The number of episodes after removing bad episodes is less than {min_episodes_num}"
+            f"Dataset {repo_path}: The number of episodes after removing bad episodes is less than {min_episodes_num}, original episodes num: {episodes_num}"
         )
 
     src_tasks_jsonl_path = repo_path / "meta/tasks.jsonl"
@@ -561,6 +563,7 @@ class QualityCheckedRepoGenerator:
         with self.db.with_session() as session:
             _sync_qced_repo_gen_tasks(session=session)
             dataset_uuid, repo_path = _gen_one_qced_repo_gen_task(session=session)
+
             bad_episodes = _get_bad_episodes(
                 session=session,
                 dataset_uuid=dataset_uuid,

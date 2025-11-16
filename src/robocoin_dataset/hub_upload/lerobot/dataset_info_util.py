@@ -154,7 +154,7 @@ class LocalDsInfoUtil(LocalDsUtil):
         tasks = "\n".join(tasks_list)
         return episodes_num, frames_num, tasks
 
-    def _get_subtasks_from_annotation(self, ds_name: str) -> str:
+    def _get_subtasks_from_annotation(self, ds_name: str) -> list[str]:
         """
         Extract subtasks from dataset annotation files (new structure).
 
@@ -165,7 +165,7 @@ class LocalDsInfoUtil(LocalDsUtil):
             ds_name (str): Name of the dataset.
 
         Returns:
-            str: Subtasks list with each item on a new line (e.g., "subtask1\nsubtask2\n").
+            list[str]: List of unique subtasks.
 
         Note:
             Reads subtask_annotations.jsonl from the annotations directory and extracts
@@ -192,6 +192,9 @@ class LocalDsInfoUtil(LocalDsUtil):
 
         # Extract unique subtasks from the JSONL file (case-insensitive)
         # Use a dict to preserve the first occurrence of each unique subtask
+        # Filter out invalid/placeholder subtasks
+        invalid_subtasks = {}
+
         subtasks_dict = {}
         try:
             with open(subtask_file, encoding='utf-8') as f:
@@ -203,24 +206,22 @@ class LocalDsInfoUtil(LocalDsUtil):
                             # Use lowercase as key for case-insensitive comparison
                             # but store the original value
                             subtask_lower = subtask.lower()
-                            if subtask_lower not in subtasks_dict:
+                            # Skip invalid/placeholder subtasks
+                            if subtask_lower not in invalid_subtasks and subtask_lower not in subtasks_dict:
                                 subtasks_dict[subtask_lower] = subtask
 
-            # Sort by the lowercase key and format with newlines
+            # Sort by the lowercase key and return as list
             sorted_subtasks = [subtasks_dict[key] for key in sorted(subtasks_dict.keys())]
-            result = "\n".join(sorted_subtasks)
-            if result:
-                result += "\n"  # Add trailing newline
 
             self.logger.info(f"dataset {ds_name}: extracted {len(sorted_subtasks)} unique subtasks from annotations.")
-            return result
+            return sorted_subtasks
 
         except Exception as e:
             self.logger.error(
                 f"dataset {ds_name}: error reading subtask_annotations.jsonl: {e}. "
                 "Subtasks will be empty."
             )
-            return ""
+            return []
 
     def _generate_size_label(self, size: int) -> str:
         """

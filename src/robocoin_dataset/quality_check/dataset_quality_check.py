@@ -41,6 +41,7 @@ from robocoin_dataset.utils.path_utils import get_dataset_video_paths, get_episo
 
 QC_CONFIG = "qc_config"
 QC_RESULT = "qc_result"
+MERGED_DATA_FEATURE = "merged"
 
 
 def get_checker_config(
@@ -78,7 +79,9 @@ def get_checker_config(
     return merge.merge(base_config, specific_config)
 
 
-def quality_check_pipeline(repo_path: str | Path, configs: dict) -> dict:
+def quality_check_pipeline(
+    repo_path: str | Path, configs: dict, data_feature: str
+) -> tuple[dict, dict]:
     dataset_data_checkers_config = configs.get("dataset_data_checkers", None)
     if not dataset_data_checkers_config:
         raise ValueError("No dataset_data_checkers config found.")
@@ -99,7 +102,7 @@ def quality_check_pipeline(repo_path: str | Path, configs: dict) -> dict:
 
         state_data_scores = {}
         action_data_scores = {}
-        parquet_files, _ = get_parquet_paths(repo_path, "")
+        _, parquet_files = get_parquet_paths(repo_path, data_feature)
         state_data_scores_perchecker = defaultdict(dict)
         action_data_scores_perchecker = defaultdict(dict)
 
@@ -331,8 +334,8 @@ def _gen_one_dataset_quality_check_task_without_sync(
     return item.dataset_uuid, item.convert_path, device_model, device_model_version
 
 
-def _check_repo(repo_path: str | Path, checker_config: dict) -> dict[int, dict]:
-    qc_results, _ = quality_check_pipeline(repo_path, checker_config)
+def _check_repo(repo_path: str | Path, checker_config: dict, data_feature: str) -> dict[int, dict]:
+    qc_results, _ = quality_check_pipeline(repo_path, checker_config, data_feature=data_feature)
     bad_episodes, state_data_scores, action_data_scores, video_scores = (
         qc_results.get("bad_data_episodes", []),
         qc_results.get("state_data_scores", {}),
@@ -377,7 +380,7 @@ class DatasetQualityCheck:
         )
 
         try:
-            qc_results = _check_repo(repo_path, checker_config)
+            qc_results = _check_repo(repo_path, checker_config, MERGED_DATA_FEATURE)
 
             with self.db.with_session() as session:
                 item = (
@@ -540,6 +543,7 @@ class DatasetQualityCheckClient(TaskClient):
             results = _check_repo(
                 repo_path,
                 task_content.get(QC_CONFIG),
+                data_feature=MERGED_DATA_FEATURE,
             )
             results_send = {str(episode_idx): v for episode_idx, v in results.items()}
 

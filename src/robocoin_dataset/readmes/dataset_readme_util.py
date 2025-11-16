@@ -217,8 +217,11 @@ class LocalDsReadmeUtil(LocalDsUtil):
     try:
       env = Environment(loader=FileSystemLoader(self.readme_template_file.parent))
       env.globals["get_meta_info_content"] = get_meta_info_content
+      ###########################################################################
+      # Remove _qced_hardlink suffix from dataset_name for display in README.md #
+      display_dataset_name = ds_name.removesuffix("_qced_hardlink")
       readme_content = env.get_template(self.readme_template_file.name).render(
-        dataset_name=ds_name, **ds_info
+        dataset_name=display_dataset_name, **ds_info
       )
 
       ds_path = self.root_path.joinpath(ds_name)

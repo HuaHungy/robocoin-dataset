@@ -122,7 +122,7 @@ def normalize_per_dimension(data: np.ndarray) -> np.ndarray:
     return normalized
 
 
-def is_window_static(window_data: np.ndarray, threshold: float = 0.05) -> bool:
+def is_window_static(window_data: np.ndarray, threshold: float = 0.01) -> bool:
     if window_data.shape[0] <= 1:
         return True
     stds = np.std(window_data, axis=0)
@@ -130,12 +130,15 @@ def is_window_static(window_data: np.ndarray, threshold: float = 0.05) -> bool:
     with np.errstate(divide="ignore", invalid="ignore"):
         rel_stds = np.divide(stds, rms_vals)
         rel_stds[rms_vals == 0] = 0.0
-    return np.all(rel_stds < threshold)
+    count = np.sum(rel_stds > threshold)
+    if count >= 1:
+        return False
+    return True
 
 
 @episode_data_checker_registry("static_frame_rate")
 def count_total_static_frames_rate(
-    data: np.ndarray, window_size: int = 5, threshold: float = 0.05
+    data: np.ndarray, window_size: int = 5, threshold: float = 0.01
 ) -> float:
     """
     统计所有被判定为静止的帧的总数量（去重，每帧只算一次）。
@@ -174,7 +177,9 @@ def count_total_static_frames_rate(
 
 
 @episode_data_checker_registry("static_joint")
-def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float = 1e-3) -> float:
+def detect_static_joint(
+    data: np.ndarray, static_joints_percent: float = 0.4, epsilon: float = 1e-3
+) -> float:
     """
     检测机械臂数据是否处于“静态”状态（全局判断，非滑动窗口）。
 
@@ -195,6 +200,7 @@ def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float
         raise ValueError("Input data must be 2D array of shape (time_steps, dimensions).")
 
     frame_num, dim = data.shape
+    static_joint_threshold = int(dim * static_joints_percent)
     if dim == 0:
         return 1.0  # 无维度，默认静态
 
@@ -207,7 +213,7 @@ def detect_static_joint(data: np.ndarray, static_joints: int = 2, epsilon: float
         is_static_dim = stds < epsilon
         static_dim_count = np.sum(is_static_dim)
 
-    return 1.0 if static_dim_count >= static_joints else 0.0
+    return 1.0 if static_dim_count >= static_joint_threshold else 0.0
 
 
 def detect_stable_then_jump_frames(

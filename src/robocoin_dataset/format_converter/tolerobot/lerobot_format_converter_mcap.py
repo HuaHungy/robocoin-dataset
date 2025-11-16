@@ -59,6 +59,32 @@ def decode_image_bytes(img_bytes: bytes, typestore) -> np.ndarray:  # noqa: ANN0
         # 如果解码失败，返回None
         return None
 
+def extract_timestamp_from_message(ros_msg, message, typestore):
+    """🔥 修复：优先使用header.stamp（传感器采集时间），回退到log_time
+    
+    Args:
+        ros_msg: 解码后的ROS消息对象（如果有）
+        message: MCAP消息对象
+        typestore: ROS typestore（用于反序列化）
+    
+    Returns:
+        时间戳（秒，浮点数）
+    """
+    # 优先使用header.stamp（传感器采集时间）
+    if ros_msg is not None:
+        try:
+            if hasattr(ros_msg, 'header') and hasattr(ros_msg.header, 'stamp'):
+                stamp = ros_msg.header.stamp
+                timestamp = float(stamp.sec) + float(stamp.nanosec) * 1e-9
+                if timestamp > 0:
+                    return timestamp
+        except Exception:
+            pass
+    
+    # 回退到log_time（消息记录时间）
+    return message.log_time * 1e-9
+
+
 class TopicMessageCache:
     """Topic消息缓存，预计算时间戳列表以优化性能
     
@@ -72,7 +98,7 @@ class TopicMessageCache:
         """初始化缓存
         
         Args:
-            msgs: list of (log_time, data) tuples，已按时间排序
+            msgs: list of (timestamp, data) tuples，已按时间排序
         """
         self.msgs = msgs
         self._times = None  # 延迟计算
@@ -85,7 +111,7 @@ class TopicMessageCache:
         return self._times
     
     def find_nearest(self, target_time):
-        """查找最接近目标时间的消息
+        """🔥 修复：查找最接近目标时间的消息，优先相等值，保证因果性
         
         Args:
             target_time: 目标时间戳
@@ -96,26 +122,24 @@ class TopicMessageCache:
         if not self.msgs:
             return None
         
-        import bisect
+        import numpy as np
         
         # 使用预计算的时间戳列表（O(1)访问）
-        times = self.times
+        times = np.array(self.times)
         
-        # 使用二分查找找到最近的消息（O(log K)）
-        pos = bisect.bisect_left(times, target_time)
+        # 🔥 修复：使用searchsorted，优先相等值，否则使用右侧（之后）第一个
+        # 这样可以保证：优先使用同步数据，否则使用"已经发生"的数据（保证因果性）
+        indices_right = np.searchsorted(times, target_time, side='right')
+        indices_left = np.searchsorted(times, target_time, side='left')
         
-        if pos == 0:
-            return self.msgs[0][1]
-        if pos == len(times):
-            return self.msgs[-1][1]
+        # 如果indices_left < indices_right，说明有相等值，使用indices_left
+        # 否则，使用indices_right（右侧第一个，保证因果性）
+        idx = indices_left if indices_left < indices_right else indices_right
         
-        # 比较前后两个时间戳，返回更近的那个
-        before = times[pos - 1]
-        after = times[pos]
+        # 处理边界情况：确保索引在有效范围内
+        idx = np.clip(idx, 0, len(self.msgs) - 1)
         
-        if abs(target_time - before) <= abs(after - target_time):
-            return self.msgs[pos - 1][1]
-        return self.msgs[pos][1]
+        return self.msgs[idx][1]
 
 
 def find_nearest_msg(msgs, target_time):  # noqa: ANN001, ANN201
@@ -608,51 +632,112 @@ int32 lift_pos
 
         # 收集所有消息
         topic_msgs = {topic: [] for topic in image_topics.keys()}
+        topic_timestamps = {topic: [] for topic in image_topics.keys()}  # 🔥 新增：单独存储时间戳
         for sub in state_subs + action_subs:
             topic = sub['args']['mcap_topic']
             topic_msgs.setdefault(topic, [])
+            topic_timestamps.setdefault(topic, [])
 
         mode_str = f"(TEST MODE: max {max_frames} frames)" if max_frames else "(FULL MODE: all frames)"
         self.logger.info(f"Parsing MCAP file: {mcap_file.name} {mode_str}")
         
+        # 🔥 修复：尝试使用 mcap_ros2 解码器来获取 ROS 消息（用于提取 header.stamp）
+        try:
+            from mcap_ros2.decoder import DecoderFactory as mcap_ros2_decoder
+            use_ros2_decoder = True
+            self.logger.info("Using mcap_ros2 decoder for timestamp extraction")
+        except ImportError:
+            use_ros2_decoder = False
+            self.logger.warning("mcap_ros2 not available, using log_time only (may cause alignment issues)")
+        
         # 🚀 阶段4优化：使用更大的文件缓冲区加速I/O
-        # 默认缓冲区是8KB，对于大文件使用更大的缓冲区可以减少系统调用
         buffer_size = 1024 * 1024  # 1MB缓冲区
         
+        # 🔥 修复：记录起始时间戳（用于转换为相对时间戳）
+        start_timestamp = None
+        
         with open(mcap_file, "rb", buffering=buffer_size) as f:
-            reader = make_reader(f)
-            for schema, channel, message in reader.iter_messages():
-                topic = channel.topic
-                if topic in topic_msgs:
-                    topic_msgs[topic].append((message.log_time, message.data))
+            if use_ros2_decoder:
+                reader = make_reader(f, decoder_factories=[mcap_ros2_decoder()])
+                for schema, channel, message, ros_msg in reader.iter_decoded_messages():
+                    topic = channel.topic
+                    if topic in topic_msgs:
+                        # 🔥 修复：使用 header.stamp 优先
+                        timestamp = extract_timestamp_from_message(ros_msg, message, self.typestore)
+                        if start_timestamp is None:
+                            start_timestamp = timestamp
+                        relative_timestamp = timestamp - start_timestamp
+                        topic_msgs[topic].append(message.data)
+                        topic_timestamps[topic].append(relative_timestamp)
+            else:
+                reader = make_reader(f)
+                for schema, channel, message in reader.iter_messages():
+                    topic = channel.topic
+                    if topic in topic_msgs:
+                        # 回退到 log_time
+                        timestamp = message.log_time * 1e-9
+                        if start_timestamp is None:
+                            start_timestamp = timestamp
+                        relative_timestamp = timestamp - start_timestamp
+                        topic_msgs[topic].append(message.data)
+                        topic_timestamps[topic].append(relative_timestamp)
         
         self.logger.info(f"Finished reading MCAP file, collected {sum(len(msgs) for msgs in topic_msgs.values())} messages")
+        
+        # 🔥 修复：将消息和时间戳组合成 (timestamp, data) 元组
+        topic_msgs_with_ts = {}
+        for topic in topic_msgs.keys():
+            topic_msgs_with_ts[topic] = list(zip(topic_timestamps[topic], topic_msgs[topic]))
         
         # 🚀 性能优化：将topic_msgs转换为TopicMessageCache，预计算时间戳列表
         self.logger.info("Building topic message cache (optimizing timestamp lookups)...")
         topic_caches = {}
-        for topic, msgs in topic_msgs.items():
+        for topic, msgs in topic_msgs_with_ts.items():
             topic_caches[topic] = TopicMessageCache(msgs)
         self.logger.info(f"Built cache for {len(topic_caches)} topics")
 
-        # 主对齐topic（如右臂关节）
-        main_joint_topic = state_subs[0]['args']['mcap_topic']
-        main_joint_msgs = topic_msgs[main_joint_topic]
-        total_frames = len(main_joint_msgs)
+        # 🔥 修复：以相机为基准，而不是以关节为基准
+        # 找到最小帧数的摄像头作为基准
+        camera_frame_counts = {topic: len(topic_msgs_with_ts[topic]) for topic in image_topics.keys() if topic in topic_msgs_with_ts}
+        if not camera_frame_counts:
+            raise ValueError("No camera topics found in MCAP file")
         
-        # 限制解析帧数（test模式用）
+        min_frame_topic = min(camera_frame_counts.items(), key=lambda x: x[1])[0]
+        min_frame_count = camera_frame_counts[min_frame_topic]
+        reference_camera = image_topics[min_frame_topic]
+        
+        self.logger.info(f"Using camera '{reference_camera}' ({min_frame_topic}) as reference with {min_frame_count} frames")
+        
+        # 🔥 修复：使用理论30Hz时间戳，而不是实际时间戳
+        # 获取FPS配置
+        fps = self.fps if hasattr(self, 'fps') else 30
+        total_frames = min_frame_count
         frames = min(max_frames, total_frames) if max_frames else total_frames
-        main_times = [t for t, _ in main_joint_msgs[:frames]]
-
+        
+        # 生成理论时间戳序列（0, 1/fps, 2/fps, ...）
+        target_timestamps = np.arange(frames) / fps
+        
+        # 获取基准相机的时间戳序列（用于对齐）
+        reference_timestamps = np.array(topic_timestamps[min_frame_topic][:frames])
+        
         decode_mode = f"(TEST MODE: {frames}/{total_frames} frames)" if max_frames else f"({frames} frames total)"
         self.logger.info(f"Starting to decode {frames} frames with {len(image_topics)} cameras {decode_mode}")
+        self.logger.info(f"Using theoretical {fps}Hz timestamps for alignment")
         
         # 🚀 阶段3优化：并行图像解码
         # 先收集所有需要解码的图像字节数据
         image_decode_tasks = []  # [(frame_idx, cam_name, img_bytes), ...]
-        for i, t in enumerate(main_times):
+        for i, target_ts in enumerate(target_timestamps):
             for topic, cam_name in image_topics.items():
-                img_bytes = topic_caches[topic].find_nearest(t)
+                if topic == min_frame_topic:
+                    # 基准相机：直接使用索引
+                    if i < len(topic_msgs[topic]):
+                        img_bytes = topic_msgs[topic][i]
+                    else:
+                        img_bytes = None
+                else:
+                    # 其他相机：基于时间戳对齐到基准相机
+                    img_bytes = topic_caches[topic].find_nearest(target_ts)
                 image_decode_tasks.append((i, cam_name, img_bytes))
         
         # 并行解码图像
@@ -704,16 +789,20 @@ int32 lift_pos
         # 注意：这里只提取原始数据，不应用convert_func
         # convert_func会在基类的_get_frame_states中统一应用
         
+        # 🔥 修复：状态和动作也使用理论30Hz时间戳对齐
         states = []
-        for i, t in enumerate(main_times):
+        for i, target_ts in enumerate(target_timestamps):
             state_vec = []
             for sub in state_subs:
                 topic = sub['args']['mcap_topic']
                 from_idx = sub['args']['range_from']
                 to_idx = sub['args']['range_to']
                 
-                # 🚀 使用缓存的topic消息，避免重复提取时间戳
-                data = topic_caches[topic].find_nearest(t)
+                # 🔥 修复：使用理论时间戳对齐，而不是主关节时间戳
+                if topic in topic_caches:
+                    data = topic_caches[topic].find_nearest(target_ts)
+                else:
+                    data = None
                 if data is not None:
                     # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
@@ -763,16 +852,20 @@ int32 lift_pos
         # 注意：这里只提取原始数据，不应用convert_func
         # convert_func会在基类的_get_frame_actions中统一应用
         
+        # 🔥 修复：动作也使用理论30Hz时间戳对齐
         actions = []
-        for i, t in enumerate(main_times):
+        for i, target_ts in enumerate(target_timestamps):
             action_vec = []
             for sub in action_subs:
                 topic = sub['args']['mcap_topic']
                 from_idx = sub['args']['range_from']
                 to_idx = sub['args']['range_to']
                 
-                # 🚀 使用缓存的topic消息，避免重复提取时间戳
-                data = topic_caches[topic].find_nearest(t)
+                # 🔥 修复：使用理论时间戳对齐，而不是主关节时间戳
+                if topic in topic_caches:
+                    data = topic_caches[topic].find_nearest(target_ts)
+                else:
+                    data = None
                 if data is not None:
                     # JointState类型 - 使用手动CDR解析（绕过rosbags bug）
                     if 'joint_states' in topic or 'gripper_pos' in topic:
@@ -1168,9 +1261,9 @@ int32 lift_pos
             self.logger.debug("✅ Episode资源清理完成，已执行垃圾回收")
 
     def _get_episode_frames_num(self, task_path: Path, ep_idx: int) -> int:
-        """快速获取帧数，避免解析整个 MCAP 文件
+        """🔥 修复：快速获取帧数，使用相机topic作为基准（而不是关节topic）
         
-        只统计主对齐 topic 的消息数量，不解码任何图像
+        统计所有相机topic的消息数量，取最小值作为总帧数
         
         在 test 模式下，返回受限的帧数
         """
@@ -1181,18 +1274,38 @@ int32 lift_pos
         # 正常模式：统计完整帧数
         mcap_file = self._get_episode_mcap_file(task_path, ep_idx)
         
-        # 获取主对齐 topic（通常是关节状态）
-        state_subs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][SUB_STATE_KEY]
-        main_joint_topic = state_subs[0]['args']['mcap_topic']
+        # 🔥 修复：使用相机topic作为基准，而不是关节topic
+        image_topics = {img['args']['mcap_topic']: img['cam_name']
+                        for img in self.converter_config[FEATURES_KEY][OBSERVATION_KEY][IMAGE_KEY]}
         
-        # 快速统计该 topic 的消息数量
-        frame_count = 0
+        if not image_topics:
+            # 如果没有相机topic，回退到使用关节topic
+            state_subs = self.converter_config[FEATURES_KEY][OBSERVATION_KEY][STATE_KEY][SUB_STATE_KEY]
+            if state_subs:
+                main_joint_topic = state_subs[0]['args']['mcap_topic']
+                frame_count = 0
+                with open(mcap_file, "rb") as f:
+                    reader = make_reader(f)
+                    for schema, channel, message in reader.iter_messages(topics=[main_joint_topic]):
+                        frame_count += 1
+                return frame_count
+            return 0
+        
+        # 统计所有相机topic的消息数量，取最小值
+        camera_frame_counts = {}
         with open(mcap_file, "rb") as f:
             reader = make_reader(f)
-            for schema, channel, message in reader.iter_messages(topics=[main_joint_topic]):
-                frame_count += 1
+            for schema, channel, message in reader.iter_messages():
+                topic = channel.topic
+                if topic in image_topics:
+                    camera_frame_counts[topic] = camera_frame_counts.get(topic, 0) + 1
         
-        return frame_count
+        if not camera_frame_counts:
+            return 0
+        
+        # 返回最小帧数（作为基准）
+        min_frame_count = min(camera_frame_counts.values())
+        return min_frame_count
 
     def _get_task_episodes_num(self, task_path: Path) -> int:
         # 与_get_episode_mcap_file保持一致，使用统一的方法

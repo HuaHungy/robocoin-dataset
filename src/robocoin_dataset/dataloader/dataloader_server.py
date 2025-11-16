@@ -7,6 +7,7 @@ This module provides the server-side orchestration for:
 """
 
 import logging
+import traceback
 from pathlib import Path
 
 from robocoin_dataset.database.database import DatasetDatabase
@@ -17,12 +18,7 @@ from robocoin_dataset.dataloader.dataloader_task import (
     _mark_task_failed,
     _sync_dataloader_detection_tasks,
 )
-from robocoin_dataset.distribution_computation.constant import (
-    DATASET_UUID,
-    TASK_FAILED,
-    TASK_RESULT_CONTENT,
-    TASK_RESULT_STATUS,
-)
+from robocoin_dataset.distribution_computation.constant import DATASET_UUID
 from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import LEFORMAT_PATH
 
@@ -84,25 +80,25 @@ class DataloaderDbServer(TaskServer):
         return TASK_CATEGORY
 
     def generate_task_content(self) -> dict | None:
-        # Retry loop: continue until we find a valid task or run out of tasks
-        # This ensures that hardlink preparation failures don't stop processing
-        max_retries = 100  # Safety limit to prevent infinite loops
-        attempt = 0
-
-        while attempt < max_retries:
-            attempt += 1
+        while True:
+            dataset_uuid = None  # Initialize to avoid NameError in exception handlers
 
             # Step 1: Sync and claim task (with DB session, includes hardlink validation)
             try:
                 with self.db.with_session() as session:
-                    # pre-sync queue (only on first attempt to avoid redundant syncs)
-                    if attempt == 1:
-                        _sync_dataloader_detection_tasks(session, logger=self.logger)
+                    # Always resync the queue before attempting to claim a task
+                    _sync_dataloader_detection_tasks(session, logger=self.logger)
 
                     # claim one (validates hardlink exists)
                     dataset_uuid, hardlink_path = _gen_one_dataloader_detection_task(session)
                     if dataset_uuid is None:
-                        return None
+                        break
+
+                if hardlink_path is None:
+                    raise FileNotFoundError(f"No hard_link_path found for dataset {dataset_uuid}")
+
+                if not hardlink_path.exists():
+                    raise FileNotFoundError(f"No such hardlink found in {hardlink_path}")
 
                 self.logger.debug(f"Using existing hardlink for client: {hardlink_path}")
 
@@ -117,30 +113,40 @@ class DataloaderDbServer(TaskServer):
                 }
 
             except FileNotFoundError as e:
-                # Task was already claimed, so we have dataset_uuid
-                err_msg = f"Hardlink assertion failed: {e}"
+                # Task was claimed before validation, so dataset_uuid is always set
+                err_msg = f"Hardlink assertion failed: {e}\n{traceback.format_exc()}"
                 self.logger.exception(f"❌ {dataset_uuid}: {err_msg}")
-
                 # Mark task as failed in database
                 with self.db.with_session() as session:
                     _mark_task_failed(session, dataset_uuid, err_msg)
-
                 # Log to summary
                 self.summary_logger.debug(f"❌ {dataset_uuid}: {err_msg}")
-
+                self.datasets_failed += 1
+                # Continue to next iteration to try another task
+                self.logger.debug("Attempting to fetch next task...")
+                continue
+            except Exception as e:
+                # Catch any unexpected exceptions during task generation/claiming
+                if dataset_uuid:
+                    err_msg = f"Unexpected error during task generation: {e}\n{traceback.format_exc()}"
+                    self.logger.exception(f"❌ {dataset_uuid}: {err_msg}")
+                    with self.db.with_session() as session:
+                        _mark_task_failed(session, dataset_uuid, err_msg)
+                    self.summary_logger.debug(f"❌ {dataset_uuid}: {err_msg}")
+                    self.datasets_failed += 1
+                else:
+                    self.logger.exception(f"❌ Unexpected error before task claimed: {e}")
                 # Continue to next iteration to try another task
                 self.logger.debug("Attempting to fetch next task...")
                 continue
 
-        # Safety: should never reach here unless we hit max_retries
-        self.logger.warning(f"Reached max retry limit ({max_retries}) in generate_task_content")
         return None
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         """Handle task result from client and update database."""
         dataset_uuid = task_content.get(DATASET_UUID)
-        # Client execution state: did the client process crash/throw exception?
-        client_execution_status = task_result_content.get(TASK_RESULT_STATUS)
+        dataset_validation_result = task_result_content or {}
+        dataset_validation_passed = dataset_validation_result.get("success", False)
 
         with self.db.with_session() as session:
             # Check if dataset exists before updating
@@ -149,44 +155,10 @@ class DataloaderDbServer(TaskServer):
                 self.logger.error(f"Dataset {dataset_uuid} not found in dataset DB.")
                 return
 
-            # Level 1: Check if client crashed (process-level failure)
-            if client_execution_status == TASK_FAILED:
-                error_message = task_result_content.get("err_msg", "Client execution failed")
-                _mark_task_failed(session, dataset_uuid, error_message)
-                self.datasets_failed += 1
-
-                # Calculate current average time per frame
-                avg_time_per_frame = (
-                    self.total_detection_time / self.total_frames_processed
-                    if self.total_frames_processed > 0
-                    else 0.0
-                )
-
-                self.summary_logger.debug(f"❌ {dataset_uuid}: {error_message}")
-
-                # Log cumulative statistics
-                total_datasets = self.datasets_succeeded + self.datasets_failed
-                self.summary_logger.debug(
-                    f"📊 Cumulative: {total_datasets} datasets "
-                    f"({self.datasets_succeeded} ✅, {self.datasets_failed} ❌), "
-                    f"{self.total_frames_processed} frames, "
-                    f"{self.total_detection_time:.2f}s total, "
-                    f"{avg_time_per_frame*1000:.1f}ms/frame avg"
-                )
-
-                self.logger.debug(
-                    f"Marked {item.convert_path} dataloader detection as FAILED: {error_message}"
-                )
-                return
-
-            # Level 2: Client executed successfully, check dataset validation result (business-level)
-            dataset_validation_result = task_result_content.get(TASK_RESULT_CONTENT, {})
-            dataset_validation_passed = dataset_validation_result.get("success", False)
-
             if dataset_validation_passed:
                 _mark_task_completed(session, dataset_uuid)
                 # Log to summary
-                result = task_result_content.get(TASK_RESULT_CONTENT, {})
+                result = dataset_validation_result
 
                 # Track aggregated statistics
                 self.total_frames_processed += result.get('total_frames_sampled', 0)
@@ -219,7 +191,7 @@ class DataloaderDbServer(TaskServer):
 
                 self.logger.debug(f"Marked {item.convert_path} dataloader detection as COMPLETED")
             else:
-                error_message = dataset_validation_result.get("error_summary", "Dataset validation failed")
+                error_message = dataset_validation_result.get("error_message") or "Dataset validation failed"
                 _mark_task_failed(session, dataset_uuid, error_message)
                 self.datasets_failed += 1
 

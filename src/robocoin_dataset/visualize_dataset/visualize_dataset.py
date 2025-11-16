@@ -251,6 +251,7 @@ class DatasetVisualizerServer(TaskServer):
                     ),
                 )
             )
+            print(f"device_model: {self.device_model}")
             if self.device_model:
                 query = query.filter(
                     DatasetDB.device_model == self.device_model,
@@ -261,6 +262,7 @@ class DatasetVisualizerServer(TaskServer):
             if not item:
                 return None
 
+            print(item.dataset_uuid)
             query = session.query(DatasetHardLinkDB).filter(
                 DatasetHardLinkDB.dataset_uuid == item.dataset_uuid
             )
@@ -295,13 +297,14 @@ class DatasetVisualizerServer(TaskServer):
             if item is None:
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
 
+            print(item.visualize_check_status)
             item.visualize_check_status = convert_status
             item.visualize_check_err_msg = task_status_msg
-            session.commit()
             self.logger.info(
                 f"Upsert {item.convert_path} visualize checke status to {convert_status}, "
                 f"update_message: {task_status_msg}"
             )
+            session.commit()
 
 
 class DatasetVisualizerClient(TaskClient):
@@ -334,4 +337,4 @@ class DatasetVisualizerClient(TaskClient):
 
             return {}
         except Exception as e:
-            raise RuntimeError(f"visualize dataset{hard_link_path} found error") from e
+            raise e

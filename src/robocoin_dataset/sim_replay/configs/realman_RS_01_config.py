@@ -8,7 +8,7 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 class RealmanRS01LerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
-        / "mjcfs/realman_RS-01/realman_WR75S_with_sites.xml"
+        / "mjcfs/realman_RS-01/meshes/realman_WR75S_with_sites.xml"
     )
 
     # fixed

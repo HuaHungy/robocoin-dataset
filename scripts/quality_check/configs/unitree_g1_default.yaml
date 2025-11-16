@@ -9,7 +9,7 @@ episode_data_checkers:
 
   - name: "static_joint"
     params:
-      static_joints: 2
+      static_joints_percent: 0.4
       epsilon: 0.001
     should_check: False
     score_weight: 1.0   

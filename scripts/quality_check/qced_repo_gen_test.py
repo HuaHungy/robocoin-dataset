@@ -1,0 +1,68 @@
+import argparse
+import logging
+from pathlib import Path
+
+from robocoin_dataset.quality_check.qced_repo_generator import QualityCheckedRepoGenerator
+from robocoin_dataset.utils.logger import setup_logger
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--db_file_path", type=str, required=True)
+
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default="",
+        help="Path to the log directory",
+    )
+
+    parser.add_argument(
+        "--qc_config_path",
+        type=str,
+        default="",
+        help="Path to the quality check config file",
+    )
+    parser.add_argument("--state_data_score_threshold", type=float, default=0.85)
+    parser.add_argument("--action_data_score_threshold", type=float, default=0.85)
+    parser.add_argument("--video_score_threshold", type=float, default=0.9)
+    parser.add_argument("--min_episodes_num", type=int, default=10)
+    parser.add_argument("--ds_api_key", type=str, default="sk-a3c8736391cf43809957329f28cac287")
+
+    args = parser.parse_args()
+
+    logger = setup_logger(
+        name="quality check",
+        log_dir=Path(args.log_dir),
+        level=logging.INFO,
+    )
+
+    generator = QualityCheckedRepoGenerator(
+        args.db_file_path,
+        state_data_score_threshold=args.state_data_score_threshold,
+        action_data_score_threshold=args.action_data_score_threshold,
+        video_score_threshold=args.video_score_threshold,
+        min_episodes_num=args.min_episodes_num,
+        ds_api_key=args.ds_api_key,
+        logger=logger,
+    )
+    generator.gen_one_qced_repo()
+
+"""Usage:
+python scripts/quality_check/qced_repo_gen.py --db_file_path ./db/datasets_new.db --log_dir ./logs/qced_repo_gen
+"""
+from robocoin_dataset.quality_check.qced_repo_generator import _get_bad_episodes, gen_qced_repo
+
+    bad_episodes = _get_bad_episodes(
+                session=session,
+                dataset_uuid=dataset_uuid,
+                state_data_score_threshold=self.state_data_score_threshold,
+                action_data_score_threshold=self.action_data_score_threshold,
+                video_score=self.video_score_threshold,
+            )
+
+    hardlink_repo_path = gen_qced_repo(
+                repo_path=repo_path,
+                bad_episodes=bad_episodes,
+                min_episodes_num=self.min_episodes_num,
+                ds_api_key=self.ds_api_key,
+            )

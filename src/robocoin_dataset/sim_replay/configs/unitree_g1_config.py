@@ -142,7 +142,7 @@ class UnitreeG1Dof29FiveFingerHandConfig(LerobotSimReplayConfig):
     ]
     action_arm_joint_mjcf_names = state_arm_joint_mjcf_names
     state_arm_joint_lerobot_names: list[str] = [
-        # left arm
+        # left arm（只包含手臂的14个关节）
         "left_arm_joint_1_rad",
         "left_arm_joint_2_rad",
         "left_arm_joint_3_rad",
@@ -169,21 +169,24 @@ class UnitreeG1Dof29FiveFingerHandConfig(LerobotSimReplayConfig):
     state_gripper_joint_mjcf_names: list[str] = []
     action_gripper_joint_mjcf_names = state_gripper_joint_mjcf_names
 
+    # gripper 字段用于绘图显示手部数据（14个关节），但不用于 MuJoCo 关节控制
     state_gripper_lerobot_names: list[str] = [
-        # left_hand
+        # left_hand（7个关节）
         "left_hand_joint_1_rad",
         "left_hand_joint_2_rad",
         "left_hand_joint_3_rad",
         "left_hand_joint_4_rad",
         "left_hand_joint_5_rad",
         "left_hand_joint_6_rad",
-        # right hand
+        "left_hand_joint_7_rad",
+        # right hand（7个关节）
         "right_hand_joint_1_rad",
         "right_hand_joint_2_rad",
         "right_hand_joint_3_rad",
         "right_hand_joint_4_rad",
         "right_hand_joint_5_rad",
         "right_hand_joint_6_rad",
+        "right_hand_joint_7_rad",
     ]
     action_gripper_lerobot_names = state_gripper_lerobot_names
 
