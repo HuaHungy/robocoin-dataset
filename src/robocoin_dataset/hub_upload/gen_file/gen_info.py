@@ -1,7 +1,13 @@
 """
-RoboCoin Datasets Generate Dataset Readme.md from readme_template/readme.j2 template
-usage:
-python -m robocoin.datasets.gen_readme --config configs/upload.yaml
+RoboCoin Datasets Generate Dataset Info YAML for Single Datasets
+
+This module provides a function for generating dataset info YAML files for individual
+datasets during the upload process. It uses the SingleDatasetInfoGenerator which works
+directly with hardlink paths without requiring root_path manipulation.
+
+Usage:
+  Called internally during upload process, or standalone with:
+  python -m robocoin.datasets.gen_info --config configs/gen_info.yaml
 """
 
 import logging
@@ -9,70 +15,68 @@ import traceback
 from pathlib import Path
 
 import draccus
-import yaml
 from tqdm import tqdm
 
-from robocoin_dataset.hub_upload.lerobot.constant import DATASET_INFO_FILE
 from robocoin_dataset.hub_upload.lerobot.dataset_info_util import LocalDsInfoConfig, LocalDsInfoUtil
+
+from .single_dataset_info_generator import SingleDatasetInfoGenerator
 
 
 def gen_info(hardlink_path: Path, output_path: Path, logger: logging.Logger | None = None) -> tuple[bool, str]:
-  """
-  Generate dataset info YAML for a single dataset.
+    """
+    Generate dataset info YAML for a single dataset using direct hardlink path.
 
-  Args:
-      hardlink_path: Path to the hardlink directory
-      output_path: Output path for the YAML file
-      logger: Optional logger instance
+    This function uses SingleDatasetInfoGenerator which reads directly from the
+    hardlink path without requiring root_path setup, eliminating the need for
+    temporary root_path manipulation.
 
-  Returns:
-      tuple[bool, str]: (success status, error message if failed or empty string if success)
-  """
-  try:
-    # Temporarily change root_path to hardlink's parent
-    temp_root = hardlink_path.parent
-    ds_name = hardlink_path.name
+    Args:
+        hardlink_path: Path to the hardlink directory (full dataset path)
+        output_path: Output path for the YAML file
+        logger: Optional logger instance
 
-    # Create info generator with temporary config
-    info_config = LocalDsInfoConfig(
-      root_path=str(temp_root),
-      output_path=str(output_path),
-      task_tags_yamls_dir=""
-    )
-    info_generator = LocalDsInfoUtil(info_config)
+    Returns:
+        tuple[bool, str]: (success status, error message if failed or empty string if success)
+    """
+    try:
+        # Use the new single-dataset generator (no root_path manipulation needed!)
+        generator = SingleDatasetInfoGenerator(
+            dataset_path=hardlink_path,
+            output_path=output_path,
+            task_tags_yamls_dir=None,  # Optional, can be added if needed
+            logger=logger,
+        )
 
-    # Generate info for this specific dataset
-    ds_info = info_generator._generate_info(ds_name)
+        # Generate and save
+        success, error = generator.generate_and_save()
 
-    # Write YAML file
-    ds_info_file = output_path.joinpath(ds_name, DATASET_INFO_FILE)
-    ds_info_file.parent.mkdir(parents=True, exist_ok=True)
+        if success:
+            ds_info_file = output_path / hardlink_path.name / "dataset_info.yml"
+            tqdm.write(f"      ✅ YAML: {ds_info_file}")
+            if logger:
+                logger.debug(f"{hardlink_path.name}: Generated YAML at {ds_info_file}")
+        else:
+            tqdm.write(f"      ❌ YAML generation failed: {error}")
 
-    with open(ds_info_file, "w+", encoding="utf-8") as f:
-      yaml.safe_dump(ds_info, f, allow_unicode=True, sort_keys=False)
+        return success, error
 
-    # Console output with path
-    tqdm.write(f"      ✅ YAML: {ds_info_file}")
-    if logger:
-      logger.debug(f"{ds_name}: Generated YAML at {ds_info_file}")
-    return True, ""
-
-  except Exception as e:
-    tb = traceback.format_exc()
-    error_msg = f"YAML generation failed: {e}\n\nFull traceback:\n{tb}"
-    tqdm.write(f"      ❌ YAML generation failed: {e}")
-    if logger:
-      logger.error(f"{hardlink_path.name}: {error_msg}")
-    return False, error_msg
+    except Exception as e:
+        tb = traceback.format_exc()
+        error_msg = f"YAML generation failed: {e}\n\nFull traceback:\n{tb}"
+        tqdm.write(f"      ❌ YAML generation failed: {e}")
+        if logger:
+            logger.error(f"{hardlink_path.name}: {error_msg}")
+        return False, error_msg
 
 
 if __name__ == "__main__":
-  """
-    Main entry point for the dataset info generator.
-
-    Parses command line configuration and runs the info generation process.
     """
-  config = draccus.parse(LocalDsInfoConfig)
-  generator = LocalDsInfoUtil(config)
-  generator.generate_infos()
-  pass
+    Main entry point for the batch dataset info generator.
+
+    Parses command line configuration and runs the batch info generation process.
+    This uses the original LocalDsInfoUtil class for batch generation.
+    """
+    config = draccus.parse(LocalDsInfoConfig)
+    generator = LocalDsInfoUtil(config)
+    generator.generate_infos()
+    pass

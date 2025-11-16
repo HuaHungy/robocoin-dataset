@@ -93,7 +93,7 @@ def create_upload_config(config_dict: dict) -> LocalDsUploadConfig:
             raise ValueError(f"Invalid hub_name: {hub_name}. Must be 'huggingface' or 'modelscope'")
 
     return LocalDsUploadConfig(
-        root_path=config_dict.get("root_path", ""),
+        root_path=config_dict.get("root_path") or None,
         hub_name=hub_name,
         token=config_dict.get("token", ""),
         namespace=config_dict.get("namespace", ""),

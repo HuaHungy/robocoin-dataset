@@ -1,7 +1,13 @@
 """
-RoboCoin Datasets Generate Dataset Readme.md from readme_template/readme.j2 template
-usage:
-python -m robocoin.datasets.gen_readme --config configs/upload.yaml
+RoboCoin Datasets Generate README.md for Single Datasets
+
+This module provides a function for generating README.md files for individual
+datasets during the upload process. It uses the SingleDatasetReadmeGenerator which works
+directly with hardlink paths without requiring root_path manipulation.
+
+Usage:
+  Called internally during upload process, or standalone with:
+  python -m robocoin.datasets.gen_readme --config configs/gen_readme.yaml
 """
 
 import logging
@@ -13,57 +19,63 @@ from tqdm import tqdm
 
 from robocoin_dataset.readmes.dataset_readme_util import LocalDsReadmeConfig, LocalDsReadmeUtil
 
+from .single_dataset_readme_generator import SingleDatasetReadmeGenerator
+
 
 def gen_readme(hardlink_path: Path, dataset_info_root_path: Path, logger: logging.Logger | None = None) -> tuple[bool, str]:
-  """
-  Generate README.md for a single dataset.
+    """
+    Generate README.md for a single dataset using direct hardlink path.
 
-  Args:
-      hardlink_path: Path to the hardlink directory
-      dataset_info_root_path: Path containing the dataset info YAML files
-      logger: Optional logger instance
+    This function uses SingleDatasetReadmeGenerator which reads directly from the
+    hardlink path without requiring root_path setup, eliminating the need for
+    temporary root_path manipulation.
 
-  Returns:
-      tuple[bool, str]: (success status, error message if failed or empty string if success)
-  """
-  try:
-    # Temporarily change root_path to hardlink's parent
-    temp_root = hardlink_path.parent
-    ds_name = hardlink_path.name
+    Args:
+        hardlink_path: Path to the hardlink directory (full dataset path)
+        dataset_info_root_path: Path containing the dataset info YAML files
+        logger: Optional logger instance
 
-    # Create readme generator with temporary config
-    readme_config = LocalDsReadmeConfig(
-      root_path=str(temp_root),
-      dataset_info_root_path=str(dataset_info_root_path)
-    )
-    readme_generator = LocalDsReadmeUtil(readme_config)
+    Returns:
+        tuple[bool, str]: (success status, error message if failed or empty string if success)
+    """
+    try:
+        # Use the new single-dataset generator (no root_path manipulation needed!)
+        generator = SingleDatasetReadmeGenerator(
+            dataset_path=hardlink_path,
+            dataset_info_root_path=dataset_info_root_path,
+            logger=logger,
+        )
 
-    # Generate README for this specific dataset
-    readme_generator._generate_readme(ds_name)
+        # Generate README
+        success, error = generator.generate_readme()
 
-    # Console output with path
-    readme_path = hardlink_path / "README.md"
-    tqdm.write(f"      ✅ README: {readme_path}")
-    if logger:
-      logger.debug(f"{ds_name}: Generated README at {readme_path}")
-    return True, ""
+        if success:
+            readme_path = hardlink_path / "README.md"
+            tqdm.write(f"      ✅ README: {readme_path}")
+            if logger:
+                logger.debug(f"{hardlink_path.name}: Generated README at {readme_path}")
+        else:
+            tqdm.write(f"      ❌ README generation failed: {error}")
 
-  except Exception as e:
-    tb = traceback.format_exc()
-    error_msg = f"README generation failed: {e}\n\nFull traceback:\n{tb}"
-    tqdm.write(f"      ❌ README generation failed: {e}")
-    if logger:
-      logger.error(f"{hardlink_path.name}: {error_msg}")
-    return False, error_msg
+        return success, error
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        error_msg = f"README generation failed: {e}\n\nFull traceback:\n{tb}"
+        tqdm.write(f"      ❌ README generation failed: {e}")
+        if logger:
+            logger.error(f"{hardlink_path.name}: {error_msg}")
+        return False, error_msg
 
 
 if __name__ == "__main__":
-  """
-    Main entry point for the README generator.
-
-    Parses command line configuration and runs the README generation process.
     """
-  config = draccus.parse(LocalDsReadmeConfig)
-  generator = LocalDsReadmeUtil(config)
-  generator.generate_readmes()
-  pass
+    Main entry point for the batch README generator.
+
+    Parses command line configuration and runs the batch README generation process.
+    This uses the original LocalDsReadmeUtil class for batch generation.
+    """
+    config = draccus.parse(LocalDsReadmeConfig)
+    generator = LocalDsReadmeUtil(config)
+    generator.generate_readmes()
+    pass

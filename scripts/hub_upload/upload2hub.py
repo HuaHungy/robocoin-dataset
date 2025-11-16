@@ -139,15 +139,18 @@ def _normalize_hub_name(value: str | DatasetsHubEnum | None) -> DatasetsHubEnum:
 def _prepare_upload_config_dict(config: dict) -> dict:
     """
     Normalize and validate configuration values before constructing the dataclass.
+    Note: root_path is now optional for Local mode (not used).
     """
     prepared: dict = dict(config)
 
-    root_path = _resolve_required_path(
-        prepared.get("root_path"),
-        "root_path",
-        must_be_dir=True,
-    )
-    prepared["root_path"] = str(root_path)
+    # root_path is now optional for Local mode
+    if prepared.get("root_path"):
+        root_path = _resolve_required_path(
+            prepared.get("root_path"),
+            "root_path",
+            must_be_dir=True,
+        )
+        prepared["root_path"] = str(root_path)
 
     db_file_path = _resolve_required_path(
         prepared.get("db_file_path"),
@@ -655,18 +658,19 @@ def main() -> None:
             logger.info(f"Loading configuration from: {args.config}")
             config_dict = load_config_from_yaml(args.config)
         elif args.client:
+            #### client mode don't need to load configuration file #####
+            #### cause server will send the configuration to client ####
             logger.info("Using default configuration for client mode")
             config_dict.setdefault("hub_name", args.hub)
             config_dict.setdefault("namespace", DS_PLATFORM_NAME)
             config_dict.setdefault("output_path", "./dataset_info")
             config_dict.setdefault("force_overwrite", False)
         else:
-            # Server and local modes require configuration file
             logger.error("❌ --config/-c is required for server and local modes")
             tqdm.write("❌ --config/-c is required for server and local modes")
             sys.exit(1)
 
-        # Override config with command line arguments if provided
+        # Override config
         if args.skip_missing:
             config_dict["skip_missing"] = True
         if args.force:
@@ -691,9 +695,7 @@ def main() -> None:
         elif args.client:
             run_client_mode(config_dict, args, logger)
         else:
-            # Local mode (default if no mode specified)
-            # Ensure required configuration entries before creating the dataclass
-            _ensure_required_config_fields(config_dict, ["db_file_path", "root_path", "token"])
+            _ensure_required_config_fields(config_dict, ["db_file_path", "token"])
 
             prepared_config_dict = _prepare_upload_config_dict(config_dict)
 
@@ -713,11 +715,7 @@ def main() -> None:
             # Create upload config
             config = create_upload_config(prepared_config_dict)
 
-            # Validate required fields
-            if not config.root_path:
-                logger.error("❌ root_path is required in configuration")
-                tqdm.write("❌ root_path is required in configuration")
-                sys.exit(1)
+            # Note: root_path is now optional for Local mode (not used)
 
             # NOTE: Steps 1 & 2 are now performed on-demand during upload
             # Each dataset will have its YAML and README generated right before upload
