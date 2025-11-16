@@ -169,6 +169,9 @@ class SingleDatasetInfoGenerator:
             return ""
 
         # Extract unique subtasks (case-insensitive)
+        # Filter out invalid/placeholder subtasks
+        invalid_subtasks = {"null", "abnormal", "end", "static"}
+
         subtasks_dict = {}
         try:
             with open(subtask_file, encoding='utf-8') as f:
@@ -178,7 +181,8 @@ class SingleDatasetInfoGenerator:
                         if "subtask" in data:
                             subtask = data["subtask"]
                             subtask_lower = subtask.lower()
-                            if subtask_lower not in subtasks_dict:
+                            # Skip invalid/placeholder subtasks
+                            if subtask_lower not in invalid_subtasks and subtask_lower not in subtasks_dict:
                                 subtasks_dict[subtask_lower] = subtask
 
             # Sort and return as list

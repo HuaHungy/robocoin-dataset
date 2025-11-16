@@ -192,6 +192,9 @@ class LocalDsInfoUtil(LocalDsUtil):
 
         # Extract unique subtasks from the JSONL file (case-insensitive)
         # Use a dict to preserve the first occurrence of each unique subtask
+        # Filter out invalid/placeholder subtasks
+        invalid_subtasks = {"null", "abnormal", "end", "static"}
+
         subtasks_dict = {}
         try:
             with open(subtask_file, encoding='utf-8') as f:
@@ -203,7 +206,8 @@ class LocalDsInfoUtil(LocalDsUtil):
                             # Use lowercase as key for case-insensitive comparison
                             # but store the original value
                             subtask_lower = subtask.lower()
-                            if subtask_lower not in subtasks_dict:
+                            # Skip invalid/placeholder subtasks
+                            if subtask_lower not in invalid_subtasks and subtask_lower not in subtasks_dict:
                                 subtasks_dict[subtask_lower] = subtask
 
             # Sort by the lowercase key and return as list
