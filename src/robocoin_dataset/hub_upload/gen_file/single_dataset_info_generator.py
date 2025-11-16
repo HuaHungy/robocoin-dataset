@@ -140,14 +140,14 @@ class SingleDatasetInfoGenerator:
         tasks = "\n".join(tasks_list)
         return episodes_num, frames_num, tasks
 
-    def _get_subtasks_from_annotation(self) -> str:
+    def _get_subtasks_from_annotation(self) -> list[str]:
         """
         Extract subtasks from dataset annotation files.
 
         Reads from: annotations/subtask_annotations.jsonl
 
         Returns:
-            str: Subtasks list with each item on a new line.
+            list[str]: List of unique subtasks.
         """
         annotations_dir = self.dataset_path / ANNOTATIONS_DIR
 
@@ -181,20 +181,17 @@ class SingleDatasetInfoGenerator:
                             if subtask_lower not in subtasks_dict:
                                 subtasks_dict[subtask_lower] = subtask
 
-            # Sort and format
+            # Sort and return as list
             sorted_subtasks = [subtasks_dict[key] for key in sorted(subtasks_dict.keys())]
-            result = "\n".join(sorted_subtasks)
-            if result:
-                result += "\n"
 
             if self.logger:
                 self.logger.info(f"{self.dataset_name}: extracted {len(sorted_subtasks)} unique subtasks")
-            return result
+            return sorted_subtasks
 
         except Exception as e:
             if self.logger:
                 self.logger.error(f"{self.dataset_name}: error reading subtask_annotations.jsonl: {e}")
-            return ""
+            return []
 
     def _generate_size_label(self, size: int) -> str:
         """

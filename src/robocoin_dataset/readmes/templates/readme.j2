@@ -440,6 +440,8 @@ The dataset is organized as follows (showing leaf directories with first 5 files
 ```
 {%- endif %}
 
+
+{#
 ## 📞 Contact and Support
 
 {% if contact_email is defined -%}
@@ -456,6 +458,7 @@ For questions, issues, or feedback regarding this dataset, please contact:
 {%- else -%}
 For technical issues or questions, please open an issue on the repository or contact the dataset authors.
 {%- endif %}
+#}
 
 ## 📄 License
 
@@ -467,6 +470,8 @@ This dataset is released under the **{{ license }}** license.
 Please refer to the LICENSE file for full license terms and conditions.
 {%- endif %}
 
+
+{#
 ## 📚 Citation
 
 If you use this dataset in your research, please cite:
@@ -480,6 +485,7 @@ If you use this dataset in your research, please cite:
 
 {{ additional_citations }}
 {%- endif %}
+#}
 
 {% if version_info is defined -%}
 ## 📌 Version Information
