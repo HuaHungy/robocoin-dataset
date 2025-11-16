@@ -54,6 +54,16 @@ class RealmanRS01LerobotSimReplayConfig(LerobotSimReplayConfig):
         "right_arm_joint_7_rad",
     ]
 
+    gripper_open_max = 1
+    gripper_open_min = 0
+    gripper_joint_max = 0.0325
+    gripper_joint_min = 0
+
+    # eef_sim 配置
+    has_gripper = True
+    gripper_value_open = gripper_open_max
+    gripper_value_close = gripper_open_min
+
 
     action_arm_joint_lerobot_names= state_arm_joint_lerobot_names
     
