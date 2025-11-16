@@ -30,13 +30,8 @@ configs:
 # Dataset Authors
 authors:
   contributed_by:
-    - name: RoboCoin
-      url: https://RoboCoin.github.io
-      affiliation: RoboCoin Team  # Optional field
-  annotated_by:
-    - name: RoboCoin
-      url: https://RoboCoin.github.io  # Optional field
-      affiliation: RoboCoin Team  # Optional field
+    - name: "@BAAI-RoboCOIN Team"
+    - name: "@Beijing Academy of Artificial Intelligence"
 
 # Dataset Description
 dataset_description: This dataset uses an extended format based on [LeRobot](https://github.com/huggingface/lerobot) and is fully compatible with LeRobot.

@@ -101,7 +101,7 @@ configs:
 {% if authors.contributed_by is defined -%}
 This dataset is contributed by:
 {% for author in authors.contributed_by -%}
-- [{{ author.name }}]({{ author.url }}){% if author.affiliation is defined %} - {{ author.affiliation }}{% endif %}
+- {% if author.url is defined and author.url %}[{{ author.name }}]({{ author.url }}){% else %}{{ author.name }}{% endif %}{% if author.affiliation is defined %} - {{ author.affiliation }}{% endif %}
 {% endfor %}
 {%- else -%}
 No contributor information available.
