@@ -193,7 +193,7 @@ class LocalDsInfoUtil(LocalDsUtil):
         # Extract unique subtasks from the JSONL file (case-insensitive)
         # Use a dict to preserve the first occurrence of each unique subtask
         # Filter out invalid/placeholder subtasks
-        invalid_subtasks = {"null", "abnormal", "end", "static"}
+        invalid_subtasks = {}
 
         subtasks_dict = {}
         try:

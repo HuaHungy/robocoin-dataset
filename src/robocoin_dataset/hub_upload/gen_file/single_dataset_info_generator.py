@@ -170,7 +170,7 @@ class SingleDatasetInfoGenerator:
 
         # Extract unique subtasks (case-insensitive)
         # Filter out invalid/placeholder subtasks
-        invalid_subtasks = {"null", "abnormal", "end", "static"}
+        invalid_subtasks = {}
 
         subtasks_dict = {}
         try:
