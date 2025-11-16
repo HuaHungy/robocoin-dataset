@@ -70,7 +70,7 @@ if __name__ == "__main__":
 """usage:
 # server
 python scripts/scene_annotation/scene_annotation_server.py \
-    --db_file_path ~/下载/datasets_n.db \
+    --db_file_path /mnt/db/datasets_new.db \
     --host 0.0.0.0 \
     --port 8769 \
     --log_dir ./logs/

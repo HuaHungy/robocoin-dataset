@@ -32,9 +32,7 @@ class SceneAnnotationDataPostProcessor(DataPostProcessorBase):
         ep_idx = self.episode_idx
 
         if ep_idx >= len(self.episode_scene_indices): # type: ignore
-            raise ValueError(
-                f"ep_idx: {ep_idx} >= len(self.episode_scene_indices): {len(self.episode_scene_indices)}"
-            )
+            ep_idx = len(self.episode_scene_indices)
 
         return {self.feature_key: self.episode_scene_indices[ep_idx]} # type: ignore
 
