@@ -271,6 +271,38 @@ def setup_logging(
     return logger, log_file
 
 
+def _setup_mode_logging(
+    mode: str,
+    hub_name: DatasetsHubEnum | str,
+    namespace: str,
+    args: argparse.Namespace,
+    log_filename: str
+) -> tuple[logging.Logger, Path]:
+    """
+    Common logging setup for all modes.
+
+    Args:
+        mode: Mode name ("local", "dist")
+        hub_name: Hub platform name
+        namespace: Namespace/username
+        args: Parsed command line arguments
+        log_filename: Log filename
+
+    Returns:
+        Tuple of (logger, log_folder_path)
+    """
+    folder_name = _generate_log_folder_name(mode, hub_name, namespace)
+    log_folder = Path("logs/hub_upload") / folder_name
+
+    logger, _ = setup_logging(
+        log_level=args.log_level,
+        log_folder=log_folder,
+        log_filename=log_filename
+    )
+
+    return logger, log_folder
+
+
 def parse_arguments() -> argparse.Namespace:
     """
     Parse command line arguments.
@@ -457,6 +489,9 @@ def run_server_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     from robocoin_dataset.hub_upload.lerobot.hub_upload_server import HubUploadServer
     from robocoin_dataset.utils.logger import setup_logger
 
+    # Ensure required config fields for server mode
+    _ensure_required_config_fields(config, ["db_file_path", "token"])
+
     hub_name = _normalize_hub_name(config.get("hub_name"))
     db_file_path = _resolve_required_path(
         config.get("db_file_path"),
@@ -470,16 +505,8 @@ def run_server_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     output_path = config.get("output_path", "./dataset_info")
     force_overwrite = config.get("force_overwrite", False)
 
-    # Create timestamped log folder for distributed mode
-    folder_name = _generate_log_folder_name("dist", hub_name, namespace)
-    log_folder = Path("logs/hub_upload") / folder_name
-
-    # Reconfigure logging with timestamped folder
-    logger, log_file = setup_logging(
-        log_level=args.log_level,
-        log_folder=log_folder,
-        log_filename="server.log"
-    )
+    # Setup logging with timestamped folder for distributed mode
+    logger, log_folder = _setup_mode_logging("dist", hub_name, namespace, args, "server.log")
 
     # Create summary logger for server status updates in the same folder
     summary_logger = setup_logger(
@@ -573,16 +600,8 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
 
     server_uri = f"ws://{args.host}:{args.port}"
 
-    # Create timestamped log folder for distributed mode (shared by all clients)
-    folder_name = _generate_log_folder_name("dist", hub_name, namespace)
-    log_folder = Path("logs/hub_upload") / folder_name
-
-    # Reconfigure logging with timestamped folder
-    logger, log_file = setup_logging(
-        log_level=args.log_level,
-        log_folder=log_folder,
-        log_filename="client_main.log"
-    )
+    # Setup logging with timestamped folder for distributed mode (shared by all clients)
+    logger, log_folder = _setup_mode_logging("dist", hub_name, namespace, args, "client_main.log")
 
     logger.info("=" * 80)
     logger.info("🔌 STARTING HUB UPLOAD CLIENT(S)")
@@ -625,6 +644,51 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     else:
         logger.info("✅ Client(s) completed successfully")
         tqdm.write("✅ Client(s) completed successfully")
+
+
+def run_local_mode(config: dict, args: argparse.Namespace, logger: logging.Logger) -> None:
+    """
+    Run the upload process in local single-machine mode.
+
+    Args:
+        config: Configuration dictionary from YAML
+        args: Parsed command line arguments
+        logger: Logger instance
+    """
+    from tqdm import tqdm
+
+    # Ensure required config fields
+    _ensure_required_config_fields(config, ["db_file_path", "token"])
+
+    prepared_config_dict = _prepare_upload_config_dict(config)
+
+    # Setup logging with timestamped folder for local mode
+    hub_name = prepared_config_dict.get("hub_name", DatasetsHubEnum.huggingface)
+    namespace = prepared_config_dict.get("namespace", DS_PLATFORM_NAME)
+    logger, log_folder = _setup_mode_logging("local", hub_name, namespace, args, "local.log")
+
+    # Create upload config
+    config_obj = create_upload_config(prepared_config_dict)
+
+    # Note: root_path is now optional for Local mode (not used)
+
+    # Log information about on-demand file generation
+    logger.info("=" * 80)
+    logger.info("📝 YAML and README files will be generated on-demand for each dataset")
+    logger.info("=" * 80)
+    tqdm.write("=" * 80)
+    tqdm.write("📝 YAML and README files will be generated on-demand for each dataset")
+    tqdm.write("=" * 80)
+
+    # Start upload process
+    logger.info("=" * 80)
+    logger.info("🚀 Starting LOCAL upload process with on-demand file generation")
+    tqdm.write("🚀 Starting LOCAL upload process with on-demand file generation")
+    logger.info("=" * 80)
+    tqdm.write("=" * 80)
+
+    # Upload datasets
+    upload_datasets_main_local(config_obj, logger)
 
 
 def main() -> None:
@@ -689,54 +753,12 @@ def main() -> None:
 
         # Handle different modes
         if args.server:
-            # Server mode - needs db_file_path and client config (token, namespace)
-            _ensure_required_config_fields(config_dict, ["db_file_path", "token"])
             run_server_mode(config_dict, args, logger)
         elif args.client:
             run_client_mode(config_dict, args, logger)
         else:
-            _ensure_required_config_fields(config_dict, ["db_file_path", "token"])
-
-            prepared_config_dict = _prepare_upload_config_dict(config_dict)
-
-            # Create timestamped log folder for local mode
-            hub_name = prepared_config_dict.get("hub_name", DatasetsHubEnum.huggingface)
-            namespace = prepared_config_dict.get("namespace", DS_PLATFORM_NAME)
-            folder_name = _generate_log_folder_name("local", hub_name, namespace)
-            log_folder = Path("logs/hub_upload") / folder_name
-
-            # Reconfigure logging with timestamped folder
-            logger, log_file = setup_logging(
-                log_level=args.log_level,
-                log_folder=log_folder,
-                log_filename="local.log"
-            )
-
-            # Create upload config
-            config = create_upload_config(prepared_config_dict)
-
-            # Note: root_path is now optional for Local mode (not used)
-
-            # NOTE: Steps 1 & 2 are now performed on-demand during upload
-            # Each dataset will have its YAML and README generated right before upload
-            # based on the hardlink path from the database
-            logger.info("=" * 80)
-            logger.info("📝 YAML and README files will be generated on-demand for each dataset")
-            logger.info("=" * 80)
-            tqdm.write("=" * 80)
-            tqdm.write("📝 YAML and README files will be generated on-demand for each dataset")
-            tqdm.write("=" * 80)
-
-            # Upload datasets to hub (with on-demand file generation)
-            logger.info("=" * 80)
-            logger.info("🚀 Starting LOCAL upload process with on-demand file generation")
-            tqdm.write("🚀 Starting LOCAL upload process with on-demand file generation")
-            logger.info("=" * 80)
-            tqdm.write("=" * 80)
-
-            ##### UPLOAD DATASET CALLING #####
-            # Use local upload mode
-            upload_datasets_main_local(config, logger)
+            # local mode (default)
+            run_local_mode(config_dict, args, logger)
 
         # Calculate total script execution time
         script_elapsed = time.time() - script_start_time
