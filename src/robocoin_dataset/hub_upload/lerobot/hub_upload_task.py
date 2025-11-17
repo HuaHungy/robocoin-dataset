@@ -251,45 +251,10 @@ def _mark_upload_completed(
         session.commit()
         _logger.debug(f"Marked dataset {dataset_uuid} as COMPLETED")
 
-
-def _verify_upload_consistency(
-    session: Session,
-    dataset_uuid: str,
-    hub_name_enum: "DatasetsHubEnum",
-    item: "DatasetDB | None" = None
-) -> str | None:
-    """Verify upload consistency. Returns error message or None.
-
-    Args:
-        session: SQLAlchemy session instance
-        dataset_uuid: UUID of the dataset to verify
-        hub_name_enum: The hub name enum
-        item: Optional pre-queried DatasetDB item to avoid redundant queries
-
-    Returns:
-        Error message string if consistency check fails, None if passes
-    """
-    from robocoin_dataset.database.models import DatasetDB, TaskStatus
-
-    # Only query if item not provided
-    if item is None:
-        item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
-
-    if not item:
-        return f"Dataset {dataset_uuid} not found in database"
-    if not hasattr(item, 'visualize_check_status'):
-        return f"Dataset {dataset_uuid} missing visualize_check_status field"
-    upload_version_ps_field = _get_hub_field_prefix(hub_name_enum, DatasetDB, "upload_version_ps")
-    return (f"visualize_check_status={item.visualize_check_status}" if item.visualize_check_status != TaskStatus.COMPLETED
-            else f"version_ps={getattr(item, upload_version_ps_field)}!={item.visualize_check_version}"
-            if getattr(item, upload_version_ps_field) != item.visualize_check_version else None)
-
-
 __all__ = [
     "_get_hub_field_prefix",
     "_sync_datasets_upload_status",
     "_gen_one_dataset_upload_task",
     "_mark_upload_failed",
     "_mark_upload_completed",
-    "_verify_upload_consistency",
 ]

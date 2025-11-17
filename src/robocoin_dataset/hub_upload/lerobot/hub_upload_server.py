@@ -21,7 +21,6 @@ from robocoin_dataset.hub_upload.lerobot.hub_upload_task import (
     _mark_upload_completed,
     _mark_upload_failed,
     _sync_datasets_upload_status,
-    _verify_upload_consistency,
 )
 
 TASK_CATEGORY = "hub_upload"
@@ -157,25 +156,10 @@ class HubUploadServer(TaskServer):
 
             # in case of success:
             if upload_success:
-
-
-                #### TEMP: Verify consistency before marking as completed
-                # Pass the already-queried item to avoid redundant database queries
-                consistency_err = _verify_upload_consistency(session, dataset_uuid, self.hub_name, item=item)
-                if consistency_err:
-                    _mark_upload_failed(session, dataset_uuid, f"Consistency check failed: {consistency_err}", self.hub_name, logger=self.logger, item=item)
-                    self.datasets_failed += 1
-                    self.logger.warning(f"Task result: REJECTED | UUID: {dataset_uuid} | Reason: {consistency_err}")
-                    self.summary_logger.debug(f"⚠️ {dataset_uuid}: {consistency_err}")
-
-
-
-
-                else:
-                    _mark_upload_completed(session, dataset_uuid, self.hub_name, logger=self.logger, item=item)
-                    self.datasets_succeeded += 1
-                    self.logger.info(f"Task result: SUCCESS | UUID: {dataset_uuid}")
-                    self.summary_logger.debug(f"✅ {dataset_uuid}: Upload completed successfully")
+                _mark_upload_completed(session, dataset_uuid, self.hub_name, logger=self.logger, item=item)
+                self.datasets_succeeded += 1
+                self.logger.info(f"Task result: SUCCESS | UUID: {dataset_uuid}")
+                self.summary_logger.debug(f"✅ {dataset_uuid}: Upload completed successfully")
 
                 # Log cumulative statistics
                 total_datasets = self.datasets_succeeded + self.datasets_failed
