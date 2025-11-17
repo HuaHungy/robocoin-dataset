@@ -24,6 +24,7 @@ def get_parquet_paths(root_dir: str | Path, new_parquet_type: str) -> tuple[list
         path_str = str(path)
         new_path_str = path_str.replace(str(data_dir_path), str(new_parquet_data_dir_path))
         new_parquet_files.append(Path(new_path_str))
+        pass
 
     return parquet_files, new_parquet_files
 

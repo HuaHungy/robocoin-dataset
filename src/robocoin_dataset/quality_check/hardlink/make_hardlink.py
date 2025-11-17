@@ -4,6 +4,11 @@ from pathlib import Path
 
 import tqdm
 
+# from robocoin_dataset.utils.parquet_paths import get_parquet_paths
+from robocoin_dataset.utils.le_path import (
+    get_parquet_files,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,8 +39,8 @@ class RepoHardLinkCorresp:
         }
         # _, source_episodes_paths = get_parquet_paths(self.source_repo_path, input_feature)
 
-        source_episodes_paths = Path(self.source_repo_path / f"{input_feature}_data").rglob(
-            "episode_*.parquet"
+        source_episodes_paths = get_parquet_files(
+            self.source_repo_path, meta_feature=input_feature, feature=input_feature
         )
         self.file_corresp.update(
             {
@@ -92,12 +97,14 @@ def create_hardlinks_from_correspondence(
         if not src_dir.is_dir():
             raise NotADirectoryError(f"Source directory does not exist: {src_dir}")
 
+        for dst_link in dst_dir.rglob("*"):
+            if dst_link.is_file():
+                dst_link.unlink()
+
         for src_file in src_dir.rglob("*"):
             if src_file.is_file():
                 # 计算相对路径
                 rel_path = src_file.relative_to(src_dir)
                 dst_file = dst_dir / rel_path
                 dst_file.parent.mkdir(parents=True, exist_ok=True)
-                if dst_file.exists():
-                    dst_file.unlink()  # 可选：覆盖
                 os.link(src_file, dst_file)

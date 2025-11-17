@@ -126,5 +126,5 @@ if __name__ == "__main__":
 
 
 """usage:
-python scripts/motion_annotation/test_motion_annotation.py /mnt/nas/synnas/docker2/robocoin-datasets/agilex_cobot_decoupled_magic_wipe_table/ 30
+python scripts/motion_annotation/test_motion_annotation.py python scripts/motion_annotation/test_sim_replay.py /mnt/nas/synnas/docker2/robocoin-datasets/ruantong_a2d_robotic_arm_picks_up_parts 30
 """

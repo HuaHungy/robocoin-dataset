@@ -36,8 +36,8 @@ from robocoin_dataset.quality_check.checker_registry import (
     EPISODE_DATA_CHECKERS,
     EPISODE_VIDEO_CHECKERS,
 )
+from robocoin_dataset.utils.le_path import get_episodes_frames, get_video_files
 from robocoin_dataset.utils.parquet_paths import get_parquet_paths
-from robocoin_dataset.utils.path_utils import get_dataset_video_paths, get_episodes_frames
 
 QC_CONFIG = "qc_config"
 QC_RESULT = "qc_result"
@@ -166,7 +166,7 @@ def quality_check_pipeline(
             )
         video_scores = {}
         video_scores_perchecker = defaultdict(dict)
-        video_paths = get_dataset_video_paths(repo_path)
+        video_paths = get_video_files(repo_path)
         for idx, paths in tqdm.tqdm(
             enumerate(video_paths), desc="Checking videos", unit="video", total=len(video_paths)
         ):
@@ -264,12 +264,14 @@ def _build_episode_qc_summary(
                 "video_score": video_scores.get(episode_idx, 1),
             }
         )
-    for episode_idx in state_data_scores.keys():
+    for episode_idx in (
+        set(state_data_scores.keys()) | set(action_data_scores.keys()) | set(video_scores.keys())
+    ):
         episode_summary[episode_idx].update(
             {
                 "is_bad": episode_idx in bad_set,
-                "state_data_score": state_data_scores.get(episode_idx, 0),
-                "action_data_score": action_data_scores.get(episode_idx, 0),
+                "state_data_score": state_data_scores.get(episode_idx, 1),
+                "action_data_score": action_data_scores.get(episode_idx, 1),
                 "video_score": video_scores.get(episode_idx, 1),
             }
         )
@@ -545,6 +547,7 @@ class DatasetQualityCheckClient(TaskClient):
                 task_content.get(QC_CONFIG),
                 data_feature=MERGED_DATA_FEATURE,
             )
+
             results_send = {str(episode_idx): v for episode_idx, v in results.items()}
 
             return {QC_RESULT: results_send}
