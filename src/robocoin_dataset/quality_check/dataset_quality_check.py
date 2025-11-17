@@ -36,8 +36,8 @@ from robocoin_dataset.quality_check.checker_registry import (
     EPISODE_DATA_CHECKERS,
     EPISODE_VIDEO_CHECKERS,
 )
+from robocoin_dataset.utils.le_path import get_episodes_frames, get_video_files
 from robocoin_dataset.utils.parquet_paths import get_parquet_paths
-from robocoin_dataset.utils.path_utils import get_dataset_video_paths, get_episodes_frames
 
 QC_CONFIG = "qc_config"
 QC_RESULT = "qc_result"
@@ -166,7 +166,7 @@ def quality_check_pipeline(
             )
         video_scores = {}
         video_scores_perchecker = defaultdict(dict)
-        video_paths = get_dataset_video_paths(repo_path)
+        video_paths = get_video_files(repo_path)
         for idx, paths in tqdm.tqdm(
             enumerate(video_paths), desc="Checking videos", unit="video", total=len(video_paths)
         ):
