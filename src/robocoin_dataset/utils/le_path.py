@@ -91,21 +91,20 @@ def get_video_files(
         camera_features = []
 
         camera_features = [
-            camera_feature
+            camera_feature.name
             for camera_feature in (video_dir / "chunk-000").glob("*")
             if camera_feature.is_dir()
         ]
         if not camera_features:
             raise ValueError("No video directory found.")
-        video_files = []
-        for ep_idx in range(ep_num):
-            chunk_idx = ep_idx // chunk_size
-            ep_video_files = [
-                video_dir / f"chunk-{chunk_idx:03d}" / cam_feature / f"episode_{ep_idx:06d}.mp4"
+        return [
+            [
+                video_dir
+                / f"chunk-{ep_idx // chunk_size:03d}/{cam_feature}/episode_{ep_idx:06d}.mp4"
                 for cam_feature in camera_features
             ]
-        video_files.append(ep_video_files)
-        return video_files
+            for ep_idx in range(ep_num)
+        ]
 
     except Exception as e:
         raise e

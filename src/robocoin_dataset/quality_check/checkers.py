@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 
 from robocoin_dataset.quality_check.checker_registry import (
+    data_video_consistency_checker_registry,
     dataset_data_checker_registry,
     episode_data_checker_registry,
     episode_video_checker_registry,
@@ -400,3 +401,15 @@ def detect_max_frame_jump_and_static(
         or max_static_frames > max_static_frames_count_threshold
         else 0
     )
+
+
+@data_video_consistency_checker_registry("LengthConsistencyChecker")
+def decect_inconsistent_length(video_paths: list[str | Path], frame_num: int) -> bool:
+    for video_path in video_paths:
+        if not Path(video_path).exists() or not Path(video_path).is_file():
+            return True
+        container = av.open(video_path)
+        if container.streams.video[0].frames != frame_num:
+            return True
+
+    return False

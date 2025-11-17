@@ -141,8 +141,9 @@ def gen_qced_repo_files(
         chunk_size=chunks_size,
         output_feature=output_feature,
     )
+    input_video_files = get_video_files(repo_path)
     return _gen_video_path_matching_dict(
-        input_video_paths=get_video_files(repo_path),
+        input_video_files=input_video_files,
         repo_path=repo_path,
         bad_episodes=bad_episodes,
         chunk_size=chunks_size,
@@ -255,7 +256,7 @@ def _gen_output_parquet_files(
 
 
 def _gen_video_path_matching_dict(
-    input_video_paths: list[list[Path]],
+    input_video_files: list[list[Path]],
     repo_path: str | Path,
     bad_episodes: set[int],
     chunk_size: int,
@@ -279,7 +280,7 @@ def _gen_video_path_matching_dict(
     matching_dict = {}
 
     out_episode_idx = 0
-    for ep_idx, video_paths in enumerate(input_video_paths):
+    for ep_idx, video_paths in enumerate(input_video_files):
         if ep_idx in bad_episodes:
             continue
 

@@ -73,5 +73,5 @@ if __name__ == "__main__":
 
 
 """Usage:
-python scripts/quality_check/qced_repo_gen_test.py --db_file_path ./db/datasets_new.db --log_dir ./logs/qced_repo_gen, --repo_path /mnt/nas/synnas/docker2/robocoin-datasets/discover_robotics_aitbot_mmk2_the_cup_is_put_into_the_bucket
+python scripts/quality_check/qced_repo_gen_test.py --db_file_path ./db/datasets_new.db --log_dir ./logs/qced_repo_gen, --repo_path /mnt/nas/synnas/docker2/robocoin-datasets/Tianqing_A2_container_storage_graphics_card
 """
