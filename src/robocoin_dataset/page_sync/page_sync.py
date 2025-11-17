@@ -113,7 +113,7 @@ def construce_target_file(
     while True:
         # 3. Sync the task status
         _logger.debug("Syncing page sync status...")
-        _sync_page_sync_status(db, session, _logger)
+        _sync_page_sync_status(session, _logger)
 
         # 4. Generate one task
         _logger.debug("Generating next task...")
@@ -220,14 +220,28 @@ def main(
         target_size_kb: Target size for compressed videos in KB (default: 500)
         log_level: Logging level (default: INFO)
     """
+    from datetime import datetime
+
     from robocoin_dataset.database.database import DatasetDatabase
 
-    # Setup logging
+    # Setup logging to logs/page/ directory
+    log_dir = Path("logs/page")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_dir / f"page_sync_{timestamp}.log"
+
+    # Configure logging with both file and console handlers
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
     )
     logger = logging.getLogger(__name__)
+    logger.info(f"Log file created at: {log_file}")
 
     # Initialize database
     db = DatasetDatabase(db_path)

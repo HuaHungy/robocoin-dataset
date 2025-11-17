@@ -96,6 +96,8 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
     videos/
       chunk-*/
         observation.images.cam_high_rgb/*.mp4
+
+  If cam_high_rgb not found, will search in other observation.images.* folders.
   """
   import random
 
@@ -118,17 +120,23 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
   # Find all videos in cam_high_rgb across all chunks
   _logger.debug(f"Searching for videos with pattern: {videos_path}/chunk-*/observation.images.cam_high_rgb/*.mp4")
   video_files = list(videos_path.glob("chunk-*/observation.images.cam_high_rgb/*.mp4"))
-  _logger.debug(f"Found {len(video_files)} video files")
+  _logger.debug(f"Found {len(video_files)} video files in cam_high_rgb")
+
+  # If no videos found in cam_high_rgb, search in other observation.images.* folders
+  if not video_files:
+      _logger.info("No videos in cam_high_rgb, searching in other observation.images.* folders...")
+      video_files = list(videos_path.glob("chunk-*/observation.images.*/*.mp4"))
+      _logger.debug(f"Found {len(video_files)} video files in other camera folders")
 
   if not video_files:
       _logger.warning(
-          f"No videos found matching pattern: {videos_path}/chunk-*/observation.images.cam_high_rgb/*.mp4"
+          f"No videos found in any observation.images.* folders under {videos_path}"
       )
       return None
 
   # Randomly sample one video
   selected_video_path = random.choice(video_files)
-  _logger.debug(f"Sampled video: {selected_video_path}")
+  _logger.info(f"Sampled video: {selected_video_path}")
 
   return str(selected_video_path)
 
