@@ -177,13 +177,20 @@ def _gen_output_episodes_jsonl_file(
     input_episodes_jsonl_path: Path,
     output_episodes_jsonl_path: Path,
     bad_episodes: set[int],
+    ep_num: int,
 ) -> None:
     out_ep_idx = 0
     with open(
         input_episodes_jsonl_path,
     ) as f:
         with open(output_episodes_jsonl_path, "w") as out_f:
-            for line in f:
+            if len(f) < ep_num:
+                raise ValueError(
+                    f"Input episodes jsonl file is too short. Expected {ep_num} episodes, got {len(f)}."
+                )
+            for ep_idx, line in enumerate(f):
+                if ep_idx >= ep_num:
+                    break
                 data = json.loads(line)
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:
@@ -197,13 +204,24 @@ def _gen_output_episodes_stats_jsonl_file(
     input_episodes_stats_jsonl_path: Path,
     output_episodes_stats_jsonl_path: Path,
     bad_episodes: set[int],
+    ep_num: int,
 ) -> None:
     out_ep_idx = 0
     with open(
         input_episodes_stats_jsonl_path,
     ) as f:
+        if len(f) < ep_num:
+            raise ValueError(
+                f"Input episodes stats jsonl file is too short. Expected {ep_num} episodes, got {len(f)}."
+            )
         with open(output_episodes_stats_jsonl_path, "w") as out_f:
-            for line in f:
+            if len(f) < ep_num:
+                raise ValueError(
+                    f"Input episodes stats jsonl file is too short. Expected {ep_num} episodes, got {len(f)}."
+                )
+            for ep_idx, line in enumerate(f):
+                if ep_idx >= ep_num:
+                    break
                 data = json.loads(line)
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:

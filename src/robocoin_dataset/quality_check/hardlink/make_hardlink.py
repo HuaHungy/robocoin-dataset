@@ -6,7 +6,11 @@ import tqdm
 
 # from robocoin_dataset.utils.parquet_paths import get_parquet_paths
 from robocoin_dataset.utils.le_path import (
+    get_episodes_jsonl_file,
+    get_episodes_stats_jsonl_file,
+    get_meta_info_file,
     get_parquet_files,
+    get_tasks_jsonl_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,15 +31,18 @@ class RepoHardLinkCorresp:
             raise FileNotFoundError(f"源目录不存在: {source_repo_path}")
 
         self.file_corresp: dict[str, str] = {
-            self.source_repo_path / f"meta/{input_feature}_info.json": self.hard_link_repo_path
-            / "meta/info.json",
-            self.source_repo_path / f"meta/{input_feature}_episodes.jsonl": self.hard_link_repo_path
-            / "meta/episodes.jsonl",
-            self.source_repo_path
-            / f"meta/{input_feature}_episodes_stats.jsonl": self.hard_link_repo_path
-            / "meta/episodes_stats.jsonl",
-            self.source_repo_path / f"meta/{input_feature}_tasks.jsonl": self.hard_link_repo_path
-            / "meta/tasks.jsonl",
+            get_meta_info_file(self.source_repo_path, input_feature): get_meta_info_file(
+                self.hard_link_repo_path
+            ),
+            get_episodes_jsonl_file(self.source_repo_path, input_feature): get_episodes_jsonl_file(
+                self.hard_link_repo_path
+            ),
+            get_episodes_stats_jsonl_file(
+                self.source_repo_path, input_feature
+            ): get_episodes_stats_jsonl_file(self.hard_link_repo_path),
+            get_tasks_jsonl_file(self.source_repo_path, input_feature): get_tasks_jsonl_file(
+                self.hard_link_repo_path
+            ),
         }
         # _, source_episodes_paths = get_parquet_paths(self.source_repo_path, input_feature)
 

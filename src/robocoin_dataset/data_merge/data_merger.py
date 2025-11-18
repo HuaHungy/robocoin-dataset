@@ -31,6 +31,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 #     get_parquet_paths,
 # )
 from robocoin_dataset.utils.le_path import (
+    get_episode_num,
     get_episodes_stats_jsonl_file,
     get_meta_info_file,
     get_parquet_files,
@@ -220,23 +221,23 @@ def merge_dataset_info_files(
 
 
 def _merge_jsonl_files(
-    ori_file: str | Path, patch_files: list[str, Path], output_file: str | Path
+    ori_file: str | Path, patch_files: list[str, Path], output_file: str | Path, ep_num: int
 ) -> None:
     with open(ori_file) as f:
         ori_jsonl = [json.loads(line) for line in f]
+    if len(ori_jsonl) < ep_num:
+        raise ValueError(f"ori_jsonl 长度不足: {len(ori_jsonl)} < {ep_num}")
 
     patch_jsonls = []
     for patch_file in patch_files:
         with open(patch_file) as f:
             patch_jsonl = [json.loads(line) for line in f]
+            if len(patch_jsonl) < ep_num:
+                raise ValueError(f"patch_jsonl 长度不足: {len(patch_jsonl)} < {ep_num}")
         patch_jsonls.append(patch_jsonl)
 
-    for patch_jsonl in patch_jsonls:
-        if len(ori_jsonl) != len(patch_jsonl):
-            raise ValueError(f"patch_jsonl 长度不一致: {len(ori_jsonl)} != {len(patch_jsonl)}")
-
     new_jsonl = []
-    for i in range(min(len(ori_jsonl), len(patch_jsonls[0]))):
+    for i in range(ep_num):
         ori_json = ori_jsonl[i]
         for patch_jsonl in patch_jsonls:
             patch_json = patch_jsonl[i]
@@ -250,26 +251,30 @@ def _merge_jsonl_files(
 
 
 def merge_dataset_stats_jsonl_files(
-    root_dir: str | Path, patch_features: list[str], merge_feature: str = "merged"
+    root_dir: str | Path, patch_features: list[str], ep_num: int, merge_feature: str = "merged"
 ) -> None:
     ori_stats_file = get_episodes_stats_jsonl_file(root_dir)
     merged_stats_file = get_episodes_stats_jsonl_file(root_dir, merge_feature)
     patch_stats_files = []
     for patch_feature in patch_features:
         patch_stats_file = get_episodes_stats_jsonl_file(root_dir, patch_feature)
-        print(patch_stats_file)
         if not patch_stats_file.exists():
             raise FileNotFoundError(f"{patch_stats_file} does not exist")
-            continue
         patch_stats_files.append(patch_stats_file)
 
-    _merge_jsonl_files(ori_stats_file, patch_stats_files, merged_stats_file)
+    _merge_jsonl_files(ori_stats_file, patch_stats_files, merged_stats_file, ep_num=ep_num)
 
 
 def merge_dataset_data(root_dir: str | Path, patch_features: list[str], merge_feature: str) -> None:
     merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
     merge_dataset_info_files(root_dir, patch_features, merge_feature)
-    merge_dataset_stats_jsonl_files(root_dir, patch_features, merge_feature)
+    ep_num = get_episode_num(root_dir)
+    merge_dataset_stats_jsonl_files(
+        root_dir=root_dir,
+        patch_features=patch_features,
+        merge_feature=merge_feature,
+        ep_num=ep_num,
+    )
 
 
 def _sync_tasks(

@@ -8,6 +8,9 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
     LerobotSimReplayConfig,
 )
 from robocoin_dataset.sim_replay.lerobot_sim_replayer import LerobotSimReplayer
+from robocoin_dataset.utils.le_path import (
+    get_meta_info_file,
+)
 
 
 class MotionAnnotationDataPostProcessorConfig:
@@ -582,7 +585,8 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
             json_dict["features"][feature_key] = {}
             json_dict["features"][feature_key]["names"] = names
 
-        with open(self.new_info_file_path, "w") as f:
+        new_info_file_path = get_meta_info_file(self.convert_path, "motion_annotation")
+        with open(new_info_file_path, "w") as f:
             json.dump(json_dict, f, indent=2)
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
