@@ -31,7 +31,7 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
 #     get_parquet_paths,
 # )
 from robocoin_dataset.utils.le_path import (
-    get_episodes_jsonl_file,
+    get_episodes_stats_jsonl_file,
     get_meta_info_file,
     get_parquet_files,
 )
@@ -252,11 +252,11 @@ def _merge_jsonl_files(
 def merge_dataset_stats_jsonl_files(
     root_dir: str | Path, patch_features: list[str], merge_feature: str = "merged"
 ) -> None:
-    ori_stats_file = get_episodes_jsonl_file(root_dir)
-    merged_stats_file = get_episodes_jsonl_file(root_dir, merge_feature)
+    ori_stats_file = get_episodes_stats_jsonl_file(root_dir)
+    merged_stats_file = get_episodes_stats_jsonl_file(root_dir, merge_feature)
     patch_stats_files = []
     for patch_feature in patch_features:
-        patch_stats_file = get_episodes_jsonl_file(root_dir, patch_feature)
+        patch_stats_file = get_episodes_stats_jsonl_file(root_dir, patch_feature)
         print(patch_stats_file)
         if not patch_stats_file.exists():
             raise FileNotFoundError(f"{patch_stats_file} does not exist")
