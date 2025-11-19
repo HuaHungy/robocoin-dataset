@@ -86,6 +86,9 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
   Sample one video path from the dataset root directory,
   identify the actual video path.
 
+  Priority: searches folders containing "high", "top", or "head" first.
+  Falls back to all observation.images.* folders if no match found.
+
   INPUT:
   hardlink_path, -> the dataset in lerobot foramt, sepecify to sample from where.
   OUTPUT:
@@ -95,46 +98,37 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
   hardlink_path/
     videos/
       chunk-*/
-        observation.images.cam_high_rgb/*.mp4
-
-  If cam_high_rgb not found, will search in other observation.images.* folders.
+        observation.images.*/*.mp4
   """
   import random
 
   _logger = logging.getLogger(__name__)
   root_path = Path(hardlink_path)
 
-  _logger.debug(f"Checking if root directory exists: {hardlink_path}")
   if not root_path.exists():
       _logger.warning(f"Root directory does not exist: {hardlink_path}")
       return None
 
-  # Navigate to videos subdirectory
   videos_path = root_path / "videos"
-  _logger.debug(f"Looking for videos directory: {videos_path}")
-
   if not videos_path.exists():
       _logger.warning(f"Videos directory does not exist: {videos_path}")
       return None
 
-  # Find all videos in cam_high_rgb across all chunks
-  _logger.debug(f"Searching for videos with pattern: {videos_path}/chunk-*/observation.images.cam_high_rgb/*.mp4")
-  video_files = list(videos_path.glob("chunk-*/observation.images.cam_high_rgb/*.mp4"))
-  _logger.debug(f"Found {len(video_files)} video files in cam_high_rgb")
-
-  # If no videos found in cam_high_rgb, search in other observation.images.* folders
-  if not video_files:
-      _logger.info("No videos in cam_high_rgb, searching in other observation.images.* folders...")
-      video_files = list(videos_path.glob("chunk-*/observation.images.*/*.mp4"))
-      _logger.debug(f"Found {len(video_files)} video files in other camera folders")
-
-  if not video_files:
-      _logger.warning(
-          f"No videos found in any observation.images.* folders under {videos_path}"
-      )
+  # Get all videos first
+  all_videos = list(videos_path.glob("chunk-*/observation.images.*/*.mp4"))
+  if not all_videos:
+      _logger.warning(f"No videos found in any observation.images.* folders under {videos_path}")
       return None
 
-  # Randomly sample one video
+  # Filter videos from priority folders (containing "high", "top", or "head")
+  priority_keywords = ["high", "top", "head"]
+  priority_videos = [
+      v for v in all_videos
+      if any(kw in str(v).lower() for kw in priority_keywords)
+  ]
+
+  # Use priority videos if found, otherwise use all videos
+  video_files = priority_videos if priority_videos else all_videos
   selected_video_path = random.choice(video_files)
   _logger.info(f"Sampled video: {selected_video_path}")
 
@@ -142,11 +136,19 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
 
 def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_kb: int) -> None:
   """
-  Compress a single video file from source path to destination path.
+  Compress a single video file from source path to destination path using conservative settings.
+  Uses CRF (Constant Rate Factor) for quality control instead of strict bitrate limits.
+  This prevents over-compression that can damage video quality while still reducing file size.
+
+  Key improvements:
+  - Uses CRF (23-25) for consistent quality rather than fixed bitrate
+  - Only applies bitrate caps when target is very small to prevent over-compression
+  - Automatically uses lighter compression if original file is already near target size
+
   INPUT:
   selected_video_path, -> the sampled, actual video path. point DIRECTLY at the video file.
   dst_path, -> the dst path to compress the video file.(in assets/dataset_info/videos/)
-  target_size_kb, -> the target size of the video file in KB.
+  target_size_kb, -> the target size of the video file in KB (used as guidance, not strict limit).
   OUTPUT:
   None, excute the compress and copying operation.
   """
@@ -168,9 +170,9 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
   # Create destination directory if it doesn't exist
   dst_video_path.parent.mkdir(parents=True, exist_ok=True)
 
-  # Get video duration using ffprobe
+  # Get video information using ffprobe
   try:
-      _logger.debug("Running ffprobe to get video duration...")
+      _logger.debug("Running ffprobe to get video information...")
       duration_cmd = [
           "ffprobe", "-v", "error", "-show_entries",
           "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
@@ -181,24 +183,77 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
       duration = float(result.stdout.strip())
       _logger.debug(f"Video duration: {duration:.2f} seconds")
 
-      # Calculate target bitrate: (target_size_kb * 8) / duration (in kbps)
+      # Get original file size
+      original_size_kb = video_file.stat().st_size / 1024
+      _logger.debug(f"Original video size: {original_size_kb:.2f} KB")
+
+      # Calculate target bitrate as guidance
       target_bitrate_kbps = int((target_size_kb * 8) / duration)
       _logger.debug(f"Target bitrate: {target_bitrate_kbps} kbps")
 
-      # Compress video directly from source to destination
+      # If original is already smaller than target, use very light compression
+      if original_size_kb <= target_size_kb * 1.1:  # 10% tolerance
+          _logger.info("Original video is already close to target size. Using light compression.")
+          crf_value = 23  # High quality (lower = better quality)
+          max_bitrate_kbps = None  # No bitrate cap, let CRF handle it
+      else:
+          # Use CRF for quality-based encoding with conservative settings
+          # CRF 23-28 is good quality range (23 = high quality, 28 = acceptable)
+          # We use conservative values (23-25) to prevent over-compression
+          if target_bitrate_kbps < 250:
+              # For very small targets, use moderate CRF but with bitrate cap to prevent over-compression
+              crf_value = 25
+              max_bitrate_kbps = max(400, target_bitrate_kbps * 2)  # Cap at 2x target, min 400 kbps
+              _logger.info(f"Target bitrate very low ({target_bitrate_kbps} kbps). Using CRF={crf_value} with max bitrate cap={max_bitrate_kbps} kbps to prevent over-compression.")
+          elif target_bitrate_kbps < 400:
+              # For small targets, use good quality CRF with bitrate cap
+              crf_value = 24
+              max_bitrate_kbps = max(500, target_bitrate_kbps * 2)  # Cap at 2x target, min 500 kbps
+              _logger.debug(f"Using CRF={crf_value} with max bitrate cap={max_bitrate_kbps} kbps")
+          else:
+              # For reasonable targets, use high quality CRF without strict bitrate cap
+              crf_value = 23
+              max_bitrate_kbps = target_bitrate_kbps * 2  # Soft cap at 2x target
+              _logger.debug(f"Using CRF={crf_value} with soft bitrate cap={max_bitrate_kbps} kbps")
+
+      # Use CRF-based encoding for quality control
+      # CRF provides consistent quality while allowing file size to vary naturally
       compress_cmd = [
           "ffmpeg", "-i", str(video_file),
-          "-b:v", f"{target_bitrate_kbps}k",
-          "-maxrate", f"{target_bitrate_kbps}k",
-          "-bufsize", f"{target_bitrate_kbps * 2}k",
-          "-y",  # Overwrite output file if exists
-          str(dst_video_path)
+          "-c:v", "libx264",  # Use H.264 codec
+          "-crf", str(crf_value),  # Constant Rate Factor for quality control
+          "-preset", "medium",  # Balanced encoding speed/quality
+          "-pix_fmt", "yuv420p",  # Ensure compatibility
+          "-movflags", "+faststart",  # Optimize for web playback
       ]
 
+      # Add bitrate cap only if needed (to prevent over-compression for very small targets)
+      if max_bitrate_kbps is not None:
+          compress_cmd.extend([
+              "-maxrate", f"{max_bitrate_kbps}k",  # Maximum bitrate cap
+              "-bufsize", f"{max_bitrate_kbps * 2}k",  # Buffer size for rate control
+          ])
+
+      compress_cmd.extend([
+          "-y",  # Overwrite output file if exists
+          str(dst_video_path)
+      ])
+
       _logger.debug(f"ffmpeg command: {' '.join(compress_cmd)}")
-      _logger.info("Starting video compression (this may take a while)...")
+      log_msg = f"Starting video compression with CRF={crf_value}"
+      if max_bitrate_kbps is not None:
+          log_msg += f", max bitrate={max_bitrate_kbps}kbps"
+      log_msg += " (this may take a while)..."
+      _logger.info(log_msg)
       result = subprocess.run(compress_cmd, check=True, capture_output=True, timeout=300)
-      _logger.info(f"Successfully compressed {video_file.name} to approximately {target_size_kb}KB at {dst_video_path}")
+
+      # Check output size
+      if dst_video_path.exists():
+          output_size_kb = dst_video_path.stat().st_size / 1024
+          _logger.info(f"Successfully compressed {video_file.name}: {original_size_kb:.2f}KB -> {output_size_kb:.2f}KB (target: {target_size_kb}KB)")
+      else:
+          _logger.warning("Compressed file created but size check failed")
+          _logger.info(f"Compression completed for {video_file.name}")
 
   except subprocess.TimeoutExpired:
       _logger.error(f"Video compression timed out for {video_file.name}")
@@ -208,7 +263,8 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
       raise RuntimeError(f"Video compression timed out for {video_file.name}")
   except subprocess.CalledProcessError as e:
       _logger.error(f"Failed to compress {video_file.name}: {e}")
-      _logger.error(f"ffmpeg stderr: {e.stderr.decode() if e.stderr else 'N/A'}")
+      error_output = e.stderr.decode() if e.stderr else 'N/A'
+      _logger.error(f"ffmpeg stderr: {error_output}")
       # Clean up partial output file if it exists
       if dst_video_path.exists():
           dst_video_path.unlink()
