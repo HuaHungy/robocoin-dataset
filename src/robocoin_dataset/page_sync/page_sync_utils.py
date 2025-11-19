@@ -46,6 +46,122 @@ def _validate_exist(yaml_path: str | None, hardlink_path: str | None) -> bool:
 
 #------- YAML OPERATION -------#
 
+def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> None:
+    """
+    Update device_model field in YAML file based on filename and mapping.json.
+
+    If the device_model field in the YAML file matches a key in mapping.json,
+    and the dataset_name (filename) contains any of the values from that key's list,
+    then update the device_model field to the matching value from the filename.
+
+    INPUT:
+    yaml_path -> path to the YAML file to update
+    dataset_name -> the dataset name (filename without extension) to check against
+
+    OUTPUT:
+    None, updates the YAML file in place
+    """
+    import json
+
+    import yaml
+
+    _logger = logging.getLogger(__name__)
+
+    yaml_file = Path(yaml_path)
+    if not yaml_file.exists():
+        _logger.error(f"YAML file does not exist: {yaml_path}")
+        raise FileNotFoundError(f"YAML file not found: {yaml_path}")
+
+    # Load mapping.json
+    mapping_file = Path(__file__).parent / "mapping.json"
+    if not mapping_file.exists():
+        _logger.warning(f"Mapping file does not exist: {mapping_file}. Skipping device_model update.")
+        return
+
+    try:
+        with open(mapping_file, encoding='utf-8') as f:
+            mapping = json.load(f)
+    except Exception as e:
+        _logger.error(f"Failed to load mapping.json: {e}. Skipping device_model update.")
+        return
+
+    # Load YAML file
+    try:
+        with open(yaml_file, encoding='utf-8') as f:
+            yaml_data = yaml.safe_load(f)
+    except Exception as e:
+        _logger.error(f"Failed to load YAML file {yaml_path}: {e}")
+        raise
+
+    if yaml_data is None:
+        _logger.warning(f"YAML file {yaml_path} is empty. Skipping device_model update.")
+        return
+
+    # Extract device_model (could be string or list)
+    device_model = yaml_data.get("device_model")
+    if device_model is None:
+        _logger.debug(f"No device_model field found in {yaml_path}. Skipping update.")
+        return
+
+    # Handle list case (take first element)
+    if isinstance(device_model, list):
+        if not device_model:
+            _logger.debug(f"device_model is empty list in {yaml_path}. Skipping update.")
+            return
+        device_model = device_model[0]
+
+    if not isinstance(device_model, str):
+        _logger.debug(f"device_model is not a string in {yaml_path}: {type(device_model)}. Skipping update.")
+        return
+
+    # Check if device_model matches a key in mapping.json
+    if device_model not in mapping:
+        _logger.debug(f"device_model '{device_model}' not found in mapping.json. Skipping update.")
+        return
+
+    # Get the list of possible values for this device_model
+    possible_values = mapping[device_model]
+    if not possible_values:
+        _logger.debug(f"No mapping values found for device_model '{device_model}'. Skipping update.")
+        return
+
+    # Check if dataset_name contains any of the possible values
+    matched_value = None
+    for value in possible_values:
+        if value in dataset_name:
+            matched_value = value
+            break
+
+    if matched_value is None:
+        _logger.debug(
+            f"Dataset name '{dataset_name}' does not contain any of the mapping values "
+            f"{possible_values} for device_model '{device_model}'. Skipping update."
+        )
+        return
+
+    # Update device_model in yaml_data
+    _logger.info(
+        f"Updating device_model from '{device_model}' to '{matched_value}' "
+        f"in {yaml_path} based on dataset name '{dataset_name}'"
+    )
+
+    # Update the field (preserve list format if it was originally a list)
+    original_was_list = isinstance(yaml_data.get("device_model"), list)
+    if original_was_list:
+        yaml_data["device_model"] = [matched_value]
+    else:
+        yaml_data["device_model"] = matched_value
+
+    # Write back to file
+    try:
+        with open(yaml_file, 'w', encoding='utf-8') as f:
+            yaml.dump(yaml_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        _logger.debug(f"Successfully updated device_model in {yaml_path}")
+    except Exception as e:
+        _logger.error(f"Failed to write updated YAML file {yaml_path}: {e}")
+        raise
+
+
 def _copy_yaml_file_from_db(yaml_path: str, dst_path: str) -> None:
   '''Copy yaml file from db defined yaml_file_path to dst path
     Since the yaml file is actually the demanded format.

@@ -75,6 +75,7 @@ def construce_target_file(
         _gen_data_index,
         _gen_video_thumbnail,
         _sample_one_video_path,
+        _update_device_model_from_filename,
         _validate_exist,
     )
 
@@ -168,6 +169,11 @@ def construce_target_file(
             _logger.debug(f"Copying YAML from {yaml_path} to {yaml_dst}...")
             _copy_yaml_file_from_db(yaml_path, str(yaml_dst))
             _logger.info(f"Copied YAML file to {yaml_dst}")
+
+            # 5.5. Update device_model based on filename and mapping.json
+            _logger.debug("Updating device_model in YAML file based on filename...")
+            _update_device_model_from_filename(str(yaml_dst), dataset_name)
+            _logger.debug("Updated device_model in YAML file if needed")
 
             # 6. Sample and compress videos
             _logger.debug(f"Sampling video from hardlink path: {hardlink_path}...")
