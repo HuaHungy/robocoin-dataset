@@ -1,8 +1,8 @@
-"""Client component for distributed dataloader detection tasks.
+"""Client component for distributed hub upload tasks.
 
 This module provides the client-side execution for:
 - Connecting to the server and requesting tasks
-- Running detection on assigned datasets
+- Running upload on assigned datasets
 - Multi-client process management
 """
 
@@ -10,11 +10,12 @@ import asyncio
 import logging
 import multiprocessing as mp
 import time
+import traceback
 from pathlib import Path
 
-from robocoin_dataset.dataloader.dataloader_utils import _run_detection
 from robocoin_dataset.distribution_computation.constant import (
     CLIENT_ID,
+    DATASET_UUID,
     MSG_CONTENT,
     MSG_TYPE,
     TASK_ID,
@@ -22,26 +23,72 @@ from robocoin_dataset.distribution_computation.constant import (
 )
 from robocoin_dataset.distribution_computation.task_client import TaskClient
 from robocoin_dataset.format_converter.tolerobot.constant import LEFORMAT_PATH
+from robocoin_dataset.hub_upload.constant import DatasetsHubEnum
+from robocoin_dataset.hub_upload.lerobot.hub_upload_util import (
+    LocalDsUploadConfig,
+    LocalDsUploadUtil,
+)
 
-TASK_CATEGORY = "dataloader_detection"
+TASK_CATEGORY = "hub_upload"
 
 
-class DataloaderDbClient(TaskClient):
-    """Client for distributed dataloader detection tasks."""
+class HubUploadClient(TaskClient):
+    """Client for distributed hub upload tasks."""
 
     def __init__(
         self,
-        server_uri: str = "ws://localhost:8771",
+        server_uri: str = "ws://localhost:2100",
+        hub_name: DatasetsHubEnum = DatasetsHubEnum.huggingface,
+        token: str = "",
+        namespace: str = "",
+        output_path: str | Path = "",
+        force_overwrite: bool = False,
         heartbeat_interval: float = 30.0,
         logger: logging.Logger | None = None,
         tqdm_position: int = 0,
     ) -> None:
+        """Initialize hub upload client with global configuration.
+
+        Args:
+            server_uri: WebSocket URI of the server
+            hub_name: Target hub platform (huggingface/modelscope)
+            token: Authentication token for the hub
+            namespace: Username/namespace on the hub platform
+            output_path: Path to output directory for YAML/README generation
+            force_overwrite: Force overwrite existing repositories
+            heartbeat_interval: Heartbeat interval in seconds
+            logger: Logger instance
+            tqdm_position: Position for tqdm progress bar (for multi-client)
+        """
         super().__init__(
             server_uri=server_uri,
             heartbeat_interval=heartbeat_interval,
             logger=logger,
         )
         self.tqdm_position = tqdm_position
+
+        # Store global upload configuration
+        self.hub_name = hub_name
+        self.token = token
+        self.namespace = namespace
+        self.output_path = Path(output_path).expanduser().absolute() if output_path else Path("./dataset_info")
+        self.force_overwrite = force_overwrite
+
+        # Create upload utility instance to handle all upload logic
+        upload_config = LocalDsUploadConfig(
+            root_path="",  # Not needed for client mode
+            hub_name=hub_name,
+            token=token,
+            namespace=namespace,
+            output_path=str(output_path),
+            db_file_path="",  # Not needed for client mode
+            skip_missing=True,
+            force_overwrite=force_overwrite,
+        )
+        self.upload_util = LocalDsUploadUtil(upload_config)
+
+        # Create output directory
+        self.output_path.mkdir(parents=True, exist_ok=True)
 
     def get_task_category(self) -> str:
         return TASK_CATEGORY
@@ -51,63 +98,120 @@ class DataloaderDbClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         """
-        Process a single task synchronously (implements abstract method from TaskClient).
-
-        Client receives the dataset path from server (already prepared with hardlinks).
-        Client just runs detection on the provided path.
+        Process a single upload task synchronously
+        (implements abstract method from TaskClient).
         """
-        # Server provides the dataset path (already prepared with hardlinks)
-        test_path = task_content.get(LEFORMAT_PATH)
-        dataset_uuid = task_content.get("dataset_uuid", "unknown")
+        # Extract task-specific parameters
+        dataset_uuid = task_content.get(DATASET_UUID, "unknown")
+        hardlink_path_str = task_content.get(LEFORMAT_PATH)
 
-        # Get configurable parameters (with defaults)
-        episodes = task_content.get("episodes", "all")
-        sample_ratio = task_content.get("sample_ratio", 0.1)  # Default: 10% sampling
-        batch_size = task_content.get("batch_size", 32)
-        num_workers = task_content.get("num_workers", 0)
+        # Extract client configuration from task content (with fallback to instance defaults)
+        client_config = task_content.get("client_config", {})
+        effective_token = client_config.get("token") or self.token
+        effective_namespace = client_config.get("namespace") or self.namespace
+        effective_hub_name_str = client_config.get("hub_name")
+        effective_output_path = client_config.get("output_path") or str(self.output_path)
+        effective_force_overwrite = client_config.get("force_overwrite", self.force_overwrite)
 
-        self.logger.info(f"🚀 Client [{self.client_id}]: Processing task {dataset_uuid}")
-        self.logger.debug(f"   Dataset path: {test_path}")
-        self.logger.debug(f"   Episodes: {episodes}")
-        self.logger.debug(f"   Sample ratio: {sample_ratio}")
-        self.logger.debug(f"   Batch size: {batch_size}")
-        self.logger.debug(f"   Num workers: {num_workers}")
-
-        # Run detection with downsampling (pass client_id for progress bar positioning)
-        result = _run_detection(
-            test_path,
-            episode_indices=episodes,
-            sample_ratio=sample_ratio,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            client_id=self.client_id,
-            tqdm_position=self.tqdm_position,
-            logger=self.logger,
-        )
-
-        if result.get("success"):
-            self.logger.info(f"✅ Client [{self.client_id}]: Task {dataset_uuid} completed successfully")
+        # Parse hub_name from string if provided in task
+        if effective_hub_name_str:
+            try:
+                effective_hub_name = DatasetsHubEnum[effective_hub_name_str]
+            except KeyError:
+                self.logger.warning(
+                    f"Unknown hub_name '{effective_hub_name_str}' in task, using default {self.hub_name.value}"
+                )
+                effective_hub_name = self.hub_name
         else:
-            self.logger.error(f"❌ Client [{self.client_id}]: Task {dataset_uuid} failed: {result.get('error_message', 'Unknown error')}")
+            effective_hub_name = self.hub_name
 
-        return result
+        if not hardlink_path_str:
+            return {
+                "success": False,
+                "error_message": "No hardlink path provided in task content"
+            }
+
+        hardlink_path = Path(hardlink_path_str)
+        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
+
+        self.logger.info(f"Processing task | UUID: {dataset_uuid} | Dataset: {dataset_name}")
+        self.logger.debug(f"Task details | UUID: {dataset_uuid} | Path: {hardlink_path} | Hub: {effective_hub_name.value} | Namespace: {effective_namespace}")
+
+        try:
+            # Create upload utility with effective configuration from task
+            task_upload_config = LocalDsUploadConfig(
+                root_path="",  # Not needed for client mode
+                hub_name=effective_hub_name,
+                token=effective_token,
+                namespace=effective_namespace,
+                output_path=effective_output_path,
+                db_file_path="",  # Not needed for client mode
+                skip_missing=True,
+                force_overwrite=effective_force_overwrite,
+            )
+            task_upload_util = LocalDsUploadUtil(task_upload_config)
+
+            upload_success, upload_error = task_upload_util._upload_one_dataset(hardlink_path)
+            if upload_success:
+                self.logger.info(f"Task completed | UUID: {dataset_uuid} | Success: True")
+                return {
+                    "success": True
+                }
+            self.logger.error(f"Task failed | UUID: {dataset_uuid} | Error: {upload_error}")
+            return {
+                "success": False,
+                "error_message": upload_error
+            }
+        except Exception as e:
+            tb = traceback.format_exc()
+            error_msg = f"Unexpected error during upload: {e}\n\nFull traceback:\n{tb}"
+            self.logger.error(f"Task exception | UUID: {dataset_uuid} | Error: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error_message": error_msg
+            }
 
 
 async def run_one_client_async(
-    server_uri: str, heartbeat_interval: float, logger: logging.Logger, tqdm_position: int = 0
+    server_uri: str,
+    hub_name: DatasetsHubEnum,
+    token: str,
+    namespace: str,
+    output_path: str | Path,
+    force_overwrite: bool,
+    heartbeat_interval: float,
+    logger: logging.Logger,
+    tqdm_position: int = 0,
 ) -> dict:
     """Run a single client that connects to server and processes tasks until none remain.
+
+    Args:
+        server_uri: WebSocket URI of the server
+        hub_name: Target hub platform
+        token: Authentication token
+        namespace: Username/namespace
+        output_path: Output path for YAML/README
+        force_overwrite: Force overwrite existing repos
+        heartbeat_interval: Heartbeat interval in seconds
+        logger: Logger instance
+        tqdm_position: Position for tqdm progress bar
 
     Returns:
         Statistics dictionary with keys: tasks_processed, tasks_succeeded, tasks_failed
     """
-    logger.info("🚀 CLIENT STARTING")
-    logger.info(f"Server URI: {server_uri}")
-    logger.info(f"Heartbeat interval: {heartbeat_interval}s")
-    logger.info("")
+    logger.info(f"Client starting | Server: {server_uri} | Hub: {hub_name.value} | Namespace: {namespace}")
+    logger.debug(f"Configuration | Heartbeat: {heartbeat_interval}s")
 
-    client = DataloaderDbClient(
-        server_uri=server_uri, heartbeat_interval=heartbeat_interval, logger=logger, tqdm_position=tqdm_position
+    client = HubUploadClient(
+        server_uri=server_uri,
+        hub_name=hub_name,
+        token=token,
+        namespace=namespace,
+        output_path=output_path,
+        force_overwrite=force_overwrite,
+        heartbeat_interval=heartbeat_interval,
+        logger=logger,
+        tqdm_position=tqdm_position,
     )
 
     # Track task counts
@@ -118,65 +222,46 @@ async def run_one_client_async(
     # Connect to server
     try:
         if not client.connected:
-            logger.info(f"🔌 Connecting to server at {server_uri}...")
+            logger.debug(f"Connecting to server at {server_uri}...")
             try:
                 await client.connect_to_server()
-                logger.info("✅ WebSocket connection established")
             except ConnectionError as e:
-                logger.error(f"❌ Connection failed: {e}")
-                logger.error(f"   Make sure the server is running at {server_uri}")
-                logger.error("   Start server with: python scripts/dataloader/run_dataloader_detection.py --server --db <db_file> --host <host> --port <port>")
+                logger.error(f"Connection failed: {e}")
                 return {
                     "tasks_processed": 0,
                     "tasks_succeeded": 0,
                     "tasks_failed": 0,
                 }
             except Exception as e:
-                logger.error(f"❌ Unexpected connection error: {e}", exc_info=True)
+                logger.error(f"Connection error: {e}", exc_info=True)
                 return {
                     "tasks_processed": 0,
                     "tasks_succeeded": 0,
                     "tasks_failed": 0,
                 }
 
-            logger.info("📡 Starting message receiver...")
-            client._receiver_task = asyncio.create_task(client._message_receiver())
+        logger.debug("Starting message receiver...")
+        client._receiver_task = asyncio.create_task(client._message_receiver())
 
-            logger.info("📝 Registering with server...")
-            registration_success = await client.register()
-            if not registration_success or not client.client_id:
-                logger.error("❌ Registration failed - no client_id received from server")
-                logger.error("   This may indicate:")
-                logger.error("   - Server is not ready to accept connections")
-                logger.error("   - Network connectivity issues")
-                logger.error("   - Server and client version mismatch")
-                logger.info("🔌 Client shutting down")
-                return {
-                    "tasks_processed": 0,
-                    "tasks_succeeded": 0,
-                    "tasks_failed": 0,
-                }
-            logger.info(f"✅ Registration successful - Client ID: {client.client_id}")
+        registration_success = await client.register()
+        if not registration_success or not client.client_id:
+            logger.error("Registration failed - no client_id received")
+            return {
+                "tasks_processed": 0,
+                "tasks_succeeded": 0,
+                "tasks_failed": 0,
+            }
 
-            logger.info("💓 Starting heartbeat...")
-            await client._start_heartbeat()
-            logger.info(f"✅ Client {client.client_id} is ready and connected")
-            logger.info("")
-            logger.info("📋 Entering task processing loop...")
-            logger.info("")
+        await client._start_heartbeat()
+        logger.info(f"Client ready | ID: {client.client_id}")
 
         # Process tasks until none remain
         while True:
-            logger.info(f"🔍 [{client.client_id}] Requesting task from server...")
+            logger.debug("Requesting task...")
             task = await client.request_task()
             if task is None:
-                logger.info(f"📭 [{client.client_id}] No more tasks available from server")
-                logger.info(f"✅ [{client.client_id}] Task loop completed normally")
+                logger.info("No more tasks available")
                 break
-
-            task_id = task.get(TASK_ID)
-            dataset_uuid = task.get("dataset_uuid", "unknown")
-            logger.info(f"📦 [{client.client_id}] Received task {task_id} (dataset: {dataset_uuid})")
 
             result_content = await asyncio.to_thread(client._sync_process_task, task)
             tasks_processed += 1
@@ -184,10 +269,8 @@ async def run_one_client_async(
             # Check if task succeeded or failed
             if result_content.get("success"):
                 tasks_succeeded += 1
-                logger.info(f"✅ [{client.client_id}] Task {task_id} completed successfully")
             else:
                 tasks_failed += 1
-                logger.error(f"❌ [{client.client_id}] Task {task_id} failed")
 
             result = {
                 MSG_TYPE: TASK_RESULT,
@@ -196,23 +279,18 @@ async def run_one_client_async(
             result[TASK_ID] = task.get(TASK_ID)
             result[CLIENT_ID] = client.client_id
 
-            logger.info(f"📤 [{client.client_id}] Submitting result for task {task_id}...")
+            logger.debug(f"Submitting result for task {task.get(TASK_ID)}...")
             await client.submit_result(result)
-            logger.info(f"✅ [{client.client_id}] Result submitted")
-            logger.info("")
 
     except KeyboardInterrupt:
-        logger.info(f"⚠️  [{client.client_id if client.client_id else 'unregistered'}] Interrupted by user")
+        logger.info("Interrupted by user")
     except Exception as e:
-        logger.error(f"❌ [{client.client_id if client.client_id else 'unregistered'}] Client runtime exception: {e}", exc_info=True)
+        logger.error(f"Client runtime exception: {e}", exc_info=True)
     finally:
-        logger.info(f"🔌 [{client.client_id if client.client_id else 'unregistered'}] Cleaning up and disconnecting...")
+        logger.debug("Cleaning up and disconnecting...")
         await client._cleanup()
-        logger.info(f"✅ [{client.client_id if client.client_id else 'unregistered'}] Client shutdown complete")
-        logger.info("📊 CLIENT SUMMARY")
-        logger.info(f"Tasks processed: {tasks_processed}")
-        logger.info(f"✅ Succeeded: {tasks_succeeded}")
-        logger.info(f"❌ Failed: {tasks_failed}")
+        logger.info("Client shutdown complete")
+        logger.info(f"Summary | Processed: {tasks_processed} | Succeeded: {tasks_succeeded} | Failed: {tasks_failed}")
 
     return {
         "tasks_processed": tasks_processed,
@@ -223,6 +301,11 @@ async def run_one_client_async(
 
 def run_one_client_process_main(
     server_uri: str,
+    hub_name: DatasetsHubEnum,
+    token: str,
+    namespace: str,
+    output_path: str | Path,
+    force_overwrite: bool,
     heartbeat_interval: float,
     log_dir: str | Path,
     log_level: str,
@@ -231,9 +314,7 @@ def run_one_client_process_main(
 ) -> int:
     """Entry point for each client process in multi-client mode."""
     import sys
-    import traceback
 
-    from robocoin_dataset.utils.logger import setup_logger
 
     # Enable console output for DEBUG mode, otherwise suppress it
     enable_console = (log_level == "DEBUG")
@@ -251,21 +332,47 @@ def run_one_client_process_main(
             handlers=[],  # No handlers
         )
 
-    # Create per-process logger with unique file name
-    logger = setup_logger(
-        name=f"client_{process_id:02d}",
-        log_dir=Path(log_dir),
-        level=getattr(logging, log_level, logging.INFO),
-        console_output=enable_console,
-    )
+    # Create per-process logger with fixed file name (client_00.log, client_01.log, etc.)
+    log_dir_path = Path(log_dir)
+    log_dir_path.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir_path / f"client_{process_id:02d}.log"
 
-    logger.info(f"Client process {process_id} started, connecting to {server_uri}")
+    logger = logging.getLogger(f"hub_upload_client_{process_id:02d}")
+    logger.setLevel(logging.DEBUG)  # File gets DEBUG level
+    logger.propagate = False
+
+    # Remove existing handlers
+    logger.handlers.clear()
+
+    # File handler - DEBUG level for detailed logs
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(log_format, datefmt=date_format)
+
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)  # File gets all DEBUG logs
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Console handler - only if DEBUG mode
+    if enable_console:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(getattr(logging, log_level, logging.INFO))
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+    logger.info(f"Hub upload client process {process_id} started, connecting to {server_uri}")
 
     # Run async client (use process_id as tqdm_position for multi-client progress bars)
     try:
         stats = asyncio.run(
             run_one_client_async(
                 server_uri=server_uri,
+                hub_name=hub_name,
+                token=token,
+                namespace=namespace,
+                output_path=output_path,
+                force_overwrite=force_overwrite,
                 heartbeat_interval=heartbeat_interval,
                 logger=logger,
                 tqdm_position=process_id,
@@ -277,7 +384,7 @@ def run_one_client_process_main(
         return 0 if stats["tasks_failed"] == 0 else 1
     except Exception as e:
         # Always show critical errors to console, regardless of log level
-        error_msg = f"❌ Client process {process_id} failed: {e}"
+        error_msg = f"❌ Hub upload client process {process_id} failed: {e}"
         logger.error(error_msg, exc_info=(log_level == "DEBUG"))
 
         # Always print critical errors to stderr so user sees them
@@ -301,6 +408,11 @@ def run_one_client_process_main(
 def run_multi_clients(
     server_uri: str,
     num_clients: int,
+    hub_name: DatasetsHubEnum,
+    token: str,
+    namespace: str,
+    output_path: str | Path,
+    force_overwrite: bool,
     heartbeat_interval: float,
     log_dir: str | Path,
     log_level: str,
@@ -308,8 +420,13 @@ def run_multi_clients(
     """Spawn multiple client processes.
 
     Args:
-        server_uri: WebSocket URI of the server (e.g. ws://localhost:8771)
+        server_uri: WebSocket URI of the server (e.g. ws://localhost:2100)
         num_clients: Number of client processes to spawn
+        hub_name: Target hub platform
+        token: Authentication token
+        namespace: Username/namespace
+        output_path: Output path for YAML/README
+        force_overwrite: Force overwrite existing repos
         heartbeat_interval: Heartbeat interval in seconds
         log_dir: Directory for log files
         log_level: Logging level string (e.g. "INFO", "DEBUG")
@@ -326,11 +443,13 @@ def run_multi_clients(
         console_logger.addHandler(handler)
 
     console_logger.info("\n" + "=" * 80)
-    console_logger.info("🚀 STARTING MULTI-CLIENT EXECUTION".center(80))
+    console_logger.info("🚀 STARTING MULTI-CLIENT HUB UPLOAD".center(80))
     console_logger.info("=" * 80)
     console_logger.info(f"\n{'CONFIGURATION'}")
     console_logger.info(f"  Clients            : {num_clients}")
     console_logger.info(f"  Server URI         : {server_uri}")
+    console_logger.info(f"  Hub                : {hub_name.value}")
+    console_logger.info(f"  Namespace          : {namespace}")
     console_logger.info(f"  Heartbeat interval : {heartbeat_interval}s")
     console_logger.info(f"  Log directory      : {log_dir}")
     console_logger.info(f"\n{'SPAWNING PROCESSES'}")
@@ -346,6 +465,11 @@ def run_multi_clients(
             target=run_one_client_process_main,
             kwargs=dict(
                 server_uri=server_uri,
+                hub_name=hub_name,
+                token=token,
+                namespace=namespace,
+                output_path=output_path,
+                force_overwrite=force_overwrite,
                 heartbeat_interval=heartbeat_interval,
                 log_dir=log_dir,
                 log_level=log_level,
@@ -425,7 +549,7 @@ def run_multi_clients(
 
     # Summary header
     console_logger.info("\n" + "=" * 80)
-    console_logger.info("📊 MULTI-CLIENT EXECUTION SUMMARY".center(80))
+    console_logger.info("📊 MULTI-CLIENT HUB UPLOAD SUMMARY".center(80))
     console_logger.info("=" * 80)
 
     # Configuration section
@@ -486,7 +610,7 @@ def run_multi_clients(
 
 
 __all__ = [
-    "DataloaderDbClient",
+    "HubUploadClient",
     "run_one_client_async",
     "run_one_client_process_main",
     "run_multi_clients",

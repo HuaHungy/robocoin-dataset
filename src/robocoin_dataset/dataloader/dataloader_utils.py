@@ -148,6 +148,7 @@ def _run_detection(
     import contextlib
     import gc
     import time
+    import traceback
 
     from tqdm import tqdm  # type: ignore
 
@@ -206,8 +207,9 @@ def _run_detection(
 
     except Exception as e:
         result.update({
-            "error_message": str(e),
+            "error_message": f"{e}\n{traceback.format_exc()}",
             "total_time_s": time.perf_counter() - start_time,
+            "success": False,
         })
         # Log error with full traceback unconditionally
         _logger.exception(f"❌ Detection failed: {e}")

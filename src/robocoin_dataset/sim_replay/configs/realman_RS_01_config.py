@@ -8,7 +8,11 @@ from robocoin_dataset.sim_replay.configs.lerobot_sim_replay_config import (
 class RealmanRS01LerobotSimReplayConfig(LerobotSimReplayConfig):
     mjcf_path = (
         Path(__file__).parent
+<<<<<<< HEAD
         / "mjcfs/realman_RS-01/mujoco_model_with_sites.xml"
+=======
+        / "mjcfs/realman_RS-01/meshes/realman_WR75S_with_sites.xml"
+>>>>>>> 4389b0f9b2515b9f3df36ff29df3cc81fc07a2ca
     )
 
     # fixed
@@ -53,6 +57,16 @@ class RealmanRS01LerobotSimReplayConfig(LerobotSimReplayConfig):
         "RightFollowerArm_Joint7.pos",
 
     ]
+
+    gripper_open_max = 1
+    gripper_open_min = 0
+    gripper_joint_max = 0.0325
+    gripper_joint_min = 0
+
+    # eef_sim 配置
+    has_gripper = True
+    gripper_value_open = gripper_open_max
+    gripper_value_close = gripper_open_min
 
 
     action_arm_joint_lerobot_names: list[str] = [

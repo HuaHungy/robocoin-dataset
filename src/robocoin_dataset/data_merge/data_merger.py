@@ -24,10 +24,17 @@ from robocoin_dataset.distribution_computation.task_server import TaskServer
 from robocoin_dataset.format_converter.tolerobot.constant import (
     LEFORMAT_PATH,
 )
-from robocoin_dataset.utils.parquet_paths import (
-    get_episode_stats_file_path,
-    get_meta_info_file_path,
-    get_parquet_paths,
+
+# from robocoin_dataset.utils.parquet_paths import (
+#     get_episode_stats_file_path,
+#     get_meta_info_file_path,
+#     get_parquet_paths,
+# )
+from robocoin_dataset.utils.le_path import (
+    get_episode_num,
+    get_episodes_stats_jsonl_file,
+    get_meta_info_file,
+    get_parquet_files,
 )
 
 
@@ -126,10 +133,13 @@ def merge_dataset_parquet_files(
     root_dir: str | Path, patch_features: list[str], merge_feature: str = "merged"
 ) -> None:
     features_parquet_files = []
-    ori_parquet_files: list[Path] = []
-    ori_parquet_files, merge_parquet_files = get_parquet_paths(root_dir, merge_feature)
+    ori_parquet_files = get_parquet_files(root_dir)
+    merge_parquet_files = get_parquet_files(root_dir, merge_feature)
     for feature in patch_features:
-        _, feature_parquet_files = get_parquet_paths(root_dir, feature)
+        feature_parquet_files = get_parquet_files(root_dir, feature=feature)
+        print(feature)
+        print(root_dir)
+        print(feature_parquet_files)
         if not feature_parquet_files[0].exists():
             # raise ValueError(f"{feature_parquet_files[0]} file not found")
             continue
@@ -194,11 +204,12 @@ def merge_dataset_info_files(
     root_dir: str | Path, patch_features: list[str], merged_feature: str = "merged"
 ) -> dict:
     root_dir = Path(root_dir).expanduser().absolute()
-    ori_info_path, merged_info_path = get_meta_info_file_path(root_dir, merged_feature)
-    _, merged_parquet_paths = get_parquet_paths(root_dir, merged_feature)
+    ori_info_path = get_meta_info_file(root_dir)
+    merged_info_path = get_meta_info_file(root_dir, merged_feature)
+    merged_parquet_paths = get_parquet_files(root_dir, merged_feature)
     patch_info_paths = []
     for feature in patch_features:
-        _, path = get_meta_info_file_path(root_dir, feature)
+        path = get_meta_info_file(root_dir, feature)
         if not path.exists():
             # raise FileNotFoundError(f"{path} not found")
             continue
@@ -213,23 +224,23 @@ def merge_dataset_info_files(
 
 
 def _merge_jsonl_files(
-    ori_file: str | Path, patch_files: list[str, Path], output_file: str | Path
+    ori_file: str | Path, patch_files: list[str, Path], output_file: str | Path, ep_num: int
 ) -> None:
     with open(ori_file) as f:
         ori_jsonl = [json.loads(line) for line in f]
+    if len(ori_jsonl) < ep_num:
+        raise ValueError(f"ori_jsonl 长度不足: {len(ori_jsonl)} < {ep_num}")
 
     patch_jsonls = []
     for patch_file in patch_files:
         with open(patch_file) as f:
             patch_jsonl = [json.loads(line) for line in f]
+            if len(patch_jsonl) < ep_num:
+                raise ValueError(f"patch_jsonl 长度不足: {len(patch_jsonl)} < {ep_num}")
         patch_jsonls.append(patch_jsonl)
 
-    for patch_jsonl in patch_jsonls:
-        if len(ori_jsonl) != len(patch_jsonl):
-            raise ValueError(f"patch_jsonl 长度不一致: {len(ori_jsonl)} != {len(patch_jsonl)}")
-
     new_jsonl = []
-    for i in range(len(ori_jsonl)):
+    for i in range(ep_num):
         ori_json = ori_jsonl[i]
         for patch_jsonl in patch_jsonls:
             patch_json = patch_jsonl[i]
@@ -243,24 +254,30 @@ def _merge_jsonl_files(
 
 
 def merge_dataset_stats_jsonl_files(
-    root_dir: str | Path, patch_features: list[str], merge_feature: str = "merged"
+    root_dir: str | Path, patch_features: list[str], ep_num: int, merge_feature: str = "merged"
 ) -> None:
-    ori_stats_file, merged_stats_file = get_episode_stats_file_path(root_dir, merge_feature)
+    ori_stats_file = get_episodes_stats_jsonl_file(root_dir)
+    merged_stats_file = get_episodes_stats_jsonl_file(root_dir, merge_feature)
     patch_stats_files = []
     for patch_feature in patch_features:
-        _, patch_stats_file = get_episode_stats_file_path(root_dir, patch_feature)
+        patch_stats_file = get_episodes_stats_jsonl_file(root_dir, patch_feature)
         if not patch_stats_file.exists():
-            # raise FileNotFoundError(f"{patch_stats_file} does not exist")
-            continue
+            raise FileNotFoundError(f"{patch_stats_file} does not exist")
         patch_stats_files.append(patch_stats_file)
 
-    _merge_jsonl_files(ori_stats_file, patch_stats_files, merged_stats_file)
+    _merge_jsonl_files(ori_stats_file, patch_stats_files, merged_stats_file, ep_num=ep_num)
 
 
 def merge_dataset_data(root_dir: str | Path, patch_features: list[str], merge_feature: str) -> None:
     merge_dataset_parquet_files(root_dir, patch_features, merge_feature)
     merge_dataset_info_files(root_dir, patch_features, merge_feature)
-    merge_dataset_stats_jsonl_files(root_dir, patch_features, merge_feature)
+    ep_num = get_episode_num(root_dir)
+    merge_dataset_stats_jsonl_files(
+        root_dir=root_dir,
+        patch_features=patch_features,
+        merge_feature=merge_feature,
+        ep_num=ep_num,
+    )
 
 
 def _sync_tasks(

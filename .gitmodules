@@ -1,6 +1,6 @@
 [submodule "third_parties/robocoin-lerobot"]
 	path = third_parties/robocoin-lerobot
 	url = https://github.com/RoboCoin-BAAI/robocoin-lerobot.git
-# [submodule "third_parties/SceneAnnotation"]
-# 	path = third_parties/SceneAnnotation
-# 	url = https://github.com/PINKCONCRETE/SceneAnnotation.git
+[submodule "third_parties/SceneAnnotation"]
+	path = third_parties/SceneAnnotation
+	url = https://github.com/PINKCONCRETE/SceneAnnotation.git

@@ -66,7 +66,7 @@ def reset_upload_status(db_file: Path) -> int:
 
                 # Always reset both upload statuses to PENDING
                 dataset.ms_upload_status = TaskStatus.PENDING
-                dataset.hf_upload_status = TaskStatus.PENDING
+                dataset.huggingface_upload_status = TaskStatus.PENDING
 
                 updated_count += 1
 
@@ -77,7 +77,7 @@ def reset_upload_status(db_file: Path) -> int:
             print(f"✅ Successfully reset {updated_count} datasets:", file=sys.stderr)
             print(f"   - visualize_check_status → COMPLETED (for {visualize_set_count} datasets with hardlink_path)", file=sys.stderr)
             print("   - ms_upload_status → PENDING (all datasets)", file=sys.stderr)
-            print("   - hf_upload_status → PENDING (all datasets)", file=sys.stderr)
+            print("   - huggingface_upload_status → PENDING (all datasets)", file=sys.stderr)
 
             return 0
 

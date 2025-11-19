@@ -1,17 +1,18 @@
 # Episode-level data checkers (作用于每个 episode 的数值数据，如关节角)
+
 episode_data_checkers:
   - name: "static_frame_rate"
     params:
       window_size: 5
       threshold: 0.05
-    should_check: False
+    should_check: True
     score_weight: 1.0   
 
   - name: "static_joint"
     params:
       static_joints_percent: 0.4
       epsilon: 0.001
-    should_check: False
+    should_check: True 
     score_weight: 1.0   
 
 episode_video_checkers:

@@ -8,6 +8,7 @@ This module provides local (non-distributed) execution for:
 
 import logging
 import time
+import traceback
 from pathlib import Path
 
 from robocoin_dataset.database.database import DatasetDatabase
@@ -29,24 +30,7 @@ def run_local_detection(
     num_workers: int = 0,
     logger: logging.Logger | None = None,
 ) -> dict:
-    """Run dataloader detection in local batch mode (sequential processing).
 
-    Args:
-        db_file: Path to the database file
-        summary_logger: Logger for summary output
-        episodes: Episode specification (e.g., "all", "0-5", "0,2,4")
-        sample_ratio: Ratio of frames to sample (0.0-1.0)
-        batch_size: Batch size for dataloader
-        num_workers: Number of dataloader workers
-        logger: Optional logger instance
-
-    Returns:
-        Dictionary with processing statistics
-
-    Note:
-        Hardlinks must be pre-created in the database before running detection.
-        Use the hardlink preparation script to create them first.
-    """
     _logger = logger or logging.getLogger(__name__)
     db = DatasetDatabase(Path(db_file).expanduser().absolute())
 
@@ -57,40 +41,71 @@ def run_local_detection(
 
     # Process datasets until none remain
     while True: # MAIN LOOP
+        dataset_uuid = None  # Initialize to avoid NameError in exception handlers
+        hardlink_path = None
+
         # Sync+Gen tasks and claim one (includes hardlink validation)
         try:
             with db.with_session() as session:
                 _sync_dataloader_detection_tasks(session, logger=_logger)
                 dataset_uuid, hardlink_path = _gen_one_dataloader_detection_task(session)
 
-            if not dataset_uuid or not hardlink_path:
+            if not dataset_uuid:
                 break
+
+            if hardlink_path is None:
+                raise FileNotFoundError(f"No hard_link_path found for dataset {dataset_uuid}")
+
+            if not hardlink_path.exists():
+                raise FileNotFoundError(f"No such hardlink found in {hardlink_path}")
 
             datasets_processed += 1
             _logger.debug(f"Processing dataset {datasets_processed}: {dataset_uuid}")
             _logger.debug(f"Using existing hardlink: {hardlink_path}")
 
         except FileNotFoundError as e:
-            # Task was already claimed, so we have dataset_uuid
-            error_msg = f"Hardlink assertion failed: {e}"
+            # Task was claimed before validation, so dataset_uuid is always set
+            error_msg = f"Hardlink assertion failed: {e}\n{traceback.format_exc()}"
             _logger.exception(error_msg)
-
             # Mark task as failed in database
             with db.with_session() as session:
                 _mark_task_failed(session, dataset_uuid, error_msg)
             failed.append((dataset_uuid, error_msg))
             summary_logger.debug(f"❌ {dataset_uuid}: {error_msg}")
             continue
+        except Exception as e:
+            # Catch any unexpected exceptions during task generation/claiming
+            if dataset_uuid:
+                error_msg = f"Unexpected error during task generation: {e}\n{traceback.format_exc()}"
+                _logger.exception(error_msg)
+                with db.with_session() as session:
+                    _mark_task_failed(session, dataset_uuid, error_msg)
+                failed.append((dataset_uuid, error_msg))
+                summary_logger.debug(f"❌ {dataset_uuid}: {error_msg}")
+            else:
+                _logger.exception(f"❌ Unexpected error before task claimed: {e}")
+            continue
 
-        # Run detection with configurable parameters
-        result = _run_detection(
-            hardlink_path,
-            episode_indices=episodes,
-            sample_ratio=sample_ratio,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            logger=_logger,
-        )
+        # Run detection with configurable parameters (wrapped in try-except for safety)
+        try:
+            result = _run_detection(
+                hardlink_path,
+                episode_indices=episodes,
+                sample_ratio=sample_ratio,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                logger=_logger,
+            )
+        except Exception as e:
+            # Safety net: _run_detection should catch all exceptions internally,
+            # but if something catastrophic happens, we still want to mark as FAILED
+            error_msg = f"Catastrophic failure during detection: {e}\n{traceback.format_exc()}"
+            _logger.exception(error_msg)
+            with db.with_session() as session:
+                _mark_task_failed(session, dataset_uuid, error_msg)
+            failed.append((dataset_uuid, error_msg))
+            summary_logger.debug(f"❌ {dataset_uuid}: {error_msg}")
+            continue
 
         # Update database based on detection result
         if result.get("success"):

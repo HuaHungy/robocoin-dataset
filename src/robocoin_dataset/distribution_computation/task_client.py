@@ -68,7 +68,7 @@ class TaskClient(ABC):
                 self.websocket = await connect(self.server_uri)
                 self.connected = True
                 if self.logger:
-                    self.logger.info(f"✅ Successfully connected to the server: {self.server_uri}")
+                    self.logger.info(f"Connected to server: {self.server_uri}")
                 return
             except Exception as e:  # noqa: PERF203
                 if self.logger:
@@ -122,9 +122,7 @@ class TaskClient(ABC):
                     if msg_type == REGISTERED:
                         self.client_id = str(msg_content[CLIENT_ID])
                         if self.logger:
-                            self.logger.info(
-                                f"🏷️ Client registered, server assigned ID: {self.client_id} | IP: {self.local_ip}"
-                            )
+                            self.logger.info(f"Registered | Client ID: {self.client_id}")
                         # Wake up the waiting registration future
                         if self._response_future is not None and not self._response_future.done():
                             self._response_future.set_result(msg)
@@ -256,13 +254,13 @@ class TaskClient(ABC):
             }
             await self.websocket.send(json.dumps(task_request_dict))
             if self.logger:
-                self.logger.info("📤 Task request sent")
+                self.logger.debug("Task request sent")
 
             try:
                 task_msg = await asyncio.wait_for(self._response_future, timeout=15.0)
             except asyncio.TimeoutError:
                 if self.logger:
-                    self.logger.warning("⚠️ Request task timeout (no response within 15 seconds)")
+                    self.logger.warning("Request task timeout")
                 if self._response_future is not None and not self._response_future.done():
                     self._response_future.cancel()
                 return None
@@ -270,13 +268,20 @@ class TaskClient(ABC):
             # Parse response
             msg_type = task_msg.get(MSG_TYPE)
             if msg_type == TASK:
+                task_content = task_msg[MSG_CONTENT]
+                task_id = task_msg.get(TASK_ID, "unknown")
+                dataset_uuid = task_content.get("dataset_uuid", "")
+                hardlink_path = task_content.get("leformat_path") or task_content.get("hardlink_path") or ""
                 if self.logger:
-                    self.logger.info(f"📥 Task received: {task_msg}")
-                return task_msg[MSG_CONTENT]
+                    if dataset_uuid or hardlink_path:
+                        self.logger.info(f"Task received | Task: {task_id} | UUID: {dataset_uuid} | Path: {hardlink_path}")
+                    else:
+                        self.logger.info(f"Task received | Task: {task_id}")
+                return task_content
 
             if msg_type == NO_TASK:
                 if self.logger:
-                    self.logger.info("📭 No task available from server")
+                    self.logger.debug("No task available")
                 return None
 
             if self.logger:
@@ -313,12 +318,18 @@ class TaskClient(ABC):
                 None, self._sync_process_task, task_data
             )
             return {TASK_RESULT_STATUS: TASK_SUCCESS, TASK_RESULT_CONTENT: task_result_content}
-        except Exception:
+        except Exception as e:
             if self.logger:
                 self.logger.error(f"Task {task_id} failed. {traceback.format_exc()}")
+            # For RuntimeError (manual error reports), only keep the error message without traceback
+            # For other exceptions, include the full traceback
+            if isinstance(e, RuntimeError):
+                error_msg = str(e)
+            else:
+                error_msg = f"Task {task_id} failed. {traceback.format_exc()}"
             return {
                 TASK_RESULT_STATUS: TASK_FAILED,
-                ERR_MSG: f"Task {task_id} failed. {traceback.format_exc()}",
+                ERR_MSG: error_msg,
                 TASK_RESULT_CONTENT: {},
             }
 

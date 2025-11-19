@@ -17,14 +17,14 @@ class LocalDsConfig:
   Configuration class for local dataset operations.
 
   Attributes:
-      root_path (Path): Root directory path for datasets. Defaults to empty Path.
+      root_path (Path | None): Root directory path for datasets. Can be None if not needed.
       process_all (bool): Flag to indicate whether to process all subdirectories. Defaults to True.
       subdirs_to_process (list[str]): List of specific subdirectories to process. Defaults to empty list.
       subdirs_to_ignore (list[str]): List of subdirectories to ignore during processing. Defaults to empty list.
       log_config (LogConfig): Logging configuration object. Defaults to empty LogConfig.
   """
 
-  root_path: Path = field(default_factory=Path)
+  root_path: Path | None = None
   process_all: bool = True
   subdirs_to_process: list[str] = field(default_factory=list)
   subdirs_to_ignore: list[str] = field(default_factory=list)
@@ -109,9 +109,13 @@ class LocalDsUtil:
         Path: Absolute path to the root dataset directory.
 
     Raises:
+        ValueError: If root_path is not set in configuration.
         FileNotFoundError: If the root path does not exist.
         NotADirectoryError: If the root path is not a directory.
     """
+    if self.config.root_path is None:
+      raise ValueError("root_path is not set in configuration")
+
     path = Path(self.config.root_path).expanduser().absolute()
     if not path.exists():
       raise FileNotFoundError(f"root_path {path} does not exists")
@@ -180,9 +184,13 @@ class LocalDsUtil:
     Validate that the root path exists and is a directory.
 
     Raises:
+        ValueError: If root_path is not set.
         FileNotFoundError: If the root path does not exist.
         NotADirectoryError: If the root path is not a directory.
     """
+    if self.config.root_path is None:
+      raise ValueError("root_path is not set in configuration")
+
     if not self.root_path.exists():
       raise FileNotFoundError(f"root_path {self.root_path} does not exists")
     if not self.root_path.is_dir():

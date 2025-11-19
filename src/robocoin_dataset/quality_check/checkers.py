@@ -3,8 +3,10 @@ from pathlib import Path
 import av
 import imagehash
 import numpy as np
+from PIL import Image
 
 from robocoin_dataset.quality_check.checker_registry import (
+    data_video_consistency_checker_registry,
     dataset_data_checker_registry,
     episode_data_checker_registry,
     episode_video_checker_registry,
@@ -318,7 +320,96 @@ def detect_max_frame_jump_dist(
     for video_path in video_paths:
         if not Path(video_path).exists() or not Path(video_path).is_file():
             return 1
-        current_jump, _ = detect_stable_then_jump_frames(str(video_path))
+        current_jump, _ = detect_stable_then_jump_frames(
+            str(video_path), stable_distance_threshold=1, min_stable_frames=0
+        )
         max_jump = max(max_jump, current_jump)
 
     return 1 if max_jump > max_dist_threshold else 0
+
+
+@episode_video_checker_registry("max_frame_jump_dist_and_max_static_frames")
+def detect_max_frame_jump_and_static(
+    video_path: str,
+    hash_size: int = 16,
+    static_threshold: int = 1,
+    max_phash_distance_threshold: int = 50,
+    max_static_frames_count_threshold: int = 50,
+    max_frames: int = None,  # 可选：限制处理帧数（调试用）
+) -> float:
+    """
+    使用 PyAV 和 pHash 分析视频帧变化。
+
+    参数:
+        video_path (str): 视频文件路径
+        hash_size (int): pHash 尺寸（默认 8 → 64位哈希）
+        static_threshold (int): 判定静止的最大汉明距离（默认 2）
+        max_frames (int or None): 最大处理帧数（None 表示全部）
+
+    返回:
+        dict: {
+            'max_hamming_distance': int,
+            'max_static_frames': int,
+            'total_frames': int
+        }
+    """
+    container = av.open(video_path)
+    stream = container.streams.video[0]
+
+    prev_hash = None
+    max_hamming = 0
+    current_static_run = 0
+    max_static_run = 0
+    frame_count = 0
+
+    try:
+        for frame in container.decode(stream):
+            if max_frames and frame_count >= max_frames:
+                break
+
+            # 转为 RGB numpy 数组
+            img_array = frame.to_rgb().to_ndarray()
+            pil_img = Image.fromarray(img_array)
+
+            # 计算 pHash
+            curr_hash = imagehash.phash(pil_img, hash_size=hash_size)
+
+            if prev_hash is not None:
+                hamming_dist = curr_hash - prev_hash  # imagehash 重载了减号为汉明距离
+                max_hamming = max(max_hamming, hamming_dist)
+
+                if hamming_dist <= static_threshold:
+                    current_static_run += 1
+                    max_static_run = max(max_static_run, current_static_run)
+                else:
+                    current_static_run = 0  # 重置静止计数
+
+            prev_hash = curr_hash
+            frame_count += 1
+
+    finally:
+        container.close()
+
+    # 注意：连续静止帧数 = 连续“间隔”数 + 1
+    # 例如：3 帧完全相同 → 有 2 个“静止间隔”，但实际静止帧数为 3
+    # 我们这里统计的是“连续静止的帧总数”，所以需要 +1
+    max_static_frames = max_static_run + 1 if max_static_run > 0 else 1 if frame_count > 0 else 0
+
+    return (
+        1
+        if max_hamming > max_phash_distance_threshold
+        or max_static_frames > max_static_frames_count_threshold
+        else 0
+    )
+
+
+@data_video_consistency_checker_registry("LengthConsistencyChecker")
+def decect_inconsistent_length(video_paths: list[str | Path], frame_num: int) -> bool:
+    for video_path in video_paths:
+        if not Path(video_path).exists() or not Path(video_path).is_file():
+            return True
+        container = av.open(video_path)
+        if container.streams.video[0].frames != frame_num:
+            return True
+
+    return False

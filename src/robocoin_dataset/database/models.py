@@ -177,7 +177,8 @@ class DatasetDB(Base):
 
     # 数据集信息同步相关
     dataset_info_sync_status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=True)
-    dataset_info_sync_version_ps = Column(Integer, nullable=True, default=0)
+    dataset_info_sync_version_ps_hf = Column(Integer, nullable=True, default=0)
+    dataset_info_sync_version_ps_ms = Column(Integer, nullable=True, default=0)
     dataset_info_sync_version = Column(Integer, nullable=True, default=0)
     dataset_info_sync_err_msg = Column(Text, nullable=True)
 
