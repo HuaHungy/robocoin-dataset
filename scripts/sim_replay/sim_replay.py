@@ -70,10 +70,10 @@ if __name__ == "__main__":
 """usage:
 # realman_rmc_aidal
 python scripts/sim_replay/sim_replay.py \
-    --db_file_path ./db/datasets_new.db \
+    --db_file_path /mnt/db/datasets_new.db \
     --sim_replay_config_path ./scripts/sim_replay/configs/sim_replay_config_path.yaml \
     --device_model realman_rmc_aidal \
-    --device_model_version default_version \
+    --device_model_version mcap_version \
     --log_dir ./logs/sim_replay
 """
 # galaxea
