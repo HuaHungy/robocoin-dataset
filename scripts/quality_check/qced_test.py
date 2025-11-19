@@ -5,7 +5,7 @@ from robocoin_dataset.quality_check.dataset_quality_check import (
 
 if __name__ == "__main__":
     repo_path = (
-        "/mnt/nas/synnas/docker2/robocoin-datasets/ruantong_a2d_mobile_accessory_storage_box_b"
+        "/mnt/nas/synnas/docker2/robocoin-datasets/Tianqing_A2_container_storage_graphics_card"
     )
     device_model = "ruantong_a2d"
     device_model_version = "default_version"

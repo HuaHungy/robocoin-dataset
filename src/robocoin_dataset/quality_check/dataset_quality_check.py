@@ -3,9 +3,11 @@ import traceback
 from collections import defaultdict
 from pathlib import Path
 
+import av
 import mergedeep as merge
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import tqdm
 import yaml
 from sqlalchemy.orm import Session
@@ -36,8 +38,7 @@ from robocoin_dataset.quality_check.checker_registry import (
     EPISODE_DATA_CHECKERS,
     EPISODE_VIDEO_CHECKERS,
 )
-from robocoin_dataset.utils.parquet_paths import get_parquet_paths
-from robocoin_dataset.utils.path_utils import get_dataset_video_paths, get_episodes_frames
+from robocoin_dataset.utils.le_path import get_episodes_frames, get_parquet_files, get_video_files
 
 QC_CONFIG = "qc_config"
 QC_RESULT = "qc_result"
@@ -79,6 +80,38 @@ def get_checker_config(
     return merge.merge(base_config, specific_config)
 
 
+def check_length_consistency(
+    repo_path: str | Path, data_feature: str | None, video_feature: str | None = None
+) -> set[int]:
+    bad_episodes = set()
+    parquet_files = get_parquet_files(repo_path, data_feature)
+    video_files = get_video_files(repo_path, video_feature)
+    episode_nums = get_episodes_frames(repo_path)
+    if len(parquet_files) != len(video_files):
+        raise ValueError(
+            f"The number of parquet files ({len(parquet_files)}) does not match the number of video files ({len(video_files)})."
+        )
+
+    for ep_idx in tqdm.tqdm(
+        range(len(parquet_files)), desc="Checking Length Consistency", unit="episode"
+    ):
+        metadata = pq.read_metadata(parquet_files[ep_idx])
+        row_num = metadata.num_rows
+        if row_num != episode_nums[ep_idx]:
+            bad_episodes.add(ep_idx)
+            break
+        for video_file in video_files[ep_idx]:
+            container = av.open(video_file)
+            stream = container.streams.video[0]  # 假设第一个视频流
+            frame_count = stream.frames  # 可能为 0 或 None（如果未知）
+            if frame_count != episode_nums[ep_idx]:
+                bad_episodes.add(ep_idx)
+                break
+            container.close()
+
+    return bad_episodes
+
+
 def quality_check_pipeline(
     repo_path: str | Path, configs: dict, data_feature: str
 ) -> tuple[dict, dict]:
@@ -91,9 +124,11 @@ def quality_check_pipeline(
         raise ValueError("No episode_data_checkers config found.")
 
     episode_video_checkers_config = configs.get("episode_video_checkers", None)
+
     try:
         episode_nums = get_episodes_frames(repo_path)
-        bad_data_episodes = set()
+        bad_data_episodes = check_length_consistency(repo_path, data_feature)
+        print("Bad data episodes: ", bad_data_episodes)
         for checker_cfg in dataset_data_checkers_config:
             name = checker_cfg["name"]
             func = DATASET_DATA_CHECKERS[name]
@@ -102,7 +137,7 @@ def quality_check_pipeline(
 
         state_data_scores = {}
         action_data_scores = {}
-        _, parquet_files = get_parquet_paths(repo_path, data_feature)
+        parquet_files = get_parquet_files(repo_path, data_feature)
         state_data_scores_perchecker = defaultdict(dict)
         action_data_scores_perchecker = defaultdict(dict)
 
@@ -166,7 +201,7 @@ def quality_check_pipeline(
             )
         video_scores = {}
         video_scores_perchecker = defaultdict(dict)
-        video_paths = get_dataset_video_paths(repo_path)
+        video_paths = get_video_files(repo_path)
         for idx, paths in tqdm.tqdm(
             enumerate(video_paths), desc="Checking videos", unit="video", total=len(video_paths)
         ):
@@ -264,12 +299,14 @@ def _build_episode_qc_summary(
                 "video_score": video_scores.get(episode_idx, 1),
             }
         )
-    for episode_idx in state_data_scores.keys():
+    for episode_idx in (
+        set(state_data_scores.keys()) | set(action_data_scores.keys()) | set(video_scores.keys())
+    ):
         episode_summary[episode_idx].update(
             {
                 "is_bad": episode_idx in bad_set,
-                "state_data_score": state_data_scores.get(episode_idx, 0),
-                "action_data_score": action_data_scores.get(episode_idx, 0),
+                "state_data_score": state_data_scores.get(episode_idx, 1),
+                "action_data_score": action_data_scores.get(episode_idx, 1),
                 "video_score": video_scores.get(episode_idx, 1),
             }
         )
@@ -545,6 +582,7 @@ class DatasetQualityCheckClient(TaskClient):
                 task_content.get(QC_CONFIG),
                 data_feature=MERGED_DATA_FEATURE,
             )
+
             results_send = {str(episode_idx): v for episode_idx, v in results.items()}
 
             return {QC_RESULT: results_send}

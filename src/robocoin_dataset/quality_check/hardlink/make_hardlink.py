@@ -4,6 +4,15 @@ from pathlib import Path
 
 import tqdm
 
+# from robocoin_dataset.utils.parquet_paths import get_parquet_paths
+from robocoin_dataset.utils.le_path import (
+    get_episodes_jsonl_file,
+    get_episodes_stats_jsonl_file,
+    get_meta_info_file,
+    get_parquet_files,
+    get_tasks_jsonl_file,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,20 +31,23 @@ class RepoHardLinkCorresp:
             raise FileNotFoundError(f"源目录不存在: {source_repo_path}")
 
         self.file_corresp: dict[str, str] = {
-            self.source_repo_path / f"meta/{input_feature}_info.json": self.hard_link_repo_path
-            / "meta/info.json",
-            self.source_repo_path / f"meta/{input_feature}_episodes.jsonl": self.hard_link_repo_path
-            / "meta/episodes.jsonl",
-            self.source_repo_path
-            / f"meta/{input_feature}_episodes_stats.jsonl": self.hard_link_repo_path
-            / "meta/episodes_stats.jsonl",
-            self.source_repo_path / f"meta/{input_feature}_tasks.jsonl": self.hard_link_repo_path
-            / "meta/tasks.jsonl",
+            get_meta_info_file(self.source_repo_path, input_feature): get_meta_info_file(
+                self.hard_link_repo_path
+            ),
+            get_episodes_jsonl_file(self.source_repo_path, input_feature): get_episodes_jsonl_file(
+                self.hard_link_repo_path
+            ),
+            get_episodes_stats_jsonl_file(
+                self.source_repo_path, input_feature
+            ): get_episodes_stats_jsonl_file(self.hard_link_repo_path),
+            get_tasks_jsonl_file(self.source_repo_path, input_feature): get_tasks_jsonl_file(
+                self.hard_link_repo_path
+            ),
         }
         # _, source_episodes_paths = get_parquet_paths(self.source_repo_path, input_feature)
 
-        source_episodes_paths = Path(self.source_repo_path / f"{input_feature}_data").rglob(
-            "episode_*.parquet"
+        source_episodes_paths = get_parquet_files(
+            self.source_repo_path, meta_feature=input_feature, feature=input_feature
         )
         self.file_corresp.update(
             {
@@ -92,12 +104,14 @@ def create_hardlinks_from_correspondence(
         if not src_dir.is_dir():
             raise NotADirectoryError(f"Source directory does not exist: {src_dir}")
 
+        for dst_link in dst_dir.rglob("*"):
+            if dst_link.is_file():
+                dst_link.unlink()
+
         for src_file in src_dir.rglob("*"):
             if src_file.is_file():
                 # 计算相对路径
                 rel_path = src_file.relative_to(src_dir)
                 dst_file = dst_dir / rel_path
                 dst_file.parent.mkdir(parents=True, exist_ok=True)
-                if dst_file.exists():
-                    dst_file.unlink()  # 可选：覆盖
                 os.link(src_file, dst_file)

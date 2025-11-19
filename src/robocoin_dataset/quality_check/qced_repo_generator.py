@@ -34,13 +34,17 @@ from robocoin_dataset.quality_check.hardlink.make_hardlink import (
     RepoHardLinkCorresp,
     create_hardlinks_from_correspondence,
 )
-from robocoin_dataset.utils.parquet_paths import get_parquet_paths
-from robocoin_dataset.utils.path_utils import (
-    get_dataset_video_paths,
-    get_episodes_jsonl_file_paths,
-    get_episodes_stats_jsonl_file_paths,
-    get_meta_info_file_path,
+from robocoin_dataset.utils.le_path import (
+    get_episode_num,
+    get_episodes_jsonl_file,
+    get_episodes_stats_jsonl_file,
+    get_meta_info_file,
+    get_parquet_files,
+    get_tasks_jsonl_file,
+    get_video_files,
 )
+
+# from robocoin_dataset.utils.parquet_paths import get_parquet_paths
 
 BAD_EPISODES = "bad_episodes"
 HARD_LINK_PATH = "hard_link_path"
@@ -75,20 +79,18 @@ def gen_qced_repo_files(
     if input_feature == output_feature:
         raise ValueError("Input feature cannot be the same as output feature.")
 
-    _, input_info_file_path = get_meta_info_file_path(repo_path, input_feature)
-    _, out_info_file_path = get_meta_info_file_path(repo_path, output_feature)
+    input_info_file_path = get_meta_info_file(repo_path, input_feature)
+    out_info_file_path = get_meta_info_file(repo_path, output_feature)
 
-    input_episodes_jsonl_path, _ = get_episodes_jsonl_file_paths(repo_path, input_feature)
-    _, out_episodes_jsonl_path = get_episodes_jsonl_file_paths(repo_path, output_feature)
+    input_episodes_jsonl_path = get_episodes_jsonl_file(repo_path)
+    out_episodes_jsonl_path = get_episodes_jsonl_file(repo_path, output_feature)
 
-    _, input_episodes_stats_jsonl_path = get_episodes_stats_jsonl_file_paths(
-        repo_path, input_feature
+    input_episodes_stats_jsonl_path = get_episodes_stats_jsonl_file(repo_path, input_feature)
+    out_episodes_stats_jsonl_path = get_episodes_stats_jsonl_file(repo_path, output_feature)
+
+    input_parquet_paths = get_parquet_files(
+        root_dir=repo_path, feature=input_feature, meta_feature=input_feature
     )
-    _, out_episodes_stats_jsonl_path = get_episodes_stats_jsonl_file_paths(
-        repo_path, output_feature
-    )
-
-    _, input_parquet_paths = get_parquet_paths(repo_path, input_feature)
 
     episodes_frame_nums = {}
     with open(input_episodes_jsonl_path) as f:
@@ -120,11 +122,12 @@ def gen_qced_repo_files(
         input_info_file_path, out_info_file_path, out_total_frames, out_total_episodes
     )
 
+    ep_num = get_episode_num(repo_path)
     _gen_output_episodes_jsonl_file(
-        input_episodes_jsonl_path, out_episodes_jsonl_path, bad_episodes
+        input_episodes_jsonl_path, out_episodes_jsonl_path, bad_episodes, ep_num=ep_num
     )
     _gen_output_episodes_stats_jsonl_file(
-        input_episodes_stats_jsonl_path, out_episodes_stats_jsonl_path, bad_episodes
+        input_episodes_stats_jsonl_path, out_episodes_stats_jsonl_path, bad_episodes, ep_num=ep_num
     )
 
     with open(input_info_file_path) as f:
@@ -139,8 +142,9 @@ def gen_qced_repo_files(
         chunk_size=chunks_size,
         output_feature=output_feature,
     )
+    input_video_files = get_video_files(repo_path)
     return _gen_video_path_matching_dict(
-        input_video_paths=get_dataset_video_paths(repo_path),
+        input_video_files=input_video_files,
         repo_path=repo_path,
         bad_episodes=bad_episodes,
         chunk_size=chunks_size,
@@ -174,13 +178,16 @@ def _gen_output_episodes_jsonl_file(
     input_episodes_jsonl_path: Path,
     output_episodes_jsonl_path: Path,
     bad_episodes: set[int],
+    ep_num: int,
 ) -> None:
     out_ep_idx = 0
     with open(
         input_episodes_jsonl_path,
     ) as f:
         with open(output_episodes_jsonl_path, "w") as out_f:
-            for line in f:
+            for ep_idx, line in enumerate(f):
+                if ep_idx >= ep_num:
+                    break
                 data = json.loads(line)
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:
@@ -194,13 +201,16 @@ def _gen_output_episodes_stats_jsonl_file(
     input_episodes_stats_jsonl_path: Path,
     output_episodes_stats_jsonl_path: Path,
     bad_episodes: set[int],
+    ep_num: int,
 ) -> None:
     out_ep_idx = 0
     with open(
         input_episodes_stats_jsonl_path,
     ) as f:
         with open(output_episodes_stats_jsonl_path, "w") as out_f:
-            for line in f:
+            for ep_idx, line in enumerate(f):
+                if ep_idx >= ep_num:
+                    break
                 data = json.loads(line)
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:
@@ -253,7 +263,7 @@ def _gen_output_parquet_files(
 
 
 def _gen_video_path_matching_dict(
-    input_video_paths: list[list[Path]],
+    input_video_files: list[list[Path]],
     repo_path: str | Path,
     bad_episodes: set[int],
     chunk_size: int,
@@ -277,7 +287,7 @@ def _gen_video_path_matching_dict(
     matching_dict = {}
 
     out_episode_idx = 0
-    for ep_idx, video_paths in enumerate(input_video_paths):
+    for ep_idx, video_paths in enumerate(input_video_files):
         if ep_idx in bad_episodes:
             continue
 
@@ -420,18 +430,14 @@ def gen_qced_repo(
 ) -> str:
     repo_path = Path(repo_path).expanduser().absolute()
 
-    _, input_info_file_path = get_meta_info_file_path(repo_path, input_feature)
-    with open(input_info_file_path) as f:
-        data = json.load(f)
-        episodes_num = data.get("total_episodes")
-
+    episodes_num = get_episode_num(repo_path)
     if (episodes_num - len(bad_episodes)) < min_episodes_num:
         raise ValueError(
             f"Dataset {repo_path}: The number of episodes after removing bad episodes is less than {min_episodes_num}, original episodes num: {episodes_num}"
         )
 
-    src_tasks_jsonl_path = repo_path / "meta/tasks.jsonl"
-    target_tasks_jsonl_path = repo_path / f"meta/{qced_feature}_tasks.jsonl"
+    src_tasks_jsonl_path = get_tasks_jsonl_file(repo_path)
+    target_tasks_jsonl_path = get_tasks_jsonl_file(repo_path, feature=qced_feature)
     _gen_optimized_tasks_jsonl(
         src_path=src_tasks_jsonl_path, target_path=target_tasks_jsonl_path, ds_api_key=ds_api_key
     )

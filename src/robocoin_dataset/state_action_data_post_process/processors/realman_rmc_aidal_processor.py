@@ -132,7 +132,26 @@ class RealmanRmcAidalMcapProcessor(StateActionDataPostProcessorBase):
         super().__init__(convert_path)
 
     def prepare_processing(self) -> None:
-        pass
+        # State 中的 gripper_open 索引
+        self.right_gripper_open_state_data_idx = 7
+        self.left_gripper_open_state_data_idx = 27
+        # Action 中的 gripper_open 索引
+        self.right_gripper_open_action_data_idx = 7
+        self.left_gripper_open_action_data_idx = 21
+
+    # 重写 process_episode_data 方法，将 action 的 gripper_open 复制到 state
+    def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        new_state_data = ori_data["observation.state"].copy()
+        new_action_data = ori_data["action"].copy()
+        
+        # 从 action 复制 gripper_open 值到 state
+        new_state_data[:, self.right_gripper_open_state_data_idx] = new_action_data[:, self.right_gripper_open_action_data_idx]
+        new_state_data[:, self.left_gripper_open_state_data_idx] = new_action_data[:, self.left_gripper_open_action_data_idx]
+        
+        return {
+            "observation.state": new_state_data,
+            "action": new_action_data,
+        }
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据
     def process_episode_state_data(self, ori_state_data: np.ndarray) -> np.ndarray:
