@@ -51,7 +51,7 @@ if __name__ == "__main__":
 """usage:
 # local
 python scripts/scene_annotation/scene_annotation_local.py \
-    --db_file_path ./db/datasets_new.db \
-    --folder_path /mnt/nas/synnas/docker2/scene_annotation \
+    --db_file_path /mnt/db/datasets_new.db \
+    --folder_path ./third_parties/SceneAnnotation/scene_annotation_results/annotations_refined \
     --log_dir ./logs/scene_annotation/
 """
