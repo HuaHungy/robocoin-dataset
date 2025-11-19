@@ -134,10 +134,10 @@ class RealmanRmcAidalMcapProcessor(StateActionDataPostProcessorBase):
     def prepare_processing(self) -> None:
         # State 中的 gripper_open 索引
         self.right_gripper_open_state_data_idx = 7
-        self.left_gripper_open_state_data_idx = 27
+        self.left_gripper_open_state_data_idx = 15
         # Action 中的 gripper_open 索引
         self.right_gripper_open_action_data_idx = 7
-        self.left_gripper_open_action_data_idx = 21
+        self.left_gripper_open_action_data_idx = 15
 
     # 重写 process_episode_data 方法，将 action 的 gripper_open 复制到 state
     def process_episode_data(self, ori_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -166,26 +166,6 @@ class RealmanRmcAidalMcapProcessor(StateActionDataPostProcessorBase):
     # 在这里填入修改后的state特征名称列表，如果没有修改，则不需要重写函数
     def get_modified_state_feature_names(self) -> list[str]:
         return [
-                "right_arm_joint_1_rad",
-                "right_arm_joint_2_rad",
-                "right_arm_joint_3_rad",
-                "right_arm_joint_4_rad",
-                "right_arm_joint_5_rad",
-                "right_arm_joint_6_rad",
-                "right_arm_joint_7_rad",
-                "right_gripper_open",
-                "right_eef_pos_x_m",
-                "right_eef_pos_y_m",
-                "right_eef_pos_z_m",
-                "right_eef_rot_euler_x_rad",
-                "right_eef_rot_euler_y_rad",
-                "right_eef_rot_euler_z_rad",
-                "right_six_force_fx",
-                "right_six_force_fy",
-                "right_six_force_fz",
-                "right_six_force_mx",
-                "right_six_force_my",
-                "right_six_force_mz",
                 "left_arm_joint_1_rad",
                 "left_arm_joint_2_rad",
                 "left_arm_joint_3_rad",
@@ -194,37 +174,19 @@ class RealmanRmcAidalMcapProcessor(StateActionDataPostProcessorBase):
                 "left_arm_joint_6_rad",
                 "left_arm_joint_7_rad",
                 "left_gripper_open",
-                "left_eef_pos_x_m",
-                "left_eef_pos_y_m",
-                "left_eef_pos_z_m",
-                "left_eef_rot_euler_x_rad",
-                "left_eef_rot_euler_y_rad",
-                "left_eef_rot_euler_z_rad",
-                "left_six_force_fx",
-                "left_six_force_fy",
-                "left_six_force_fz",
-                "left_six_force_mx",
-                "left_six_force_my",
-                "left_six_force_mz"
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_arm_joint_7_rad",
+                "right_gripper_open",
             ]
 
     # 在这里填入修改后的action特征名称列表，如果没有修改，则不需要重写函数
     def get_modified_action_feature_names(self) -> list[str]:
         return [
-                "right_arm_joint_1_rad",
-                "right_arm_joint_2_rad",
-                "right_arm_joint_3_rad",
-                "right_arm_joint_4_rad",
-                "right_arm_joint_5_rad",
-                "right_arm_joint_6_rad",
-                "right_arm_joint_7_rad",
-                "right_gripper_open",
-                "right_eef_pos_x_m",
-                "right_eef_pos_y_m",
-                "right_eef_pos_z_m",
-                "right_eef_rot_euler_x_rad",
-                "right_eef_rot_euler_y_rad",
-                "right_eef_rot_euler_z_rad",
                 "left_arm_joint_1_rad",
                 "left_arm_joint_2_rad",
                 "left_arm_joint_3_rad",
@@ -233,10 +195,12 @@ class RealmanRmcAidalMcapProcessor(StateActionDataPostProcessorBase):
                 "left_arm_joint_6_rad",
                 "left_arm_joint_7_rad",
                 "left_gripper_open",
-                "left_eef_pos_x_m",
-                "left_eef_pos_y_m",
-                "left_eef_pos_z_m",
-                "left_eef_rot_euler_x_rad",
-                "left_eef_rot_euler_y_rad",
-                "left_eef_rot_euler_z_rad"
+                "right_arm_joint_1_rad",
+                "right_arm_joint_2_rad",
+                "right_arm_joint_3_rad",
+                "right_arm_joint_4_rad",
+                "right_arm_joint_5_rad",
+                "right_arm_joint_6_rad",
+                "right_arm_joint_7_rad",
+                "right_gripper_open",
             ]

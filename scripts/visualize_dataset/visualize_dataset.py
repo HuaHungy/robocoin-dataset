@@ -95,5 +95,5 @@ if __name__ == "__main__":
     main()
 
 """
-python scripts/visualize_dataset/visualize_dataset.py --repo-path  /mnt/nas/synnas/docker2/robocoin-datasets/realman_rmc_aidal_basket_storage_peach_qced_hardlink
+python scripts/visualize_dataset/visualize_dataset.py --repo-path  /mnt/nas/synnas/docker2/robocoin-datasets/AgiBot-g1_box_storage_tool
 """
