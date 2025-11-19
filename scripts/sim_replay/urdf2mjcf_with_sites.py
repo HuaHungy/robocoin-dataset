@@ -151,7 +151,5 @@ except Exception as e:
     exit(1)
 
 """usage:
-python scripts/sim_replay/urdf2mjcf_with_sites.py /home/kemove/Downloads/o2_urdf/o2_urdf/meshes_sim_simplified/o2.urdf \
---left_eef_body_name Link10 \
---right_eef_body_name Link17
+
 """
