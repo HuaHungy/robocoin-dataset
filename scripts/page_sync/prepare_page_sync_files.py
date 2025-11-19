@@ -59,7 +59,7 @@ Output Structure:
     parser.add_argument(
         "--target-size-kb",
         type=int,
-        default=500,
+        default=512,
         help="Target size for compressed videos in KB (default: 500)",
     )
 
