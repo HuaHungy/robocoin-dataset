@@ -123,6 +123,7 @@ def get_parquet_files(
         data_dir = root_dir / f"{feature}_data"
     else:
         data_dir = root_dir / "data"
+    print(data_dir, total_episodes)
     return [
         data_dir / f"chunk-{(ep_idx // chunk_size):03d}/episode_{ep_idx:06d}.parquet"
         for ep_idx in range(total_episodes)

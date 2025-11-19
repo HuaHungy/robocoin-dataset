@@ -7,7 +7,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from tqdm import tqdm
 
-from robocoin_dataset.utils.parquet_paths import get_parquet_paths
+from robocoin_dataset.utils.le_path import (
+    get_episodes_stats_jsonl_file,
+    get_meta_info_file,
+    get_parquet_files,
+)
 
 
 class DataPostProcessorBase:
@@ -24,15 +28,15 @@ class DataPostProcessorBase:
         if not (self.convert_path / "meta/info.json").exists():
             raise FileNotFoundError(f"{convert_path}/meta/info.json does not exist")
 
-        self.parquet_files, self.new_parquet_files = get_parquet_paths(
-            root_dir=self.convert_path, new_parquet_type=data_post_process_type
-        )
+        self.parquet_files = get_parquet_files(self.convert_path)
+        self.new_parquet_files = get_parquet_files(self.convert_path, data_post_process_type)
+
         self.data_features = data_feature_keys
-        self.new_info_file_path = self.convert_path / "meta" / f"{data_post_process_type}_info.json"
-        self.new_episodes_stats_file_path = (
-            self.convert_path / "meta" / f"{data_post_process_type}_episodes_stats.jsonl"
+        self.new_info_file = get_meta_info_file(self.convert_path, data_post_process_type)
+        self.new_episodes_stats_file_path = get_episodes_stats_jsonl_file(
+            self.convert_path, data_post_process_type
         )
-        self.info_file_path = self.convert_path / "meta/info.json"
+        self.info_file_path = get_meta_info_file(self.convert_path)
         self._ep_idx: int | None = None
 
     # 将处理episode数据的准备工作放在这里
@@ -156,7 +160,7 @@ class DataPostProcessorBase:
             json_dict["features"][feature_key] = {}
             json_dict["features"][feature_key]["names"] = names
 
-        with open(self.new_info_file_path, "w") as f:
+        with open(self.new_info_file, "w") as f:
             json.dump(json_dict, f)
 
     def process(self) -> None:
@@ -182,13 +186,18 @@ class DataPostProcessorBase:
                     f"new_datas keys {new_datas.keys()} != self.data_features {self.data_features}"
                 )
 
+            found_none_data = False
             for feature_key, data in ori_data.items():
                 if data is None:
-                    continue
+                    found_none_data = True
+                    break
                 if data.shape[0] != new_datas[feature_key].shape[0]:
                     raise ValueError(
                         f"ori_data shape {data.shape}[0] != new_datas shape {new_datas[feature_key].shape}[0]"
                     )
+
+            if found_none_data:
+                continue
 
             self.write_new_episode_file(new_datas, episode_idx)
             self.episodes_stats.append(self._compute_episode_stat(new_datas))

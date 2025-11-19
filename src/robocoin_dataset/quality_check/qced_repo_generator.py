@@ -122,11 +122,12 @@ def gen_qced_repo_files(
         input_info_file_path, out_info_file_path, out_total_frames, out_total_episodes
     )
 
+    ep_num = get_episode_num(repo_path)
     _gen_output_episodes_jsonl_file(
-        input_episodes_jsonl_path, out_episodes_jsonl_path, bad_episodes
+        input_episodes_jsonl_path, out_episodes_jsonl_path, bad_episodes, ep_num=ep_num
     )
     _gen_output_episodes_stats_jsonl_file(
-        input_episodes_stats_jsonl_path, out_episodes_stats_jsonl_path, bad_episodes
+        input_episodes_stats_jsonl_path, out_episodes_stats_jsonl_path, bad_episodes, ep_num=ep_num
     )
 
     with open(input_info_file_path) as f:
@@ -177,13 +178,16 @@ def _gen_output_episodes_jsonl_file(
     input_episodes_jsonl_path: Path,
     output_episodes_jsonl_path: Path,
     bad_episodes: set[int],
+    ep_num: int,
 ) -> None:
     out_ep_idx = 0
     with open(
         input_episodes_jsonl_path,
     ) as f:
         with open(output_episodes_jsonl_path, "w") as out_f:
-            for line in f:
+            for ep_idx, line in enumerate(f):
+                if ep_idx >= ep_num:
+                    break
                 data = json.loads(line)
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:
@@ -197,13 +201,16 @@ def _gen_output_episodes_stats_jsonl_file(
     input_episodes_stats_jsonl_path: Path,
     output_episodes_stats_jsonl_path: Path,
     bad_episodes: set[int],
+    ep_num: int,
 ) -> None:
     out_ep_idx = 0
     with open(
         input_episodes_stats_jsonl_path,
     ) as f:
         with open(output_episodes_stats_jsonl_path, "w") as out_f:
-            for line in f:
+            for ep_idx, line in enumerate(f):
+                if ep_idx >= ep_num:
+                    break
                 data = json.loads(line)
                 episode_id = data["episode_index"]
                 if episode_id in bad_episodes:

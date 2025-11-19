@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 '''
 python scripts/sim_replay/sim_replay_local.py \
-  --repo_path /mnt/nas/synnas/docker2/robocoin-datasets-test/realman_rmc_aidal_place_the_book \
+  --repo_path /home/kemove/Downloads/mcap_to_lerobot/test \
   --config_module robocoin_dataset.sim_replay.configs.realman_RS_01_config \
   --config_class RealmanRS01LerobotSimReplayConfig \
   --replay_source data

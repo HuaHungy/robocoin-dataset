@@ -12,9 +12,9 @@ from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import (
     DatasetDB,
     TaskStatus,
-    VideoHashDB,
     VideoOptStAnnotationDB,
 )
+from robocoin_dataset.utils.le_path import get_episodes_frames
 
 
 def annotations_to_frame_array(
@@ -34,6 +34,8 @@ def annotations_to_frame_array(
     for ep_idx in episode_indices:
         anns = episodes[ep_idx]
 
+        if ep_idx not in episode_frame_nums:
+            continue
         max_frame = episode_frame_nums[ep_idx]
 
         # 明确指定 dtype=np.int32
@@ -89,9 +91,7 @@ class StAnnotationDataPostProcessor(DataPostProcessorBase):
         ep_idx = self.episode_idx
 
         if ep_idx >= len(self.episode_st_indices):
-            raise ValueError(
-                f"ep_idx: {ep_idx} >= len(self.episode_st_indices): {len(self.episode_st_indices)}"
-            )
+            return {self.feature_key: None}
 
         return {self.feature_key: self.episode_st_indices[ep_idx]}
 
@@ -185,15 +185,8 @@ class DatasetSubtaskAnnotationEmbedding:
                     (item.episode_idx, item.start_frame_idx, item.end_frame_idx, annotation_idx)
                 )
 
-            ep_items = (
-                session.query(VideoHashDB).filter(VideoHashDB.dataset_uuid == dataset_uuid).all()
-            )
-            episode_frame_nums = {}
-
-            for ep_item in ep_items:
-                episode_frame_nums[ep_item.ep_idx] = ep_item.frame_num
-
         try:
+            episode_frame_nums = get_episodes_frames(repo_path)
             annotation_datas = annotations_to_frame_array(
                 annotations=annotations,
                 annotation_num=len(optimized_subtask_annotations_dict),
