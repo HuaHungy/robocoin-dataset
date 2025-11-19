@@ -256,6 +256,37 @@ def _align_video_name_with_yaml(yaml_path: str, video_path: str, dataset_name: s
       _logger.debug(f"Video already named correctly: {src_video.name}")
 
 
+def _gen_video_thumbnail(video_path: str, thumbnail_dir: str) -> None:
+    """
+    Generate a thumbnail image from a video file.
+    Extracts the first frame of the video and saves it as a JPEG image.
+
+    INPUT:
+    video_path -> path to the video file
+    thumbnail_dir -> directory to save the thumbnail image
+
+    OUTPUT:
+    None, saves thumbnail image with the same name as the video (with .jpg extension)
+    """
+    import subprocess
+
+    _logger = logging.getLogger(__name__)
+
+    video_file = Path(video_path)
+    thumbnail_dir_path = Path(thumbnail_dir)
+    thumbnail_dir_path.mkdir(parents=True, exist_ok=True)
+
+    thumbnail_path = thumbnail_dir_path / f"{video_file.stem}.jpg"
+
+    subprocess.run(
+        ["ffmpeg", "-i", str(video_file), "-vframes", "1", "-q:v", "2", "-y", str(thumbnail_path)],
+        check=True,
+        capture_output=True,
+        timeout=60
+    )
+    _logger.debug(f"Generated thumbnail: {thumbnail_path}")
+
+
 #------- CONSOLIDATION -------#
 
 def _gen_consolidation(dataset_info_dir: str, output_path: str) -> None:
