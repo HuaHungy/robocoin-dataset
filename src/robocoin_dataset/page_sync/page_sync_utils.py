@@ -48,16 +48,14 @@ def _validate_exist(yaml_path: str | None, hardlink_path: str | None) -> bool:
 
 def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> None:
     """
-    Update device_model field in YAML file based on filename and mapping.json.
+    Update device_model field in YAML file based on filename and names.json.
 
-    If the device_model field in the YAML file matches a key in mapping.json
-    (meaning it's an illegal/internal name), this function will replace it with
-    the correct public-facing device name:
-
-    Case 1: If the key maps to only ONE value, directly replace with that value
-            (no filename check needed)
-    Case 2: If the key maps to MULTIPLE values, check the dataset_name (filename)
-            to determine which value to use
+    This function:
+    1. Ensures device_model field exists in the YAML file (creates it if missing)
+    2. Searches for any value from names.json that appears in the dataset_name
+    3. If a match is found, sets device_model to that matched value
+    4. If no match is found, keeps device_model field but doesn't change its value
+       (or creates it as empty if it didn't exist)
 
     INPUT:
     yaml_path -> path to the YAML file to update
@@ -69,7 +67,6 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
     import json
 
     import yaml
-
     _logger = logging.getLogger(__name__)
 
     yaml_file = Path(yaml_path)
@@ -77,17 +74,20 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
         _logger.error(f"YAML file does not exist: {yaml_path}")
         raise FileNotFoundError(f"YAML file not found: {yaml_path}")
 
-    # Load mapping.json
-    mapping_file = Path(__file__).parent / "mapping.json"
-    if not mapping_file.exists():
-        _logger.warning(f"Mapping file does not exist: {mapping_file}. Skipping device_model update.")
+    # Load names.json
+    names_file = Path(__file__).parent / "names.json"
+    if not names_file.exists():
+        _logger.warning(f"Names file does not exist: {names_file}. Skipping device_model update.")
+        return
+    try:
+        with open(names_file, encoding='utf-8') as f:
+            device_names = json.load(f)
+    except Exception as e:
+        _logger.error(f"Failed to load names.json: {e}. Skipping device_model update.")
         return
 
-    try:
-        with open(mapping_file, encoding='utf-8') as f:
-            mapping = json.load(f)
-    except Exception as e:
-        _logger.error(f"Failed to load mapping.json: {e}. Skipping device_model update.")
+    if not isinstance(device_names, list):
+        _logger.error(f"names.json should contain a list, but got {type(device_names)}. Skipping device_model update.")
         return
 
     # Load YAML file
@@ -99,77 +99,45 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
         raise
 
     if yaml_data is None:
-        _logger.warning(f"YAML file {yaml_path} is empty. Skipping device_model update.")
-        return
+        yaml_data = {}
 
-    # Extract device_model (could be string or list)
-    device_model = yaml_data.get("device_model")
-    if device_model is None:
-        _logger.debug(f"No device_model field found in {yaml_path}. Skipping update.")
-        return
+    # Ensure device_model field exists
+    device_model_exists = "device_model" in yaml_data
+    original_device_model = yaml_data.get("device_model")
 
-    # Handle list case (take first element)
-    if isinstance(device_model, list):
-        if not device_model:
-            _logger.debug(f"device_model is empty list in {yaml_path}. Skipping update.")
-            return
-        device_model = device_model[0]
+    # Search for matching device name in dataset_name
+    matched_value = None
+    for device_name in device_names:
+        if device_name in dataset_name:
+            matched_value = device_name
+            break
 
-    if not isinstance(device_model, str):
-        _logger.debug(f"device_model is not a string in {yaml_path}: {type(device_model)}. Skipping update.")
-        return
-
-    # Check if device_model matches a key in mapping.json
-    if device_model not in mapping:
-        _logger.debug(f"device_model '{device_model}' not found in mapping.json. Skipping update.")
-        return
-
-    # Get the list of possible values for this device_model
-    possible_values = mapping[device_model]
-    if not possible_values:
-        _logger.debug(f"No mapping values found for device_model '{device_model}'. Skipping update.")
-        return
-
-    # Case 1: Only one value mapped - directly use it without checking filename
-    if len(possible_values) == 1:
-        matched_value = possible_values[0]
-        _logger.info(
-            f"device_model '{device_model}' maps to single value '{matched_value}'. "
-            f"Updating directly without filename check."
-        )
-    else:
-        # Case 2: Multiple values mapped - check dataset_name/filename to determine which one
-        matched_value = None
-        for value in possible_values:
-            if value in dataset_name:
-                matched_value = value
-                break
-
-        if matched_value is None:
-            _logger.warning(
-                f"Dataset name '{dataset_name}' does not contain any of the mapping values "
-                f"{possible_values} for device_model '{device_model}'. Cannot determine correct value. "
-                f"Skipping update."
-            )
-            return
-
-        _logger.info(
-            f"device_model '{device_model}' maps to multiple values {possible_values}. "
-            f"Found '{matched_value}' in dataset name '{dataset_name}'."
-        )
-
-    # Update device_model in yaml_data
-    _logger.info(
-        f"Updating device_model from '{device_model}' to '{matched_value}' "
-        f"in {yaml_path} based on dataset name '{dataset_name}'"
-    )
-
-    # Update the field (preserve list format if it was originally a list)
-    original_was_list = isinstance(yaml_data.get("device_model"), list)
-    if original_was_list:
-        yaml_data["device_model"] = [matched_value]
-    else:
+    # Update device_model if match found, otherwise ensure field exists
+    if matched_value is not None:
         yaml_data["device_model"] = matched_value
+        if device_model_exists:
+            _logger.info(
+                f"Found match '{matched_value}' in dataset name '{dataset_name}'. "
+                f"Updating device_model from '{original_device_model}' to '{matched_value}' in {yaml_path}"
+            )
+        else:
+            _logger.info(
+                f"Found match '{matched_value}' in dataset name '{dataset_name}'. "
+                f"Setting device_model to '{matched_value}' in {yaml_path}"
+            )
+    else:
+        # No match found, but ensure field exists
+        if not device_model_exists:
+            yaml_data["device_model"] = None
+            _logger.debug(
+                f"No match found in dataset name '{dataset_name}' for any device name in names.json. "
+                f"Created empty device_model field in {yaml_path}"
+            )
+        else:
+            _logger.debug(
+                f"No match found in dataset name '{dataset_name}' for any device name in names.json. "
+                f"Keeping existing device_model value '{original_device_model}' in {yaml_path}"
+            )
 
     # Write back to file
     try:
