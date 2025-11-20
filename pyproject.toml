@@ -33,7 +33,7 @@ dependencies = [
   "blake3",
   "mujoco",
   "matplotlib>=3.9.4",
-  "lerobot>=0.1.0",
+  "robocoin",
 ] # project dependencies
 
 # scripts path
