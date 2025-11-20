@@ -48,11 +48,11 @@ def _validate_exist(yaml_path: str | None, hardlink_path: str | None) -> bool:
 
 def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> None:
     """
-    Update device_model field in YAML file based on filename and names.json.
+    Update device_model field in YAML file based on filename and names.yml.
 
     This function:
     1. Ensures device_model field exists in the YAML file (creates it if missing)
-    2. Searches for any value from names.json that appears in the dataset_name
+    2. Searches for any value from names.yml that appears in the dataset_name
     3. If a match is found, sets device_model to that matched value
     4. If no match is found, keeps device_model field but doesn't change its value
        (or creates it as empty if it didn't exist)
@@ -64,8 +64,6 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
     OUTPUT:
     None, updates the YAML file in place
     """
-    import json
-
     import yaml
     _logger = logging.getLogger(__name__)
 
@@ -74,20 +72,20 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
         _logger.error(f"YAML file does not exist: {yaml_path}")
         raise FileNotFoundError(f"YAML file not found: {yaml_path}")
 
-    # Load names.json
-    names_file = Path(__file__).parent / "names.json"
+    # Load names.yml
+    names_file = Path(__file__).parent / "names.yml"
     if not names_file.exists():
         _logger.warning(f"Names file does not exist: {names_file}. Skipping device_model update.")
         return
     try:
         with open(names_file, encoding='utf-8') as f:
-            device_names = json.load(f)
+            device_names = yaml.safe_load(f)
     except Exception as e:
-        _logger.error(f"Failed to load names.json: {e}. Skipping device_model update.")
+        _logger.error(f"Failed to load names.yml: {e}. Skipping device_model update.")
         return
 
     if not isinstance(device_names, list):
-        _logger.error(f"names.json should contain a list, but got {type(device_names)}. Skipping device_model update.")
+        _logger.error(f"names.yml should contain a list, but got {type(device_names)}. Skipping device_model update.")
         return
 
     # Load YAML file
@@ -130,12 +128,12 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
         if not device_model_exists:
             yaml_data["device_model"] = None
             _logger.debug(
-                f"No match found in dataset name '{dataset_name}' for any device name in names.json. "
+                f"No match found in dataset name '{dataset_name}' for any device name in names.yml. "
                 f"Created empty device_model field in {yaml_path}"
             )
         else:
             _logger.debug(
-                f"No match found in dataset name '{dataset_name}' for any device name in names.json. "
+                f"No match found in dataset name '{dataset_name}' for any device name in names.yml. "
                 f"Keeping existing device_model value '{original_device_model}' in {yaml_path}"
             )
 

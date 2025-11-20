@@ -170,7 +170,7 @@ def construce_target_file(
             _copy_yaml_file_from_db(yaml_path, str(yaml_dst))
             _logger.info(f"Copied YAML file to {yaml_dst}")
 
-            # 5.5. Update device_model based on filename and mapping.json
+            # 5.5. Update device_model based on filename and names.yml
             _logger.debug("Updating device_model in YAML file based on filename...")
             _update_device_model_from_filename(str(yaml_dst), dataset_name)
             _logger.debug("Updated device_model in YAML file if needed")
