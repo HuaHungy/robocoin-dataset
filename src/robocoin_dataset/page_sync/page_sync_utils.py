@@ -50,9 +50,14 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
     """
     Update device_model field in YAML file based on filename and mapping.json.
 
-    If the device_model field in the YAML file matches a key in mapping.json,
-    and the dataset_name (filename) contains any of the values from that key's list,
-    then update the device_model field to the matching value from the filename.
+    If the device_model field in the YAML file matches a key in mapping.json
+    (meaning it's an illegal/internal name), this function will replace it with
+    the correct public-facing device name:
+
+    Case 1: If the key maps to only ONE value, directly replace with that value
+            (no filename check needed)
+    Case 2: If the key maps to MULTIPLE values, check the dataset_name (filename)
+            to determine which value to use
 
     INPUT:
     yaml_path -> path to the YAML file to update
@@ -125,19 +130,33 @@ def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> Non
         _logger.debug(f"No mapping values found for device_model '{device_model}'. Skipping update.")
         return
 
-    # Check if dataset_name contains any of the possible values
-    matched_value = None
-    for value in possible_values:
-        if value in dataset_name:
-            matched_value = value
-            break
-
-    if matched_value is None:
-        _logger.debug(
-            f"Dataset name '{dataset_name}' does not contain any of the mapping values "
-            f"{possible_values} for device_model '{device_model}'. Skipping update."
+    # Case 1: Only one value mapped - directly use it without checking filename
+    if len(possible_values) == 1:
+        matched_value = possible_values[0]
+        _logger.info(
+            f"device_model '{device_model}' maps to single value '{matched_value}'. "
+            f"Updating directly without filename check."
         )
-        return
+    else:
+        # Case 2: Multiple values mapped - check dataset_name/filename to determine which one
+        matched_value = None
+        for value in possible_values:
+            if value in dataset_name:
+                matched_value = value
+                break
+
+        if matched_value is None:
+            _logger.warning(
+                f"Dataset name '{dataset_name}' does not contain any of the mapping values "
+                f"{possible_values} for device_model '{device_model}'. Cannot determine correct value. "
+                f"Skipping update."
+            )
+            return
+
+        _logger.info(
+            f"device_model '{device_model}' maps to multiple values {possible_values}. "
+            f"Found '{matched_value}' in dataset name '{dataset_name}'."
+        )
 
     # Update device_model in yaml_data
     _logger.info(

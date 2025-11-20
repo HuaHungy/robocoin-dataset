@@ -11,6 +11,9 @@ Hub Upload Status Report Generator
 - cloud_but_not_in_should_upload: 云端有但不应该上传的数据集
 - both_have: 应该上传且云端也有的数据集
 - uploaded_but_missing_in_cloud: 本地标注上传完成但云端缺失的数据集
+- uploaded_but_not_marked: 已上传到云端但数据库中未标记为完成的数据集
+- uploaded_but_not_marked_should_upload: uploaded_but_not_marked中应该上传的（验证项）
+- uploaded_but_not_marked_should_not_upload: uploaded_but_not_marked中不应该上传的（验证项，理论上为空）
 - should_not_upload_but_marked_completed: 不应该上传（可视化状态不是完成）但被标记完成的数据集
 - should_not_upload_but_marked_and_in_cloud: 不应该上传但被标记完成且确实在云端存在的数据集
 - summary: 各种统计信息
@@ -345,6 +348,8 @@ def compare_datasets(should_upload: list[str], cloud_datasets: list[str], upload
             "both_have": [...],  # 两者都有的
             "uploaded_but_missing_in_cloud": [...],  # 本地标注上传完成但云端缺失的
             "uploaded_but_not_marked": [...],  # 已上传到云端但数据库中未标记为完成的数据集
+            "uploaded_but_not_marked_should_upload": [...],  # uploaded_but_not_marked中应该上传的（理论上应该全部）
+            "uploaded_but_not_marked_should_not_upload": [...],  # uploaded_but_not_marked中不应该上传的（理论上应该为空）
             "should_not_upload_but_marked_completed": [...],  # 不应该上传但被标记完成的数据集
             "should_not_upload_but_marked_and_in_cloud": [...],  # 不应该上传但被标记完成且确实在云端存在的数据集
             "summary": {
@@ -356,6 +361,8 @@ def compare_datasets(should_upload: list[str], cloud_datasets: list[str], upload
                 "uploaded_count": int,  # 本地标注上传完成的数量
                 "uploaded_but_missing_count": int,  # 本地标注上传完成但云端缺失的数量
                 "uploaded_but_not_marked_count": int,  # 已上传到云端但数据库中未标记为完成的数量
+                "uploaded_but_not_marked_should_upload_count": int,  # uploaded_but_not_marked中应该上传的数量
+                "uploaded_but_not_marked_should_not_upload_count": int,  # uploaded_but_not_marked中不应该上传的数量
                 "should_not_upload_but_marked_count": int,  # 不应该上传但被标记完成的数量
                 "should_not_upload_but_marked_and_in_cloud_count": int  # 不应该上传但被标记完成且确实在云端存在的数量
             }
@@ -394,6 +401,15 @@ def compare_datasets(should_upload: list[str], cloud_datasets: list[str], upload
         uploaded_but_not_marked = sorted(both_set - uploaded_set)
         result["uploaded_but_not_marked"] = uploaded_but_not_marked
         result["summary"]["uploaded_but_not_marked_count"] = len(uploaded_but_not_marked)
+
+        # 验证 uploaded_but_not_marked 中的项目是否都应该上传（理论上应该都是）
+        uploaded_but_not_marked_set = set(uploaded_but_not_marked)
+        uploaded_but_not_marked_should_upload = sorted(uploaded_but_not_marked_set & should_upload_set)
+        uploaded_but_not_marked_should_not_upload = sorted(uploaded_but_not_marked_set - should_upload_set)
+        result["uploaded_but_not_marked_should_upload"] = uploaded_but_not_marked_should_upload
+        result["uploaded_but_not_marked_should_not_upload"] = uploaded_but_not_marked_should_not_upload
+        result["summary"]["uploaded_but_not_marked_should_upload_count"] = len(uploaded_but_not_marked_should_upload)
+        result["summary"]["uploaded_but_not_marked_should_not_upload_count"] = len(uploaded_but_not_marked_should_not_upload)
 
     # 如果提供了 should_not_upload_but_marked 列表，添加到结果中
     if should_not_upload_but_marked is not None:
@@ -495,6 +511,8 @@ def main() -> None:
     logger.info(f"  本地标注上传完成: {hf_comparison['summary'].get('uploaded_count', 0)}")
     logger.info(f"  ⚠️  本地标注上传完成但云端缺失: {hf_comparison['summary'].get('uploaded_but_missing_count', 0)}")
     logger.info(f"  ⚠️  已上传但未标记完成: {hf_comparison['summary'].get('uploaded_but_not_marked_count', 0)}")
+    logger.info(f"    └─ 其中应该上传的: {hf_comparison['summary'].get('uploaded_but_not_marked_should_upload_count', 0)}")
+    logger.info(f"    └─ 其中不应该上传的: {hf_comparison['summary'].get('uploaded_but_not_marked_should_not_upload_count', 0)}")
     logger.info(f"  ⚠️  不应该上传但被标记完成: {hf_comparison['summary'].get('should_not_upload_but_marked_count', 0)}")
     logger.info(f"  ⚠️  不应该上传但被标记完成且确实在云端存在: {hf_comparison['summary'].get('should_not_upload_but_marked_and_in_cloud_count', 0)}")
 
@@ -508,6 +526,8 @@ def main() -> None:
     logger.info(f"  本地标注上传完成: {ms_comparison['summary'].get('uploaded_count', 0)}")
     logger.info(f"  ⚠️  本地标注上传完成但云端缺失: {ms_comparison['summary'].get('uploaded_but_missing_count', 0)}")
     logger.info(f"  ⚠️  已上传但未标记完成: {ms_comparison['summary'].get('uploaded_but_not_marked_count', 0)}")
+    logger.info(f"    └─ 其中应该上传的: {ms_comparison['summary'].get('uploaded_but_not_marked_should_upload_count', 0)}")
+    logger.info(f"    └─ 其中不应该上传的: {ms_comparison['summary'].get('uploaded_but_not_marked_should_not_upload_count', 0)}")
     logger.info(f"  ⚠️  不应该上传但被标记完成: {ms_comparison['summary'].get('should_not_upload_but_marked_count', 0)}")
     logger.info(f"  ⚠️  不应该上传但被标记完成且确实在云端存在: {ms_comparison['summary'].get('should_not_upload_but_marked_and_in_cloud_count', 0)}")
 
