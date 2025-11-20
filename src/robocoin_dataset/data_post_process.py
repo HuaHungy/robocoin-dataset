@@ -188,7 +188,6 @@ class DataPostProcessorBase:
 
             self.write_new_episode_file(new_datas, episode_idx)
             self.episodes_stats.append(self._compute_episode_stat(new_datas))
-        print(self.episodes_stats)
         self._write_new_episodes_stats_file()
         self._ep_idx = None
 
