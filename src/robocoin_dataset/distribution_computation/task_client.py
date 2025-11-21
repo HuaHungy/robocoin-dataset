@@ -318,20 +318,15 @@ class TaskClient(ABC):
                 None, self._sync_process_task, task_data
             )
             return {TASK_RESULT_STATUS: TASK_SUCCESS, TASK_RESULT_CONTENT: task_result_content}
-        except Exception as e:
+        except Exception:
             if self.logger:
                 self.logger.error(f"Task {task_id} failed. {traceback.format_exc()}")
-            # For RuntimeError (manual error reports), only keep the error message without traceback
-            # For other exceptions, include the full traceback
-            if isinstance(e, RuntimeError):
-                error_msg = str(e)
-            else:
-                error_msg = f"Task {task_id} failed. {traceback.format_exc()}"
             return {
                 TASK_RESULT_STATUS: TASK_FAILED,
-                ERR_MSG: error_msg,
+                ERR_MSG: f"Task {task_id} failed. {traceback.format_exc()}",
                 TASK_RESULT_CONTENT: {},
             }
+
 
     async def run_until_no_task(self) -> None:
         try:
