@@ -47,6 +47,8 @@ def construce_target_file(
                 *.yml files
             videos/
                 *.mp4 files
+            thumbnails/
+                *.jpg files
             info/
                 consolidated_datasets.json
                 data_index.json
@@ -71,7 +73,9 @@ def construce_target_file(
         _copy_yaml_file_from_db,
         _gen_consolidation,
         _gen_data_index,
+        _gen_video_thumbnail,
         _sample_one_video_path,
+        _update_device_model_from_filename,
         _validate_exist,
     )
 
@@ -107,6 +111,13 @@ def construce_target_file(
         _logger.debug(f"Created info directory: {info_dir}")
     else:
         _logger.debug(f"Info directory already exists: {info_dir}")
+
+    thumbnails_dir = assets_dir / "thumbnails"
+    if not thumbnails_dir.exists():
+        thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        _logger.debug(f"Created thumbnails directory: {thumbnails_dir}")
+    else:
+        _logger.debug(f"Thumbnails directory already exists: {thumbnails_dir}")
 
     # 3-8. Main loop: sync -> generate task -> copy yaml -> copy & compress videos -> align video name -> mark completed
     task_count = 0
@@ -159,6 +170,11 @@ def construce_target_file(
             _copy_yaml_file_from_db(yaml_path, str(yaml_dst))
             _logger.info(f"Copied YAML file to {yaml_dst}")
 
+            # 5.5. Update device_model based on filename and mapping.json
+            _logger.debug("Updating device_model in YAML file based on filename...")
+            _update_device_model_from_filename(str(yaml_dst), dataset_name)
+            _logger.debug("Updated device_model in YAML file if needed")
+
             # 6. Sample and compress videos
             _logger.debug(f"Sampling video from hardlink path: {hardlink_path}...")
             sampled_video_path = _sample_one_video_path(hardlink_path)
@@ -178,6 +194,12 @@ def construce_target_file(
             compressed_video_path = videos_dir / compressed_video_name
             _align_video_name_with_yaml(str(yaml_dst), str(compressed_video_path), dataset_name)
             _logger.info(f"Aligned video name to {dataset_name}")
+
+            # 7.5. Generate thumbnail after video is renamed
+            video_suffix = compressed_video_path.suffix
+            final_video_path = videos_dir / f"{dataset_name}{video_suffix}"
+            _gen_video_thumbnail(str(final_video_path), str(thumbnails_dir))
+            _logger.info(f"Generated thumbnail for {dataset_name}")
 
             # 8. Update task status to COMPLETED
             _mark_task_completed(session, dataset_uuid)

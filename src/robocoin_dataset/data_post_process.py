@@ -186,19 +186,6 @@ class DataPostProcessorBase:
                     f"new_datas keys {new_datas.keys()} != self.data_features {self.data_features}"
                 )
 
-            found_none_data = False
-            for feature_key, data in ori_data.items():
-                if data is None:
-                    found_none_data = True
-                    break
-                if data.shape[0] != new_datas[feature_key].shape[0]:
-                    raise ValueError(
-                        f"ori_data shape {data.shape}[0] != new_datas shape {new_datas[feature_key].shape}[0]"
-                    )
-
-            if found_none_data:
-                continue
-
             self.write_new_episode_file(new_datas, episode_idx)
             self.episodes_stats.append(self._compute_episode_stat(new_datas))
         self._write_new_episodes_stats_file()

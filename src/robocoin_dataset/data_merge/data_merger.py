@@ -137,9 +137,6 @@ def merge_dataset_parquet_files(
     merge_parquet_files = get_parquet_files(root_dir, merge_feature)
     for feature in patch_features:
         feature_parquet_files = get_parquet_files(root_dir, feature=feature)
-        print(feature)
-        print(root_dir)
-        print(feature_parquet_files)
         if not feature_parquet_files[0].exists():
             # raise ValueError(f"{feature_parquet_files[0]} file not found")
             continue
