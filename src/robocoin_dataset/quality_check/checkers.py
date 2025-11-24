@@ -334,7 +334,7 @@ def detect_max_frame_jump_and_static(
     hash_size: int = 16,
     static_threshold: int = 1,
     max_phash_distance_threshold: int = 50,
-    max_static_frames_count_threshold: int = 50,
+    max_static_frames_count_threshold: int = 5,
     max_frames: int = None,  # 可选：限制处理帧数（调试用）
 ) -> float:
     """
