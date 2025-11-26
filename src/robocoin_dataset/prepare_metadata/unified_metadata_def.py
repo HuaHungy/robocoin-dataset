@@ -186,9 +186,11 @@ class UnifiedMetadata:
     # 这些字段从数据集的 meta/info.json 文件中自动提取
 
     robot_type: str = ""
-    # 数据来源: meta/info.json["robot_type"]
+    # 数据来源: 通过字符串匹配 page_sync/names.yml 与数据集文件夹名
+    #          如果匹配失败，则回退到 meta/info.json["robot_type"]
     # 用途: 机器人类型标识
-    # 示例: "unitree_g1", "realman_rmc"
+    # 示例: "G1edu-u3", "RMC-AIDA-L", "AIRBOT_MMK2"
+    # 注意: 使用 names.yml 进行一对多映射，直接在文件夹名中查找匹配的设备名称
 
     codebase_version: str = ""
     # 数据来源: meta/info.json["codebase_version"]

@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ from robocoin_dataset.hub_upload.gen_file.single_dataset_readme_generator import
 )
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
 
+_logger = logging.getLogger(__name__)
+
 # 为后续的yaml文件生成和README生成，以及网页的元信息收集做准备。
 # 将所有的字段和名称记录下来之后，进行最终的更新和修改
 # 1. 首先根据yaml文件记录字段和对应的值，如果值为空则一样赋值为空但是记录有这样一个字段，保存为字典
@@ -21,6 +24,48 @@ from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetada
 #   3. 单对单信息：yaml_file_path, data_path, convert_path
 # 3. 然后根据数据库中的信息，进行最终的更新和修改
 # 4. 最后生成yaml文件和README文件
+
+
+def _match_device_name_from_folder(dataset_name: str) -> str | None:
+    """
+    Match device name from names.yml based on dataset folder name string matching.
+
+    This function:
+    1. Loads device names from names.yml
+    2. Searches for any device name that appears in the dataset_name
+    3. Returns the first match found, or None if no match
+
+    Args:
+        dataset_name: The dataset folder name to check against
+
+    Returns:
+        Matched device name from names.yml, or None if no match found
+    """
+    # Load names.yml from page_sync module
+    names_file = Path(__file__).parent.parent / "page_sync" / "names.yml"
+    if not names_file.exists():
+        _logger.warning(f"Names file does not exist: {names_file}. Cannot match device name.")
+        return None
+
+    try:
+        with open(names_file, encoding='utf-8') as f:
+            device_names = yaml.safe_load(f)
+    except Exception as e:
+        _logger.error(f"Failed to load names.yml: {e}. Cannot match device name.")
+        return None
+
+    if not isinstance(device_names, list):
+        _logger.error(f"names.yml should contain a list, but got {type(device_names)}. Cannot match device name.")
+        return None
+
+    # Search for matching device name in dataset_name
+    for device_name in device_names:
+        if device_name in dataset_name:
+            _logger.info(f"Matched device name '{device_name}' in dataset name '{dataset_name}'")
+            return device_name
+
+    _logger.debug(f"No device name from names.yml matched in dataset name '{dataset_name}'")
+    return None
 
 
 def create_unified_metadata(
@@ -131,7 +176,14 @@ def create_unified_metadata(
     splits = meta_info.get("splits", UnifiedMetadata().splits)
     data_path = meta_info.get("data_path", UnifiedMetadata().data_path)
     video_path = meta_info.get("video_path", UnifiedMetadata().video_path)
-    robot_type = meta_info.get("robot_type", "")
+
+    # robot_type: Use string matching from names.yml first, fallback to meta_info
+    matched_device_name = _match_device_name_from_folder(base_name)
+    if matched_device_name:
+        robot_type = matched_device_name
+    else:
+        robot_type = meta_info.get("robot_type", "")
+
     codebase_version = meta_info.get("codebase_version", "")
 
     # cameras / observation_space / action_space
