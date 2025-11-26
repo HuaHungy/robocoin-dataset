@@ -109,54 +109,16 @@ class EpisodeSampler(torch.utils.data.Sampler):
         return len(self.frame_ids)
 
 
-def diagnose_stats_dimensions(episodes_stats: dict) -> str:
-    """Diagnose which episodes and features have corrupted stats (0-dimensional arrays)."""
-    issues = []
-    
-    for episode_id, episode_stats in episodes_stats.items():
-        for feature_key, feature_stats in episode_stats.items():
-            for stat_key, stat_value in feature_stats.items():
-                if hasattr(stat_value, 'ndim') and stat_value.ndim == 0:
-                    issues.append(
-                        f"Episode {episode_id}, Feature '{feature_key}', Stat '{stat_key}': "
-                        f"shape={stat_value.shape}, ndim={stat_value.ndim}, value={stat_value}"
-                    )
-                elif hasattr(stat_value, 'shape') and len(stat_value.shape) == 0:
-                    issues.append(
-                        f"Episode {episode_id}, Feature '{feature_key}', Stat '{stat_key}': "
-                        f"shape={stat_value.shape} (scalar), value={stat_value}"
-                    )
-    
-    if issues:
-        return "Found corrupted stats:\n" + "\n".join(issues)
-    else:
-        return "No 0-dimensional stats found in episodes_stats"
-
-
 def load_repo(
     repo_hardlink: str | Path,
     num_workers: int = 8,
     sample_rate: float = 0.1,
 ) -> None:
-    try:
-        dataset = LeRobotDataset(
-            repo_id="test/test_repo",
-            root=repo_hardlink,
-            video_backend="pyav",  # torchcodec is not supported.(2.0)
-        )
-    except ValueError as e:
-        if "Number of dimensions must be at least 1" in str(e):
-            # Try to diagnose the issue by loading episodes_stats directly
-            try:
-                from lerobot.datasets.lerobot_dataset import load_episodes_stats
-                episodes_stats = load_episodes_stats(repo_hardlink)
-                diagnosis = diagnose_stats_dimensions(episodes_stats)
-                raise ValueError(f"Dataset stats corruption detected:\n{diagnosis}\nOriginal error: {e}") from e
-            except Exception as diag_e:
-                raise ValueError(f"Dataset stats corruption detected. Could not load episodes_stats for diagnosis: {diag_e}\nOriginal error: {e}") from e
-        else:
-            raise
-    
+    dataset = LeRobotDataset(
+        repo_id="test/test_repo",
+        root=repo_hardlink,
+        video_backend="pyav",  # torchcodec is not supported.(2.0)
+    )
     sampler = EpisodeSampler(dataset, sample_rate=sample_rate)
 
     dataloader = torch.utils.data.DataLoader(

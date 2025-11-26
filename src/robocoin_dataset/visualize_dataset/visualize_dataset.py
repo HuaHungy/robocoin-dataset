@@ -327,6 +327,39 @@ class DatasetVisualizerClient(TaskClient):
         """客户端可自定义任务请求参数"""
         return {}
 
+    async def process_task(self, task_data: dict) -> dict:
+        import asyncio
+        import traceback
+        from robocoin_dataset.distribution_computation.constant import (
+            TASK_FAILED,
+            TASK_SUCCESS,
+            ERR_MSG,
+            TASK_RESULT_STATUS,
+            TASK_RESULT_CONTENT,
+            TASK_ID,
+        )
+
+        loop = asyncio.get_event_loop()
+        task_id = task_data.get(TASK_ID)
+        try:
+            task_result_content = await loop.run_in_executor(
+                None, self._sync_process_task, task_data
+            )
+            return {TASK_RESULT_STATUS: TASK_SUCCESS, TASK_RESULT_CONTENT: task_result_content}
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Task {task_id} failed. {traceback.format_exc()}")
+            # 检查是否为人工检查错误
+            if isinstance(e, RuntimeError) and str(e).startswith("人工检查发现错误: "):
+                err_msg = str(e)
+            else:
+                err_msg = f"Task {task_id} failed. {traceback.format_exc()}"
+            return {
+                TASK_RESULT_STATUS: TASK_FAILED,
+                ERR_MSG: err_msg,
+                TASK_RESULT_CONTENT: {},
+            }
+
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
             hard_link_path = task_content.get(HARD_LINK_PATH)
