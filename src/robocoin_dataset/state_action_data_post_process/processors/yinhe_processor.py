@@ -85,7 +85,9 @@ class YinheProcessor(StateActionDataPostProcessorBase):
             # if division_count > 0:
             #     logger.info(f"Episode {self.episode_index} divided by 3 {division_count} time(s), final max value: {col_max:.6f}")
             # 新增：如果最大值在 (0.1, 1.0) 之间，循环乘以 20
-            while 0.1 > col_max :
+            if col_max < 0.0:
+                raise ValueError(f"Gripper column at index {col_idx} has negative max value {col_max}")
+            while 0.1 > col_max and col_max > 0 and multiply_count < 10:  # 添加 col_max > 0 和最大迭代次数限制
                 scaled_data[:, col_idx] = scaled_data[:, col_idx] * 20.0
                 multiply_count += 1
                 col_max = float(np.max(scaled_data[:, col_idx]))
