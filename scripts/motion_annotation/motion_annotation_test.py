@@ -9,7 +9,7 @@ from robocoin_dataset.sim_replay.configs.unitree_g1_config import (
 
 if __name__ == "__main__":
     repo_path: Path = Path(
-        "/mnt/nas/synnas/docker2/robocoin-datasets/discover_robotics_aitbot_mmk2_place_the_pliers_and_wallpaper_knife"
+        "/mnt/nas/synnas/docker2/robocoin-datasets/agilex_cobot_decoupled_magic_put_the_pen_into_the_pen_holder"
     )
     processor: MotionAnnotationDataPostProcessor = MotionAnnotationDataPostProcessor(
         convert_path=repo_path, sim_replay_config=UnitreeG1Dof29ThreeFingerHandConfig()
