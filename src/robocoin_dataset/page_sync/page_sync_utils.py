@@ -306,7 +306,11 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
 
   return str(selected_video_path)
 
-def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_kb: int) -> None:
+def _compress_video_to_dst(selected_video_path: str,
+  dst_path: str,
+  target_size_kb: int,
+  force_update: bool = False,
+) -> None:
   """
   Compress a single video file from source path to destination path using conservative settings.
   Uses CRF (Constant Rate Factor) for quality control instead of strict bitrate limits.
@@ -321,6 +325,7 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
   selected_video_path, -> the sampled, actual video path. point DIRECTLY at the video file.
   dst_path, -> the dst path to compress the video file.(in assets/dataset_info/videos/)
   target_size_kb, -> the target size of the video file in KB (used as guidance, not strict limit).
+  force_update, -> if True, always regenerate; if False, skip if file exists (default: False).
   OUTPUT:
   None, excute the compress and copying operation.
   """
@@ -330,6 +335,11 @@ def _compress_video_to_dst(selected_video_path: str, dst_path: str, target_size_
   dst_video_path = Path(dst_path) / video_file.name
 
   _logger = logging.getLogger(__name__)
+
+  # Skip if file exists and force_update is False
+  if not force_update and dst_video_path.exists():
+      _logger.info(f"Video already exists at {dst_video_path}, skipping compression")
+      return
 
   _logger.debug(f"Video file: {video_file}")
   _logger.debug(f"Destination: {dst_video_path}")
@@ -484,7 +494,10 @@ def _align_video_name_with_yaml(yaml_path: str, video_path: str, dataset_name: s
       _logger.debug(f"Video already named correctly: {src_video.name}")
 
 
-def _gen_video_thumbnail(video_path: str, thumbnail_dir: str) -> None:
+def _gen_video_thumbnail(video_path: str,
+  thumbnail_dir: str,
+  force_update: bool = False,
+) -> None:
     """
     Generate a thumbnail image from a video file.
     Extracts the first frame of the video and saves it as a JPEG image.
@@ -492,6 +505,7 @@ def _gen_video_thumbnail(video_path: str, thumbnail_dir: str) -> None:
     INPUT:
     video_path -> path to the video file
     thumbnail_dir -> directory to save the thumbnail image
+    force_update -> if True, always regenerate; if False, skip if file exists (default: False)
 
     OUTPUT:
     None, saves thumbnail image with the same name as the video (with .jpg extension)
@@ -505,6 +519,11 @@ def _gen_video_thumbnail(video_path: str, thumbnail_dir: str) -> None:
     thumbnail_dir_path.mkdir(parents=True, exist_ok=True)
 
     thumbnail_path = thumbnail_dir_path / f"{video_file.stem}.jpg"
+
+    # Skip if file exists and force_update is False
+    if not force_update and thumbnail_path.exists():
+        _logger.info(f"Thumbnail already exists at {thumbnail_path}, skipping generation")
+        return
 
     subprocess.run(
         ["ffmpeg", "-i", str(video_file), "-vframes", "1", "-q:v", "2", "-y", str(thumbnail_path)],

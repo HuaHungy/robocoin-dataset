@@ -254,13 +254,6 @@ class LocalDsUploadUtil(LocalDsUtil):
         output_path = Path(self.config.output_path or "./dataset_info").expanduser().absolute()
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Step 1: Generate YAML file for this dataset
-        tqdm.write("    📝 Generating YAML...")
-        self.logger.info(f"{dataset_name}: Generating YAML...")
-        yaml_success, yaml_error = self._generate_yaml_for_dataset(hardlink_path, output_path)
-        if not yaml_success:
-            return False, yaml_error
-
         # Step 2: Build aggregated metadata from database + local files
         tqdm.write("    🧩 Collecting unified metadata...")
         self.logger.info(f"{dataset_name}: Collecting unified metadata...")

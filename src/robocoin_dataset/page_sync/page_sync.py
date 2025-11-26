@@ -34,6 +34,7 @@ def construce_target_file(
     session: "Session",
     target_dir: str,
     target_size_kb: int = 500,
+    update_videos: bool = False,
     logger: logging.Logger | None = None,
 ) -> None:
     """
@@ -58,6 +59,7 @@ def construce_target_file(
         session: SQLAlchemy session
         target_dir: Root directory of the page project
         target_size_kb: Target size for compressed videos in KB (default: 500)
+        update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
         logger: Optional logger instance
     """
     from robocoin_dataset.page_sync.page_sync_task import (
@@ -189,7 +191,7 @@ def construce_target_file(
 
             _logger.info(f"Sampled video: {sampled_video_path}")
             _logger.debug(f"Starting video compression (target: {target_size_kb}KB)...")
-            _compress_video_to_dst(sampled_video_path, str(videos_dir), target_size_kb)
+            _compress_video_to_dst(sampled_video_path, str(videos_dir), target_size_kb, force_update=update_videos)
             _logger.info(f"Compressed video from {sampled_video_path} into {videos_dir}")
 
             # 7. Alighment-Rename videos
@@ -202,7 +204,7 @@ def construce_target_file(
             # 7.5. Generate thumbnail after video is renamed
             video_suffix = compressed_video_path.suffix
             final_video_path = videos_dir / f"{dataset_name}{video_suffix}"
-            _gen_video_thumbnail(str(final_video_path), str(thumbnails_dir))
+            _gen_video_thumbnail(str(final_video_path), str(thumbnails_dir), force_update=update_videos)
             _logger.info(f"Generated thumbnail for {dataset_name}")
 
             # 8. Update task status to COMPLETED
@@ -235,6 +237,7 @@ def main(
     db_path: str,
     target_dir: str,
     target_size_kb: int = 500,
+    update_videos: bool = False,
     log_level: str = "INFO",
 ) -> None:
     """
@@ -244,6 +247,7 @@ def main(
         db_path: Path to the SQLite database
         target_dir: Root directory of the page project
         target_size_kb: Target size for compressed videos in KB (default: 500)
+        update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
         log_level: Logging level (default: INFO)
     """
     from datetime import datetime
@@ -280,6 +284,7 @@ def main(
             session=session,
             target_dir=target_dir,
             target_size_kb=target_size_kb,
+            update_videos=update_videos,
             logger=logger,
         )
 
@@ -309,6 +314,11 @@ if __name__ == "__main__":
         help="Target size for compressed videos in KB (default: 500)",
     )
     parser.add_argument(
+        "--update-videos",
+        action="store_true",
+        help="Force regenerate videos and thumbnails even if they exist (default: False)",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="INFO",
@@ -322,5 +332,6 @@ if __name__ == "__main__":
         db_path=args.db_path,
         target_dir=args.target_dir,
         target_size_kb=args.target_size_kb,
+        update_videos=args.update_videos,
         log_level=args.log_level,
     )

@@ -30,6 +30,12 @@ Examples:
     --target-size-kb 1000 \\
     --log-level DEBUG
 
+  # Force regenerate videos and thumbnails
+  python scripts/page_sync/construct_assets.py \\
+    --db-path db/datasets_new.db \\
+    --target-dir /path/to/page-project \\
+    --update-videos
+
 Output Structure:
   target-dir/
     assets/
@@ -64,6 +70,12 @@ Output Structure:
     )
 
     parser.add_argument(
+        "--update-videos",
+        action="store_true",
+        help="Force regenerate videos and thumbnails even if they exist (default: False)",
+    )
+
+    parser.add_argument(
         "--log-level",
         type=str,
         default="INFO",
@@ -92,6 +104,7 @@ Output Structure:
     print(f"  Database: {args.db_path}")
     print(f"  Target: {args.target_dir}")
     print(f"  Video size: {args.target_size_kb} KB")
+    print(f"  Update videos: {args.update_videos}")
     print(f"  Log level: {args.log_level}")
     print()
 
@@ -100,6 +113,7 @@ Output Structure:
             db_path=str(db_path.absolute()),
             target_dir=str(target_dir.absolute()),
             target_size_kb=args.target_size_kb,
+            update_videos=args.update_videos,
             log_level=args.log_level,
         )
         print("\n✓ Page sync completed successfully!")
