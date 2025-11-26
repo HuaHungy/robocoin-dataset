@@ -3,101 +3,10 @@
 import logging
 from pathlib import Path
 
-from robocoin_dataset.readmes.dataset_readme_util import LocalDsReadmeConfig, LocalDsReadmeUtil
-
-from .dataset_info_util import LocalDsInfoConfig, LocalDsInfoUtil
 from .hub_upload_util import (
     LocalDsUploadConfig,
     LocalDsUploadUtil,
 )
-
-
-def generate_dataset_info(
-    root_path: str,
-    output_path: str | None = None,
-    logger: logging.Logger | None = None
-) -> str:
-    """
-    生成所有数据集的 info YAML 文件。
-
-    所有信息从数据集元数据中提取（meta/info.json, meta/tasks.jsonl 等）。
-
-    Args:
-        root_path: 包含数据集目录的根路径
-        output_path: 生成的 info 文件的输出路径。如果为 None，默认为 "./dataset_info"
-        logger: Logger 实例（可选）
-
-    Returns:
-        str: 使用的输出路径（如果传入 None 则解析为默认值）
-    """
-    _logger = logger or logging.getLogger(__name__)
-
-    # 设置默认输出路径
-    if output_path is None:
-        output_path = "./dataset_info"
-        _logger.debug(f"使用默认 info 输出路径: {output_path}")
-
-    try:
-        _logger.info(f"📝 正在生成 dataset info YAML 文件到: {output_path}")
-
-        # 创建 info 生成器配置（不需要 task_tags_yamls_dir）
-        info_config = LocalDsInfoConfig(
-            root_path=Path(root_path),
-            output_path=output_path,
-            task_tags_yamls_dir=""  # 不使用 - 所有信息从数据集元数据获取
-        )
-
-        # 生成 info 文件
-        info_generator = LocalDsInfoUtil(info_config)
-        info_generator.generate_infos()
-
-        _logger.info("✅ Dataset info 文件生成成功")
-
-        return output_path
-
-    except Exception as e:
-        _logger.error(f"❌ 生成 dataset info 文件失败: {e}", exc_info=True)
-        raise
-
-
-def generate_dataset_readmes(
-    root_path: str,
-    dataset_info_root_path: str | None = None,
-    logger: logging.Logger | None = None
-) -> None:
-    """
-    生成所有数据集的 README.md 文件。
-
-    Args:
-        root_path: 包含数据集目录的根路径
-        dataset_info_root_path: 包含 dataset info YAML 文件的路径。如果为 None，默认为 "./dataset_info"
-        logger: Logger 实例（可选）
-    """
-    _logger = logger or logging.getLogger(__name__)
-
-    # 设置默认 dataset info 路径
-    if dataset_info_root_path is None:
-        dataset_info_root_path = "./dataset_info"
-        _logger.debug(f"使用默认 dataset info 路径: {dataset_info_root_path}")
-
-    try:
-        _logger.info(f"📝 正在从 {dataset_info_root_path} 生成 dataset README 文件")
-
-        # 创建 readme 生成器配置
-        readme_config = LocalDsReadmeConfig(
-            root_path=Path(root_path),
-            dataset_info_root_path=dataset_info_root_path
-        )
-
-        # 生成 readme 文件
-        readme_generator = LocalDsReadmeUtil(readme_config)
-        readme_generator.generate_readmes()
-
-        _logger.info("✅ Dataset README 文件生成成功")
-
-    except Exception as e:
-        _logger.error(f"❌ 生成 dataset README 文件失败: {e}", exc_info=True)
-        raise
 
 
 def upload_datasets_from_database_local(config: LocalDsUploadConfig, logger: logging.Logger | None = None) -> None:
