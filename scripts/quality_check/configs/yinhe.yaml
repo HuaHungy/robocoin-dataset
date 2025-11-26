@@ -17,7 +17,9 @@ episode_data_checkers:
 
 episode_video_checkers:
   - name: "max_frame_jump_dist_and_max_static_frames"
+    params:
+      hash_size: 32
+      max_phash_distance_threshold: 1000
+      max_static_frames_count_threshold: 5
     should_check: True  
     score_weight: 1.0   
-    max_phash_distance_threshold:  150
-    max_static_frames_count_threshold: 5

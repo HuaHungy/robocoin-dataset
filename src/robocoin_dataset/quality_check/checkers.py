@@ -331,9 +331,9 @@ def detect_max_frame_jump_dist(
 @episode_video_checker_registry("max_frame_jump_dist_and_max_static_frames")
 def detect_max_frame_jump_and_static(
     video_paths: list[str | Path],
-    hash_size: int = 16,
+    hash_size: int = 32,
     static_threshold: int = 1,
-    max_phash_distance_threshold: int = 50,
+    max_phash_distance_threshold: int = 200,
     max_static_frames_count_threshold: int = 5,
     max_frames: int = None,  # 可选：限制处理帧数（调试用）
 ) -> float:
@@ -364,6 +364,7 @@ def detect_max_frame_jump_and_static(
         current_static_run = 0
         max_static_run = 0
         frame_count = 0
+        max_static_frame_idx = 0
 
         try:
             for frame in container.decode(stream):
@@ -383,6 +384,10 @@ def detect_max_frame_jump_and_static(
 
                     if hamming_dist <= static_threshold:
                         current_static_run += 1
+                        if current_static_run > max_static_run:
+                            max_static_run = current_static_run
+                            max_static_frame_idx = frame_count
+
                         max_static_run = max(max_static_run, current_static_run)
                     else:
                         current_static_run = 0  # 重置静止计数
