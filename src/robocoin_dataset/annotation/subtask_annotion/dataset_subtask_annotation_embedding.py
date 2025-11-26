@@ -16,6 +16,55 @@ from robocoin_dataset.database.models import (
 )
 from robocoin_dataset.utils.le_path import get_episodes_frames
 
+# def annotations_to_frame_array(
+#     annotations: list[tuple[int, int, int, int]],
+#     annotation_num: int,
+#     episode_frame_nums: dict[int, int],
+#     max_st_num: int = 5,
+# ) -> list[np.ndarray]:
+#     episodes = defaultdict(list)
+#     for ann in annotations:
+#         ep_idx, start, end, data = ann
+#         episodes[ep_idx].append((start, end, data))
+
+#     result = []
+#     episode_indices = sorted(episodes.keys())
+
+#     for ep_idx in episode_indices:
+#         anns = episodes[ep_idx]
+
+#         if ep_idx not in episode_frame_nums:
+#             continue
+#         max_frame = episode_frame_nums[ep_idx]
+
+#         # 明确指定 dtype=np.int32
+#         frame_array = np.full(
+#             (max_frame, max_st_num),
+#             annotation_num,
+#             dtype=np.int32,  # 👈 指定为 int32
+#         )
+
+#         for start, end, data in anns:
+#             if isinstance(data, int):
+#                 data = [data]
+#             elif isinstance(data, (list, tuple)):
+#                 data = list(data)
+#             else:
+#                 raise ValueError("int_data must be int or list/tuple of int")
+
+#             # 截断到 n
+#             data = data[:max_st_num]
+#             # 转为 int32 数组
+#             data_arr = np.array(data, dtype=np.int32)
+
+#             for frame_idx in range(start, end - 1):
+#                 if frame_idx < max_frame:
+#                     frame_array[frame_idx, : len(data_arr)] = data_arr
+
+#         result.append(frame_array)
+
+#     return result
+
 
 def annotations_to_frame_array(
     annotations: list[tuple[int, int, int, int]],
@@ -33,17 +82,12 @@ def annotations_to_frame_array(
 
     for ep_idx in episode_indices:
         anns = episodes[ep_idx]
-
         if ep_idx not in episode_frame_nums:
             continue
         max_frame = episode_frame_nums[ep_idx]
 
-        # 明确指定 dtype=np.int32
-        frame_array = np.full(
-            (max_frame, max_st_num),
-            annotation_num,
-            dtype=np.int32,  # 👈 指定为 int32
-        )
+        # 用于收集每帧的所有标签
+        frame_labels = defaultdict(list)  # frame_idx -> list of labels
 
         for start, end, data in anns:
             if isinstance(data, int):
@@ -51,16 +95,28 @@ def annotations_to_frame_array(
             elif isinstance(data, (list, tuple)):
                 data = list(data)
             else:
-                raise ValueError("int_data must be int or list/tuple of int")
+                raise ValueError("data must be int or list/tuple of int")
 
-            # 截断到 n
-            data = data[:max_st_num]
-            # 转为 int32 数组
-            data_arr = np.array(data, dtype=np.int32)
+            # 遍历每一帧（修正为 [start, end) 区间）
+            for frame_idx in range(start, min(end, max_frame)):
+                frame_labels[frame_idx].extend(data)
 
-            for frame_idx in range(start, end - 1):
-                if frame_idx < max_frame:
-                    frame_array[frame_idx, : len(data_arr)] = data_arr
+        # 初始化 frame_array
+        frame_array = np.full(
+            (max_frame, max_st_num),
+            annotation_num,
+            dtype=np.int32,
+        )
+
+        # 填充每帧的标签（可选：去重、排序）
+        for frame_idx, labels in frame_labels.items():
+            # 可选：去重（如果标签不应重复）
+            # labels = list(dict.fromkeys(labels))  # 保持顺序的去重
+
+            # 截断到 max_st_num
+            selected = labels[:max_st_num]
+            # 转为 numpy 并填入
+            frame_array[frame_idx, : len(selected)] = selected
 
         result.append(frame_array)
 
