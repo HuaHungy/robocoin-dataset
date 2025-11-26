@@ -44,7 +44,78 @@ def _validate_exist(yaml_path: str | None, hardlink_path: str | None) -> bool:
   return True
 
 
-#------- YAML OPERATION -------#
+#------- YAML / METADATA OPERATION -------#
+
+
+def _write_unified_metadata_yaml(
+    dst_yaml_path: str,
+    dataset_path: str,
+    db_file_path: str,
+    dataset_uuid: str | None,
+) -> None:
+    """
+    Generate a new YAML metadata file for page assets based on UnifiedMetadata.
+
+    This function delegates the heavy lifting to prepare_metadata.metadata_collect
+    to build a UnifiedMetadata instance, then serializes it to a YAML file that
+    the page project can consume directly.
+
+    INPUT:
+      dst_yaml_path -> final YAML file path under assets/dataset_info/
+      dataset_path  -> hardlink dataset root (usually *_hardlink or *_qced_hardlink)
+      db_file_path  -> path to db/datasets_new.db
+      dataset_uuid  -> dataset uuid (optional but recommended for precise lookup)
+
+    OUTPUT:
+      None, writes YAML to dst_yaml_path (overwrites if exists)
+    """
+    from robocoin_dataset.prepare_metadata.metadata_collect import create_unified_metadata
+
+    _logger = logging.getLogger(__name__)
+
+    try:
+        _logger.debug(
+            "Creating UnifiedMetadata for dataset_uuid=%s, dataset_path=%s, db_file_path=%s",
+            dataset_uuid,
+            dataset_path,
+            db_file_path,
+        )
+        metadata = create_unified_metadata(
+            dataset_path=dataset_path,
+            db_file_path=db_file_path,
+            dataset_uuid=dataset_uuid,
+        )
+    except Exception as e:  # noqa: PERF203
+        _logger.error(
+            "Failed to create UnifiedMetadata for dataset_uuid=%s: %s",
+            dataset_uuid,
+            e,
+            exc_info=True,
+        )
+        raise
+
+    dst_path = Path(dst_yaml_path)
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # UnifiedMetadata knows how to serialize itself to YAML.
+        yaml_str = metadata.to_yaml(str(dst_path))
+        _logger.debug(
+            "Wrote UnifiedMetadata YAML for dataset_uuid=%s to %s (size=%d chars)",
+            dataset_uuid,
+            dst_path,
+            len(yaml_str),
+        )
+    except Exception as e:  # noqa: PERF203
+        _logger.error(
+            "Failed to write UnifiedMetadata YAML for dataset_uuid=%s to %s: %s",
+            dataset_uuid,
+            dst_path,
+            e,
+            exc_info=True,
+        )
+        raise
+
 
 def _update_device_model_from_filename(yaml_path: str, dataset_name: str) -> None:
     """

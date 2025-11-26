@@ -8,6 +8,7 @@ without requiring root_path manipulation. Designed for single-file generation du
 import logging
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
 import yaml
 from jinja2 import Environment, FileSystemLoader
@@ -17,6 +18,7 @@ from robocoin_dataset.hub_upload.lerobot.constant import (
     LEROBOT_META_INFO_FILE,
     README_FILE,
 )
+from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
 
 
 def generate_folder_structure(root_path: Path, max_files_per_dir: int = 5) -> str:
@@ -120,7 +122,7 @@ class SingleDatasetReadmeGenerator:
     def __init__(
         self,
         dataset_path: Path,
-        dataset_info_root_path: Path,
+        dataset_info_root_path: Path | None,
         logger: logging.Logger | None = None,
     ) -> None:
         """
@@ -132,7 +134,9 @@ class SingleDatasetReadmeGenerator:
             logger: Optional logger instance
         """
         self.dataset_path = Path(dataset_path)
-        self.dataset_info_root_path = Path(dataset_info_root_path)
+        self.dataset_info_root_path = (
+            Path(dataset_info_root_path) if dataset_info_root_path is not None else None
+        )
         self.logger = logger
 
         if not self.dataset_path.exists():
@@ -185,7 +189,30 @@ class SingleDatasetReadmeGenerator:
         """
         return generate_folder_structure(self.dataset_path, max_files_per_dir=5)
 
-    def generate_readme(self) -> tuple[bool, str]:
+    def _render_readme(self, context: dict[str, Any]) -> str:
+        """
+        Render README content from provided context dict.
+
+        The context is typically generated from a UnifiedMetadata instance.
+        """
+        # Setup Jinja2 environment
+        env = Environment(loader=FileSystemLoader(self.readme_template_file.parent))
+        env.globals["get_meta_info_content"] = self._get_meta_info_content
+
+        # Determine display name (strip hardlink suffix, or fall back to path in metadata)
+        display_dataset_name = context.get("path") or (
+            self.dataset_name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
+        )
+
+        return env.get_template(self.readme_template_file.name).render(
+            dataset_name=display_dataset_name,
+            **context,
+        )
+
+    def generate_readme(
+        self,
+        metadata: UnifiedMetadata | dict[str, Any] | None = None,
+    ) -> tuple[bool, str]:
         """
         Generate README file for the dataset using Jinja2 template.
 
@@ -195,39 +222,47 @@ class SingleDatasetReadmeGenerator:
             tuple[bool, str]: (success status, error message if failed or empty string if success)
         """
         try:
-            # Load dataset info YAML
-            ds_info_file = (
-                self.dataset_info_root_path / self.dataset_name / DATASET_INFO_FILE
-            )
+            # Prefer using aggregated metadata object if provided
+            if metadata is not None:
+                if isinstance(metadata, UnifiedMetadata):
+                    context: dict[str, Any] = metadata.to_dict()
+                else:
+                    context = dict(metadata)
+                # If structure is still auto-generated or missing, fill it from folder
+                structure_value = context.get("structure")
+                if not structure_value or structure_value == "auto_generated":
+                    context["structure"] = self._get_folder_structure()
+            else:
+                # Backward-compatible path: load dataset_info.yml and build context
+                if self.dataset_info_root_path is None:
+                    error_msg = (
+                        "dataset_info_root_path is required when metadata is not provided"
+                    )
+                    if self.logger:
+                        self.logger.error(f"{self.dataset_name}: {error_msg}")
+                    return False, error_msg
 
-            if not ds_info_file.exists():
-                error_msg = f"Dataset info file not found: {ds_info_file}"
-                if self.logger:
-                    self.logger.error(f"{self.dataset_name}: {error_msg}")
-                return False, error_msg
+                ds_info_file = (
+                    self.dataset_info_root_path / self.dataset_name / DATASET_INFO_FILE
+                )
 
-            with open(ds_info_file, encoding="utf-8") as f:
-                ds_info: dict = yaml.safe_load(f)
+                if not ds_info_file.exists():
+                    error_msg = f"Dataset info file not found: {ds_info_file}"
+                    if self.logger:
+                        self.logger.error(f"{self.dataset_name}: {error_msg}")
+                    return False, error_msg
 
-            # Auto-generate structure if not provided in ds_info
-            if "structure" not in ds_info or ds_info.get("structure") == "auto_generated":
-                ds_info["structure"] = self._get_folder_structure()
+                with open(ds_info_file, encoding="utf-8") as f:
+                    ds_info: dict[str, Any] = yaml.safe_load(f)
 
-            # Setup Jinja2 environment
-            env = Environment(loader=FileSystemLoader(self.readme_template_file.parent))
-            env.globals["get_meta_info_content"] = self._get_meta_info_content
+                # Auto-generate structure if not provided in ds_info
+                if "structure" not in ds_info or ds_info.get("structure") == "auto_generated":
+                    ds_info["structure"] = self._get_folder_structure()
 
-            # Remove _qced_hardlink and _hardlink suffixes from dataset_name for display
-            display_dataset_name = (
-                self.dataset_name
-                .removesuffix("_qced_hardlink")
-                .removesuffix("_hardlink")
-            )
+                context = ds_info
 
             # Render README from template
-            readme_content = env.get_template(self.readme_template_file.name).render(
-                dataset_name=display_dataset_name, **ds_info
-            )
+            readme_content = self._render_readme(context)
 
             # Write README file
             readme_file = self.dataset_path / README_FILE

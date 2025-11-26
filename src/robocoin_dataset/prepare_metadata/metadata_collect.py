@@ -23,263 +23,6 @@ from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetada
 # 4. 最后生成yaml文件和README文件
 
 
-def collect_correct_metadata(yaml_path: str, database_file_path: str) -> None:
-    # 1. 首先根据yaml文件记录字段和对应的值，如果值为空则一样赋值为空但是记录有这样一个字段，保存为字典
-    # 2. 然后分为三部分：
-    #   1. 基础信息：dataset_name, dataset_uuid, device_model, end_effector_type, operation_platform_height
-    #   2. 多对多信息：scene_type, task_descriptions, atomic_actions, objects
-    pass
-
-def _generate_size_label(size: int) -> str:
-    """
-    根据 total_frames 自动生成 size_categories 标签。
-    规则与 dataset_info_util.py 中保持一致。
-    """
-    if size < 1000:
-        return "<1K"
-    if size < 10000:
-        return "1K-10K"
-    if size < 100000:
-        return "10K-100K"
-    if size < 1000000:
-        return "100K-1M"
-    if size < 10000000:
-        return "1M-10M"
-    if size < 100000000:
-        return "10M-100M"
-    if size < 1000000000:
-        return "100M-1B"
-    if size < 10000000000:
-        return "1B-10B"
-    if size < 100000000000:
-        return "10B-1T"
-    return ">1T"
-
-
-def _load_meta_info(meta_info_file: Path) -> dict[str, Any]:
-    """从 meta/info.json 中提取 UnifiedMetadata 需要的字段。"""
-    if not meta_info_file.exists():
-        return {}
-
-    try:
-        with meta_info_file.open(encoding="utf-8") as f:
-            meta_info: dict[str, Any] = json.load(f)
-    except Exception:
-        return {}
-
-    extracted: dict[str, Any] = {}
-
-    # 机器人 & 代码版本
-    if "robot_type" in meta_info:
-        extracted["robot_type"] = meta_info["robot_type"]
-    if "codebase_version" in meta_info:
-        extracted["codebase_version"] = meta_info["codebase_version"]
-
-    # 统计信息
-    statistics: dict[str, Any] = {}
-    for key in [
-        "total_episodes",
-        "total_frames",
-        "total_tasks",
-        "total_videos",
-        "total_chunks",
-        "chunks_size",
-        "fps",
-        "total_duration",
-        "video_resolution",
-        "state_dim",
-        "action_dim",
-        "camera_views",
-    ]:
-        if key in meta_info:
-            statistics[key] = meta_info[key]
-    if statistics:
-        extracted["statistics"] = statistics
-
-    # 数据组织
-    if "splits" in meta_info:
-        extracted["splits"] = meta_info["splits"]
-    if "data_path" in meta_info:
-        extracted["data_path"] = meta_info["data_path"]
-    if "video_path" in meta_info:
-        extracted["video_path"] = meta_info["video_path"]
-
-    # features & depth_enabled
-    if "features" in meta_info:
-        features = meta_info["features"]
-        extracted["features"] = features
-
-        depth_enabled = False
-        for key, value in features.items():
-            if key.startswith("observation.images.") and isinstance(value, dict):
-                info = value.get("info", {})
-                if info.get("video.is_depth_map", False):
-                    depth_enabled = True
-                    break
-        extracted["depth_enabled"] = depth_enabled
-
-    return extracted
-
-
-def _load_tasks(tasks_file: Path) -> str:
-    """从 meta/tasks.jsonl 中读取所有 task 字段并拼接为一个字符串。"""
-    if not tasks_file.exists():
-        return ""
-
-    tasks: list[str] = []
-    try:
-        with tasks_file.open(encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    data = json.loads(line)
-                    task = data.get("task", "")
-                    if task:
-                        tasks.append(task)
-                except json.JSONDecodeError:
-                    continue
-    except Exception:
-        return ""
-
-    return "\n".join(tasks)
-
-
-def _load_subtasks(annotations_dir: Path) -> list[str]:
-    """
-    从 annotations/subtask_annotations.jsonl 中提取去重后的 subtask 列表。
-    逻辑与 dataset_info_util._get_subtasks_from_annotation 基本一致。
-    """
-    if not annotations_dir.exists():
-        return []
-
-    subtask_file = annotations_dir / "subtask_annotations.jsonl"
-    if not subtask_file.exists():
-        return []
-
-    subtasks_dict: dict[str, str] = {}
-    try:
-        with subtask_file.open(encoding="utf-8") as f:
-            for line in f:
-                if line := line.strip():
-                    data = json.loads(line)
-                    if "subtask" in data:
-                        subtask = data["subtask"]
-                        key = str(subtask).lower()
-                        if key not in subtasks_dict:
-                            subtasks_dict[key] = subtask
-    except Exception:
-        return []
-
-    return [subtasks_dict[k] for k in sorted(subtasks_dict.keys())]
-
-
-def _load_raw_yaml(yaml_file_path: str | None) -> dict[str, Any]:
-    """读取原始 YAML 配置，作为 raw 字段保留（若不存在则返回空字典）。"""
-    if not yaml_file_path:
-        return {}
-
-    path = Path(yaml_file_path).expanduser()
-    if not path.exists():
-        return {}
-
-    try:
-        with path.open(encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def _build_cameras_from_features(features: dict[str, Any]) -> list[dict[str, Any]]:
-    """
-    根据 features 中 observation.images.* 字段生成 cameras 列表。
-
-    返回的每个元素包含基础的相机信息，便于 README 模板统计数量或展示详情。
-    """
-    cameras: list[dict[str, Any]] = []
-    for key, value in features.items():
-        if not (isinstance(key, str) and key.startswith("observation.images.")):
-            continue
-        if not isinstance(value, dict):
-            continue
-
-        name = key.split(".")[-1]
-        info = value.get("info", {}) if isinstance(value.get("info", {}), dict) else {}
-        camera = {
-            "key": key,
-            "name": name,
-            "dtype": value.get("dtype"),
-            "shape": value.get("shape"),
-            "resolution": [
-                info.get("video.height"),
-                info.get("video.width"),
-            ],
-            "fps": info.get("video.fps"),
-            "is_depth": bool(info.get("video.is_depth_map", False)),
-        }
-        cameras.append(camera)
-
-    return cameras
-
-
-def _build_observation_space_from_features(features: dict[str, Any]) -> dict[str, Any]:
-    """
-    根据 features 构建 observation_space 字段。
-
-    - images: 所有 observation.images.* 的摘要信息列表
-    - state: observation.state 的 shape / names / dtype 信息
-    """
-    images: list[dict[str, Any]] = []
-    for key, value in features.items():
-        if not (isinstance(key, str) and key.startswith("observation.images.")):
-            continue
-        if not isinstance(value, dict):
-            continue
-        images.append(
-            {
-                "key": key,
-                "dtype": value.get("dtype"),
-                "shape": value.get("shape"),
-                "names": value.get("names"),
-            }
-        )
-
-    state_info: dict[str, Any] | None = None
-    state_feat = features.get("observation.state")
-    if isinstance(state_feat, dict):
-        state_info = {
-            "dtype": state_feat.get("dtype"),
-            "shape": state_feat.get("shape"),
-            "names": state_feat.get("names"),
-        }
-
-    obs_space = UnifiedMetadata().observation_space
-    # 如果能解析出更详细的信息，则覆盖默认的 auto_generated 占位
-    if images:
-        obs_space["images"] = images
-    if state_info is not None:
-        obs_space["state"] = state_info
-    return obs_space
-
-
-def _build_action_space_from_features(features: dict[str, Any]) -> dict[str, Any] | str:
-    """
-    根据 features 构建 action_space 字段。
-
-    如果存在 features['action']，则返回其 shape / names / dtype 的摘要；
-    否则保留默认的 auto_generated。
-    """
-    action_feat = features.get("action")
-    if isinstance(action_feat, dict):
-        return {
-            "dtype": action_feat.get("dtype"),
-            "shape": action_feat.get("shape"),
-            "names": action_feat.get("names"),
-        }
-    return UnifiedMetadata().action_space
-
-
 def create_unified_metadata(
     dataset_path: str | Path,
     db_file_path: str | Path,
@@ -287,7 +30,6 @@ def create_unified_metadata(
 ) -> UnifiedMetadata:
     """
     从数据库和本地数据集目录创建并初始化一个标准的 UnifiedMetadata 实例，并返回。
-
     阶段 1：根据传入的路径收集信息并填充 UnifiedMetadata 各个字段：
         - 数据库 (datasets_new.db):
             * DatasetDB: dataset_name, dataset_uuid, device_model, end_effector_type,
@@ -304,7 +46,6 @@ def create_unified_metadata(
             * path: 由数据集文件夹名去除 `_qced_hardlink` / `_hardlink` 后得到
             * video_url, thumbnail_url: 根据 path 按网页约定生成
             * size_categories: 根据 statistics.total_frames 自动计算
-
     阶段 2：返回已经填充好的 UnifiedMetadata 实例。
 
     Args:
@@ -314,7 +55,6 @@ def create_unified_metadata(
     """
     ds_path = Path(dataset_path).expanduser().absolute()
     db_path = Path(db_file_path).expanduser().absolute()
-
     db = DatasetDatabase(db_path)
 
     # ---- 从数据库中获取 DatasetDB 记录 ----
@@ -446,3 +186,250 @@ def create_unified_metadata(
         # 原始 YAML
         raw=raw_yaml,
     )
+
+
+def _load_subtasks(annotations_dir: Path) -> list[str]:
+    """
+    从 annotations/subtask_annotations.jsonl 中提取去重后的 subtask 列表。
+    逻辑与 dataset_info_util._get_subtasks_from_annotation 基本一致。
+    """
+    if not annotations_dir.exists():
+        return []
+
+    subtask_file = annotations_dir / "subtask_annotations.jsonl"
+    if not subtask_file.exists():
+        return []
+
+    subtasks_dict: dict[str, str] = {}
+    try:
+        with subtask_file.open(encoding="utf-8") as f:
+            for line in f:
+                if line := line.strip():
+                    data = json.loads(line)
+                    if "subtask" in data:
+                        subtask = data["subtask"]
+                        key = str(subtask).lower()
+                        if key not in subtasks_dict:
+                            subtasks_dict[key] = subtask
+    except Exception:
+        return []
+
+    return [subtasks_dict[k] for k in sorted(subtasks_dict.keys())]
+
+
+def _load_raw_yaml(yaml_file_path: str | None) -> dict[str, Any]:
+    """读取原始 YAML 配置，作为 raw 字段保留（若不存在则返回空字典）。"""
+    if not yaml_file_path:
+        return {}
+
+    path = Path(yaml_file_path).expanduser()
+    if not path.exists():
+        return {}
+
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _build_cameras_from_features(features: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    根据 features 中 observation.images.* 字段生成 cameras 列表。
+    返回的每个元素包含基础的相机信息，便于 README 模板统计数量或展示详情。
+    """
+    cameras: list[dict[str, Any]] = []
+    for key, value in features.items():
+        if not (isinstance(key, str) and key.startswith("observation.images.")):
+            continue
+        if not isinstance(value, dict):
+            continue
+
+        name = key.split(".")[-1]
+        info = value.get("info", {}) if isinstance(value.get("info", {}), dict) else {}
+        camera = {
+            "key": key,
+            "name": name,
+            "dtype": value.get("dtype"),
+            "shape": value.get("shape"),
+            "resolution": [
+                info.get("video.height"),
+                info.get("video.width"),
+            ],
+            "fps": info.get("video.fps"),
+            "is_depth": bool(info.get("video.is_depth_map", False)),
+        }
+        cameras.append(camera)
+
+    return cameras
+
+
+def _build_observation_space_from_features(features: dict[str, Any]) -> dict[str, Any]:
+    """
+    根据 features 构建 observation_space 字段。
+    - images: 所有 observation.images.* 的摘要信息列表
+    - state: observation.state 的 shape / names / dtype 信息
+    """
+    images: list[dict[str, Any]] = []
+    for key, value in features.items():
+        if not (isinstance(key, str) and key.startswith("observation.images.")):
+            continue
+        if not isinstance(value, dict):
+            continue
+        images.append(
+            {
+                "key": key,
+                "dtype": value.get("dtype"),
+                "shape": value.get("shape"),
+                "names": value.get("names"),
+            }
+        )
+
+    state_info: dict[str, Any] | None = None
+    state_feat = features.get("observation.state")
+    if isinstance(state_feat, dict):
+        state_info = {
+            "dtype": state_feat.get("dtype"),
+            "shape": state_feat.get("shape"),
+            "names": state_feat.get("names"),
+        }
+
+    obs_space = UnifiedMetadata().observation_space
+    # 如果能解析出更详细的信息，则覆盖默认的 auto_generated 占位
+    if images:
+        obs_space["images"] = images
+    if state_info is not None:
+        obs_space["state"] = state_info
+    return obs_space
+
+
+def _build_action_space_from_features(features: dict[str, Any]) -> dict[str, Any] | str:
+    """
+    根据 features 构建 action_space 字段。
+    如果存在 features['action']，则返回其 shape / names / dtype 的摘要；
+    否则保留默认的 auto_generated。
+    """
+    action_feat = features.get("action")
+    if isinstance(action_feat, dict):
+        return {
+            "dtype": action_feat.get("dtype"),
+            "shape": action_feat.get("shape"),
+            "names": action_feat.get("names"),
+        }
+    return UnifiedMetadata().action_space
+
+
+def _generate_size_label(size: int) -> str:
+    """
+    根据 total_frames 自动生成 size_categories 标签。
+    规则与 dataset_info_util.py 中保持一致。
+    """
+    if size < 1000:
+        return "<1K"
+    if size < 10000:
+        return "1K-10K"
+    if size < 100000:
+        return "10K-100K"
+    if size < 1000000:
+        return "100K-1M"
+    if size < 10000000:
+        return "1M-10M"
+    if size < 100000000:
+        return "10M-100M"
+    if size < 1000000000:
+        return "100M-1B"
+    if size < 10000000000:
+        return "1B-10B"
+    if size < 100000000000:
+        return "10B-1T"
+    return ">1T"
+
+
+def _load_meta_info(meta_info_file: Path) -> dict[str, Any]:
+    """从 meta/info.json 中提取 UnifiedMetadata 需要的字段。"""
+    if not meta_info_file.exists():
+        return {}
+
+    try:
+        with meta_info_file.open(encoding="utf-8") as f:
+            meta_info: dict[str, Any] = json.load(f)
+    except Exception:
+        return {}
+
+    extracted: dict[str, Any] = {}
+
+    # 机器人 & 代码版本
+    if "robot_type" in meta_info:
+        extracted["robot_type"] = meta_info["robot_type"]
+    if "codebase_version" in meta_info:
+        extracted["codebase_version"] = meta_info["codebase_version"]
+
+    # 统计信息
+    statistics: dict[str, Any] = {}
+    for key in [
+        "total_episodes",
+        "total_frames",
+        "total_tasks",
+        "total_videos",
+        "total_chunks",
+        "chunks_size",
+        "fps",
+        "total_duration",
+        "video_resolution",
+        "state_dim",
+        "action_dim",
+        "camera_views",
+    ]:
+        if key in meta_info:
+            statistics[key] = meta_info[key]
+    if statistics:
+        extracted["statistics"] = statistics
+
+    # 数据组织
+    if "splits" in meta_info:
+        extracted["splits"] = meta_info["splits"]
+    if "data_path" in meta_info:
+        extracted["data_path"] = meta_info["data_path"]
+    if "video_path" in meta_info:
+        extracted["video_path"] = meta_info["video_path"]
+
+    # features & depth_enabled
+    if "features" in meta_info:
+        features = meta_info["features"]
+        extracted["features"] = features
+
+        depth_enabled = False
+        for key, value in features.items():
+            if key.startswith("observation.images.") and isinstance(value, dict):
+                info = value.get("info", {})
+                if info.get("video.is_depth_map", False):
+                    depth_enabled = True
+                    break
+        extracted["depth_enabled"] = depth_enabled
+
+    return extracted
+
+
+def _load_tasks(tasks_file: Path) -> str:
+    """从 meta/tasks.jsonl 中读取所有 task 字段并拼接为一个字符串。"""
+    if not tasks_file.exists():
+        return ""
+
+    tasks: list[str] = []
+    try:
+        with tasks_file.open(encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                    task = data.get("task", "")
+                    if task:
+                        tasks.append(task)
+                except json.JSONDecodeError:
+                    continue
+    except Exception:
+        return ""
+
+    return "\n".join(tasks)

@@ -16,6 +16,8 @@ from tqdm import tqdm
 
 from robocoin_dataset.hub_upload.gen_file.gen_info import gen_info
 from robocoin_dataset.hub_upload.gen_file.gen_readme import gen_readme
+from robocoin_dataset.prepare_metadata.metadata_collect import create_unified_metadata
+from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
 
 from .constant import (
     DatasetsHubEnum,
@@ -259,14 +261,36 @@ class LocalDsUploadUtil(LocalDsUtil):
         if not yaml_success:
             return False, yaml_error
 
-        # Step 2: Generate README file for this dataset
-        tqdm.write("    📝 Generating README...")
-        self.logger.info(f"{dataset_name}: Generating README...")
-        readme_success, readme_error = self._generate_readme_for_dataset(hardlink_path, output_path)
+        # Step 2: Build aggregated metadata from database + local files
+        tqdm.write("    🧩 Collecting unified metadata...")
+        self.logger.info(f"{dataset_name}: Collecting unified metadata...")
+        try:
+            if not self.config.db_file_path:
+                raise ValueError("db_file_path is required for unified metadata collection")
+            metadata = create_unified_metadata(
+                dataset_path=hardlink_path,
+                db_file_path=self.config.db_file_path,
+                dataset_uuid=None,
+            )
+        except Exception as e:  # noqa: PERF203
+            tb = traceback.format_exc()
+            error_msg = f"Unified metadata collection failed: {e}\n\nFull traceback:\n{tb}"
+            tqdm.write(f"      ❌ Unified metadata collection failed: {e}")
+            self.logger.error(f"{dataset_name}: {error_msg}")
+            return False, error_msg
+
+        # Step 3: Generate README file for this dataset using unified metadata
+        tqdm.write("    📝 Generating README from unified metadata...")
+        self.logger.info(f"{dataset_name}: Generating README from unified metadata...")
+        readme_success, readme_error = self._generate_readme_for_dataset(
+            hardlink_path,
+            output_path,
+            metadata,
+        )
         if not readme_success:
             return False, readme_error
 
-        # Step 3: Execute upload
+        # Step 4: Execute upload
         tqdm.write("    ⬆️  Uploading to hub (this may take several minutes for large datasets)...")
         self.logger.info(f"{dataset_name}: Uploading to hub...")
         result = self._do_upload(hardlink_path)
@@ -293,8 +317,9 @@ class LocalDsUploadUtil(LocalDsUtil):
         self,
         hardlink_path: Path,
         dataset_info_root_path: Path,
+        metadata: UnifiedMetadata,
     ) -> tuple[bool, str]:
-        return gen_readme(hardlink_path, dataset_info_root_path, self.logger)
+        return gen_readme(hardlink_path, dataset_info_root_path, self.logger, metadata=metadata)
 
     # def _check_repo_conflict(self, repo_id: str, timeout: float = 5.0) -> bool:
     #     """

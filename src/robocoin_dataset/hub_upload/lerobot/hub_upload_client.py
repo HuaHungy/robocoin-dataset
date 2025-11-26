@@ -112,6 +112,7 @@ class HubUploadClient(TaskClient):
         effective_hub_name_str = client_config.get("hub_name")
         effective_output_path = client_config.get("output_path") or str(self.output_path)
         effective_force_overwrite = client_config.get("force_overwrite", self.force_overwrite)
+        effective_db_file_path = client_config.get("db_file_path", "")
 
         # Parse hub_name from string if provided in task
         if effective_hub_name_str:
@@ -145,7 +146,7 @@ class HubUploadClient(TaskClient):
                 token=effective_token,
                 namespace=effective_namespace,
                 output_path=effective_output_path,
-                db_file_path="",  # Not needed for client mode
+                db_file_path=effective_db_file_path,
                 skip_missing=True,
                 force_overwrite=effective_force_overwrite,
             )

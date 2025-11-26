@@ -70,13 +70,12 @@ def construce_target_file(
     from robocoin_dataset.page_sync.page_sync_utils import (
         _align_video_name_with_yaml,
         _compress_video_to_dst,
-        _copy_yaml_file_from_db,
         _gen_consolidation,
         _gen_data_index,
         _gen_video_thumbnail,
         _sample_one_video_path,
-        _update_device_model_from_filename,
         _validate_exist,
+        _write_unified_metadata_yaml,
     )
 
     _logger = logger or logging.getLogger(__name__)
@@ -155,7 +154,7 @@ def construce_target_file(
 
         try:
 
-            # 5. Copy yaml
+            # 5. Generate YAML via unified metadata
             _logger.debug(f"Getting dataset name for {dataset_uuid}...")
             dataset_name = _get_dataset_name(session)
             if not dataset_name:
@@ -166,14 +165,19 @@ def construce_target_file(
             _logger.info(f"Dataset name: {dataset_name}")
             yaml_dst = dataset_info_dir / f"{dataset_name}.yml"
 
-            _logger.debug(f"Copying YAML from {yaml_path} to {yaml_dst}...")
-            _copy_yaml_file_from_db(yaml_path, str(yaml_dst))
-            _logger.info(f"Copied YAML file to {yaml_dst}")
-
-            # 5.5. Update device_model based on filename and names.yml
-            _logger.debug("Updating device_model in YAML file based on filename...")
-            _update_device_model_from_filename(str(yaml_dst), dataset_name)
-            _logger.debug("Updated device_model in YAML file if needed")
+            _logger.debug(
+                "Generating unified metadata YAML for dataset %s at %s using db %s",
+                dataset_uuid,
+                yaml_dst,
+                db.db_file,
+            )
+            _write_unified_metadata_yaml(
+                dst_yaml_path=str(yaml_dst),
+                dataset_path=str(hardlink_path),
+                db_file_path=str(db.db_file),
+                dataset_uuid=dataset_uuid,
+            )
+            _logger.info("Generated unified metadata YAML at %s", yaml_dst)
 
             # 6. Sample and compress videos
             _logger.debug(f"Sampling video from hardlink path: {hardlink_path}...")
