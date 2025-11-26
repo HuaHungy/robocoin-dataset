@@ -3,7 +3,6 @@
 合并 page_example.py 和 readme_example.py 的所有字段
 可用于 YAML 生成、数据访问和序列化
 """
-
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
