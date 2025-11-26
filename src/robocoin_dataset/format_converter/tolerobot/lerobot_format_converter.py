@@ -743,20 +743,49 @@ class LerobotFormatConverter(ABC):
         }
 
     def _create_lerobot_dataset(self) -> LeRobotDataset:
-        """创建LeRobot数据集
+        """创建或加载LeRobot数据集（支持断点续转）
         
-        🔥 处理目录已存在的情况（FileExistsError修复）：
-        - 如果output_path已存在，先删除（通常是之前失败的转换残留）
+        🔥 断点续转功能：
+        - 如果output_path已存在且包含有效数据集，则加载它（续转）
+        - 否则创建新的数据集
         - 支持重试机制，处理并发创建的竞态条件
-        - 然后创建新的数据集
         
-        注意：lerobot库的create方法不支持exist_ok参数，必须手动处理
+        Returns:
+            LeRobotDataset: 创建或加载的数据集对象
         """
         import shutil
         import time
         from pathlib import Path
         
         output_path = Path(self.output_path)
+        
+        # 🆕 检查是否存在有效的数据集（断点续转）
+        info_file = output_path / "meta" / "info.json"
+        if output_path.exists() and info_file.exists():
+            if self.logger:
+                self.logger.info(f"🔄 检测到已存在的数据集: {output_path.name}")
+                self.logger.info(f"   尝试加载以支持断点续转...")
+            
+            try:
+                # 尝试加载已存在的数据集
+                dataset = LeRobotDataset(
+                    repo_id=self.repo_id,
+                    root=self.output_path,
+                    local_files_only=True  # 只使用本地文件，不从Hub下载
+                )
+                
+                if self.logger:
+                    self.logger.info(f"✅ 成功加载已存在的数据集")
+                    self.logger.info(f"   当前已有 {len(dataset)} 个episodes")
+                    self.logger.info(f"   将继续转换剩余episodes...")
+                
+                return dataset
+                
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"⚠️  加载已存在数据集失败: {e}")
+                    self.logger.warning(f"   将删除并重新创建数据集...")
+                # 加载失败，继续下面的删除+重建流程
         
         # 最多重试3次（处理并发竞态条件）
         max_retries = 3
@@ -1058,7 +1087,7 @@ class LerobotFormatConverter(ABC):
         }
 
     def convert(self, is_test: bool = False) -> Iterable[tuple[str, int, int]]:
-        """转换数据集，使用智能容错机制
+        """转换数据集，使用智能容错机制（支持断点续转）
         
         Args:
             is_test: 是否为测试模式（只转换第一个episode）
@@ -1075,10 +1104,16 @@ class LerobotFormatConverter(ABC):
         if not is_test:
             dataset = self._create_lerobot_dataset()
             self.lerobot_dataset = dataset  # 🆕 保存到self，用于清理
+            
+            # 🔄 断点续转：获取已存在的episodes数量
+            existing_episodes = len(dataset) if dataset else 0
+            if existing_episodes > 0 and self.logger:
+                self.logger.info(f"🔄 检测到 {existing_episodes} 个已存在的episodes，将跳过它们")
         else:
             dataset = None  # 测试模式不需要数据集对象
+            existing_episodes = 0
         
-        global_ep_idx = 0  # LeRobot中的全局episode索引（只计算成功转换的）
+        global_ep_idx = existing_episodes  # 从已存在的episodes数量开始计数
         original_ep_idx = 0  # 原始数据中的全局episode索引（包含所有episode，包括跳过的）
         task_stats = {}  # 每个task的统计信息
         
@@ -1107,6 +1142,13 @@ class LerobotFormatConverter(ABC):
             }
             
             for task_ep_idx in range(episodes_num):
+                # 🔄 断点续转：跳过已经转换的episodes
+                if original_ep_idx < existing_episodes:
+                    if self.logger and original_ep_idx == 0:
+                        self.logger.info(f"⏭️  跳过已转换的 {existing_episodes} 个episodes...")
+                    original_ep_idx += 1
+                    continue
+                
                 # 🧪 测试模式不使用严格模式（允许跳过字段缺失的episode）
                 # 正式模式：前N个episode使用严格模式（检测配置错误）
                 is_strict = global_ep_idx < self.strict_episodes and not is_test
