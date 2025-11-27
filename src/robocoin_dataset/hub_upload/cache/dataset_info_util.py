@@ -12,13 +12,13 @@ from pathlib import Path
 import draccus
 import yaml
 
-from .constant import (
+from ..lerobot.constant import (
     ANNOTATIONS_DIR,
     DATASET_INFO_FILE,
     LEROBOT_META_INFO_FILE,
     LEROBOT_META_TASKS_FILE,
 )
-from .local_datasets_util import LocalDsConfig, LocalDsUtil
+from ..lerobot.local_datasets_util import LocalDsConfig, LocalDsUtil
 
 
 @dataclass
