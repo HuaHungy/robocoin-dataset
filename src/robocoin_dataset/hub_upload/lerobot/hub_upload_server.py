@@ -41,8 +41,8 @@ class HubUploadServer(TaskServer):
         force_overwrite: bool = False,
         host: str = "0.0.0.0",
         port: int = 2100,
-        heartbeat_interval: float = 10.0,
-        timeout: float = 15.0,
+        heartbeat_interval: float = 30.0,
+        timeout: float = 90.0,
         logger: logging.Logger | None = None,
     ) -> None:
         """
