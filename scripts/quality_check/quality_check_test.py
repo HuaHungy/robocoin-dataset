@@ -4,7 +4,7 @@ from robocoin_dataset.quality_check.dataset_quality_check import (
 )
 
 if __name__ == "__main__":
-    repo_path = "/mnt/nas/synnas/docker2/robocoin-datasets/unitree_g1_stack_bowls"
+    repo_path = "/mnt/nas/synnas/docker2/robocoin-datasets/G1edu-u3_bowl_storage_grape_multitry"
     device_model = "unitree_g1"
     device_model_version = "default_version"
     device_version_config_file = "scripts/quality_check/configs/device_version_checker_config.yaml"

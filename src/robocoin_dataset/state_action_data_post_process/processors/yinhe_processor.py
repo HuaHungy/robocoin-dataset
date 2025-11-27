@@ -74,19 +74,30 @@ class YinheProcessor(StateActionDataPostProcessorBase):
         for col_idx in gripper_indices:
             if col_idx is None:
                 continue
-            # try:
             col_max = float(np.max(scaled_data[:, col_idx]))
             division_count = 0
-            while col_max > 0.05:
-                raise ValueError("Max value too large, scaling down.")
-                # scaled_data[:, col_idx] = scaled_data[:, col_idx] / 2.0
-                # division_count += 1
-                # col_max = float(np.max(scaled_data[:, col_idx]))
-            if division_count > 0:
-                logger.info(f"Episode {self.episode_index}: Column {col_idx} divided by 2 {division_count} time(s), final max value: {col_max:.6f}")
-            # except (IndexError, ValueError) as e:
-            #     logger.warning(f"Episode {self.episode_index}: Could not process column {col_idx}. Reason: {e}")
-            #     continue
+            multiply_count = 0
+            # 先处理大于 0.05 的情况
+            # while col_max > 0.05:
+            #     scaled_data[:, col_idx] = scaled_data[:, col_idx] / 3.0
+            #     division_count += 1
+            #     col_max = float(np.max(scaled_data[:, col_idx]))
+            # if division_count > 0:
+            #     logger.info(f"Episode {self.episode_index} divided by 3 {division_count} time(s), final max value: {col_max:.6f}")
+            # 新增：如果最大值在 (0.1, 1.0) 之间，循环乘以 20
+            if col_max < 0.0:
+                raise ValueError(f"Gripper column at index {col_idx} has negative max value {col_max}")
+            while 0.1 > col_max and col_max > 0 and multiply_count < 10:  # 添加 col_max > 0 和最大迭代次数限制
+                scaled_data[:, col_idx] = scaled_data[:, col_idx] * 20.0
+                multiply_count += 1
+                col_max = float(np.max(scaled_data[:, col_idx]))
+            if col_max > 1.0:
+                scaled_data[:, col_idx] = scaled_data[:, col_idx] / 2.0
+                col_max = float(np.max(scaled_data[:, col_idx]))
+            if multiply_count > 0:
+                logger.info(f"Episode {self.episode_index} multiplied by 20 {multiply_count} time(s), final max value: {col_max:.6f}")
+            # if col_max > 1.0 or col_max < 0.4:
+            #     raise ValueError(f"After scaling, gripper column at index {col_idx} still has max value {col_max} > 1.0 or < 0.4")
         return scaled_data
 
     # 该方法将ori_state_data进行后处理，返回结果为后处理后的数据

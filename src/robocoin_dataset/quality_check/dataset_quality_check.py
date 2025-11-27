@@ -128,7 +128,6 @@ def quality_check_pipeline(
     try:
         episode_nums = get_episodes_frames(repo_path)
         bad_data_episodes = check_length_consistency(repo_path, data_feature)
-        print("Bad data episodes: ", bad_data_episodes)
         for checker_cfg in dataset_data_checkers_config:
             name = checker_cfg["name"]
             func = DATASET_DATA_CHECKERS[name]

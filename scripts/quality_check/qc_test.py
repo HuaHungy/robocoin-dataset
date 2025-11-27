@@ -4,10 +4,8 @@ from robocoin_dataset.quality_check.dataset_quality_check import (
 )
 
 if __name__ == "__main__":
-    repo_path = (
-        "/mnt/nas/synnas/docker2/robocoin-datasets/Tianqing_A2_container_storage_graphics_card"
-    )
-    device_model = "ruantong_a2d"
+    repo_path = "/mnt/nas/synnas/docker2/robocoin-datasets/Galbot_g1_steamer_storage_baozi_h"
+    device_model = "yinhe"
     device_model_version = "default_version"
     device_version_config_file = "scripts/quality_check/configs/device_version_checker_config.yaml"
     checker_config = get_checker_config(

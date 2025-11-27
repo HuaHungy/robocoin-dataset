@@ -15,7 +15,10 @@ episode_data_checkers:
     score_weight: 1.0   
 
 
-episode_video_checkers:
-  - name: "max_frame_jump_dist_and_max_static_frames"
-    should_check: True  
-    score_weight: 1.0   
+# episode_video_checkers:
+#   - name: "frame_jump"
+#     params:
+#       hash_size: 16
+#       jump_threshold: 50  # 新增：判定跳帧所需的最小汉明距离
+#     should_check: True  
+#     score_weight: 1.0   
