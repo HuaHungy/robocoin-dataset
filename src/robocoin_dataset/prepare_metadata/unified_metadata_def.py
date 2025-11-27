@@ -185,6 +185,12 @@ class UnifiedMetadata:
     # 数据来源: 模板固定值（可选）
     # 用途: 项目页面链接
 
+
+    issues_url: str = "https://github.com/FlagOpen/RoboCOIN/issues"
+    # 数据来源: 模板固定值（可选）
+    # 用途: GitHub Issues 链接，用于问题追踪
+
+
     # ========== 来源：meta/info.json ==========
     # 这些字段从数据集的 meta/info.json 文件中自动提取
 

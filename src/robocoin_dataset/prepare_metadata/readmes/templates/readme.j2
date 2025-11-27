@@ -29,6 +29,27 @@ configs:
 {%- endif %}
 {% if codebase_version is defined %} | **Codebase Version:** `{{ codebase_version }}`
 {%- endif %}
+{% if end_effector_type is defined -%}
+**End-Effector Type:** `{{ end_effector_type }}`
+{%- endif %}
+
+{% if scene_type is defined and scene_type -%}
+## 🏠 Scene Types
+
+This dataset covers the following scene types:
+{% for scene in scene_type -%}
+- `{{ scene }}`
+{% endfor %}
+{%- endif %}
+
+{% if atomic_actions is defined and atomic_actions -%}
+## 🤖 Atomic Actions
+
+This dataset includes the following atomic actions:
+{% for action in atomic_actions -%}
+- `{{ action }}`
+{% endfor %}
+{%- endif %}
 
 ## 📊 Dataset Statistics
 
@@ -121,6 +142,9 @@ No contributor information available.
 {% if project_page is defined -%}
 - **🌐 Project Page:** [{{ project_page }}]({{ project_page }})
 {% endif -%}
+{% if issues_url is defined -%}
+- **🐛 Issues:** [{{ issues_url }}]({{ issues_url }})
+{% endif -%}
 - **📜 License:** {{ license }}
 
 ## 🏷️ Dataset Tags
@@ -145,11 +169,6 @@ This dataset includes {{ sub_tasks | length }} distinct subtasks:
 {%- else -%}
 {{ sub_tasks }}
 {%- endif %}
-{%- endif %}
-
-{% if scene is defined -%}
-### Scene Descriptions
-{{ scene }}
 {%- endif %}
 
 ## 🎥 Camera Views
@@ -441,7 +460,6 @@ The dataset is organized as follows (showing leaf directories with first 5 files
 {%- endif %}
 
 
-{#
 ## 📞 Contact and Support
 
 {% if contact_email is defined -%}
@@ -458,7 +476,6 @@ For questions, issues, or feedback regarding this dataset, please contact:
 {%- else -%}
 For technical issues or questions, please open an issue on the repository or contact the dataset authors.
 {%- endif %}
-#}
 
 ## 📄 License
 
@@ -471,7 +488,6 @@ Please refer to the LICENSE file for full license terms and conditions.
 {%- endif %}
 
 
-{#
 ## 📚 Citation
 
 If you use this dataset in your research, please cite:
@@ -485,10 +501,12 @@ If you use this dataset in your research, please cite:
 
 {{ additional_citations }}
 {%- endif %}
-#}
 
-{% if version_info is defined -%}
 ## 📌 Version Information
 
+{% if version_info is defined -%}
 {{ version_info }}
+{%- else -%}
+## Version History
+- v1.0.0 (2025-11): Initial release
 {%- endif %}
