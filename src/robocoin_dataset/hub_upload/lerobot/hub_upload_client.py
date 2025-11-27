@@ -185,6 +185,7 @@ class HubUploadClient(TaskClient):
 
         # db_file_path must come from server - client doesn't need to know about it
         effective_db_file_path = client_config.get("db_file_path", "")
+        self.logger.info(f"Client config received: db_file_path='{client_config.get('db_file_path', 'MISSING')}'")
         if not effective_db_file_path:
             error_msg = (
                 "Server did not provide db_file_path in task configuration. "

@@ -14,8 +14,7 @@ from pathlib import Path
 import yaml
 from tqdm import tqdm
 
-from robocoin_dataset.hub_upload.gen_file.gen_info import gen_info
-from robocoin_dataset.hub_upload.gen_file.gen_readme import gen_readme
+from robocoin_dataset.hub_upload.gen_readme.gen_readme import gen_readme
 from robocoin_dataset.prepare_metadata.metadata_collect import create_unified_metadata
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
 
@@ -298,13 +297,6 @@ class LocalDsUploadUtil(LocalDsUtil):
             self.logger.info(f"{dataset_name}: Upload failed after {dataset_elapsed:.2f}s")
 
         return result
-
-    def _generate_yaml_for_dataset(
-        self,
-        hardlink_path: Path,
-        output_path: Path,
-    ) -> tuple[bool, str]:
-        return gen_info(hardlink_path, output_path, self.logger)
 
     def _generate_readme_for_dataset(
         self,

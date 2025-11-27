@@ -1,7 +1,7 @@
 """
-RoboCoin Datasets Generate Dataset Readme.md from readme_template/readme.j2 template
-usage:
-python -m robocoin.datasets.gen_readme --config configs/upload.yaml
+这个脚本主要用于生成dataset_info.yml文件，用于上传到hub生成README使用，文件中
+也包含了批量生成的方法，但是现在已经弃用，并使用针对单个文件的脚本。
+总的来说，该脚本已经不再使用，请避免使用他做依赖。
 """
 
 import json
