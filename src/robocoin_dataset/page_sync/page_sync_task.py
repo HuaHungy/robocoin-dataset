@@ -167,6 +167,7 @@ def _mark_task_completed(session: "Session", dataset_uuid: str) -> None:
         session.commit()
         logging.getLogger(__name__).info(f"Marked dataset {dataset_uuid} as COMPLETED")
 
+
 def _mark_task_failed(session: "Session", dataset_uuid: str, error_msg: str = "") -> None:
     """
     Mark the specific task as FAILED using dataset_uuid and store error message.
@@ -188,6 +189,7 @@ def _mark_task_failed(session: "Session", dataset_uuid: str, error_msg: str = ""
         item.dataset_info_sync_err_msg = error_msg if error_msg else None
         session.commit()
         logging.getLogger(__name__).error(f"Marked dataset {dataset_uuid} as FAILED: {error_msg}")
+
 
 def _get_hub_field_prefix(dataset_table: "type[DatasetDB]") -> tuple[str, str]:
     '''Return the correct field prefixes for both HuggingFace and ModelScope hubs,
