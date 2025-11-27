@@ -127,9 +127,14 @@ class SingleDatasetReadmeGenerator:
             self.dataset_name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
         )
 
+        # Create a copy of context without dataset_name to avoid conflict
+        # since we're passing dataset_name explicitly as a keyword argument
+        context_copy = context.copy()
+        context_copy.pop("dataset_name", None)
+
         return env.get_template(self.readme_template_file.name).render(
             dataset_name=display_dataset_name,
-            **context,
+            **context_copy,
         )
 
     def generate_readme(
