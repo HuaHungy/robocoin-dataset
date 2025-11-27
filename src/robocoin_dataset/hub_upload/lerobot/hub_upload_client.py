@@ -11,6 +11,7 @@ import logging
 import multiprocessing as mp
 import time
 import traceback
+from functools import cached_property
 from pathlib import Path
 
 from robocoin_dataset.distribution_computation.constant import (
@@ -74,13 +75,6 @@ class HubUploadClient(TaskClient):
         self.output_path = Path(output_path).expanduser().absolute() if output_path else Path("./dataset_info")
         self.force_overwrite = force_overwrite
 
-        # Lazy initialization: cached upload utility instance and its configuration
-        self._upload_util: LocalDsUploadUtil | None = None
-        self._current_config: tuple | None = None
-
-        # Pending configuration for next upload utility creation
-        self._pending_config: tuple | None = None
-
         # Create output directory
         self.output_path.mkdir(parents=True, exist_ok=True)
 
@@ -90,79 +84,38 @@ class HubUploadClient(TaskClient):
     def generate_task_request_desc(self) -> dict:
         return {}
 
-    def _configure_upload_util(
-        self,
-        hub_name: DatasetsHubEnum,
-        token: str,
-        namespace: str,
-        output_path: str,
-        db_file_path: str,
-        force_overwrite: bool,
-    ) -> None:
-        """
-        Configure upload utility parameters for lazy initialization.
-
-        This method sets the pending configuration that will be used when
-        the upload_util property is accessed. Implements the Lazy Initialization
-        pattern by deferring instance creation until actual access.
-
-        Args:
-            hub_name: Target hub platform
-            token: Authentication token
-            namespace: Username/namespace
-            output_path: Output path for generated files
-            db_file_path: Database file path
-            force_overwrite: Force overwrite flag
-        """
-        self._pending_config = (hub_name.value, token, namespace, output_path, db_file_path, force_overwrite)
-
-    @property
+    @cached_property
     def upload_util(self) -> LocalDsUploadUtil:
         """
-        Get upload utility instance with lazy initialization (property decorator).
+        Get upload utility instance with lazy initialization.
 
-        This property implements the Lazy Initialization pattern: the instance is
-        created only when first accessed, and reused for subsequent accesses if
-        configuration hasn't changed. Provides clean, attribute-style access.
+        This property uses @cached_property so that the uploader is created only
+        once per client process, based on configuration that is constant during
+        the whole lifecycle (hub_name, token, namespace, output_path, etc.).
+        Per-task dynamic parameters (e.g. dataset metadata) are passed directly
+        into the upload call and are NOT baked into this config.
 
         Returns:
             LocalDsUploadUtil instance (cached or newly created)
 
-        Raises:
-            RuntimeError: If accessed before configuration is set via _configure_upload_util
         """
-        if self._pending_config is None:
-            raise RuntimeError(
-                "Upload utility configuration not set. "
-                "Call _configure_upload_util() before accessing upload_util property."
-            )
+        self.logger.debug(
+            "Initializing upload utility "
+            f"| hub={self.hub_name.value} | namespace={self.namespace} | output_path={self.output_path}"
+        )
 
-        # Lazy initialization: create instance only when needed
-        # Reuse instance if configuration hasn't changed
-        if self._upload_util is None or self._current_config != self._pending_config:
-            hub_name_str, token, namespace, output_path, db_file_path, force_overwrite = self._pending_config
-            hub_name = DatasetsHubEnum[hub_name_str]
+        upload_config = LocalDsUploadConfig(
+            root_path="",  # Not needed for client mode
+            hub_name=self.hub_name,
+            token=self.token,
+            namespace=self.namespace,
+            output_path=str(self.output_path),
+            db_file_path="",  # Client never reads DB; metadata is provided by server
+            skip_missing=True,
+            force_overwrite=self.force_overwrite,
+        )
 
-            self.logger.debug(
-                f"{'Initializing' if self._upload_util is None else 'Reinitializing'} "
-                f"upload utility | hub={hub_name.value} | namespace={namespace} | db={db_file_path}"
-            )
-
-            upload_config = LocalDsUploadConfig(
-                root_path="",  # Not needed for client mode
-                hub_name=hub_name,
-                token=token,
-                namespace=namespace,
-                output_path=output_path,
-                db_file_path=db_file_path,
-                skip_missing=True,
-                force_overwrite=force_overwrite,
-            )
-
-            self._upload_util = LocalDsUploadUtil(upload_config)
-            self._current_config = self._pending_config
-
-        return self._upload_util
+        return LocalDsUploadUtil(upload_config)
 
     def _sync_process_task(self, task_content: dict) -> dict:
         """
@@ -172,6 +125,7 @@ class HubUploadClient(TaskClient):
         # Extract task-specific parameters
         dataset_uuid = task_content.get(DATASET_UUID, "unknown")
         hardlink_path_str = task_content.get(LEFORMAT_PATH)
+        metadata = task_content.get("metadata")
 
         # Extract client configuration from task content (server provides all necessary config)
         client_config = task_content.get("client_config", {})
@@ -183,20 +137,7 @@ class HubUploadClient(TaskClient):
         effective_output_path = client_config.get("output_path") or str(self.output_path)
         effective_force_overwrite = client_config.get("force_overwrite", self.force_overwrite)
 
-        # db_file_path must come from server - client doesn't need to know about it
-        effective_db_file_path = client_config.get("db_file_path", "")
-        self.logger.info(f"Client config received: db_file_path='{client_config.get('db_file_path', 'MISSING')}'")
-        if not effective_db_file_path:
-            error_msg = (
-                "Server did not provide db_file_path in task configuration. "
-                "This is required for metadata collection. "
-                "Please check that the server is properly configured with a valid database path."
-            )
-            self.logger.error(error_msg)
-            return {
-                "success": False,
-                "error_message": error_msg
-            }
+        self.logger.debug(f"Client config received: {client_config}")
 
         # Parse hub_name from string if provided in task
         if effective_hub_name_str:
@@ -223,17 +164,20 @@ class HubUploadClient(TaskClient):
         self.logger.debug(f"Task details | UUID: {dataset_uuid} | Path: {hardlink_path} | Hub: {effective_hub_name.value} | Namespace: {effective_namespace}")
 
         try:
-            # Configure and get upload utility (lazy initialization via @property)
-            self._configure_upload_util(
-                hub_name=effective_hub_name,
-                token=effective_token,
-                namespace=effective_namespace,
-                output_path=effective_output_path,
-                db_file_path=effective_db_file_path,
-                force_overwrite=effective_force_overwrite,
-            )
+            # Before first use of upload_util, allow server-provided config to
+            # override defaults for this client process (only once).
+            if "upload_util" not in self.__dict__:
+                self.hub_name = effective_hub_name
+                self.token = effective_token
+                self.namespace = effective_namespace
+                self.output_path = Path(effective_output_path).expanduser().absolute()
+                self.force_overwrite = effective_force_overwrite
 
-            upload_success, upload_error = self.upload_util._upload_one_dataset(hardlink_path)
+            # Use pre-built metadata from server; client never touches DB.
+            upload_success, upload_error = self.upload_util._upload_one_dataset(
+                hardlink_path,
+                metadata=metadata,
+            )
             if upload_success:
                 self.logger.info(f"Task completed | UUID: {dataset_uuid} | Success: True")
                 return {

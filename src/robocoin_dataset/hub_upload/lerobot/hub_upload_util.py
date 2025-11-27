@@ -233,13 +233,21 @@ class LocalDsUploadUtil(LocalDsUtil):
 
         return False, "Upload failed with unknown error"
 
-    def _upload_one_dataset(self, hardlink_path: Path) -> tuple[bool, str]:
+    def _upload_one_dataset(
+        self,
+        hardlink_path: Path,
+        metadata: UnifiedMetadata | dict | None = None,
+    ) -> tuple[bool, str]:
         """
         Upload a dataset to the hub with YAML and README generation.
-        is an enhanced version of _upload_one_dataset in LocalDsUtil.
+        Enhanced version of _upload_one_dataset in LocalDsUtil.
 
         Args:
-            hardlink_path: Path to the hardlink directory
+            hardlink_path: Path to the hardlink directory.
+            metadata: Optional pre-built UnifiedMetadata instance or dict.
+                - If provided, it will be used directly (DISTRIBUTED mode).
+                - If None, metadata will be collected locally from DB/files
+                  using create_unified_metadata (LOCAL mode).
 
         Returns:
             tuple[bool, str]: (success status, error message if failed or empty string if success)
@@ -254,16 +262,25 @@ class LocalDsUploadUtil(LocalDsUtil):
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Step 2: Build aggregated metadata from database + local files
+        # NOTE:
+        #   - LOCAL mode: metadata is collected here using db_file_path.
+        #   - DISTRIBUTED mode: metadata is pre-packaged on the server and
+        #     passed in via the `metadata` argument so the client never touches DB.
         tqdm.write("    🧩 Collecting unified metadata...")
         self.logger.info(f"{dataset_name}: Collecting unified metadata...")
         try:
-            if not self.config.db_file_path:
-                raise ValueError("db_file_path is required for unified metadata collection")
-            metadata = create_unified_metadata(
-                hardlink_path=hardlink_path,
-                db_file_path=self.config.db_file_path,
-                dataset_uuid=None,
-            )
+            if metadata is None:
+                # Local mode: collect metadata using local database
+                if not self.config.db_file_path:
+                    raise ValueError("db_file_path is required for unified metadata collection")
+                metadata = create_unified_metadata(
+                    hardlink_path=hardlink_path,
+                    db_file_path=self.config.db_file_path,
+                    dataset_uuid=None,
+                )
+            elif isinstance(metadata, dict):
+                # Convert dict back to UnifiedMetadata when coming from server
+                metadata = UnifiedMetadata.from_dict(metadata)
         except Exception as e:  # noqa: PERF203
             tb = traceback.format_exc()
             error_msg = f"Unified metadata collection failed: {e}\n\nFull traceback:\n{tb}"

@@ -22,6 +22,7 @@ from robocoin_dataset.hub_upload.lerobot.hub_upload_task import (
     _mark_upload_failed,
     _sync_datasets_upload_status,
 )
+from robocoin_dataset.prepare_metadata.metadata_collect import create_unified_metadata
 
 TASK_CATEGORY = "hub_upload"
 
@@ -71,13 +72,12 @@ class HubUploadServer(TaskServer):
         self.hub_name = hub_name
 
         # Store client configuration parameters to be sent with tasks
+        # NOTE: Client should not need to know any database path – all metadata
+        # is prepared on the server side and sent with each task.
         self.client_token = token
         self.client_namespace = namespace
         self.client_output_path = output_path or "./dataset_info"
         self.client_force_overwrite = force_overwrite
-        # Also propagate database path to clients so they can build metadata
-        self.client_db_file_path = str(self.db_file_path)
-        self.logger.info(f"Server initialized with client_db_file_path: {self.client_db_file_path}")
         self.logger.info(f"Server db_file_path: {self.db_file_path}")
 
         self.datasets_succeeded = 0
@@ -107,10 +107,33 @@ class HubUploadServer(TaskServer):
 
                 self.logger.debug(f"Using existing hardlink for client: {hardlink_path}")
 
+                # Step 2: Build unified metadata on the server side so that
+                # clients never need to access the database.
+                try:
+                    unified_metadata = create_unified_metadata(
+                        hardlink_path=hardlink_path,
+                        db_file_path=self.db_file_path,
+                        dataset_uuid=dataset_uuid,
+                    )
+                    metadata_dict = unified_metadata.to_dict()
+                except Exception as e:  # noqa: PERF203
+                    err_msg = (
+                        f"Unified metadata collection failed on server for dataset {dataset_uuid}: {e}\n"
+                        f"{traceback.format_exc()}"
+                    )
+                    self.logger.exception(f"❌ {dataset_uuid}: {err_msg}")
+                    with self.db.with_session() as session:
+                        _mark_upload_failed(session, dataset_uuid, err_msg, self.hub_name, logger=self.logger)
+                    self.summary_logger.debug(f"❌ {dataset_uuid}: {err_msg}")
+                    self.datasets_failed += 1
+                    # Try to fetch next available task
+                    continue
+
                 # in case of success:
                 task_config = {
                     DATASET_UUID: dataset_uuid,
                     LEFORMAT_PATH: str(hardlink_path),  # Send hardlink path to client
+                    "metadata": metadata_dict,  # Send pre-built unified metadata
                     # Send client configuration parameters with the task
                     "client_config": {
                         "token": self.client_token,
@@ -118,11 +141,9 @@ class HubUploadServer(TaskServer):
                         "hub_name": self.hub_name.value,
                         "output_path": self.client_output_path,
                         "force_overwrite": self.client_force_overwrite,
-                        "db_file_path": self.client_db_file_path,
-                    }
+                    },
                 }
-                self.logger.warning(f"GENERATING TASK: db_file_path in config = '{self.client_db_file_path}'")
-                self.logger.warning(f"Sending task config: {task_config}")
+                self.logger.debug(f"Sending task config for dataset {dataset_uuid}")
                 return task_config
 
                 # in case of failure:

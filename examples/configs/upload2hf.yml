@@ -37,7 +37,7 @@ output_path: ./examples/datasets/outputs/upload_history
 # You MUST explicitly choose the upload mode via command line:
 #   --db_file_path <path>       : Use specified path
 #   --db_file_path default      : Use the path below from this YAML config
-db_file_path: "/path/to/your/datasets_new.db"  # Default path when using --db_file_path default
+db_file_path: "/home/adminpc1/robocoin-dataset/db/datasets_new.db"  # Default path when using --db_file_path default
 # Example: db_file_path: "/home/user/robocoin-dataset/db/datasets_new.db"
 
 # Option 2: Directory-based upload (LEGACY)
