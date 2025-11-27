@@ -167,6 +167,7 @@ def _mark_task_completed(session: "Session", dataset_uuid: str) -> None:
         session.commit()
         logging.getLogger(__name__).info(f"Marked dataset {dataset_uuid} as COMPLETED")
 
+
 def _mark_task_failed(session: "Session", dataset_uuid: str, error_msg: str = "") -> None:
     """
     Mark the specific task as FAILED using dataset_uuid and store error message.
@@ -188,6 +189,7 @@ def _mark_task_failed(session: "Session", dataset_uuid: str, error_msg: str = ""
         item.dataset_info_sync_err_msg = error_msg if error_msg else None
         session.commit()
         logging.getLogger(__name__).error(f"Marked dataset {dataset_uuid} as FAILED: {error_msg}")
+
 
 def _get_hub_field_prefix(dataset_table: "type[DatasetDB]") -> tuple[str, str]:
     '''Return the correct field prefixes for both HuggingFace and ModelScope hubs,
@@ -211,34 +213,3 @@ def _get_hub_field_prefix(dataset_table: "type[DatasetDB]") -> tuple[str, str]:
         )
 
     return hf_prefix, ms_prefix
-
-
-def _get_dataset_name(session: "Session") -> str | None:
-    """
-    Get dataset name from a PROCESSING status record.
-    This is for the page script compatibility.
-    """
-    from pathlib import Path
-
-    from robocoin_dataset.database.models import DatasetDB, TaskStatus
-
-    _logger = logging.getLogger(__name__)
-
-    _logger.debug("Querying for PROCESSING task to get dataset name...")
-    query = session.query(DatasetDB).filter(
-        DatasetDB.dataset_info_sync_status == TaskStatus.PROCESSING
-    )
-    item = query.first()
-
-    if not item:
-        _logger.warning("No PROCESSING task found when trying to get dataset name")
-        return None
-
-    if not hasattr(item, 'convert_path') or not item.convert_path:
-        _logger.warning("PROCESSING task found but convert_path is missing or empty")
-        return None
-
-    # Get the basename (ending) of the convert_path as dataset_name
-    dataset_name = Path(item.convert_path).name
-    _logger.debug(f"Retrieved dataset name: {dataset_name}")
-    return dataset_name

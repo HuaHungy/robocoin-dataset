@@ -1,17 +1,17 @@
-# dataset_name使用小写字母和下划线命名，例如 
+# dataset_name使用小写字母和下划线命名，例如
 # dataset_name: pickup_objects_on_table
 dataset_name: pickup_objects_on_table
 
 # dataset_uuid为数据集的唯一标识符，由程序自动生成，无需人工填写
-dataset_uuid: 
+dataset_uuid:
 
-# 任务描述, 使用英文语句描述, 可使用多个描述, 每行一个描述, 例如: 
-# task_desriptions: 
+# 任务描述, 使用英文语句描述, 可使用多个描述, 每行一个描述, 例如:
+# task_desriptions:
 # - pickup apples from table and place it into basket.
 # - pickup oranges from table and place it into basket.
 # - pickup bananas from table and place it into basket.
 # 每次新增任务时, 必须在最后新增任务描述, 以避免任务描述的编号错误
-task_descriptions: 
+task_descriptions:
 - pickup apples from table and place it into basket.
 
 # 场景类型, 例如: restaurant, kitchen, living_room，可使用多个标签，每行一个标签
@@ -35,7 +35,7 @@ objects:
   level4: null
   level5: null
 
-- object_name: rag 
+- object_name: rag
   level1: clothing
   level2: rag
   level3: null
@@ -60,5 +60,3 @@ device_model: agilex_pika_sense
 end_effector_type: two_finger_gripper
 
 device__list:
-
-

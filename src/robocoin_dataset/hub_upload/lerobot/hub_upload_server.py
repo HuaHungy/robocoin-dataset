@@ -75,6 +75,10 @@ class HubUploadServer(TaskServer):
         self.client_namespace = namespace
         self.client_output_path = output_path or "./dataset_info"
         self.client_force_overwrite = force_overwrite
+        # Also propagate database path to clients so they can build metadata
+        self.client_db_file_path = str(self.db_file_path)
+        self.logger.info(f"Server initialized with client_db_file_path: {self.client_db_file_path}")
+        self.logger.info(f"Server db_file_path: {self.db_file_path}")
 
         self.datasets_succeeded = 0
         self.datasets_failed = 0
@@ -104,7 +108,7 @@ class HubUploadServer(TaskServer):
                 self.logger.debug(f"Using existing hardlink for client: {hardlink_path}")
 
                 # in case of success:
-                return {
+                task_config = {
                     DATASET_UUID: dataset_uuid,
                     LEFORMAT_PATH: str(hardlink_path),  # Send hardlink path to client
                     # Send client configuration parameters with the task
@@ -114,8 +118,12 @@ class HubUploadServer(TaskServer):
                         "hub_name": self.hub_name.value,
                         "output_path": self.client_output_path,
                         "force_overwrite": self.client_force_overwrite,
+                        "db_file_path": self.client_db_file_path,
                     }
                 }
+                self.logger.warning(f"GENERATING TASK: db_file_path in config = '{self.client_db_file_path}'")
+                self.logger.warning(f"Sending task config: {task_config}")
+                return task_config
 
                 # in case of failure:
             except FileNotFoundError as e:

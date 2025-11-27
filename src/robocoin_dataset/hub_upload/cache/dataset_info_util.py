@@ -1,7 +1,7 @@
 """
-RoboCoin Datasets Generate Dataset Readme.md from readme_template/readme.j2 template
-usage:
-python -m robocoin.datasets.gen_readme --config configs/upload.yaml
+这个脚本主要用于生成dataset_info.yml文件，用于上传到hub生成README使用，文件中
+也包含了批量生成的方法，但是现在已经弃用，并使用针对单个文件的脚本。
+总的来说，该脚本已经不再使用，请避免使用他做依赖。
 """
 
 import json
@@ -12,13 +12,13 @@ from pathlib import Path
 import draccus
 import yaml
 
-from .constant import (
+from ..lerobot.constant import (
     ANNOTATIONS_DIR,
     DATASET_INFO_FILE,
     LEROBOT_META_INFO_FILE,
     LEROBOT_META_TASKS_FILE,
 )
-from .local_datasets_util import LocalDsConfig, LocalDsUtil
+from ..lerobot.local_datasets_util import LocalDsConfig, LocalDsUtil
 
 
 @dataclass
@@ -70,8 +70,13 @@ class LocalDsInfoUtil(LocalDsUtil):
         Raises:
             FileNotFoundError: If the info template file does not exist.
         """
-        # Template is in the readmes module, go up to hub_upload, then to readmes
-        path = Path(__file__).parent.parent.parent.joinpath("readmes", "templates", "dataset_info.yml")
+        # Template is in the prepare_metadata/readmes module
+        path = Path(__file__).parent.parent.parent.joinpath(
+            "prepare_metadata",
+            "readmes",
+            "templates",
+            "dataset_info.yml",
+        )
         if not path.exists():
             raise FileNotFoundError(f"info template file {path} does not exists")
         return path

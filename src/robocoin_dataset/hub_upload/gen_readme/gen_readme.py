@@ -13,16 +13,26 @@ Usage:
 import logging
 import traceback
 from pathlib import Path
+from typing import Any
 
 import draccus
 from tqdm import tqdm
 
-from robocoin_dataset.readmes.dataset_readme_util import LocalDsReadmeConfig, LocalDsReadmeUtil
+from robocoin_dataset.hub_upload.lerobot.local_datasets_util import (
+    LocalDsReadmeConfig,
+    LocalDsReadmeUtil,
+)
+from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
 
 from .single_dataset_readme_generator import SingleDatasetReadmeGenerator
 
 
-def gen_readme(hardlink_path: Path, dataset_info_root_path: Path, logger: logging.Logger | None = None) -> tuple[bool, str]:
+def gen_readme(
+    hardlink_path: Path,
+    dataset_info_root_path: Path | None,
+    logger: logging.Logger | None = None,
+    metadata: UnifiedMetadata | dict[str, Any] | None = None,
+) -> tuple[bool, str]:
     """
     Generate README.md for a single dataset using direct hardlink path.
 
@@ -46,8 +56,8 @@ def gen_readme(hardlink_path: Path, dataset_info_root_path: Path, logger: loggin
             logger=logger,
         )
 
-        # Generate README
-        success, error = generator.generate_readme()
+        # Generate README (prefer aggregated metadata when provided)
+        success, error = generator.generate_readme(metadata=metadata)
 
         if success:
             readme_path = hardlink_path / "README.md"
