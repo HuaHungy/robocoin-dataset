@@ -70,8 +70,13 @@ class LocalDsInfoUtil(LocalDsUtil):
         Raises:
             FileNotFoundError: If the info template file does not exist.
         """
-        # Template is in the readmes module, go up to hub_upload, then to readmes
-        path = Path(__file__).parent.parent.parent.joinpath("readmes", "templates", "dataset_info.yml")
+        # Template is in the prepare_metadata/readmes module
+        path = Path(__file__).parent.parent.parent.joinpath(
+            "prepare_metadata",
+            "readmes",
+            "templates",
+            "dataset_info.yml",
+        )
         if not path.exists():
             raise FileNotFoundError(f"info template file {path} does not exists")
         return path

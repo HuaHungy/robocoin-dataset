@@ -197,3 +197,169 @@ class LocalDsUtil:
             raise FileNotFoundError(f"root_path {self.root_path} does not exists")
         if not self.root_path.is_dir():
             raise NotADirectoryError(f"root_path {self.root_path} is not a directory")
+
+
+@dataclass
+class LocalDsReadmeConfig(LocalDsConfig):
+  """
+  Configuration class for local dataset README generation.
+
+  Attributes:
+      dataset_info_root_path (str): Root path containing dataset info files. Defaults to empty string.
+  """
+
+  dataset_info_root_path: str = ""
+
+
+class LocalDsReadmeUtil(LocalDsUtil):
+  """
+  Utility class for generating dataset README files from Jinja2 templates.
+
+  This class generates README.md files for datasets by combining dataset information
+  with a Jinja2 template, producing formatted documentation for each dataset.
+
+  Attributes:
+      config (LocalDsReadmeConfig): Configuration object for the README generator.
+      logger: Logger instance for the README generator.
+  """
+
+  def __init__(self, config: LocalDsReadmeConfig) -> None:
+    """
+    Initialize the README generator with configuration.
+
+    Args:
+        config (LocalDsReadmeConfig): Configuration object for the README generator.
+    """
+    super().__init__(config)
+    self.config = config
+
+    self.logger = self.setup_logger(logger_name="GEN_DATASET_README")
+
+  @cached_property
+  def readme_template_file(self) -> Path:
+    """
+    Get the path to the README template file with validation.
+
+    Returns:
+        Path: Absolute path to the README template file.
+
+    Raises:
+        FileNotFoundError: If the README template file does not exist.
+    """
+    path = Path(__file__).parent.parent.parent.joinpath(
+        "prepare_metadata",
+        "readmes",
+        "templates",
+        "readme.j2",
+    )
+    if not path.exists():
+      raise FileNotFoundError(f"readme template file {path} does not exists")
+    return path
+
+  def _generate_readme(self, ds_name: str) -> None:
+    """
+    Generate README file for a specific dataset using Jinja2 template.
+
+    IMPORTANT: This method ALWAYS OVERWRITES the existing README.md file.
+    The file is opened in write mode ('w'), which truncates any existing content.
+
+    Args:
+        ds_name (str): Name of the dataset to generate README for.
+
+    Raises:
+        FileNotFoundError: If meta info file does not exist.
+        RuntimeError: If there are errors during README generation.
+    """
+    from jinja2 import Environment, FileSystemLoader
+
+    from ...prepare_metadata.readmes.folder_structure_util import (
+        generate_folder_structure,
+    )
+    from ..constant import (
+        DATASET_INFO_FILE,
+        LEROBOT_META_INFO_FILE,
+    )
+
+    def get_meta_info_content() -> str:
+      """
+      Get the content of the meta info file.
+
+      Returns:
+          str: Content of the meta info file.
+
+      Raises:
+          FileNotFoundError: If meta info file does not exist.
+      """
+      meta_info_file = self.root_path.joinpath(ds_name, LEROBOT_META_INFO_FILE)
+      if not meta_info_file.exists():
+        raise FileNotFoundError(f"Meta info file {meta_info_file} does not exist.")
+      return meta_info_file.read_text(encoding="utf-8")
+
+    def get_folder_structure() -> str:
+      """
+      Get the folder structure tree for the dataset.
+
+      Returns:
+          str: Formatted folder structure tree showing leaf directories with first 5 files.
+      """
+      ds_path = self.root_path.joinpath(ds_name)
+      return generate_folder_structure(ds_path, max_files_per_dir=5)
+
+    ds_info_file = (
+      Path(self.config.dataset_info_root_path)
+      .joinpath(ds_name, DATASET_INFO_FILE)
+      .expanduser()
+      .absolute()
+    )
+    ds_info: dict
+    try:
+      import yaml
+      with open(ds_info_file) as f:
+        ds_info = yaml.safe_load(f)
+    except Exception as e:
+      raise RuntimeError(e) from e
+
+    # Auto-generate structure if not provided in ds_info
+    if "structure" not in ds_info or ds_info.get("structure") == "auto_generated":
+      ds_info["structure"] = get_folder_structure()
+
+    try:
+      env = Environment(loader=FileSystemLoader(self.readme_template_file.parent))
+      env.globals["get_meta_info_content"] = get_meta_info_content
+      ###########################################################################
+      # Remove _qced_hardlink suffix from dataset_name for display in README.md #
+      display_dataset_name = ds_name.removesuffix("_qced_hardlink")
+      readme_content = env.get_template(self.readme_template_file.name).render(
+        dataset_name=display_dataset_name, **ds_info
+      )
+
+      ds_path = self.root_path.joinpath(ds_name)
+      readme_file = ds_path.joinpath("README.md")
+
+      # Always overwrite the README.md file
+      with open(readme_file, "w", encoding="utf-8") as f:
+        f.write(readme_content)
+    except Exception as e:
+      raise RuntimeError(e) from e
+
+  def generate_readmes(self) -> None:
+    """
+    Generate README files for all valid datasets in the root path.
+
+    This method validates datasets and generates README.md files for each one
+    using the Jinja2 template and dataset information files.
+    """
+    from ..constant import README_FILE
+
+    self.check_root_path_valid()
+    ds_names = self.get_root_path_subdirs()
+
+    for ds_name in ds_names:
+      self.check_dataset_dir_valid(ds_name=ds_name)
+      log_prefix = f"dataset {ds_name}:"
+
+      try:
+        self._generate_readme(ds_name=ds_name)
+        self.logger.info(f"{log_prefix} generate {README_FILE} successfully")
+      except Exception as e:
+        self.logger.error(f"{log_prefix} generate {README_FILE} failed, {e}")

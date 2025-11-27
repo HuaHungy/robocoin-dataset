@@ -3,6 +3,8 @@ Single Dataset Info Generator - For On-Demand Generation During Upload
 
 This module provides a class for generating dataset info YAML files for individual datasets
 without requiring root_path manipulation. Designed for single-file generation during upload.
+
+现在这个脚本已经不再使用，请使用metadata_collect.py脚本代替，这个脚本将会在未来的某个版本被删除。
 """
 
 import json
@@ -71,8 +73,13 @@ class SingleDatasetInfoGenerator:
         Raises:
             FileNotFoundError: If the info template file does not exist.
         """
-        # Template is in the readmes module
-        path = Path(__file__).parent.parent.parent.joinpath("readmes", "templates", "dataset_info.yml")
+        # Template is in the prepare_metadata/readmes module
+        path = Path(__file__).parent.parent.parent.joinpath(
+            "prepare_metadata",
+            "readmes",
+            "templates",
+            "dataset_info.yml",
+        )
         if not path.exists():
             raise FileNotFoundError(f"Info template file {path} does not exist")
         return path

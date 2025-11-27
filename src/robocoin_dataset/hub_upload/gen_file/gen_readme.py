@@ -18,8 +18,11 @@ from typing import Any
 import draccus
 from tqdm import tqdm
 
+from robocoin_dataset.hub_upload.lerobot.local_datasets_util import (
+    LocalDsReadmeConfig,
+    LocalDsReadmeUtil,
+)
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
-from robocoin_dataset.readmes.dataset_readme_util import LocalDsReadmeConfig, LocalDsReadmeUtil
 
 from .single_dataset_readme_generator import SingleDatasetReadmeGenerator
 

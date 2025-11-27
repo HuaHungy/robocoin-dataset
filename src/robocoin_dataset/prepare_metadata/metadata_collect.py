@@ -15,7 +15,7 @@ import yaml
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB
-from robocoin_dataset.hub_upload.gen_file.single_dataset_readme_generator import (
+from robocoin_dataset.prepare_metadata.readmes.folder_structure_util import (
     generate_folder_structure,
 )
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
