@@ -1,7 +1,9 @@
 """
-统一元数据，用途是用于网页展示和上传到Hub的数据集的README生成。
-合并 page_example.py 和 readme_example.py 的所有字段
-可用于 YAML 生成、数据访问和序列化
+统一元数据，用途是用于网页展示和上传到Hub的数据集的README生成
+是对外展示和用于数据集筛选的依赖项目
+本数据类型将两者的信息整合进行处理
+并直接在yaml文件（用于网页）和README（用于数据集上传）的时候直接进行调用
+返回一个完整的数据结构对象，并据此进行文件的生成
 """
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -32,7 +34,8 @@ class UnifiedMetadata:
     # 用途: 描述机器人需要执行的具体任务
     # 示例: ["place the batteries in the box on the table."]
     # 处理: 在data-manager.js中直接映射到 description 字段
-    ### 现在直接使用tasks.jsonl中的task字段，因为原本的可能是错误的，需要使用任务标注的精确结果！
+    ### 废弃：现在直接使用tasks.jsonl中的task字段，因为原本的可能是错误的，
+    # 需要使用任务标注的精确结果，请直接读取tasks字段
 
     scene_type: list[str] = field(default_factory=list)
     # 数据来源: YAML文件的 scene_type 字段（数组）
@@ -367,13 +370,12 @@ class UnifiedMetadata:
     # 数据来源: 模板固定值（可选）
     # 用途: 许可证详细说明
 
-    citation_bibtex: str | None = """@misc{RoboCOINReport,
-        author = {Shihan Wu, Xuecheng Liu, Shaoxuan Xie, Pengwei Wang, Xinghang Li, Bowen Yang, Zhe Li, Kai Zhu, Hongyu Wu, Yiheng Liu, Zhaoye Long, Yue Wang, Chong Liu, Dihan Wang, Ziqiang Ni, Xiang Yang, You Liu, Ruoxuan Feng, Runtian Xu, Lei Zhang, Denghang Huang, Chenghao Jin, Anlan Yin, Xinlong Wang, Zhenguo Sun, Junkai Zhao, Mengfei Du, Mingyu Cao, Xiansheng Chen, Hongyang Cheng, Xiaojie Zhang, Yankai Fu, Ning Chen, Cheng Chi, Sixiang Chen, Huaihai Lyu, Xiaoshuai Hao, Yankai Fu, Yequan Wang, Bo Lei, Dong Liu, Xi Yang, Yance Jiao, Tengfei Pan, Yunyan Zhang, Songjing Wang, Ziqian Zhang, Xu Liu, Ji Zhang, Caowei Meng, Zhizheng Zhang, Jiyang Gao, Song Wang, Xiaokun Leng, Zhiqiang Xie, Zhenzhen Zhou, Peng Huang, Wu Yang, Yandong Guo, Yichao Zhu, Suibing Zheng, Hao Cheng, Xinmin Ding, Yang Yue, Huanqian Wang, Chi Chen, Jingrui Pang, YuXi Qian, Haoran Geng, Lianli Gao, Haiyuan Li, Bin Fang, Gao Huang, Yaodong Yang, Hao Dong, He Wang, Hang Zhao, Yadong Mu, Di Hu, Hao Zhao, Tiejun Huang, Shanghang Zhang, Yonghua Lin, Zhongyuan Wang and Guocai Yao},
-        title = {RoboCOIN: An Open-Sourced Bimanual Robotic Data Collection for Integrated Manipulation},
-        year = {2025},
-        eprint = {2511.17441},
-        archivePrefix = {arXiv},
-        url = {https://arxiv.org/abs/2511.17441}
+    citation_bibtex: str | None = """@article{robocoin,
+    title={RoboCOIN: An Open-Sourced Bimanual Robotic Data Collection for Integrated Manipulation},
+    author={Shihan Wu, Xuecheng Liu, Shaoxuan Xie, Pengwei Wang, Xinghang Li, Bowen Yang, Zhe Li, Kai Zhu, Hongyu Wu, Yiheng Liu, Zhaoye Long, Yue Wang, Chong Liu, Dihan Wang, Ziqiang Ni, Xiang Yang, You Liu, Ruoxuan Feng, Runtian Xu, Lei Zhang, Denghang Huang, Chenghao Jin, Anlan Yin, Xinlong Wang, Zhenguo Sun, Junkai Zhao, Mengfei Du, Mingyu Cao, Xiansheng Chen, Hongyang Cheng, Xiaojie Zhang, Yankai Fu, Ning Chen, Cheng Chi, Sixiang Chen, Huaihai Lyu, Xiaoshuai Hao, Yequan Wang, Bo Lei, Dong Liu, Xi Yang, Yance Jiao, Tengfei Pan, Yunyan Zhang, Songjing Wang, Ziqian Zhang, Xu Liu, Ji Zhang, Caowei Meng, Zhizheng Zhang, Jiyang Gao, Song Wang, Xiaokun Leng, Zhiqiang Xie, Zhenzhen Zhou, Peng Huang, Wu Yang, Yandong Guo, Yichao Zhu, Suibing Zheng, Hao Cheng, Xinmin Ding, Yang Yue, Huanqian Wang, Chi Chen, Jingrui Pang, YuXi Qian, Haoran Geng, Lianli Gao, Haiyuan Li, Bin Fang, Gao Huang, Yaodong Yang, Hao Dong, He Wang, Hang Zhao, Yadong Mu, Di Hu, Hao Zhao, Tiejun Huang, Shanghang Zhang, Yonghua Lin, Zhongyuan Wang and Guocai Yao},
+    journal={arXiv preprint arXiv:2511.17441},
+    url = {https://arxiv.org/abs/2511.17441},
+    year={2025}
     }"""
     # 数据来源: 模板固定值，可手动添加
     # 用途: BibTeX 格式的引用信息

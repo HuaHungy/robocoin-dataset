@@ -33,7 +33,7 @@ def construce_target_file(
     db: "DatasetDatabase",
     session: "Session",
     target_dir: str,
-    target_size_kb: int = 500,
+    crf: int = 18,
     update_videos: bool = False,
     logger: logging.Logger | None = None,
 ) -> None:
@@ -58,13 +58,12 @@ def construce_target_file(
         db: Database connection
         session: SQLAlchemy session
         target_dir: Root directory of the page project
-        target_size_kb: Target size for compressed videos in KB (default: 500)
+        crf: CRF value for video compression (default: 18, range: 0-51, lower = better quality)
         update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
         logger: Optional logger instance
     """
     from robocoin_dataset.page_sync.page_sync_task import (
         _gen_one_page_sync_task,
-        _get_dataset_name,
         _mark_task_completed,
         _mark_task_failed,
         _sync_page_sync_status,
@@ -75,6 +74,7 @@ def construce_target_file(
         _gen_consolidation,
         _gen_data_index,
         _gen_video_thumbnail,
+        _get_dataset_name,
         _sample_one_video_path,
         _validate_exist,
         _write_unified_metadata_yaml,
@@ -158,7 +158,7 @@ def construce_target_file(
 
             # 5. Generate YAML via unified metadata
             _logger.debug(f"Getting dataset name for {dataset_uuid}...")
-            dataset_name = _get_dataset_name(session)
+            dataset_name = _get_dataset_name(session, dataset_uuid)
             if not dataset_name:
                 _logger.error(f"Failed to get dataset name for dataset {dataset_uuid}")
                 _mark_task_failed(session, dataset_uuid)
@@ -175,7 +175,7 @@ def construce_target_file(
             )
             _write_unified_metadata_yaml(
                 dst_yaml_path=str(yaml_dst),
-                dataset_path=str(hardlink_path),
+                hardlink_path=str(hardlink_path),
                 db_file_path=str(db.db_file),
                 dataset_uuid=dataset_uuid,
             )
@@ -190,8 +190,8 @@ def construce_target_file(
                 continue
 
             _logger.info(f"Sampled video: {sampled_video_path}")
-            _logger.debug(f"Starting video compression (target: {target_size_kb}KB)...")
-            _compress_video_to_dst(sampled_video_path, str(videos_dir), target_size_kb, force_update=update_videos)
+            _logger.debug(f"Starting video compression with CRF={crf}...")
+            _compress_video_to_dst(sampled_video_path, str(videos_dir), crf=crf, force_update=update_videos)
             _logger.info(f"Compressed video from {sampled_video_path} into {videos_dir}")
 
             # 7. Alighment-Rename videos
@@ -236,7 +236,7 @@ def construce_target_file(
 def main(
     db_path: str,
     target_dir: str,
-    target_size_kb: int = 500,
+    crf: int = 18,
     update_videos: bool = False,
     log_level: str = "INFO",
 ) -> None:
@@ -246,7 +246,7 @@ def main(
     Args:
         db_path: Path to the SQLite database
         target_dir: Root directory of the page project
-        target_size_kb: Target size for compressed videos in KB (default: 500)
+        crf: CRF value for video compression (default: 18, range: 0-51, lower = better quality)
         update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
         log_level: Logging level (default: INFO)
     """
@@ -283,7 +283,7 @@ def main(
             db=db,
             session=session,
             target_dir=target_dir,
-            target_size_kb=target_size_kb,
+            crf=crf,
             update_videos=update_videos,
             logger=logger,
         )
@@ -308,10 +308,10 @@ if __name__ == "__main__":
         help="Root directory of the page project",
     )
     parser.add_argument(
-        "--target-size-kb",
+        "--crf",
         type=int,
-        default=500,
-        help="Target size for compressed videos in KB (default: 500)",
+        default=18,
+        help="CRF value for video compression (default: 18, range: 0-51, lower = better quality)",
     )
     parser.add_argument(
         "--update-videos",
@@ -331,7 +331,7 @@ if __name__ == "__main__":
     main(
         db_path=args.db_path,
         target_dir=args.target_dir,
-        target_size_kb=args.target_size_kb,
+        crf=args.crf,
         update_videos=args.update_videos,
         log_level=args.log_level,
     )

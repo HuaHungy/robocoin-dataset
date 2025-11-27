@@ -8,6 +8,8 @@ directly with hardlink paths without requiring root_path manipulation.
 Usage:
   Called internally during upload process, or standalone with:
   python -m robocoin.datasets.gen_info --config configs/gen_info.yaml
+
+现在这个脚本已经不再使用，请使用metadata_collect.py脚本代替，这个脚本将会在未来的某个版本被删除
 """
 
 import logging

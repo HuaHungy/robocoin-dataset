@@ -261,7 +261,7 @@ class LocalDsUploadUtil(LocalDsUtil):
             if not self.config.db_file_path:
                 raise ValueError("db_file_path is required for unified metadata collection")
             metadata = create_unified_metadata(
-                dataset_path=hardlink_path,
+                hardlink_path=hardlink_path,
                 db_file_path=self.config.db_file_path,
                 dataset_uuid=None,
             )

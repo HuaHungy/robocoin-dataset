@@ -3,6 +3,8 @@ Single Dataset README Generator - For On-Demand Generation During Upload
 
 This module provides a class for generating README.md files for individual datasets
 without requiring root_path manipulation. Designed for single-file generation during upload.
+
+现在这个脚本已经不再使用，请使用metadata_collect.py脚本代替，这个脚本将会在未来的某个版本被删除
 """
 
 import logging

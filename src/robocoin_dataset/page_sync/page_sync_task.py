@@ -211,34 +211,3 @@ def _get_hub_field_prefix(dataset_table: "type[DatasetDB]") -> tuple[str, str]:
         )
 
     return hf_prefix, ms_prefix
-
-
-def _get_dataset_name(session: "Session") -> str | None:
-    """
-    Get dataset name from a PROCESSING status record.
-    This is for the page script compatibility.
-    """
-    from pathlib import Path
-
-    from robocoin_dataset.database.models import DatasetDB, TaskStatus
-
-    _logger = logging.getLogger(__name__)
-
-    _logger.debug("Querying for PROCESSING task to get dataset name...")
-    query = session.query(DatasetDB).filter(
-        DatasetDB.dataset_info_sync_status == TaskStatus.PROCESSING
-    )
-    item = query.first()
-
-    if not item:
-        _logger.warning("No PROCESSING task found when trying to get dataset name")
-        return None
-
-    if not hasattr(item, 'convert_path') or not item.convert_path:
-        _logger.warning("PROCESSING task found but convert_path is missing or empty")
-        return None
-
-    # Get the basename (ending) of the convert_path as dataset_name
-    dataset_name = Path(item.convert_path).name
-    _logger.debug(f"Retrieved dataset name: {dataset_name}")
-    return dataset_name

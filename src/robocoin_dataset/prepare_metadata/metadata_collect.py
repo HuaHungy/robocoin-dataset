@@ -1,3 +1,11 @@
+'''
+本脚本旨在将所有的元数据收集和加载返回流程以及对应的方法全部集成到这个脚本
+以实现功能的模块化和统一化，减小后期的维护成本
+如果需要修改元数据或修改他们的来源，请直接在这个脚本里进行修改
+目前本脚本用于网页的元信息收集和生成yaml，以及数据集上传到Hub的元信息收集和生成README
+'''
+
+
 import json
 import logging
 from pathlib import Path
@@ -14,74 +22,24 @@ from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetada
 
 _logger = logging.getLogger(__name__)
 
-# 为后续的yaml文件生成和README生成，以及网页的元信息收集做准备。
-# 将所有的字段和名称记录下来之后，进行最终的更新和修改
-# 1. 首先根据yaml文件记录字段和对应的值，如果值为空则一样赋值为空但是记录有这样一个字段，保存为字典
-# 2. 然后分为三部分：
-#   1. 基础信息：dataset_name根据文件夹的名字给出, dataset_uuid根据数据库中的信息给出, device_model根据文件名的前半段给出, end_effector_type根据数据库的字段给出,
-#              operation_platform_height根据数据库中的信息给出，如果没有则赋值null
-#   2. 多对多信息：scene_type, task_descriptions, atomic_actions, objects
-#   3. 单对单信息：yaml_file_path, data_path, convert_path
-# 3. 然后根据数据库中的信息，进行最终的更新和修改
-# 4. 最后生成yaml文件和README文件
-
-
-def _match_device_name_from_folder(dataset_name: str) -> str | None:
-    """
-    Match device name from names.yml based on dataset folder name string matching.
-
-    This function:
-    1. Loads device names from names.yml
-    2. Searches for any device name that appears in the dataset_name
-    3. Returns the first match found, or None if no match
-
-    Args:
-        dataset_name: The dataset folder name to check against
-
-    Returns:
-        Matched device name from names.yml, or None if no match found
-    """
-    # Load names.yml from page_sync module
-    names_file = Path(__file__).parent.parent / "page_sync" / "names.yml"
-    if not names_file.exists():
-        _logger.warning(f"Names file does not exist: {names_file}. Cannot match device name.")
-        return None
-
-    try:
-        with open(names_file, encoding='utf-8') as f:
-            device_names = yaml.safe_load(f)
-    except Exception as e:
-        _logger.error(f"Failed to load names.yml: {e}. Cannot match device name.")
-        return None
-
-    if not isinstance(device_names, list):
-        _logger.error(f"names.yml should contain a list, but got {type(device_names)}. Cannot match device name.")
-        return None
-
-    # Search for matching device name in dataset_name
-    for device_name in device_names:
-        if device_name in dataset_name:
-            _logger.info(f"Matched device name '{device_name}' in dataset name '{dataset_name}'")
-            return device_name
-
-    _logger.debug(f"No device name from names.yml matched in dataset name '{dataset_name}'")
-    return None
-
 
 def create_unified_metadata(
-    dataset_path: str | Path,
+    hardlink_path: str | Path,
     db_file_path: str | Path,
     dataset_uuid: str | None = None,
 ) -> UnifiedMetadata:
     """
     从数据库和本地数据集目录创建并初始化一个标准的 UnifiedMetadata 实例，并返回。
     阶段 1：根据传入的路径收集信息并填充 UnifiedMetadata 各个字段：
-        - 数据库 (datasets_new.db):
-            * DatasetDB: dataset_name, dataset_uuid, device_model, end_effector_type,
+        - 从数据库获取的信息 (datasets_new.db):
+            * DatasetDB: dataset_name, dataset_uuid, device_model(*可能有错误请不要使用这个字段*),
+              end_effector_type(*严格从数据库获取，原始yaml是错误的)
               operation_platform_height
-            * 多对多关系: scene_types, atomic_actions, objects
             * yaml_file_path: 用于读取原始 YAML，填充 raw 字段
-        - 数据集目录 (dataset_path):
+        - 从原始yaml文件里获取的信息：
+            * 多对多关系: scene_types, atomic_actions, objects, 直接从yaml里复制
+              这里的yaml是来自datasetDB的yaml_file_path对应的文件
+        - 从数据集目录里获取的信息 (也就是hardlink_path对应的目录):
             * meta/info.json: robot_type, codebase_version, statistics, splits,
               data_path, video_path, features, depth_enabled
             * meta/tasks.jsonl: tasks（按行读取 task 字段并用换行拼接）
@@ -94,11 +52,11 @@ def create_unified_metadata(
     阶段 2：返回已经填充好的 UnifiedMetadata 实例。
 
     Args:
-        dataset_path: 单个数据集的根目录（通常是 *_hardlink 或 *_qced_hardlink 文件夹）。
+        hardlink_path: 单个数据集的根目录（通常是 *_hardlink 或 *_qced_hardlink 文件夹）。
         db_file_path: SQLite 数据库文件路径（如 db/datasets_new.db）。
         dataset_uuid: 可选，如果不提供，则会根据 dataset_path 在 DatasetHardLinkDB 中自动推断。
     """
-    ds_path = Path(dataset_path).expanduser().absolute()
+    ds_path = Path(hardlink_path).expanduser().absolute()
     db_path = Path(db_file_path).expanduser().absolute()
     db = DatasetDatabase(db_path)
 
@@ -130,22 +88,51 @@ def create_unified_metadata(
         dataset_name = item.dataset_name
         yaml_file_path = item.yaml_file_path
 
-        scene_type = [st.name for st in item.scene_types]
-        atomic_actions = [aa.action_name for aa in item.atomic_actions]
-        objects = [
-            {
-                "object_name": obj.object_name,
-                "level1": obj.level1_category,
-                "level2": obj.level2_category,
-                "level3": obj.level3_category,
-                "level4": obj.level4_category,
-                "level5": obj.level5_category,
-            }
-            for obj in item.objects
-        ]
-
-        # 原始 YAML 内容仅保存在 raw 字段中，方便调试；不直接覆盖上面的字段
+        # 原始 YAML 内容仅保存在 raw 字段中，方便调试
+        # 同时用于获取多对多关系字段 (scene_types, atomic_actions, objects)
         raw_yaml = _load_raw_yaml(yaml_file_path)
+
+        # 直接从原始yaml文件获取多对多关系字段
+        scene_type = []
+        if "scene_type" in raw_yaml and raw_yaml["scene_type"]:
+            scene_type = raw_yaml["scene_type"] if isinstance(raw_yaml["scene_type"], list) else []
+
+        atomic_actions = []
+        if "atomic_actions" in raw_yaml and raw_yaml["atomic_actions"]:
+            atomic_actions = raw_yaml["atomic_actions"] if isinstance(raw_yaml["atomic_actions"], list) else []
+
+        objects = []
+        if "objects" in raw_yaml and raw_yaml["objects"]:
+            raw_objects = raw_yaml["objects"] if isinstance(raw_yaml["objects"], list) else []
+            objects.extend([
+                {
+                    "object_name": obj.get("object_name"),
+                    "level1": obj.get("level1"),
+                    "level2": obj.get("level2"),
+                    "level3": obj.get("level3"),
+                    "level4": obj.get("level4"),
+                    "level5": obj.get("level5"),
+                }
+                for obj in raw_objects
+                if isinstance(obj, dict) and "object_name" in obj
+            ])
+
+        # Debug logging for empty fields
+        if not scene_type:
+            _logger.warning(
+                f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty scene_type in YAML. "
+                f"YAML file: {yaml_file_path}"
+            )
+        if not atomic_actions:
+            _logger.warning(
+                f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty atomic_actions in YAML. "
+                f"YAML file: {yaml_file_path}"
+            )
+        if not objects:
+            _logger.warning(
+                f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty objects in YAML. "
+                f"YAML file: {yaml_file_path}"
+            )
 
         # ---- 从 meta/ 和 annotations/ 中收集信息 ----
         meta_dir = ds_path / "meta"
@@ -238,6 +225,48 @@ def create_unified_metadata(
         # 原始 YAML
         raw=raw_yaml,
     )
+
+
+def _match_device_name_from_folder(dataset_folder_name: str) -> str | None:
+    """
+    Match device name from names.yml based on dataset folder name string matching.
+
+    This function:
+    1. Loads device names from names.yml
+    2. Searches for any device name that appears in the dataset_name
+    3. Returns the first match found, or None if no match
+
+    Args:
+        dataset_name: The dataset folder name to check against
+
+    Returns:
+        Matched device name from names.yml, or None if no match found
+    """
+    # Load names.yml from page_sync module
+    names_file = Path(__file__).parent.parent / "page_sync" / "names.yml"
+    if not names_file.exists():
+        _logger.warning(f"Names file does not exist: {names_file}. Cannot match device name.")
+        return None
+
+    try:
+        with open(names_file, encoding='utf-8') as f:
+            device_names = yaml.safe_load(f)
+    except Exception as e:
+        _logger.error(f"Failed to load names.yml: {e}. Cannot match device name.")
+        return None
+
+    if not isinstance(device_names, list):
+        _logger.error(f"names.yml should contain a list, but got {type(device_names)}. Cannot match device name.")
+        return None
+
+    # Search for matching device name in dataset_name
+    for device_name in device_names:
+        if device_name in dataset_folder_name:
+            _logger.info(f"Matched device name '{device_name}' in dataset name '{dataset_folder_name}'")
+            return device_name
+
+    _logger.debug(f"No device name from names.yml matched in dataset name '{dataset_folder_name}'")
+    return None
 
 
 def _load_subtasks(annotations_dir: Path) -> list[str]:
