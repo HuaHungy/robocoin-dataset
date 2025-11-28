@@ -468,8 +468,8 @@ Examples:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=45.0,
-        help="Timeout in seconds for server/client heartbeat (default: 45.0)"
+        default=400.0,
+        help="Timeout in seconds for server/client heartbeat (default: 300.0)"
     )
 
     return parser.parse_args()
