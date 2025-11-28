@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-CLI Script for Page Sync - Construct Assets
-
-Main entrance point for syncing dataset information to the page project.
-This script extracts YAML files and compressed videos from the database
-and organizes them into the page project's assets directory.
+本脚本是进行网页同步所需的素材文件生成的CLI入口脚本,一个标准的执行命令是:
+python scripts/page_sync/prepare_page_sync_files.py \
+  --db-path /mnt/db/datasets_new.db \
+  --target-dir /home/rogerspyke/projects \
+  --log-level INFO \
+  --update-videos \
+  --crf 30
+这里--update-videos可以删除,如果加入参数则表示强制重新生成视频。
+--crf通过指定crf参数进行视频文件压缩的质量控制,范围是0-51,越小质量越好,越大质量越差
+现在的crf设置30可以得到一个平均视频文件在500kb左右的一个结果
+脚本的实际功能都在 page_sync (src) 中实现
 """
 
 import argparse
@@ -70,7 +76,7 @@ Output Structure:
     parser.add_argument(
         "--crf",
         type=int,
-        default=18,
+        default=23,
         help="CRF value for video compression (default: 18, range: 0-51, lower = better quality)",
     )
 
