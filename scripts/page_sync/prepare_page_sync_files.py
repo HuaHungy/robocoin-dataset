@@ -36,6 +36,12 @@ Examples:
     --target-dir /path/to/page-project \\
     --update-videos
 
+  # With custom CRF value for video compression
+  python scripts/page_sync/construct_assets.py \\
+    --db-path db/datasets_new.db \\
+    --target-dir /path/to/page-project \\
+    --crf 23
+
 Output Structure:
   target-dir/
     assets/
@@ -67,6 +73,13 @@ Output Structure:
         type=int,
         default=512,
         help="Target size for compressed videos in KB (default: 500)",
+    )
+
+    parser.add_argument(
+        "--crf",
+        type=int,
+        default=18,
+        help="CRF value for video compression (default: 18, range: 0-51, lower = better quality)",
     )
 
     parser.add_argument(
@@ -104,6 +117,7 @@ Output Structure:
     print(f"  Database: {args.db_path}")
     print(f"  Target: {args.target_dir}")
     print(f"  Video size: {args.target_size_kb} KB")
+    print(f"  CRF: {args.crf}")
     print(f"  Update videos: {args.update_videos}")
     print(f"  Log level: {args.log_level}")
     print()
@@ -112,7 +126,7 @@ Output Structure:
         page_sync_main(
             db_path=str(db_path.absolute()),
             target_dir=str(target_dir.absolute()),
-            target_size_kb=args.target_size_kb,
+            crf=args.crf,
             update_videos=args.update_videos,
             log_level=args.log_level,
         )
