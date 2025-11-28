@@ -23,11 +23,10 @@ Examples:
     --db-path db/datasets_new.db \\
     --target-dir /path/to/page-project
 
-  # With custom video size and debug logging
+  # With debug logging
   python scripts/page_sync/construct_assets.py \\
     --db-path db/datasets_new.db \\
     --target-dir /path/to/page-project \\
-    --target-size-kb 1000 \\
     --log-level DEBUG
 
   # Force regenerate videos and thumbnails
@@ -66,13 +65,6 @@ Output Structure:
         type=str,
         required=True,
         help="Root directory of the page project where assets will be created",
-    )
-
-    parser.add_argument(
-        "--target-size-kb",
-        type=int,
-        default=512,
-        help="Target size for compressed videos in KB (default: 500)",
     )
 
     parser.add_argument(
@@ -116,7 +108,6 @@ Output Structure:
     print("Starting page sync operation...")
     print(f"  Database: {args.db_path}")
     print(f"  Target: {args.target_dir}")
-    print(f"  Video size: {args.target_size_kb} KB")
     print(f"  CRF: {args.crf}")
     print(f"  Update videos: {args.update_videos}")
     print(f"  Log level: {args.log_level}")
