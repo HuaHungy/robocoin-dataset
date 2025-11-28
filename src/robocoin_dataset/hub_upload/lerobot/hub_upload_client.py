@@ -45,6 +45,7 @@ class HubUploadClient(TaskClient):
         output_path: str | Path = "",
         force_overwrite: bool = False,
         heartbeat_interval: float = 30.0,
+        request_task_timeout: float | None = None,
         logger: logging.Logger | None = None,
         tqdm_position: int = 0,
     ) -> None:
@@ -64,6 +65,7 @@ class HubUploadClient(TaskClient):
         super().__init__(
             server_uri=server_uri,
             heartbeat_interval=heartbeat_interval,
+            request_task_timeout=request_task_timeout,
             logger=logger,
         )
         self.tqdm_position = tqdm_position
@@ -206,6 +208,7 @@ async def run_one_client_async(
     output_path: str | Path,
     force_overwrite: bool,
     heartbeat_interval: float,
+    request_timeout: float,
     logger: logging.Logger,
     tqdm_position: int = 0,
 ) -> dict:
@@ -236,6 +239,7 @@ async def run_one_client_async(
         output_path=output_path,
         force_overwrite=force_overwrite,
         heartbeat_interval=heartbeat_interval,
+        request_task_timeout=request_timeout if request_timeout > 0 else None,
         logger=logger,
         tqdm_position=tqdm_position,
     )
@@ -333,6 +337,7 @@ def run_one_client_process_main(
     output_path: str | Path,
     force_overwrite: bool,
     heartbeat_interval: float,
+    request_timeout: float,
     log_dir: str | Path,
     log_level: str,
     process_id: int,
@@ -400,6 +405,7 @@ def run_one_client_process_main(
                 output_path=output_path,
                 force_overwrite=force_overwrite,
                 heartbeat_interval=heartbeat_interval,
+                request_timeout=request_timeout,
                 logger=logger,
                 tqdm_position=process_id,
             )
@@ -440,6 +446,7 @@ def run_multi_clients(
     output_path: str | Path,
     force_overwrite: bool,
     heartbeat_interval: float,
+    request_timeout: float,
     log_dir: str | Path,
     log_level: str,
 ) -> int:
@@ -497,6 +504,7 @@ def run_multi_clients(
                 output_path=output_path,
                 force_overwrite=force_overwrite,
                 heartbeat_interval=heartbeat_interval,
+                request_timeout=request_timeout,
                 log_dir=log_dir,
                 log_level=log_level,
                 process_id=i,

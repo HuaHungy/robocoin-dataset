@@ -466,9 +466,19 @@ Examples:
     )
 
     parser.add_argument(
+        "--request-timeout",
+        type=float,
+        default=15.0,
+        help=(
+            "Timeout in seconds when waiting for a task from server in client mode. "
+            "Use <= 0 to wait indefinitely for tasks (default: 15.0)."
+        ),
+    )
+
+    parser.add_argument(
         "--timeout",
         type=float,
-        default=400.0,
+        default=90.0,
         help="Timeout in seconds for server/client heartbeat (default: 300.0)"
     )
 
@@ -633,6 +643,7 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
         output_path=output_path,
         force_overwrite=force_overwrite,
         heartbeat_interval=args.heartbeat_interval,
+        request_timeout=args.request_timeout,
         log_dir=log_folder,
         log_level=args.log_level,
     )

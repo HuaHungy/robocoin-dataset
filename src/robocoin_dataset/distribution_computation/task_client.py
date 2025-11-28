@@ -48,6 +48,7 @@ class TaskClient(ABC):
         self,
         server_uri: str = "ws://localhost:8765",
         heartbeat_interval: float = 10.0,
+        request_task_timeout: float | None = 15.0,
         logger: logging.Logger | None = None,
     ) -> None:
         self.server_uri = server_uri
@@ -60,6 +61,8 @@ class TaskClient(ABC):
         self._heartbeat_task: asyncio.Task | None = None
         self._receiver_task: asyncio.Task | None = None
         self._response_future: asyncio.Future | None = None  # May be None
+        # None or <= 0 means: wait indefinitely for task response
+        self.request_task_timeout: float | None = request_task_timeout
         self.logger = logger
 
     async def connect_to_server(self, max_retries: int = 5, delay: float = 3.0) -> None:
@@ -256,14 +259,24 @@ class TaskClient(ABC):
             if self.logger:
                 self.logger.debug("Task request sent")
 
-            try:
-                task_msg = await asyncio.wait_for(self._response_future, timeout=15.0)
-            except asyncio.TimeoutError:
-                if self.logger:
-                    self.logger.warning("Request task timeout")
-                if self._response_future is not None and not self._response_future.done():
-                    self._response_future.cancel()
-                return None
+            # Wait for server to respond with either TASK or NO_TASK.
+            # If `request_task_timeout` is None or <= 0, wait indefinitely and
+            # rely on heartbeat / connection errors to break the loop.
+            # Otherwise, use asyncio.wait_for with the configured timeout.
+            if self.request_task_timeout is not None and self.request_task_timeout > 0:
+                try:
+                    task_msg = await asyncio.wait_for(
+                        self._response_future,
+                        timeout=self.request_task_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    if self.logger:
+                        self.logger.warning("Request task timeout")
+                    if self._response_future is not None and not self._response_future.done():
+                        self._response_future.cancel()
+                    return None
+            else:
+                task_msg = await self._response_future
 
             # Parse response
             msg_type = task_msg.get(MSG_TYPE)
