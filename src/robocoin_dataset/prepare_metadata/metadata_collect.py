@@ -48,7 +48,7 @@ def create_unified_metadata(
         - 其它自动生成字段:
             * path: 由数据集文件夹名去除 `_qced_hardlink` / `_hardlink` 后得到
             * video_url, thumbnail_url: 根据 path 按网页约定生成
-            * size_categories: 根据 statistics.total_frames 自动计算
+            * frame_range: 根据 statistics.total_frames 自动计算的帧数范围标签
     阶段 2：返回已经填充好的 UnifiedMetadata 实例。
 
     Args:
@@ -151,11 +151,17 @@ def create_unified_metadata(
     video_url = f"./assets/videos/{path}.mp4"
     thumbnail_url = f"./assets/thumbnails/{path}.jpg"
 
-    # statistics / size_categories
+    # statistics / dataset_size (计算实际文件大小)
     statistics = UnifiedMetadata().statistics  # 默认结构
     statistics.update(meta_info.get("statistics", {}))
     total_frames = int(statistics.get("total_frames", 0) or 0)
-    size_categories = _generate_size_label(total_frames)
+
+    # 计算数据集总文件大小
+    dataset_size_bytes = _calculate_dataset_size(ds_path)
+    dataset_size = _format_file_size(dataset_size_bytes)
+
+    # 生成帧数范围标签
+    frame_range = _generate_size_label(total_frames)
 
     # depth_enabled / features / splits / data_path / video_path / robot_type / codebase_version
     depth_enabled = bool(meta_info.get("depth_enabled", False))
@@ -204,7 +210,8 @@ def create_unified_metadata(
         path=path,
         video_url=video_url,
         thumbnail_url=thumbnail_url,
-        size_categories=size_categories,
+        frame_range=frame_range,
+        dataset_size=dataset_size,
         # meta/info.json
         robot_type=robot_type,
         codebase_version=codebase_version,
@@ -401,9 +408,59 @@ def _build_action_space_from_features(features: dict[str, Any]) -> dict[str, Any
     return UnifiedMetadata().action_space
 
 
+def _calculate_dataset_size(ds_path: Path) -> int:
+    """
+    计算数据集目录的总大小（字节数）。
+
+    Args:
+        ds_path: 数据集目录路径
+
+    Returns:
+        总文件大小（字节）
+    """
+    if not ds_path.exists():
+        return 0
+
+    total_size = 0
+    try:
+        for file_path in ds_path.rglob('*'):
+            if file_path.is_file():
+                total_size += file_path.stat().st_size
+    except Exception:
+        return 0
+
+    return total_size
+
+
+def _format_file_size(size_bytes: int) -> str:
+    """
+    将字节数格式化为人类可读的文件大小字符串。
+
+    Args:
+        size_bytes: 文件大小（字节）
+
+    Returns:
+        格式化的文件大小字符串，如 "2.7GB", "234MB"
+    """
+    if size_bytes == 0:
+        return "0B"
+
+    size_names = ["B", "KB", "MB", "GB", "TB"]
+    size_index = 0
+    size = float(size_bytes)
+
+    while size >= 1024 and size_index < len(size_names) - 1:
+        size /= 1024
+        size_index += 1
+
+    if size_index == 0:
+        return f"{int(size)}{size_names[size_index]}"
+    return f"{size:.1f}{size_names[size_index]}"
+
+
 def _generate_size_label(size: int) -> str:
     """
-    根据 total_frames 自动生成 size_categories 标签。
+    根据 total_frames 自动生成帧数范围标签。
     规则与 dataset_info_util.py 中保持一致。
     """
     if size < 1000:

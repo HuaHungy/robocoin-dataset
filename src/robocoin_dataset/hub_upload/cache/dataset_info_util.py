@@ -387,7 +387,7 @@ class LocalDsInfoUtil(LocalDsUtil):
 
         # Merge all information
         auto_info = {
-            "size_categories": size_category,
+            "frame_range": size_category,
             "tasks": tasks,
             "sub_tasks": sub_tasks,
         }

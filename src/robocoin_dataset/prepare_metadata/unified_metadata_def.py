@@ -139,11 +139,17 @@ class UnifiedMetadata:
     # 示例: ["RoboCoin", "LeRobot"]
     # 注意: 如果配置了 task_tags_yamls_dir，会从 {dataset_name}.yml 额外添加标签
 
-    size_categories: str = "100K-1M"
+    frame_range: str = "100K-1M"
     # 数据来源: 根据 total_frames 自动计算
-    # 用途: 数据集大小分类
+    # 用途: 数据集帧数范围标签
     # 规则: <1K, 1K-10K, 10K-100K, 100K-1M, 1M-10M, ...
     # 示例: "100K-1M"
+
+    dataset_size: str = ""
+    # 数据来源: 根据数据集目录实际计算的文件大小
+    # 用途: 数据集的实际文件大小
+    # 格式: 人类可读的格式，如 "2.7GB", "234MB"
+    # 示例: "1.2GB"
 
     configs: list[dict[str, str]] = field(default_factory=lambda: [
         {"config_name": "default", "data_files": "data/*/*.parquet"}
@@ -452,11 +458,11 @@ FIELD_GROUPS = {
     ],
     # 自动生成的字段（根据其他字段计算）
     "auto_generated": [
-        "path", "video_url", "thumbnail_url"
+        "path", "video_url", "thumbnail_url", "dataset_size"
     ],
     # 模板固定值字段（从配置文件或模板获取）
     "template_fixed": [
-        "license", "language", "task_categories", "tags", "size_categories",
+        "license", "language", "task_categories", "tags", "frame_range",
         "configs", "authors", "dataset_description", "homepage", "paper",
         "repository", "project_page", "contact_email", "contact_info",
         "support_info", "license_details", "citation_bibtex",

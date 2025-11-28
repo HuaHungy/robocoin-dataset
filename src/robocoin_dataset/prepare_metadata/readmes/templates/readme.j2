@@ -12,7 +12,7 @@ tags:
 {%- for tag in tags %}
   - {{ tag }}
 {%- endfor %}
-size_categories: {{ size_categories }}
+frame_range: {{ frame_range }}
 configs:
 - config_name: {{ configs[0].config_name }}
   data_files: {{ configs[0].data_files }}
@@ -91,6 +91,9 @@ This dataset includes the following atomic actions:
 {% endif -%}
 {% if statistics.camera_views is defined -%}
 | **Camera Views** | {{ statistics.camera_views }} |
+{% endif -%}
+{% if dataset_size is defined and dataset_size -%}
+| **Dataset Size** | {{ dataset_size }} |
 {% endif -%}
 {%- else -%}
 {% if total_episodes is defined -%}

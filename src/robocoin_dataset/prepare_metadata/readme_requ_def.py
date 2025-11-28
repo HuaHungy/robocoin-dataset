@@ -28,7 +28,7 @@ dataset_info_dict = {
         # 如果配置了 task_tags_yamls_dir，会从 {dataset_name}.yml 额外添加标签
     ],
 
-    "size_categories": "100K-1M",  # 来源：计算生成（根据 total_frames 自动计算）
+    "frame_range": "100K-1M",  # 来源：计算生成（根据 total_frames 自动计算）
     # 规则：<1K, 1K-10K, 10K-100K, 100K-1M, 1M-10M, ...
 
     "configs": [  # 来源：模板固定值
