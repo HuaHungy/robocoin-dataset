@@ -468,7 +468,7 @@ Examples:
     parser.add_argument(
         "--request-timeout",
         type=float,
-        default=15.0,
+        default=90.0,
         help=(
             "Timeout in seconds when waiting for a task from server in client mode. "
             "Use <= 0 to wait indefinitely for tasks (default: 15.0)."
