@@ -225,7 +225,10 @@ echo "password=$GIT_TOKEN"
 
 
 def _run_git_sync(config: SyncConfig) -> None:
-    """在目标目录执行 git add/commit/push,用于触发 GitHub Actions。"""
+    """在目标目录执行 git add/commit/push,用于触发 GitHub Actions。
+
+    只添加 assets 目录下的文件，确保不会修改 README 或其他文件。
+    """
     target_dir = config.target_dir
 
     logger.info("Running git sync in %s", target_dir)
@@ -233,8 +236,15 @@ def _run_git_sync(config: SyncConfig) -> None:
     # 0) 设置认证（如果提供了凭据）
     _setup_git_auth(config)
 
-    # 1) git add .
-    _run_subprocess(["git", "add", "."], cwd=target_dir, check=True)
+    # 1) 只添加 docs/assets 目录，确保不会修改 README 或其他文件
+    assets_path = target_dir / "docs" / "assets"
+    if not assets_path.exists():
+        logger.warning("Assets directory does not exist at %s. Skipping git add.", assets_path)
+        return
+
+    logger.info("Adding docs/assets directory to git")
+    # 使用相对路径，相对于 target_dir
+    _run_subprocess(["git", "add", "docs/assets/"], cwd=target_dir, check=True)
 
     # 2) 检查是否有 staged 变更,没有则跳过 commit/push
     diff_result = subprocess.run(

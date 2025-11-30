@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
 import draccus
 import yaml
@@ -175,7 +176,8 @@ class LocalDsInfoUtil(LocalDsUtil):
         Note:
             Reads subtask_annotations.jsonl from the annotations directory and extracts
             unique subtask values from the "subtask" field. Deduplication is case-insensitive,
-            keeping the first occurrence of each unique subtask.
+            keeping the first occurrence of each unique subtask. The returned list is ordered by
+            the numeric `subtask_index`/`index` field if present, otherwise by file order.
         """
         annotations_dir = self.root_path.joinpath(ds_name, ANNOTATIONS_DIR)
 
@@ -195,28 +197,29 @@ class LocalDsInfoUtil(LocalDsUtil):
             )
             return ""
 
-        # Extract unique subtasks from the JSONL file (case-insensitive)
-        # Use a dict to preserve the first occurrence of each unique subtask
-        # Filter out invalid/placeholder subtasks
-        invalid_subtasks = {}
-
-        subtasks_dict = {}
+        # Extract unique subtasks from the JSONL file (case-insensitive).
+        # Keep the first occurrence of each subtask and order them by subtask_index/index.
+        seen_subtasks: set[str] = set()
+        entries: list[tuple[int | None, int, str]] = []
         try:
             with open(subtask_file, encoding='utf-8') as f:
-                for line in f:
-                    if line := line.strip():
-                        data = json.loads(line)
-                        if "subtask" in data:
-                            subtask = data["subtask"]
-                            # Use lowercase as key for case-insensitive comparison
-                            # but store the original value
-                            subtask_lower = subtask.lower()
-                            # Skip invalid/placeholder subtasks
-                            if subtask_lower not in invalid_subtasks and subtask_lower not in subtasks_dict:
-                                subtasks_dict[subtask_lower] = subtask
+                for line_number, line in enumerate(f):
+                    if not (line := line.strip()):
+                        continue
+                    data = json.loads(line)
+                    if "subtask" not in data:
+                        continue
+                    subtask = data["subtask"]
+                    subtask_lower = subtask.lower()
+                    if subtask_lower in seen_subtasks:
+                        continue
+                    seen_subtasks.add(subtask_lower)
 
-            # Sort by the lowercase key and return as list
-            sorted_subtasks = [subtasks_dict[key] for key in sorted(subtasks_dict.keys())]
+                    index_value = self._extract_subtask_index(data)
+                    entries.append((index_value, line_number, subtask))
+
+            entries.sort(key=lambda entry: (entry[0] if entry[0] is not None else float("inf"), entry[1]))
+            sorted_subtasks = [entry[2] for entry in entries]
 
             self.logger.info(f"dataset {ds_name}: extracted {len(sorted_subtasks)} unique subtasks from annotations.")
             return sorted_subtasks
@@ -227,6 +230,22 @@ class LocalDsInfoUtil(LocalDsUtil):
                 "Subtasks will be empty."
             )
             return []
+
+    def _extract_subtask_index(self, data: dict[str, Any]) -> int | None:
+        """尝试从 JSON 记录中解析 subtask_index 或 index，返回整数用于排序。"""
+        for key in ("subtask_index", "index"):
+            if key not in data:
+                continue
+            value = data[key]
+            if value is None:
+                continue
+            if isinstance(value, str):
+                value = value.strip()
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                continue
+        return None
 
     def _generate_size_label(self, size: int) -> str:
         """

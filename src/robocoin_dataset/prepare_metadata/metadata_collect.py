@@ -87,62 +87,18 @@ def create_unified_metadata(
         # 基础字段（来自数据库）
         dataset_name = item.dataset_name
         yaml_file_path = item.yaml_file_path
-
-        # 原始 YAML 内容仅保存在 raw 字段中，方便调试
-        # 同时用于获取多对多关系字段 (scene_types, atomic_actions, objects)
-        raw_yaml = _load_raw_yaml(yaml_file_path)
-
-        # 直接从原始yaml文件获取多对多关系字段
-        scene_type = []
-        if "scene_type" in raw_yaml and raw_yaml["scene_type"]:
-            scene_type = raw_yaml["scene_type"] if isinstance(raw_yaml["scene_type"], list) else []
-
-        atomic_actions = []
-        if "atomic_actions" in raw_yaml and raw_yaml["atomic_actions"]:
-            atomic_actions = raw_yaml["atomic_actions"] if isinstance(raw_yaml["atomic_actions"], list) else []
-
-        objects = []
-        if "objects" in raw_yaml and raw_yaml["objects"]:
-            raw_objects = raw_yaml["objects"] if isinstance(raw_yaml["objects"], list) else []
-            objects.extend([
-                {
-                    "object_name": obj.get("object_name"),
-                    "level1": obj.get("level1"),
-                    "level2": obj.get("level2"),
-                    "level3": obj.get("level3"),
-                    "level4": obj.get("level4"),
-                    "level5": obj.get("level5"),
-                }
-                for obj in raw_objects
-                if isinstance(obj, dict) and "object_name" in obj
-            ])
-
-        # Debug logging for empty fields
-        if not scene_type:
-            _logger.warning(
-                f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty scene_type in YAML. "
-                f"YAML file: {yaml_file_path}"
-            )
-        if not atomic_actions:
-            _logger.warning(
-                f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty atomic_actions in YAML. "
-                f"YAML file: {yaml_file_path}"
-            )
-        if not objects:
-            _logger.warning(
-                f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty objects in YAML. "
-                f"YAML file: {yaml_file_path}"
-            )
+        yaml_metadata = _collect_from_yaml(yaml_file_path, dataset_name, dataset_uuid)
+        scene_type = yaml_metadata["scene_type"]
+        atomic_actions = yaml_metadata["atomic_actions"]
+        objects = yaml_metadata["objects"]
+        raw_yaml = yaml_metadata["raw_yaml"]
 
         # ---- 从 meta/ 和 annotations/ 中收集信息 ----
         meta_dir = ds_path / "meta"
         annotations_dir = ds_path / "annotations"
-        info_file = meta_dir / "info.json"
-        tasks_file = meta_dir / "tasks.jsonl"
 
-        meta_info = _load_meta_info(info_file)
-        tasks = _load_tasks(tasks_file)
-        sub_tasks = _load_subtasks(annotations_dir)
+        meta_info, tasks = _collect_from_meta(meta_dir)
+        sub_tasks = _collect_from_subtask_annotations(annotations_dir)
 
     # ---- 计算自动生成字段 ----
     # path / video_url / thumbnail_url
@@ -193,7 +149,7 @@ def create_unified_metadata(
     )
 
     # 目录结构
-    structure = generate_folder_structure(ds_path, max_files_per_dir=5)
+    structure = _collect_from_directory_structure(ds_path)
 
     # ---- 阶段 1：创建并初始化 UnifiedMetadata 实例 ----
     # ---- 阶段 2：返回实例 ----
@@ -276,10 +232,9 @@ def _match_device_name_from_folder(dataset_folder_name: str) -> str | None:
     return None
 
 
-def _load_subtasks(annotations_dir: Path) -> list[str]:
+def _collect_from_subtask_annotations(annotations_dir: Path) -> list[str]:
     """
-    从 annotations/subtask_annotations.jsonl 中提取去重后的 subtask 列表。
-    逻辑与 dataset_info_util._get_subtasks_from_annotation 基本一致。
+    从 annotations/subtask_annotations.jsonl 中提取去重后的 subtask 列表，按 subtask_index 排序。
     """
     if not annotations_dir.exists():
         return []
@@ -288,21 +243,46 @@ def _load_subtasks(annotations_dir: Path) -> list[str]:
     if not subtask_file.exists():
         return []
 
-    subtasks_dict: dict[str, str] = {}
+    seen_subtasks: set[str] = set()
+    entries: list[tuple[int | None, int, str]] = []
     try:
         with subtask_file.open(encoding="utf-8") as f:
-            for line in f:
-                if line := line.strip():
-                    data = json.loads(line)
-                    if "subtask" in data:
-                        subtask = data["subtask"]
-                        key = str(subtask).lower()
-                        if key not in subtasks_dict:
-                            subtasks_dict[key] = subtask
+            for line_number, line in enumerate(f):
+                if not (line := line.strip()):
+                    continue
+                data = json.loads(line)
+                if "subtask" not in data:
+                    continue
+                subtask = data["subtask"]
+                key = str(subtask).lower()
+                if key in seen_subtasks:
+                    continue
+                seen_subtasks.add(key)
+
+                index_value = _extract_subtask_index(data)
+                entries.append((index_value, line_number, subtask))
     except Exception:
         return []
 
-    return [subtasks_dict[k] for k in sorted(subtasks_dict.keys())]
+    entries.sort(key=lambda item: (item[0] if item[0] is not None else float("inf"), item[1]))
+    return [entry[2] for entry in entries]
+
+
+def _extract_subtask_index(data: dict[str, Any]) -> int | None:
+    """尝试从标注记录中解析 subtask_index 或 index 值，用于排序。"""
+    for key in ("subtask_index", "index"):
+        if key not in data:
+            continue
+        value = data[key]
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            continue
+    return None
 
 
 def _load_raw_yaml(yaml_file_path: str | None) -> dict[str, Any]:
@@ -571,3 +551,69 @@ def _load_tasks(tasks_file: Path) -> str:
         return ""
 
     return "\n".join(tasks)
+
+
+def _collect_from_yaml(
+    yaml_file_path: str | Path, dataset_name: str, dataset_uuid: str
+) -> dict[str, Any]:
+    """根据 dataset_name/uuid 描述，从原始 YAML 中提取多对多关系字段。"""
+    raw_yaml = _load_raw_yaml(yaml_file_path)
+
+    scene_type = []
+    if raw_yaml.get("scene_type"):
+        scene_type = raw_yaml["scene_type"] if isinstance(raw_yaml["scene_type"], list) else []
+
+    atomic_actions = []
+    if raw_yaml.get("atomic_actions"):
+        atomic_actions = raw_yaml["atomic_actions"] if isinstance(raw_yaml["atomic_actions"], list) else []
+
+    objects = []
+    raw_objects = raw_yaml.get("objects")
+    if isinstance(raw_objects, list):
+        objects.extend(
+            {
+                "object_name": obj.get("object_name"),
+                "level1": obj.get("level1"),
+                "level2": obj.get("level2"),
+                "level3": obj.get("level3"),
+                "level4": obj.get("level4"),
+                "level5": obj.get("level5"),
+            }
+            for obj in raw_objects
+            if isinstance(obj, dict) and "object_name" in obj
+        )
+
+    if not scene_type:
+        _logger.warning(
+            f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty scene_type in YAML. "
+            f"YAML file: {yaml_file_path}"
+        )
+    if not atomic_actions:
+        _logger.warning(
+            f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty atomic_actions in YAML. "
+            f"YAML file: {yaml_file_path}"
+        )
+    if not objects:
+        _logger.warning(
+            f"Dataset {dataset_name} (UUID: {dataset_uuid}) has empty objects in YAML. "
+            f"YAML file: {yaml_file_path}"
+        )
+
+    return {
+        "raw_yaml": raw_yaml,
+        "scene_type": scene_type,
+        "atomic_actions": atomic_actions,
+        "objects": objects,
+    }
+
+
+def _collect_from_meta(meta_dir: Path) -> tuple[dict[str, Any], str]:
+    """从 meta/info.json 与 meta/tasks.jsonl 中提取预定义字段与 task 文本。"""
+    info_file = meta_dir / "info.json"
+    tasks_file = meta_dir / "tasks.jsonl"
+    return _load_meta_info(info_file), _load_tasks(tasks_file)
+
+
+def _collect_from_directory_structure(ds_path: Path) -> dict[str, Any]:
+    """按照平台生成目录结构描述，封装 generate_folder_structure。"""
+    return generate_folder_structure(ds_path, max_files_per_dir=5)
