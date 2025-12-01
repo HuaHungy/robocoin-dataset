@@ -66,7 +66,7 @@ class UnifiedMetadata:
     # 示例: "two_finger_gripper", "parallel_gripper", "suction_cup"
     # 处理: data-manager.js 映射到 endEffector 字段
     # 使用: filter-manager.js 的 'end' 过滤器组
-    ### 注意!!! 这个信息是错误的，需要从数据库里面读取正确值！
+    ### 注意!!! yaml里这个信息是错误的，需要从数据库里面读取正确值！
 
     operation_platform_height: float | None = None
     # 数据来源: YAML文件的 operation_platform_height 字段

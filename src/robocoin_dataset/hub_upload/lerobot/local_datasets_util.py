@@ -272,7 +272,7 @@ class LocalDsReadmeUtil(LocalDsUtil):
     """
     from jinja2 import Environment, FileSystemLoader
 
-    from ...prepare_metadata.readmes.folder_structure_util import (
+    from ...prepare_metadata.metadata_collect_utils import (
         generate_folder_structure,
     )
     from ..constant import (

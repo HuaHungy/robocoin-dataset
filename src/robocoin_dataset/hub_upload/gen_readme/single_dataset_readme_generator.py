@@ -18,7 +18,7 @@ from robocoin_dataset.hub_upload.lerobot.constant import (
     LEROBOT_META_INFO_FILE,
     README_FILE,
 )
-from robocoin_dataset.prepare_metadata.readmes.folder_structure_util import (
+from robocoin_dataset.prepare_metadata.metadata_collect_utils import (
     generate_folder_structure,
 )
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
