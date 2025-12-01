@@ -500,3 +500,22 @@ def _gen_data_index(dataset_info_dir: str, output_path: str) -> None:
         json.dump(data_index, f, indent=2, ensure_ascii=False)
 
     _logger.info(f"Successfully wrote data index to {output_file} with {len(yaml_files)} datasets")
+
+
+def _copy_robot_aliases(info_dir: str) -> None:
+    """
+    Copy the repository's robot_aliases.json into the page info directory as @robotaliases.json.
+    """
+    import shutil
+
+    _logger = logging.getLogger(__name__)
+    src_file = Path(__file__).parent / "robot_aliases.json"
+    if not src_file.exists():
+        _logger.error("robot_aliases.json resource missing at %s", src_file)
+        raise FileNotFoundError(f"Failed to locate robot_aliases.json at {src_file}")
+
+    dst_dir = Path(info_dir)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst_file = dst_dir / "@robotaliases.json"
+    shutil.copy2(src_file, dst_file)
+    _logger.info("Copied %s to %s", src_file, dst_file)
