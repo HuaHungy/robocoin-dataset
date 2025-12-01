@@ -86,10 +86,10 @@
     # 使用：filter-manager.js 的 'robot' 过滤器组
     # 注意：可能是字符串或字符串数组（支持多机器人）
 
-    "end_effector_type": "string",
-    # 数据来源：YAML文件的 end_effector_type 字段
-    # 用途：标识机器人末端执行器的类型
-    # 示例：two_finger_gripper, parallel_gripper, suction_cup
+    "end_effector_type": "string | string[]",
+    # 数据来源：数据库或 YAML 的 end_effector_type 字段（数据库会返回 "/" 分隔值）
+    # 用途：标识机器人末端执行器的类型，可以包含多个
+    # 示例：two_finger_gripper, [three_finger_hand, suction_cup]
     # 处理：data-manager.js 映射到 endEffector 字段
     # 使用：filter-manager.js 的 'end' 过滤器组
 

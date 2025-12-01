@@ -29,8 +29,12 @@ configs:
 {%- endif %}
 {% if codebase_version is defined %} | **Codebase Version:** `{{ codebase_version }}`
 {%- endif %}
-{% if end_effector_type is defined -%}
-**End-Effector Type:** `{{ end_effector_type }}`
+{% if end_effector_type is defined and end_effector_type -%}
+{%- set _eef_display = end_effector_type -%}
+{%- if _eef_display is iterable and not _eef_display is string -%}
+{%- set _eef_display = _eef_display | join(', ') -%}
+{%- endif -%}
+**End-Effector Type:** `{{ _eef_display }}`
 {%- endif %}
 
 {% if scene_type is defined and scene_type -%}

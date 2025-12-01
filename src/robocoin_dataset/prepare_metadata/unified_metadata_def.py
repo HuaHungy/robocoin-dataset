@@ -60,13 +60,13 @@ class UnifiedMetadata:
     # 注意: 可能是字符串或字符串数组（支持多机器人）
     ### 现在直接使用robot_type字段
 
-    end_effector_type: str = ""
-    # 数据来源: YAML文件的 end_effector_type 字段
-    # 用途: 标识机器人末端执行器的类型
-    # 示例: "two_finger_gripper", "parallel_gripper", "suction_cup"
+    end_effector_type: list[str] = field(default_factory=list)
+    # 数据来源: 数据库或 YAML 的 end_effector_type 字段（以 "/" 分割多个值）
+    # 用途: 标识机器人末端执行器的类型，支持多种组合
+    # 示例: ["two_finger_gripper"], ["three_finger_hand", "suction_cup"]
     # 处理: data-manager.js 映射到 endEffector 字段
     # 使用: filter-manager.js 的 'end' 过滤器组
-    ### 注意!!! yaml里这个信息是错误的，需要从数据库里面读取正确值！
+    ### 注意!!! yaml里这个信息是错误的，需要从数据库里读取正确值！
 
     operation_platform_height: float | None = None
     # 数据来源: YAML文件的 operation_platform_height 字段

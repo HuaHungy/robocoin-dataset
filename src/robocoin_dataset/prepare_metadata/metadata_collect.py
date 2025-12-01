@@ -154,6 +154,14 @@ def create_unified_metadata(
     # 目录结构
     structure = collect_directory_structure(ds_path)
 
+    # 解析末端执行器（可能包含 "/" 分隔多个值）
+    raw_end_effector_type = item.end_effector_type or ""
+    end_effector_types = [
+        part.strip()
+        for part in raw_end_effector_type.split("/")
+        if part.strip()
+    ]
+
     # ---- 阶段 1：创建并初始化 UnifiedMetadata 实例 ----
     # ---- 阶段 2：返回实例 ----
     return UnifiedMetadata(
@@ -162,7 +170,7 @@ def create_unified_metadata(
         dataset_uuid=dataset_uuid,
         scene_type=scene_type,
         atomic_actions=atomic_actions,
-        end_effector_type=item.end_effector_type or "",
+        end_effector_type=end_effector_types,
         operation_platform_height=item.operation_platform_height,
         objects=objects,
         # 自动生成字段
