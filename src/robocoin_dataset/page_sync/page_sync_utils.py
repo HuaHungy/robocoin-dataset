@@ -198,7 +198,7 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
         return None
 
     # Filter videos from priority folders (containing "high", "top", or "head")
-    priority_keywords = ["high", "top", "head"]
+    priority_keywords = ["high", "top", "head","front"]
     priority_videos = [
         v for v in all_videos if any(kw in str(v).lower() for kw in priority_keywords)
     ]

@@ -20,6 +20,7 @@ The actual business logic is implemented in page_sync_utils.py.
 """
 
 import logging
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -152,7 +153,11 @@ def construce_target_file(
                 f"yaml_path={yaml_path}, hardlink_path={hardlink_path}. "
                 f"Both paths must exist. Marking as FAILED."
             )
-            _mark_task_failed(session, dataset_uuid)
+            err_msg = (
+                "Page sync validation failed: yaml_path and hardlink_path must both exist. "
+                f"yaml_path={yaml_path}, hardlink_path={hardlink_path}"
+            )
+            _mark_task_failed(session, dataset_uuid, err_msg)
             continue
 
         try:
@@ -162,7 +167,8 @@ def construce_target_file(
             dataset_name = _get_dataset_name(session, dataset_uuid)
             if not dataset_name:
                 _logger.error(f"Failed to get dataset name for dataset {dataset_uuid}")
-                _mark_task_failed(session, dataset_uuid)
+                err_msg = f"Failed to get dataset name for dataset_uuid={dataset_uuid}"
+                _mark_task_failed(session, dataset_uuid, err_msg)
                 continue
 
             _logger.info(f"Dataset name: {dataset_name}")
@@ -187,7 +193,11 @@ def construce_target_file(
             sampled_video_path = _sample_one_video_path(hardlink_path)
             if not sampled_video_path:
                 _logger.error(f"Failed to sample video from {hardlink_path}")
-                _mark_task_failed(session, dataset_uuid)
+                err_msg = (
+                    "Failed to sample video for page sync: no suitable video found under "
+                    f"hardlink_path={hardlink_path}"
+                )
+                _mark_task_failed(session, dataset_uuid, err_msg)
                 continue
 
             _logger.info(f"Sampled video: {sampled_video_path}")
@@ -214,7 +224,8 @@ def construce_target_file(
 
         except Exception as e:
             _logger.error(f"Error processing task {dataset_uuid}: {e}", exc_info=True)
-            _mark_task_failed(session, dataset_uuid)
+            err_msg = f"Error processing page sync task for dataset_uuid={dataset_uuid}: {e}\n{traceback.format_exc()}"
+            _mark_task_failed(session, dataset_uuid, err_msg)
 
     # 9. Generate consolidated datasets and data index files
     _logger.info("Generating consolidated metadata files...")
