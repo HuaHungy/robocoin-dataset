@@ -504,7 +504,7 @@ def _gen_data_index(dataset_info_dir: str, output_path: str) -> None:
 
 def _copy_robot_aliases(info_dir: str) -> None:
     """
-    Copy the repository's robot_aliases.json into the page info directory as @robotaliases.json.
+    Copy the repository's robot_aliases.json into the page info directory as robot_aliases.json.
     """
     import shutil
 
@@ -516,6 +516,6 @@ def _copy_robot_aliases(info_dir: str) -> None:
 
     dst_dir = Path(info_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
-    dst_file = dst_dir / "@robotaliases.json"
+    dst_file = dst_dir / "robot_aliases.json"
     shutil.copy2(src_file, dst_file)
     _logger.info("Copied %s to %s", src_file, dst_file)

@@ -12,6 +12,8 @@ python scripts/page_sync/auto_sync_workflow.py \
   --crf 30 \
   --run-once
 
+  --interval-hours 6
+
 脚本的流程是:
 1. 每隔固定时间(默认 2 小时)执行一次完整的同步流程:
    1) 调用页面同步逻辑,在 target-dir 中生成网页项目所需的 YAML 和视频资源
@@ -192,30 +194,51 @@ def _copy_assets_to_git_dir(config: SyncConfig) -> None:
     source_assets = config.target_dir / "docs" / "assets"
     target_assets = config.git_dir / "docs" / "assets"
 
+    logger.info("Source assets path: %s", source_assets)
+    logger.info("Target assets path: %s", target_assets)
+    logger.info("Source exists: %s", source_assets.exists())
+    logger.info("Target exists: %s", target_assets.exists())
+
     if not source_assets.exists():
         logger.warning("Source assets directory does not exist: %s", source_assets)
-        return
+        # 检查是否已经在目标目录中
+        if target_assets.exists():
+            logger.info("Assets already exist in target directory, skipping copy")
+            return
+        raise FileNotFoundError(f"Source assets directory not found: {source_assets}")
 
     logger.info("Copying assets from %s to %s (force overwrite)", source_assets, target_assets)
 
     try:
+        # 如果源和目标是同一个路径，跳过复制
+        if source_assets.resolve() == target_assets.resolve():
+            logger.info("Source and target are the same path, skipping copy")
+            return
+
         # 确保目标目录存在
         target_assets.parent.mkdir(parents=True, exist_ok=True)
 
         # 强制覆写：如果目标目录存在，先删除再复制
         if target_assets.exists():
             import shutil
+            logger.info("Removing existing target directory: %s", target_assets)
             shutil.rmtree(target_assets)
 
         # 使用 rsync 进行复制，如果 rsync 不可用则使用 cp
         try:
+            logger.info("Using rsync to copy assets")
             _run_subprocess(["rsync", "-av", "--delete", str(source_assets) + "/", str(target_assets)], check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.warning("rsync failed (%s), falling back to shutil", e)
             # rsync 不可用，使用 shutil
             import shutil
             shutil.copytree(source_assets, target_assets)
 
         logger.info("Assets copy completed successfully to %s", target_assets)
+
+        # 验证复制是否成功
+        if not target_assets.exists():
+            raise RuntimeError(f"Copy completed but target directory does not exist: {target_assets}")
 
     except Exception as exc:
         logger.error("Failed to copy assets to git directory: %s", exc)
@@ -589,6 +612,11 @@ def _build_config(args: argparse.Namespace) -> SyncConfig:
     target_dir = Path(args.target_dir).expanduser().absolute()
     git_dir = Path(args.git_dir).expanduser().absolute()
     mount_path = Path(args.mount_path).expanduser().absolute()
+
+    # 验证路径配置
+    if target_dir.resolve() == git_dir.resolve():
+        print(f"Warning: target_dir and git_dir are the same path: {target_dir}", file=sys.stderr)
+        print("This may cause issues with the sync workflow.", file=sys.stderr)
 
     # 基本路径校验
     if not db_path.exists():
