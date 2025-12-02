@@ -11,6 +11,14 @@ python scripts/page_sync/prepare_page_sync_files.py \
 --crf通过指定crf参数进行视频文件压缩的质量控制,范围是0-51,越小质量越好,越大质量越差
 现在的crf设置30可以得到一个平均视频文件在500kb左右的一个结果
 脚本的实际功能都在 page_sync (src) 中实现
+
+
+# With HuggingFace upload
+python scripts/page_sync/prepare_page_sync_files.py \
+    --db-path db/datasets_new.db \
+    --target-dir /home/rogerspyke/projects \
+    --hf-token your_hf_token \
+    --hf-repo-id RogersPyke/RoboCOIN-DataManager-assets
 """
 
 import argparse
@@ -25,27 +33,34 @@ def main() -> None:
         epilog="""
 Examples:
   # Basic usage with required arguments
-  python scripts/page_sync/construct_assets.py \\
+  python scripts/page_sync/prepare_page_sync_files.py \\
     --db-path db/datasets_new.db \\
     --target-dir /path/to/page-project
 
   # With debug logging
-  python scripts/page_sync/construct_assets.py \\
+  python scripts/page_sync/prepare_page_sync_files.py \\
     --db-path db/datasets_new.db \\
     --target-dir /path/to/page-project \\
     --log-level DEBUG
 
   # Force regenerate videos and thumbnails
-  python scripts/page_sync/construct_assets.py \\
+  python scripts/page_sync/prepare_page_sync_files.py \\
     --db-path db/datasets_new.db \\
     --target-dir /path/to/page-project \\
     --update-videos
 
   # With custom CRF value for video compression
-  python scripts/page_sync/construct_assets.py \\
+  python scripts/page_sync/prepare_page_sync_files.py \\
     --db-path db/datasets_new.db \\
     --target-dir /path/to/page-project \\
     --crf 23
+
+  # With HuggingFace upload
+  python scripts/page_sync/prepare_page_sync_files.py \\
+    --db-path db/datasets_new.db \\
+    --target-dir /path/to/page-project \\
+    --hf-token your_hf_token \\
+    --hf-repo-id RogersPyke/RoboCOIN-DataManager-assets
 
 Output Structure:
   target-dir/
@@ -94,6 +109,20 @@ Output Structure:
         help="Logging level (default: INFO)",
     )
 
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        default=None,
+        help="HuggingFace token for uploading assets (optional). If not provided, upload will be skipped.",
+    )
+
+    parser.add_argument(
+        "--hf-repo-id",
+        type=str,
+        default=None,
+        help="HuggingFace repository ID for uploading assets (optional). If not provided, upload will be skipped.",
+    )
+
     args = parser.parse_args()
 
     # Validate paths
@@ -128,6 +157,28 @@ Output Structure:
             log_level=args.log_level,
         )
         print("\n✓ Page sync completed successfully!")
+
+        # Optional HuggingFace upload
+        if args.hf_token and args.hf_repo_id:
+            print("\nStarting HuggingFace upload...")
+            try:
+                from robocoin_dataset.page_sync.upload_assets_utils import sync_assets_to_hf
+
+                assets_dir = target_dir / "assets"
+                commit_sha = sync_assets_to_hf(
+                    assets_dir=str(assets_dir),
+                    repo_id=args.hf_repo_id,
+                    token=args.hf_token,
+                )
+                print(f"✓ HuggingFace upload completed successfully! Commit SHA: {commit_sha}")
+            except Exception as e:
+                print(f"\n✗ Error during HuggingFace upload: {e}", file=sys.stderr)
+                sys.exit(1)
+        elif args.hf_token or args.hf_repo_id:
+            print("\n⚠ WARNING: Both --hf-token and --hf-repo-id must be provided for HuggingFace upload. Skipping upload.")
+        else:
+            print("\nℹ HuggingFace upload skipped (no token/repo-id provided)")
+
     except KeyboardInterrupt:
         print("\n✗ Operation cancelled by user", file=sys.stderr)
         sys.exit(130)

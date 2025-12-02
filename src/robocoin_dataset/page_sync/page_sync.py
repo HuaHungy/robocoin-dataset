@@ -72,7 +72,7 @@ def construce_target_file(
     from robocoin_dataset.page_sync.page_sync_utils import (
         _align_video_name_with_yaml,
         _compress_video_to_dst,
-        _copy_robot_aliases,
+        _copy_robot_aliases_and_exclude,
         _gen_consolidation,
         _gen_data_index,
         _gen_video_thumbnail,
@@ -239,7 +239,7 @@ def construce_target_file(
         _gen_data_index(str(dataset_info_dir), str(data_index_path))
 
         _logger.debug("Copying robot aliases file into info directory")
-        _copy_robot_aliases(str(info_dir))
+        _copy_robot_aliases_and_exclude(str(info_dir))
 
         _logger.info("Successfully generated consolidated metadata files")
     except Exception as e:

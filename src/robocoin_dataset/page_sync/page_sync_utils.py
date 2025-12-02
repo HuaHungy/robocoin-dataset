@@ -502,20 +502,33 @@ def _gen_data_index(dataset_info_dir: str, output_path: str) -> None:
     _logger.info(f"Successfully wrote data index to {output_file} with {len(yaml_files)} datasets")
 
 
-def _copy_robot_aliases(info_dir: str) -> None:
+def _copy_robot_aliases_and_exclude(info_dir: str) -> None:
     """
-    Copy the repository's robot_aliases.json into the page info directory as robot_aliases.json.
+    Copy the repository's robot_aliases.json and exclude.json into the page info directory.
     """
     import shutil
 
     _logger = logging.getLogger(__name__)
-    src_file = Path(__file__).parent / "robot_aliases.json"
-    if not src_file.exists():
-        _logger.error("robot_aliases.json resource missing at %s", src_file)
-        raise FileNotFoundError(f"Failed to locate robot_aliases.json at {src_file}")
+    assets_dir = Path(__file__).parent / "assets"
+
+    # Copy robot_aliases.json
+    robot_aliases_src = assets_dir / "robot_aliases.json"
+    if not robot_aliases_src.exists():
+        _logger.error("robot_aliases.json resource missing at %s", robot_aliases_src)
+        raise FileNotFoundError(f"Failed to locate robot_aliases.json at {robot_aliases_src}")
 
     dst_dir = Path(info_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
-    dst_file = dst_dir / "robot_aliases.json"
-    shutil.copy2(src_file, dst_file)
-    _logger.info("Copied %s to %s", src_file, dst_file)
+    robot_aliases_dst = dst_dir / "robot_aliases.json"
+    shutil.copy2(robot_aliases_src, robot_aliases_dst)
+    _logger.info("Copied %s to %s", robot_aliases_src, robot_aliases_dst)
+
+    # Copy exclude.json
+    exclude_src = assets_dir / "exclude.json"
+    if not exclude_src.exists():
+        _logger.error("exclude.json resource missing at %s", exclude_src)
+        raise FileNotFoundError(f"Failed to locate exclude.json at {exclude_src}")
+
+    exclude_dst = dst_dir / "exclude.json"
+    shutil.copy2(exclude_src, exclude_dst)
+    _logger.info("Copied %s to %s", exclude_src, exclude_dst)
