@@ -58,7 +58,7 @@ def detect_few_episodes(
 
 @dataset_data_checker_registry("abnormal_episode_length")
 def detect_frame_num_outliers_mad_idx(
-    episode_frame_nums: dict[int, int], ignored_indices: set[int], threshold: float = 3.0
+    episode_frame_nums: dict[int, int], ignored_indices: set[int], threshold: float = 2.0
 ) -> set[int]:
     episode_frame_nums.values()
     bad_episodes = set()
@@ -69,6 +69,8 @@ def detect_frame_num_outliers_mad_idx(
     if data.size == 0:
         return bad_episodes
 
+    median = np.median(data)
+    data = median / data
     median = np.median(data)
     mad = np.median(np.abs(data - median))
 
@@ -82,7 +84,12 @@ def detect_frame_num_outliers_mad_idx(
     # 找出绝对值超过阈值的索引
     outlier_indices = np.where(np.abs(modified_z_scores) > threshold)[0]
 
+    bad_episodes_frame_nums = {}
+
     for idx in outlier_indices:
+        bad_episodes_frame_nums[list(episode_frame_nums.keys())[idx]] = list(
+            episode_frame_nums.values()
+        )[idx]
         bad_episodes.add(list(episode_frame_nums.keys())[idx])
     return bad_episodes
 

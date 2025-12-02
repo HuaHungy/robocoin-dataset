@@ -4,8 +4,8 @@ from robocoin_dataset.quality_check.dataset_quality_check import (
 )
 
 if __name__ == "__main__":
-    repo_path = "/mnt/nas/synnas/docker2/robocoin-datasets/Galbot_g1_steamer_storage_baozi_h"
-    device_model = "yinhe"
+    repo_path = "/mnt/nas/synnas/docker2/robocoin-datasets/Cobot_Magic_fold_shirt"
+    device_model = "agilex_cobot_decoupled_magic"
     device_model_version = "default_version"
     device_version_config_file = "scripts/quality_check/configs/device_version_checker_config.yaml"
     checker_config = get_checker_config(
@@ -16,7 +16,8 @@ if __name__ == "__main__":
     res, detail_res = quality_check_pipeline(
         repo_path=repo_path, configs=checker_config, data_feature="merged"
     )
-    for k, v in detail_res.items():
-        print(k)
-        for k1, v1 in v.items():
-            print(k1, v1)
+
+    # for k, v in detail_res.items():
+    #     print(k)
+    #     for k1, v1 in v.items():
+    #         print(k1, v1)
