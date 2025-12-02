@@ -566,6 +566,7 @@ class MotionAnnotationDataPostProcessor(DataPostProcessorBase):
                 "gripper_mode_state": gripper_mode_names,
                 "gripper_mode_action": gripper_mode_names,
                 "gripper_activity_state": gripper_activity_names,
+                "gripper_activity_action": gripper_activity_names,
             }
         else:
             gripper_feature_names = {}
