@@ -1,3 +1,4 @@
+import json
 import logging
 import traceback
 from collections import defaultdict
@@ -157,10 +158,15 @@ class StAnnotationDataPostProcessor(DataPostProcessorBase):
     def write_subtask_jsonl_file(self) -> None:
         subtask_jsonl_file_path = self.convert_path / "annotations/subtask_annotations.jsonl"
         subtask_jsonl_file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(subtask_jsonl_file_path, "w") as f:
+
+        with open(subtask_jsonl_file_path, "w", encoding="utf-8") as f:
             for i, annotation in enumerate(self.subtask_annotations):
-                f.write(f'{{"subtask_index": {i}, "subtask": "{annotation}"}}\n')
-            f.write(f'{{"subtask_index": {len(self.subtask_annotations)}, "subtask": "null"}}\n')
+                record = {"subtask_index": i, "subtask": annotation}
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+            # Append the final "null" sentinel entry
+            sentinel = {"subtask_index": len(self.subtask_annotations), "subtask": "null"}
+            f.write(json.dumps(sentinel, ensure_ascii=False) + "\n")
 
 
 class DatasetSubtaskAnnotationEmbedding:
