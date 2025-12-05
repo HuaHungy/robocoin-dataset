@@ -11,7 +11,7 @@ dataset_data_checkers:
 
   - name: "abnormal_episode_length"
     params:
-      threshold: 4.0
+      threshold: 3.0
     should_check: True  
 
 episode_data_checkers:
