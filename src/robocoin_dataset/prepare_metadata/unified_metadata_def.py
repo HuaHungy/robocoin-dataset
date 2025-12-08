@@ -403,7 +403,7 @@ class UnifiedMetadata:
     # ========== 来源：模板固定值（数据集访问控制） ==========
     # 这些字段用于HuggingFace Hub的gated dataset功能
 
-    extra_gated_prompt: str = "You agree to not use the dataset to conduct experiments that cause harm to human subjects."
+    extra_gated_prompt: str = "By accessing this dataset, you agree to cite the associated paper in your research/publications—see the \"Citation\" section for details. You agree to not use the dataset to conduct experiments that cause harm to human subjects."
     # 数据来源: 模板固定值
     # 用途: 数据集访问时的提示信息，用于告知用户数据集使用条款
     # 示例: "You agree to not use the dataset to conduct experiments that cause harm to human subjects."

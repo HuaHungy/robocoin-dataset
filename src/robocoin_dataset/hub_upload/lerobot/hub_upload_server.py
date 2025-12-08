@@ -39,6 +39,7 @@ class HubUploadServer(TaskServer):
         namespace: str = "",
         output_path: str = "",
         force_overwrite: bool = False,
+        readme_only: bool = False,
         host: str = "0.0.0.0",
         port: int = 2100,
         heartbeat_interval: float = 30.0,
@@ -78,6 +79,7 @@ class HubUploadServer(TaskServer):
         self.client_namespace = namespace
         self.client_output_path = output_path or "./dataset_info"
         self.client_force_overwrite = force_overwrite
+        self.client_readme_only = readme_only
         self.logger.info(f"Server db_file_path: {self.db_file_path}")
 
         self.datasets_succeeded = 0
@@ -141,6 +143,7 @@ class HubUploadServer(TaskServer):
                         "hub_name": self.hub_name.value,
                         "output_path": self.client_output_path,
                         "force_overwrite": self.client_force_overwrite,
+                        "readme_only": self.client_readme_only,
                     },
                 }
                 self.logger.debug(f"Sending task config for dataset {dataset_uuid}")

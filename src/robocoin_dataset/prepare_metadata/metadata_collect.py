@@ -41,8 +41,8 @@ def get_default_gated_access_config() -> dict[str, Any]:
     """
     return {
         "extra_gated_prompt": (
-            "You agree to not use the dataset to conduct experiments "
-            "that cause harm to human subjects."
+            "By accessing this dataset, you agree to cite the associated paper in your research/publications—see the \"Citation\" section for details. "
+            "You agree to not use the dataset to conduct experiments that cause harm to human subjects."
         ),
         "extra_gated_fields": {
             "Company/Organization": {

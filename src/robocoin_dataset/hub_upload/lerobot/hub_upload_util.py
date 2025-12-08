@@ -6,6 +6,8 @@ It contains the business logic for dataset upload operations.
 """
 
 import random
+import shutil
+import tempfile
 import time
 import traceback
 from dataclasses import dataclass
@@ -40,6 +42,7 @@ class LocalDsUploadConfig(LocalDsConfig):
         db_file_path (str): Path to the database file for dataset tracking. Defaults to empty string.
         skip_missing (bool): Skip datasets with missing paths instead of aborting.
         force_overwrite (bool): Force overwrite existing repositories without prompting. Defaults to False.
+        readme_only (bool): Only update README files without uploading dataset files. Defaults to False.
     """
 
     hub_name: DatasetsHubEnum = DatasetsHubEnum.huggingface
@@ -49,6 +52,7 @@ class LocalDsUploadConfig(LocalDsConfig):
     db_file_path: str = ""
     skip_missing: bool = True
     force_overwrite: bool = False
+    readme_only: bool = False
 
 
 def load_config_from_yaml(config_path: str | Path) -> dict:
@@ -94,7 +98,6 @@ def create_upload_config(config_dict: dict) -> LocalDsUploadConfig:
             raise ValueError(f"Invalid hub_name: {hub_name}. Must be 'huggingface' or 'modelscope'")
 
     return LocalDsUploadConfig(
-        root_path=config_dict.get("root_path") or None,
         hub_name=hub_name,
         token=config_dict.get("token", ""),
         namespace=config_dict.get("namespace", ""),
@@ -102,6 +105,7 @@ def create_upload_config(config_dict: dict) -> LocalDsUploadConfig:
         db_file_path=config_dict.get("db_file_path", ""),
         skip_missing=config_dict.get("skip_missing", True),
         force_overwrite=config_dict.get("force_overwrite", False),
+        readme_only=config_dict.get("readme_only", False),
     )
 
 
@@ -150,7 +154,11 @@ class LocalDsUploadUtil(LocalDsUtil):
 
 
     def _do_upload(
-        self, hardlink_path: Path, commit_msg: str = "", max_retries: int = 3
+        self,
+        hardlink_path: Path,
+        commit_msg: str | None = None,
+        upload_path: Path | None = None,
+        max_retries: int = 3,
     ) -> tuple[bool, str]:
         """
         Upload a single dataset to the remote hub.
@@ -183,15 +191,19 @@ class LocalDsUploadUtil(LocalDsUtil):
         # if not hardlink_path.exists():
         #     raise FileNotFoundError(f"dataset path {hardlink_path} does not exist")
 
-        upload_path = hardlink_path
-        self.logger.debug(f"{dataset_name}: Using {upload_path}")
+        effective_upload_path = upload_path or hardlink_path
+        self.logger.debug(f"{dataset_name}: Using {effective_upload_path}")
 
         # Repository ID uses clean name (without _hardlink suffix)
         repo_id = f"{self.namespace}/{dataset_name}"
 
         # Generate commit message if not provided
         if not commit_msg:
-            commit_msg = f"Upload dataset {dataset_name}"
+            commit_msg = (
+                f"Upload dataset {dataset_name}"
+                if not self.config.readme_only
+                else f"Update README for {dataset_name}"
+            )
 
         # Retry logic with random delays
         for attempt in range(1, max_retries + 1):
@@ -202,7 +214,7 @@ class LocalDsUploadUtil(LocalDsUtil):
 
                 ### UPLOAD: CALL API ###
                 commit_url = self.hub.upload_repo(
-                    folder_path=upload_path,
+                    folder_path=effective_upload_path,
                     repo_id=repo_id,
                     commit_msg=commit_msg,
                     logger=self.logger,
@@ -299,6 +311,18 @@ class LocalDsUploadUtil(LocalDsUtil):
         if not readme_success:
             return False, readme_error
 
+        # Check if we're in readme-only mode
+        if self.config.readme_only:
+            tqdm.write("    📝 README-only mode: Uploading README.md to hub...")
+            self.logger.info(f"{dataset_name}: README-only mode - pushing README.md only")
+            result = self._upload_readme_only(hardlink_path, dataset_name)
+            dataset_elapsed = time.time() - dataset_start_time
+            if result[0]:
+                tqdm.write(f"    ✅ README uploaded successfully (took {dataset_elapsed:.1f}s)")
+            else:
+                tqdm.write(f"    ❌ README upload failed: {result[1] or 'unknown error'}")
+            return result
+
         # Step 4: Execute upload
         tqdm.write("    ⬆️  Uploading to hub (this may take several minutes for large datasets)...")
         self.logger.info(f"{dataset_name}: Uploading to hub...")
@@ -323,62 +347,30 @@ class LocalDsUploadUtil(LocalDsUtil):
     ) -> tuple[bool, str]:
         return gen_readme(hardlink_path, dataset_info_root_path, self.logger, metadata=metadata)
 
-    # def _check_repo_conflict(self, repo_id: str, timeout: float = 5.0) -> bool:
-    #     """
-    #     Check if repository exists and prompt user for confirmation.
+    def _upload_readme_only(
+        self,
+        hardlink_path: Path,
+        dataset_name: str,
+    ) -> tuple[bool, str]:
+        """
+        Upload only the README.md file for a dataset by staging it in a temporary folder.
+        """
+        readme_path = hardlink_path / "README.md"
+        if not readme_path.exists():
+            error_msg = f"README.md not found for {dataset_name}"
+            self.logger.error(error_msg)
+            return False, error_msg
 
-    #     Args:
-    #         repo_id: Repository identifier.
-    #         timeout: Timeout in seconds for user input (default: 5.0)
+        with tempfile.TemporaryDirectory(prefix="robo-readme-upload-") as tmpdir:
+            staging_dir = Path(tmpdir)
+            staging_readme = staging_dir / "README.md"
+            shutil.copy2(readme_path, staging_readme)
+            self.logger.debug(f"{dataset_name}: Staging README for upload at {staging_readme}")
+            return self._do_upload(
+                hardlink_path=hardlink_path,
+                upload_path=staging_dir,
+            )
 
-    #     Returns:
-    #         True if user confirms to proceed, False otherwise.
-    #     """
-    #     self.logger.debug(f"Checking repo: {repo_id}")
-    #     repo_exists = self.hub.repo_exists(repo_id=repo_id)
-    #     self.logger.debug(f"Exists: {repo_exists}")
-
-    #     if not repo_exists:
-    #         return True
-
-    #     # Repo exists - check force_overwrite flag
-    #     if self.config.force_overwrite:
-    #         self.logger.debug(f"{repo_id}: Force overwrite enabled")
-    #         return True
-
-    #     # Prompt user for confirmation with timeout
-    #     tqdm.write("")  # Blank line for spacing
-    #     tqdm.write(f"⚠️  Repository already exists: {repo_id}")
-    #     tqdm.write(f"   Overwrite? (y/n) [default: y in {timeout}s]: ", end="")
-    #     sys.stdout.flush()
-
-    #     # Use select for timeout input
-    #     try:
-    #         # Check if stdin has input ready within timeout
-    #         ready, _, _ = select.select([sys.stdin], [], [], timeout)
-
-    #         if ready:
-    #             # Input available
-    #             response = sys.stdin.readline().strip().lower()
-    #             if response in ["y", "yes", ""]:
-    #                 return True
-    #             if response in ["n", "no"]:
-    #                 return False
-    #             tqdm.write("   Invalid input, defaulting to 'yes'")
-    #             return True
-    #         # Timeout - default to yes
-    #         tqdm.write("   (timeout - defaulting to 'yes')")
-    #         return True
-
-    #     except (OSError, ValueError):
-    #         # select not supported (e.g., Windows) or other issues
-    #         # Fall back to regular input
-    #         try:
-    #             response = input().strip().lower()
-    #             return response in ["y", "yes", ""]
-    #         except (EOFError, KeyboardInterrupt):
-    #             # No input or Ctrl+C - default to no
-    #             return False
 
 
 if __name__ == "__main__":

@@ -1,0 +1,27 @@
+# Configuration for README-only mode testing
+# This config is used to test if --readme-only parameter works correctly
+# in both local and server/client modes
+
+# Hub platform (huggingface or modelscope)
+hub_name: huggingface
+
+# Authentication token for the hub platform
+token: NULL
+
+# Namespace (username) on the hub platform
+namespace: "RoboCOIN"
+
+# Output path for generated dataset info files
+output_path: ./examples/datasets/outputs/upload_history
+
+# Database file path
+db_file_path: ./db/datasets_new.db
+
+# Skip datasets with missing hardlinks instead of aborting
+skip_missing: true
+
+# Force overwrite existing repositories without prompting
+force_overwrite: false
+
+# README-only mode (only update README files, no dataset upload)
+readme_only: true

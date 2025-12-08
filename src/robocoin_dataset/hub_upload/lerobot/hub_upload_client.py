@@ -44,6 +44,7 @@ class HubUploadClient(TaskClient):
         namespace: str = "",
         output_path: str | Path = "",
         force_overwrite: bool = False,
+        readme_only: bool = False,
         heartbeat_interval: float = 30.0,
         request_task_timeout: float | None = None,
         logger: logging.Logger | None = None,
@@ -76,6 +77,7 @@ class HubUploadClient(TaskClient):
         self.namespace = namespace
         self.output_path = Path(output_path).expanduser().absolute() if output_path else Path("./dataset_info")
         self.force_overwrite = force_overwrite
+        self.readme_only = readme_only
 
         # Create output directory
         self.output_path.mkdir(parents=True, exist_ok=True)
@@ -115,6 +117,7 @@ class HubUploadClient(TaskClient):
             db_file_path="",  # Client never reads DB; metadata is provided by server
             skip_missing=True,
             force_overwrite=self.force_overwrite,
+            readme_only=self.readme_only,
         )
 
         return LocalDsUploadUtil(upload_config)
@@ -138,6 +141,7 @@ class HubUploadClient(TaskClient):
         effective_hub_name_str = client_config.get("hub_name")
         effective_output_path = client_config.get("output_path") or str(self.output_path)
         effective_force_overwrite = client_config.get("force_overwrite", self.force_overwrite)
+        effective_readme_only = client_config.get("readme_only", self.readme_only)
 
         self.logger.debug(f"Client config received: {client_config}")
 
@@ -174,6 +178,7 @@ class HubUploadClient(TaskClient):
                 self.namespace = effective_namespace
                 self.output_path = Path(effective_output_path).expanduser().absolute()
                 self.force_overwrite = effective_force_overwrite
+                self.readme_only = effective_readme_only
 
             # Use pre-built metadata from server; client never touches DB.
             upload_success, upload_error = self.upload_util._upload_one_dataset(
@@ -207,6 +212,7 @@ async def run_one_client_async(
     namespace: str,
     output_path: str | Path,
     force_overwrite: bool,
+    readme_only: bool,
     heartbeat_interval: float,
     request_timeout: float,
     logger: logging.Logger,
@@ -221,6 +227,7 @@ async def run_one_client_async(
         namespace: Username/namespace
         output_path: Output path for YAML/README
         force_overwrite: Force overwrite existing repos
+        readme_only: Only update README files without uploading dataset files
         heartbeat_interval: Heartbeat interval in seconds
         logger: Logger instance
         tqdm_position: Position for tqdm progress bar
@@ -238,6 +245,7 @@ async def run_one_client_async(
         namespace=namespace,
         output_path=output_path,
         force_overwrite=force_overwrite,
+        readme_only=readme_only,
         heartbeat_interval=heartbeat_interval,
         request_task_timeout=request_timeout if request_timeout > 0 else None,
         logger=logger,
@@ -336,6 +344,7 @@ def run_one_client_process_main(
     namespace: str,
     output_path: str | Path,
     force_overwrite: bool,
+    readme_only: bool,
     heartbeat_interval: float,
     request_timeout: float,
     log_dir: str | Path,
@@ -404,6 +413,7 @@ def run_one_client_process_main(
                 namespace=namespace,
                 output_path=output_path,
                 force_overwrite=force_overwrite,
+                readme_only=readme_only,
                 heartbeat_interval=heartbeat_interval,
                 request_timeout=request_timeout,
                 logger=logger,
@@ -445,6 +455,7 @@ def run_multi_clients(
     namespace: str,
     output_path: str | Path,
     force_overwrite: bool,
+    readme_only: bool,
     heartbeat_interval: float,
     request_timeout: float,
     log_dir: str | Path,
@@ -460,6 +471,7 @@ def run_multi_clients(
         namespace: Username/namespace
         output_path: Output path for YAML/README
         force_overwrite: Force overwrite existing repos
+        readme_only: Only update README files without uploading dataset files
         heartbeat_interval: Heartbeat interval in seconds
         log_dir: Directory for log files
         log_level: Logging level string (e.g. "INFO", "DEBUG")
@@ -503,6 +515,7 @@ def run_multi_clients(
                 namespace=namespace,
                 output_path=output_path,
                 force_overwrite=force_overwrite,
+                readme_only=readme_only,
                 heartbeat_interval=heartbeat_interval,
                 request_timeout=request_timeout,
                 log_dir=log_dir,

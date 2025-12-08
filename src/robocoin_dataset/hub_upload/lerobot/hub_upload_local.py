@@ -192,12 +192,18 @@ logger: logging.Logger | None = None
     _logger = logger or logging.getLogger(__name__)
 
     try:
-        # 调用本地上传函数
-        _logger.info("开始上传流程...")
-        upload_datasets_from_database_local(config, logger=_logger)
+        _logger.info(f"Config readme_only: {getattr(config, 'readme_only', 'NOT_SET')}")
+        if config.readme_only:
+            # README-only mode: only generate README files
+            _logger.info("开始README-only流程...")
+            upload_datasets_from_database_local(config, logger=_logger)
+        else:
+            # Normal upload mode
+            _logger.info("开始上传流程...")
+            upload_datasets_from_database_local(config, logger=_logger)
 
-        _logger.info("✅ 上传流程完成")
-        tqdm.write("\n✅ 上传流程完成")
+        _logger.info("✅ 流程完成")
+        tqdm.write("\n✅ 流程完成")
 
     except KeyboardInterrupt:
         _logger.warning("\n⚠️  上传被用户中断")

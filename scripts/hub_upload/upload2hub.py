@@ -22,7 +22,7 @@ WORKFLOW:
     For each dataset in the database:
     1. Generate dataset_info.yml file from metadata
     2. Generate README.md file from template
-    3. Upload dataset to hub
+    3. Upload dataset to hub (unless --readme-only is specified)
 
 Usage:
     # Local upload mode (single machine, default)
@@ -52,6 +52,12 @@ Usage:
     python scripts/hub_upload/upload2hub.py \\
         --config configs/upload.yaml \\
         --db-file-path /path/to/datasets_new.db \\
+        --token YOUR_TOKEN
+
+    # README-only mode (only update README files, no dataset upload)
+    python scripts/hub_upload/upload2hub.py \\
+        --config configs/upload.yaml \\
+        --readme-only \\
         --token YOUR_TOKEN
 """
 
@@ -143,8 +149,8 @@ def _prepare_upload_config_dict(config: dict) -> dict:
     """
     prepared: dict = dict(config)
 
-    # root_path is now optional for Local mode
-    if prepared.get("root_path"):
+    # root_path is optional for Local mode and not needed for readme-only mode
+    if prepared.get("root_path") and not prepared.get("readme_only", False):
         root_path = _resolve_required_path(
             prepared.get("root_path"),
             "root_path",
@@ -168,6 +174,7 @@ def _prepare_upload_config_dict(config: dict) -> dict:
 
     prepared["skip_missing"] = bool(prepared.get("skip_missing", False))
     prepared["force_overwrite"] = bool(prepared.get("force_overwrite", False))
+    prepared["readme_only"] = bool(prepared.get("readme_only", False))
 
     prepared["hub_name"] = _normalize_hub_name(prepared.get("hub_name"))
 
@@ -349,6 +356,12 @@ Examples:
       --log-level DEBUG \\
       --skip-missing \\
       --force
+
+  # README-only mode (only update README files, no dataset upload)
+  python scripts/hub_upload/upload2hub.py \\
+      --config configs/upload.yaml \\
+      --readme-only \\
+      --token YOUR_TOKEN
         """
     )
 
@@ -382,6 +395,12 @@ Examples:
         "--force",
         action="store_true",
         help="Force overwrite existing repositories without prompting"
+    )
+
+    parser.add_argument(
+        "--readme-only",
+        action="store_true",
+        help="Only update README files without uploading dataset files"
     )
 
     parser.add_argument(
@@ -514,6 +533,7 @@ def run_server_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     namespace = config.get("namespace", DS_PLATFORM_NAME)
     output_path = config.get("output_path", "./dataset_info")
     force_overwrite = config.get("force_overwrite", False)
+    readme_only = config.get("readme_only", False)
 
     # Setup logging with timestamped folder for distributed mode
     logger, log_folder = _setup_mode_logging("dist", hub_name, namespace, args, "server.log")
@@ -559,6 +579,7 @@ def run_server_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
         namespace=namespace,
         output_path=output_path,
         force_overwrite=force_overwrite,
+        readme_only=readme_only,
         host=args.host,
         port=args.port,
         heartbeat_interval=args.heartbeat_interval,
@@ -607,6 +628,7 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
     namespace = config.get("namespace", DS_PLATFORM_NAME)
     output_path = config.get("output_path", "./dataset_info")
     force_overwrite = config.get("force_overwrite", False)
+    readme_only = config.get("readme_only", False)
 
     server_uri = f"ws://{args.host}:{args.port}"
 
@@ -642,6 +664,7 @@ def run_client_mode(config: dict, args: argparse.Namespace, logger: logging.Logg
         namespace=namespace,
         output_path=output_path,
         force_overwrite=force_overwrite,
+        readme_only=readme_only,
         heartbeat_interval=args.heartbeat_interval,
         request_timeout=args.request_timeout,
         log_dir=log_folder,
@@ -668,10 +691,13 @@ def run_local_mode(config: dict, args: argparse.Namespace, logger: logging.Logge
     """
     from tqdm import tqdm
 
-    # Ensure required config fields
-    _ensure_required_config_fields(config, ["db_file_path", "token"])
-
     prepared_config_dict = _prepare_upload_config_dict(config)
+
+    # Ensure required config fields (skip token check for readme-only mode)
+    required_fields = ["db_file_path"]
+    if not prepared_config_dict.get("readme_only", False):
+        required_fields.append("token")
+    _ensure_required_config_fields(config, required_fields)
 
     # Setup logging with timestamped folder for local mode
     hub_name = prepared_config_dict.get("hub_name", DatasetsHubEnum.huggingface)
@@ -683,20 +709,39 @@ def run_local_mode(config: dict, args: argparse.Namespace, logger: logging.Logge
 
     # Note: root_path is now optional for Local mode (not used)
 
-    # Log information about on-demand file generation
-    logger.info("=" * 80)
-    logger.info("📝 YAML and README files will be generated on-demand for each dataset")
-    logger.info("=" * 80)
-    tqdm.write("=" * 80)
-    tqdm.write("📝 YAML and README files will be generated on-demand for each dataset")
-    tqdm.write("=" * 80)
+    # Check if we're in readme-only mode
+    if prepared_config_dict.get("readme_only", False):
+        # Log information about readme-only mode
+        logger.info("=" * 80)
+        logger.info("📝 README-ONLY MODE: Only updating README files (no dataset upload)")
+        logger.info("   YAML and README files will be generated on-demand for each dataset")
+        logger.info("=" * 80)
+        tqdm.write("=" * 80)
+        tqdm.write("📝 README-ONLY MODE: Only updating README files (no dataset upload)")
+        tqdm.write("   YAML and README files will be generated on-demand for each dataset")
+        tqdm.write("=" * 80)
 
-    # Start upload process
-    logger.info("=" * 80)
-    logger.info("🚀 Starting LOCAL upload process with on-demand file generation")
-    tqdm.write("🚀 Starting LOCAL upload process with on-demand file generation")
-    logger.info("=" * 80)
-    tqdm.write("=" * 80)
+        # Start readme-only process
+        logger.info("=" * 80)
+        logger.info("🚀 Starting README-ONLY process with on-demand file generation")
+        tqdm.write("🚀 Starting README-ONLY process with on-demand file generation")
+        logger.info("=" * 80)
+        tqdm.write("=" * 80)
+    else:
+        # Log information about full upload mode
+        logger.info("=" * 80)
+        logger.info("📝 YAML and README files will be generated on-demand for each dataset")
+        logger.info("=" * 80)
+        tqdm.write("=" * 80)
+        tqdm.write("📝 YAML and README files will be generated on-demand for each dataset")
+        tqdm.write("=" * 80)
+
+        # Start upload process
+        logger.info("=" * 80)
+        logger.info("🚀 Starting LOCAL upload process with on-demand file generation")
+        tqdm.write("🚀 Starting LOCAL upload process with on-demand file generation")
+        logger.info("=" * 80)
+        tqdm.write("=" * 80)
 
     # Upload datasets
     upload_datasets_main_local(config_obj, logger)
@@ -750,6 +795,8 @@ def main() -> None:
             config_dict["skip_missing"] = True
         if args.force:
             config_dict["force_overwrite"] = True
+        if args.readme_only:
+            config_dict["readme_only"] = True
         if args.db_file_path:
             config_dict["db_file_path"] = args.db_file_path
         if args.name_space:
