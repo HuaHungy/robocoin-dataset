@@ -13,6 +13,17 @@ tags:
   - {{ tag }}
 {%- endfor %}
 frame_range: {{ frame_range }}
+{% if extra_gated_prompt is defined and extra_gated_prompt -%}
+extra_gated_prompt: "{{ extra_gated_prompt }}"
+{% endif -%}
+{% if extra_gated_fields is defined and extra_gated_fields -%}
+extra_gated_fields:
+{%- for field_name, field_config in extra_gated_fields.items() %}
+  {{ field_name }}:
+    type: {{ field_config.type }}
+    description: {{ field_config.description }}
+{%- endfor %}
+{% endif -%}
 configs:
 - config_name: {{ configs[0].config_name }}
   data_files: {{ configs[0].data_files }}

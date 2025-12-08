@@ -7,6 +7,7 @@
 
 
 from pathlib import Path
+from typing import Any
 
 from robocoin_dataset.database.database import DatasetDatabase
 from robocoin_dataset.database.models import DatasetDB, DatasetHardLinkDB
@@ -24,6 +25,45 @@ from robocoin_dataset.prepare_metadata.metadata_collect_utils import (
     match_device_name_from_folder,
 )
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
+
+
+def get_default_gated_access_config() -> dict[str, Any]:
+    """
+    获取默认的数据集访问控制配置。
+
+    这个函数封装了所有数据集的标准访问控制配置，用于生成 HuggingFace Hub 的 README 头部。
+    统一管理所有数据集的访问控制规则，便于后续修改和维护。
+
+    Returns:
+        dict[str, Any]: 包含以下字段的字典：
+            - extra_gated_prompt (str): 用户访问数据集时显示的提示信息
+            - extra_gated_fields (dict): 用户需要填写的表单字段配置
+    """
+    return {
+        "extra_gated_prompt": (
+            "You agree to not use the dataset to conduct experiments "
+            "that cause harm to human subjects."
+        ),
+        "extra_gated_fields": {
+            "Company/Organization": {
+                "type": "text",
+                "description": (
+                    'e.g., "ETH Zurich", "Boston Dynamics", "Independent Researcher"'
+                ),
+            },
+            "Country": {
+                "type": "country",
+                "description": 'e.g., "Germany", "China", "United States"',
+            },
+            "Intended use": {
+                "type": "text",
+                "description": (
+                    'e.g., "imitation learning", "policy generalization", '
+                    '"bimanual manipulation research"'
+                ),
+            },
+        },
+    }
 
 
 def create_unified_metadata(
@@ -162,6 +202,9 @@ def create_unified_metadata(
         if part.strip()
     ]
 
+    # 获取数据集访问控制配置
+    gated_access_config = get_default_gated_access_config()
+
     # ---- 阶段 1：创建并初始化 UnifiedMetadata 实例 ----
     # ---- 阶段 2：返回实例 ----
     return UnifiedMetadata(
@@ -198,4 +241,7 @@ def create_unified_metadata(
         structure=structure,
         # 原始 YAML
         raw=raw_yaml,
+        # 数据集访问控制（HuggingFace Hub gated dataset）
+        extra_gated_prompt=gated_access_config["extra_gated_prompt"],
+        extra_gated_fields=gated_access_config["extra_gated_fields"],
     )

@@ -400,6 +400,36 @@ class UnifiedMetadata:
     # 数据来源: 模板固定值（可选）
     # 用途: 版本历史信息
 
+    # ========== 来源：模板固定值（数据集访问控制） ==========
+    # 这些字段用于HuggingFace Hub的gated dataset功能
+
+    extra_gated_prompt: str = "You agree to not use the dataset to conduct experiments that cause harm to human subjects."
+    # 数据来源: 模板固定值
+    # 用途: 数据集访问时的提示信息，用于告知用户数据集使用条款
+    # 示例: "You agree to not use the dataset to conduct experiments that cause harm to human subjects."
+
+    extra_gated_fields: dict[str, dict[str, str]] = field(default_factory=lambda: {
+        "Company/Organization": {
+            "type": "text",
+            "description": 'e.g., "ETH Zurich", "Boston Dynamics", "Independent Researcher"'
+        },
+        "Country": {
+            "type": "country",
+            "description": 'e.g., "Germany", "China", "United States"'
+        },
+        "Intended use": {
+            "type": "text",
+            "description": 'e.g., "imitation learning", "policy generalization", "bimanual manipulation research"'
+        }
+    })
+    # 数据来源: 模板固定值
+    # 用途: 数据集访问时需要用户填写的字段，用于收集用户信息和使用目的
+    # 格式: {field_name: {"type": field_type, "description": field_description}}
+    # 字段说明:
+    #   - type: 字段类型，可以是 "text", "country", "checkbox" 等
+    #   - description: 字段描述，用于向用户解释该字段的用途和示例
+    # 注意: 这些字段会在HuggingFace Hub的数据集页面上展示为表单
+
     # ========== 原始数据保留 ==========
 
     raw: dict[str, Any] = field(default_factory=dict)
@@ -466,7 +496,8 @@ FIELD_GROUPS = {
         "configs", "authors", "dataset_description", "homepage", "paper",
         "repository", "project_page", "contact_email", "contact_info",
         "support_info", "license_details", "citation_bibtex",
-        "additional_citations", "version_info"
+        "additional_citations", "version_info", "extra_gated_prompt",
+        "extra_gated_fields"
     ],
     # 从 meta/info.json 提取的字段
     "meta_info_json": [
