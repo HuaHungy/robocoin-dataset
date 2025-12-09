@@ -39,25 +39,33 @@ def get_default_gated_access_config() -> dict[str, Any]:
             - extra_gated_prompt (str): 用户访问数据集时显示的提示信息
             - extra_gated_fields (dict): 用户需要填写的表单字段配置
     """
+    def _escape_yaml_string(value: str) -> str:
+        """对字符串进行YAML完全安全的转义处理"""
+        if isinstance(value, str):
+            # 对于YAML单引号字符串，我们需要转义单引号为双单引号
+            # 同时确保内容中没有可能破坏YAML结构的字符
+            return value.replace("'", "''").replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+        return value
+
     return {
-        "extra_gated_prompt": (
+        "extra_gated_prompt": _escape_yaml_string(
             "By accessing this dataset, you agree to cite the associated paper in your research/publications—see the \"Citation\" section for details. "
             "You agree to not use the dataset to conduct experiments that cause harm to human subjects."
         ),
         "extra_gated_fields": {
             "Company/Organization": {
-                "type": "text",
-                "description": (
+                "type": _escape_yaml_string("text"),
+                "description": _escape_yaml_string(
                     'e.g., "ETH Zurich", "Boston Dynamics", "Independent Researcher"'
                 ),
             },
             "Country": {
-                "type": "country",
-                "description": 'e.g., "Germany", "China", "United States"',
+                "type": _escape_yaml_string("country"),
+                "description": _escape_yaml_string('e.g., "Germany", "China", "United States"'),
             },
             "Intended use": {
-                "type": "text",
-                "description": (
+                "type": _escape_yaml_string("text"),
+                "description": _escape_yaml_string(
                     'e.g., "imitation learning", "policy generalization", '
                     '"bimanual manipulation research"'
                 ),

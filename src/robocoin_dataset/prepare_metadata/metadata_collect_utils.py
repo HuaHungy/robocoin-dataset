@@ -14,10 +14,10 @@ from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetada
 
 _logger = logging.getLogger(__name__)
 
-
 def match_device_name_from_folder(dataset_folder_name: str) -> str | None:
-    """Try to match a device name from ``page_sync/names.yml`` based on folder name."""
-    names_file = Path(__file__).parent.parent / "page_sync" / "names.yml"
+    """Try to match a device name from ``prepare_metadata/names.yml`` based on folder name."""
+    # names.yml is colocated with this module under prepare_metadata/
+    names_file = Path(__file__).parent / "names.yml"
     if not names_file.exists():
         _logger.warning(
             "Names file does not exist: %s. Cannot match device name.", names_file

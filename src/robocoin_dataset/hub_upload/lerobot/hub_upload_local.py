@@ -104,17 +104,6 @@ def upload_datasets_from_database_local(config: LocalDsUploadConfig, logger: log
             dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
             pbar.set_description(f"📤 {dataset_name[:30]:30s}")
 
-            # 检查仓库冲突
-            # repo_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
-            # repo_id = f"{config.namespace}/{repo_name}"
-            # if not uploader._check_repo_conflict(repo_id):
-            #     _logger.debug(f"{dataset_name}: Skipped (user cancelled)")
-            #     with db.with_session() as session:
-            #         _mark_upload_failed(session, dataset_uuid, "User cancelled", config.hub_name, _logger)
-            #     skipped_count += 1
-            #     pbar.update(1)
-            #     continue
-
             # 打印状态到控制台
             tqdm.write(f"  📦 Processing: {dataset_name}")
             tqdm.write(f"     UUID: {dataset_uuid}")

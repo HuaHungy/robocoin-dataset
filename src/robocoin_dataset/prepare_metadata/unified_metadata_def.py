@@ -201,7 +201,7 @@ class UnifiedMetadata:
     # 这些字段从数据集的 meta/info.json 文件中自动提取
 
     robot_type: str = ""
-    # 数据来源: 通过字符串匹配 page_sync/names.yml 与数据集文件夹名
+    # 数据来源: 通过字符串匹配 prepare_metadata/names.yml 与数据集文件夹名
     #          如果匹配失败，则回退到 meta/info.json["robot_type"]
     # 用途: 机器人类型标识
     # 示例: "G1edu-u3", "RMC-AIDA-L", "AIRBOT_MMK2"
@@ -403,23 +403,19 @@ class UnifiedMetadata:
     # ========== 来源：模板固定值（数据集访问控制） ==========
     # 这些字段用于HuggingFace Hub的gated dataset功能
 
-    extra_gated_prompt: str = "By accessing this dataset, you agree to cite the associated paper in your research/publications—see the \"Citation\" section for details. You agree to not use the dataset to conduct experiments that cause harm to human subjects."
+    extra_gated_prompt: str = "By accessing this dataset, you agree to cite the associated paper in your research/publications—see the ''Citation'' section for details. You agree to not use the dataset to conduct experiments that cause harm to human subjects."
     # 数据来源: 模板固定值
     # 用途: 数据集访问时的提示信息，用于告知用户数据集使用条款
     # 示例: "You agree to not use the dataset to conduct experiments that cause harm to human subjects."
 
     extra_gated_fields: dict[str, dict[str, str]] = field(default_factory=lambda: {
-        "Company/Organization": {
-            "type": "text",
-            "description": 'e.g., "ETH Zurich", "Boston Dynamics", "Independent Researcher"'
-        },
         "Country": {
             "type": "country",
-            "description": 'e.g., "Germany", "China", "United States"'
+            "description": "e.g., ''Germany'', ''China'', ''United States''"
         },
-        "Intended use": {
+        "Company/Organization": {
             "type": "text",
-            "description": 'e.g., "imitation learning", "policy generalization", "bimanual manipulation research"'
+            "description": "e.g., ''ETH Zurich'', ''Boston Dynamics'', ''Independent Researcher''"
         }
     })
     # 数据来源: 模板固定值

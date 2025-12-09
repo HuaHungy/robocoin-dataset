@@ -1,29 +1,36 @@
 ---
-license: {{ license }}
-language:
-{%- for lang in language %}
-  - {{ lang }}
-{%- endfor %}
 task_categories:
 {%- for task in task_categories %}
   - {{ task }}
 {%- endfor %}
+
+language:
+{%- for lang in language %}
+  - {{ lang }}
+{%- endfor %}
+
+{% if extra_gated_prompt is defined and extra_gated_prompt %}
+extra_gated_prompt: '{{ extra_gated_prompt | replace("'", "''") }}'
+
+{% endif %}
+{% if extra_gated_fields is defined and extra_gated_fields %}
+extra_gated_fields:
+{% for field_name, field_config in extra_gated_fields.items() %}
+  {{ field_name }}:
+    type: '{{ field_config.type | replace("'", "''") }}'
+    description: '{{ field_config.description | replace("'", "''") }}'
+{% endfor %}
+
+{% endif %}
 tags:
 {%- for tag in tags %}
   - {{ tag }}
 {%- endfor %}
+
 frame_range: {{ frame_range }}
-{%- if extra_gated_prompt is defined and extra_gated_prompt -%}
-extra_gated_prompt: '{{ extra_gated_prompt | replace("'", "''") }}'
-{%- endif -%}
-{%- if extra_gated_fields is defined and extra_gated_fields -%}
-extra_gated_fields:
-{%- for field_name, field_config in extra_gated_fields.items() %}
-  {{ field_name }}:
-    type: '{{ field_config.type | replace("'", "''") }}'
-    description: '{{ field_config.description | replace("'", "''") }}'
-{%- endfor %}
-{%- endif -%}
+
+license: {{ license }}
+
 configs:
 - config_name: {{ configs[0].config_name }}
   data_files: {{ configs[0].data_files }}

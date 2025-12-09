@@ -108,8 +108,9 @@ class HubUploadClient(TaskClient):
             f"| hub={self.hub_name.value} | namespace={self.namespace} | output_path={self.output_path}"
         )
 
+        # Note: root_path is intentionally omitted here. The client works purely with
+        # hardlink paths provided by the server and does not rely on a global root_path.
         upload_config = LocalDsUploadConfig(
-            root_path="",  # Not needed for client mode
             hub_name=self.hub_name,
             token=self.token,
             namespace=self.namespace,
