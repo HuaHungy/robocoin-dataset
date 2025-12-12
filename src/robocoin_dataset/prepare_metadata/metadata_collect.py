@@ -62,14 +62,7 @@ def get_default_gated_access_config() -> dict[str, Any]:
             "Country": {
                 "type": _escape_yaml_string("country"),
                 "description": _escape_yaml_string('e.g., "Germany", "China", "United States"'),
-            },
-            "Intended use": {
-                "type": _escape_yaml_string("text"),
-                "description": _escape_yaml_string(
-                    'e.g., "imitation learning", "policy generalization", '
-                    '"bimanual manipulation research"'
-                ),
-            },
+            }
         },
     }
 
@@ -210,9 +203,6 @@ def create_unified_metadata(
         if part.strip()
     ]
 
-    # 获取数据集访问控制配置
-    gated_access_config = get_default_gated_access_config()
-
     # ---- 阶段 1：创建并初始化 UnifiedMetadata 实例 ----
     # ---- 阶段 2：返回实例 ----
     return UnifiedMetadata(
@@ -249,7 +239,4 @@ def create_unified_metadata(
         structure=structure,
         # 原始 YAML
         raw=raw_yaml,
-        # 数据集访问控制（HuggingFace Hub gated dataset）
-        extra_gated_prompt=gated_access_config["extra_gated_prompt"],
-        extra_gated_fields=gated_access_config["extra_gated_fields"],
     )
