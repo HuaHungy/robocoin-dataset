@@ -28,7 +28,7 @@ pip install uv
 conda create -n robocoin-dataset
 conda activate robocoin-dataset
 conda install ffmpeg=7.1.1 -c conda-forge
-``` 
+```
 
 ### 2. 克隆并进入项目目录
 
@@ -139,6 +139,29 @@ pytest tests/
 ├── README.md             # 项目简介
 └── CONTRIBUTING.md       # 贡献指南
 ```
+
+---
+
+## 🐳 构建 Docker 镜像（与本地环境一致）
+
+为了让容器里的 Python 依赖与当前本地虚拟环境**完全一致**，请使用仓库根目录下的 `produceDockerImage.sh`：
+
+```bash
+# 先激活/准备好本地环境，确保依赖已经安装
+source .venv/bin/activate
+
+# 然后生成镜像（默认 tag 为 robocoin-dataset:latest）
+./produceDockerImage.sh
+```
+
+该脚本会依次执行：
+
+1. `uv pip freeze --exclude-editable`：把**当前环境**中的依赖快照保存到 `requirements-current.txt`，并把所有指向仓库本地路径的 `file:///...` URI 自动替换成容器内的 `/opt/robocoin/...` 路径，保证诸如 `third_parties/robocoin-lerobot` 这类本地包也能在镜像里安装。
+2. `docker build`：Dockerfile 会直接基于该快照创建虚拟环境，安装完全相同的依赖集合，再运行 `uv pip install -e .` 安装当前工作副本。
+
+脚本不会改动 `pyproject.toml` 或 `uv.lock`，它只关注 Docker 所需的快照。
+
+> 📌 提示：如果你更新了本地依赖（比如 `pip install some-wheel.whl` 或手工修改了第三方源码），重新运行脚本即可刷新 `requirements-current.txt` 并重建镜像，不需要手动编辑 Dockerfile。
 
 ---
 

@@ -1,0 +1,91 @@
+# Generated from .gitignore to keep Docker contexts minimal.
+# Anything excluded here will not be copied into the Docker build context.
+
+# Git metadata
+.git
+.gitignore
+.gitattributes
+.gitmodules
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc~
+*.pyc$
+
+# Native/build outputs
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+*.so
+*.dylib
+*.dll
+*.pyd
+*.pyz
+*.pyzw
+
+# Virtual environments and uv caches (force recreation inside the image)
+.venv/
+env/
+venv/
+virtualenv/
+.uv/
+.uv-cache/
+.ruff_cache/
+
+# Testing artifacts
+.coverage
+coverage.xml
+htmlcov/
+pytest_debug.log
+.pytest_cache/
+
+# Documentation build output
+docs/_build/
+docs/build/
+
+# IDE/editor config
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+*.komodoproject
+*.kdev4
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Project data/output directories
+outputs/
+output/
+logs/
+log/
+data/
+datas/
+extracted_data/
+db/
+
+# Example datasets that should not ship in the image
+examples/dataloader_test/
+examples/database_transfer_test/
+
+# Misc project-specific artifacts
+run*
+alembic/
+alembic.ini
+robocoin_datasets/server_logs/
+
+# JSON blobs except for explicitly whitelisted assets
+*.json
+!src/robocoin_dataset/page_sync/assets/robot_aliases.json
+!src/robocoin_dataset/page_sync/assets/exclude.json

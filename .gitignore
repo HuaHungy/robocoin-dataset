@@ -11,6 +11,11 @@
 !README.md
 !LICENSE
 !examples/
+!Dockerfile
+!produceDockerImage.sh
+!testDockerImage.sh
+!.dockerignore
+
 # Byte-compiled / optimized / DLL files
 
 __pycache__/
