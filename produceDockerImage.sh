@@ -63,6 +63,30 @@ retry_command() {
     return 1
 }
 
+# Ensure all dependencies are installed before snapshotting
+ensure_dependencies() {
+    echo ">>>Ensuring all project dependencies are installed..."
+
+    if ! command -v uv &> /dev/null; then
+        echo "<ERROR> uv is required to install dependencies"
+        return 1
+    fi
+
+    # Install the robocoin package first (local dependency)
+    if ! uv pip install -e third_parties/robocoin-lerobot; then
+        echo "<ERROR> Failed to install robocoin package"
+        return 1
+    fi
+
+    # Install current project in editable mode to ensure all dependencies are resolved
+    if ! uv pip install -e .; then
+        echo "<ERROR> Failed to install current project"
+        return 1
+    fi
+
+    echo "<SUCCESS> All dependencies installed"
+}
+
 # Export the currently installed dependencies so Docker can recreate
 # the exact same environment without re-resolving pyproject.toml.
 snapshot_current_environment() {
@@ -124,6 +148,9 @@ PY
 
     echo "<SUCCESS> Wrote ${ENV_SNAPSHOT_FILE} from current environment"
 }
+
+echo ">>>Ensuring all dependencies are installed..."
+ensure_dependencies
 
 echo ">>>Snapshotting current Python environment..."
 snapshot_current_environment
