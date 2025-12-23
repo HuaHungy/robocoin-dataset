@@ -8,7 +8,7 @@
 # Usage:
 #   ./testDockerImage.sh <IMAGE_FILE>
 # Example:
-#   ./testDockerImage.sh /home/rogerspyke/projects/robocoin-dataset.tar.gz
+#   sudo ./testDockerImage.sh --stable /home/rogerspyke/projects/robocoin-dataset-stable.tar.gz
 
 set -euo pipefail
 

@@ -4,7 +4,7 @@
 #   ./produceDockerImage.sh [image-tag] [build-context]          # only build
 #   ./produceDockerImage.sh --export [image-tag] [output-file]   # build + export
 # Example:
-#   ./produceDockerImage.sh --export latest /home/rogerspyke/projects/robocoin-dataset.tar.gz
+#   sudo ./produceDockerImage.sh --export stable /home/rogerspyke/projects/robocoin-dataset-stable.tar.gz
 
 set -euo pipefail
 
@@ -46,11 +46,29 @@ retry_command() {
 
     while [[ $attempt -le $max_retries ]]; do
         echo ">>>Attempt $attempt/$max_retries: $cmd"
-        if eval "$cmd"; then
+        # Stream output to the console, but also capture it so we can detect
+        # non-transient failures where retrying is unlikely to help.
+        local log_file
+        log_file="$(mktemp)"
+
+        if eval "$cmd" 2>&1 | tee "${log_file}"; then
+            rm -f "${log_file}"
             echo "<SUCCESS> Command succeeded on attempt $attempt"
             return 0
         else
+            local exit_code=$?
             echo "<FAILED> Command failed on attempt $attempt"
+
+            # Certificate / TLS errors are almost always environmental (proxy / DNS / SSL
+            # inspection) and retrying tends to waste time.
+            if grep -qE 'tls: failed to verify certificate|x509: certificate is valid for|certificate signed by unknown authority' "${log_file}"; then
+                echo "<ERROR> TLS/certificate error detected; aborting retries."
+                echo ">>>This usually indicates a proxy/SSL inspection or DNS issue between this machine and the registry."
+                rm -f "${log_file}"
+                return "${exit_code}"
+            fi
+
+            rm -f "${log_file}"
             if [[ $attempt -lt $max_retries ]]; then
                 echo ">>>Waiting ${delay}s before retry..."
                 sleep "$delay"
