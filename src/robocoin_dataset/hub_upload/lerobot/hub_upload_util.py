@@ -17,7 +17,7 @@ import yaml
 from tqdm import tqdm
 
 from robocoin_dataset.hub_upload.gen_readme.gen_readme import gen_readme
-from robocoin_dataset.prepare_metadata.metadata_collect import create_unified_metadata
+from robocoin_dataset.prepare_metadata.metadata_service import MetadataSyncService
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
 
 from .constant import (
@@ -151,6 +151,18 @@ class LocalDsUploadUtil(LocalDsUtil):
         pass
 
         self.logger = self.setup_logger(logger_name="UPLOAD_DATASETS")
+        # README 生成与页面同步共用的统一元数据服务。
+        # 分布式客户端没有本地数据库时不创建实例，改为使用服务器传入的元数据。
+        self.metadata_service: MetadataSyncService | None = None
+        if self.config.db_file_path:
+            try:
+                self.metadata_service = MetadataSyncService(
+                    db_file_path=self.config.db_file_path,
+                    logger=self.logger,
+                )
+            except FileNotFoundError as exc:
+                self.logger.error("初始化元数据服务失败: %s", exc)
+                raise
 
 
     def _do_upload(
@@ -282,12 +294,13 @@ class LocalDsUploadUtil(LocalDsUtil):
         self.logger.info(f"{dataset_name}: Collecting unified metadata...")
         try:
             if metadata is None:
-                # Local mode: collect metadata using local database
-                if not self.config.db_file_path:
-                    raise ValueError("db_file_path is required for unified metadata collection")
-                metadata = create_unified_metadata(
+                # Local mode: collect metadata using shared service
+                if not self.metadata_service:
+                    raise ValueError(
+                        "metadata_service is not initialized; db_file_path is required for collection"
+                    )
+                metadata = self.metadata_service.collect_unified_metadata(
                     hardlink_path=hardlink_path,
-                    db_file_path=self.config.db_file_path,
                     dataset_uuid=None,
                 )
             elif isinstance(metadata, dict):

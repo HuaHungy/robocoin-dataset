@@ -24,6 +24,8 @@ import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from robocoin_dataset.prepare_metadata.metadata_service import MetadataSyncService
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -122,6 +124,12 @@ def construce_target_file(
     else:
         _logger.debug(f"Thumbnails directory already exists: {thumbnails_dir}")
 
+    # 2.5 出于性能考虑，复用同一个元数据服务实例，避免重复解析 DB 路径
+    metadata_service = MetadataSyncService(
+        db_file_path=str(db.db_file),
+        logger=_logger,
+    )
+
     # 3-8. Main loop: sync -> generate task -> copy yaml -> copy & compress videos -> align video name -> mark completed
     task_count = 0
     while True:
@@ -181,9 +189,9 @@ def construce_target_file(
                 db.db_file,
             )
             _write_unified_metadata_yaml(
+                metadata_service=metadata_service,
                 dst_yaml_path=str(yaml_dst),
                 hardlink_path=str(hardlink_path),
-                db_file_path=str(db.db_file),
                 dataset_uuid=dataset_uuid,
             )
             _logger.info("Generated unified metadata YAML at %s", yaml_dst)
