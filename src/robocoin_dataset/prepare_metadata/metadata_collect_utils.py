@@ -1,6 +1,22 @@
 """
-Helper utilities required by :mod:`metadata_collect` to gather metadata from
-the dataset directory, meta files, and YAML sources.
+`prepare_metadata` 目录下的“元数据采集工具集”。
+
+这个文件刻意只放**无状态**的纯函数（或尽量接近纯函数），供上层的
+`metadata_collect.create_unified_metadata()` 组装使用。
+
+为什么需要这个文件：
+- `metadata_collect.py` 需要同时读取 DB / YAML / meta/ / annotations/ / 文件系统结构；
+  如果把所有辅助逻辑都塞在一个文件里，主流程会很难读、也很难复用。
+- README 生成器（例如 `hub_upload/gen_readme/single_dataset_readme_generator.py`）
+  也需要复用少量“目录结构树”等展示型信息。
+
+本文件按“数据来源/职责”做了分区（仅重排与注释增强，不改变行为）：
+- **目录名 -> 设备名映射**：`match_device_name_from_folder`
+- **annotations/ 提取**：`collect_subtask_annotations`
+- **原始 YAML 读取与字段抽取**：`collect_from_yaml`
+- **meta/ 目录读取**：`collect_meta_info`
+- **features 摘要（相机/观测/动作空间）**：`build_*_from_features`
+- **文件系统统计/展示**：`calculate_dataset_size`、`format_file_size`、`generate_size_label`、`generate_folder_structure`
 """
 
 import json
@@ -14,8 +30,24 @@ from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetada
 
 _logger = logging.getLogger(__name__)
 
+# =============================================================================
+# 目录名 -> 设备名映射（names.yml）
+# =============================================================================
+
 def match_device_name_from_folder(dataset_folder_name: str) -> str | None:
-    """Try to match a device name from ``prepare_metadata/names.yml`` based on folder name."""
+    """
+    根据数据集文件夹名，尝试从 `prepare_metadata/names.yml` 中匹配一个“设备/机器人名”。
+
+    使用位置：
+    - `metadata_collect.create_unified_metadata()` 会用它作为 robot_type 的候选值之一
+
+    规则：
+    - `names.yml` 是一个字符串列表；只要其中某个字符串是 folder_name 的子串就算命中
+    - 命中返回该字符串，否则返回 None
+
+    注意：
+    - 这是一个“启发式匹配”，不保证 100% 正确；上层会有优先级回退（meta/info.json、DB 等）。
+    """
     # names.yml is colocated with this module under prepare_metadata/
     names_file = Path(__file__).parent / "names.yml"
     if not names_file.exists():
@@ -54,8 +86,23 @@ def match_device_name_from_folder(dataset_folder_name: str) -> str | None:
     return None
 
 
+# =============================================================================
+# annotations/ 提取（子任务等）
+# =============================================================================
+
 def collect_subtask_annotations(annotations_dir: Path) -> list[str]:
-    """Extract deduplicated ``subtask`` values from annotations."""
+    """
+    从 `annotations/subtask_annotations.jsonl` 中抽取子任务列表（去重 + 稳定排序）。
+
+    使用位置：
+    - `metadata_collect.create_unified_metadata()`：写入 `UnifiedMetadata.sub_tasks`
+
+    行为细节（保持现状）：
+    - 文件不存在/不可读/解析失败：直接返回空列表（容错）
+    - 去重：不区分大小写（使用 lower 后的 key）
+    - 排序：优先使用 `subtask_index` 或 `index`（如果能解析为 int），否则放到最后；
+      在 index 相同/缺失时使用行号保持稳定
+    """
     if not annotations_dir.exists():
         return []
 
@@ -89,7 +136,7 @@ def collect_subtask_annotations(annotations_dir: Path) -> list[str]:
 
 
 def _extract_subtask_index(data: dict[str, Any]) -> int | None:
-    """Extract ``subtask_index`` or ``index`` for consistent ordering."""
+    """提取排序用的索引：优先 subtask_index，其次 index；无法解析则返回 None。"""
     for key in ("subtask_index", "index"):
         if key not in data:
             continue
@@ -105,10 +152,23 @@ def _extract_subtask_index(data: dict[str, Any]) -> int | None:
     return None
 
 
+# =============================================================================
+# 原始 YAML 读取与字段抽取（dataset_info.yml）
+# =============================================================================
+
 def collect_from_yaml(
     yaml_file_path: str | Path, dataset_name: str, dataset_uuid: str
 ) -> dict[str, Any]:
-    """Gather ``scene_type``, ``atomic_actions``, ``objects`` from the original YAML."""
+    """
+    从“原始 YAML”（通常是 `dataset_info.yml`）中抽取可用于展示/筛选的字段。
+
+    使用位置：
+    - `metadata_collect._load_yaml_payload()`：在 DB 字段缺失时做补全（scene_type、atomic_actions、objects 等）
+
+    设计说明：
+    - YAML 内容可能存在错误或不完整，因此上层会优先使用 DB 中结构化字段。
+    - 这里保留 raw_yaml，用于调试或下游模板引用。
+    """
     raw_yaml = _load_raw_yaml(yaml_file_path)
 
     scene_type = []
@@ -170,7 +230,12 @@ def collect_from_yaml(
 
 
 def _load_raw_yaml(yaml_file_path: str | Path | None) -> dict[str, Any]:
-    """Load raw YAML configuration if present."""
+    """
+    安全读取 YAML，任何异常都返回空 dict。
+
+    为什么“吞掉异常”：
+    - 这一步是“可选补全”，主流程应该尽量继续（尤其在批处理/分布式上传场景）。
+    """
     if not yaml_file_path:
         return {}
 
@@ -186,15 +251,32 @@ def _load_raw_yaml(yaml_file_path: str | Path | None) -> dict[str, Any]:
         return {}
 
 
+# =============================================================================
+# meta/ 目录读取（info.json / tasks.jsonl）
+# =============================================================================
+
 def collect_meta_info(meta_dir: Path) -> tuple[dict[str, Any], str]:
-    """Return meta info and consolidated tasks from the ``meta/`` folder."""
+    """
+    读取 `meta/` 目录下的关键信息：
+    - `meta/info.json`（统计信息、特征定义、robot_type 等）
+    - `meta/tasks.jsonl`（自然语言任务描述列表）
+
+    使用位置：
+    - `metadata_collect.create_unified_metadata()`：合并统计信息、features、tasks 等字段
+    """
     info_file = meta_dir / "info.json"
     tasks_file = meta_dir / "tasks.jsonl"
     return _load_meta_info(info_file), _load_tasks(tasks_file)
 
 
 def _load_meta_info(meta_info_file: Path) -> dict[str, Any]:
-    """Extract targeted fields from ``meta/info.json``."""
+    """
+    从 `meta/info.json` 中**挑选式**抽取字段（而不是原样全部拷贝）。
+
+    目的：
+    - `UnifiedMetadata` 希望持有稳定、可控的展示字段；meta/info.json 可能会不断加新字段
+    - 抽取能减少 YAML 输出噪音，也便于前端/README 的字段契约保持稳定
+    """
     if not meta_info_file.exists():
         return {}
 
@@ -250,7 +332,12 @@ def _load_meta_info(meta_info_file: Path) -> dict[str, Any]:
 
 
 def _load_tasks(tasks_file: Path) -> str:
-    """Concatenate ``task`` fields from ``meta/tasks.jsonl``."""
+    """
+    读取 `meta/tasks.jsonl`，把每行的 `task` 字段用换行拼接成一个字符串。
+
+    使用位置：
+    - `metadata_collect.create_unified_metadata()`：写入 `UnifiedMetadata.tasks`
+    """
     if not tasks_file.exists():
         return ""
 
@@ -273,13 +360,28 @@ def _load_tasks(tasks_file: Path) -> str:
     return "\n".join(tasks)
 
 
+# =============================================================================
+# features 摘要（相机/观测空间/动作空间）
+# =============================================================================
+
 def collect_directory_structure(ds_path: Path) -> dict[str, Any]:
-    """Generate the dataset directory structure summary."""
+    """
+    生成数据集目录结构摘要。
+
+    兼容性说明：
+    - 这个函数目前只是 `generate_folder_structure()` 的薄封装（历史遗留）。
+    - 对外保留以避免已有调用方断裂。
+    """
     return generate_folder_structure(ds_path, max_files_per_dir=5)
 
 
 def build_cameras_from_features(features: dict[str, Any]) -> list[dict[str, Any]]:
-    """Generate camera info summaries from ``features``."""
+    """
+    从 `features` 中提取“相机摘要列表”。
+
+    使用位置：
+    - `metadata_collect.create_unified_metadata()`：写入 `UnifiedMetadata.cameras`
+    """
     cameras: list[dict[str, Any]] = []
     for key, value in features.items():
         if not (isinstance(key, str) and key.startswith("observation.images.")):
@@ -303,7 +405,13 @@ def build_cameras_from_features(features: dict[str, Any]) -> list[dict[str, Any]
 
 
 def build_observation_space_from_features(features: dict[str, Any]) -> dict[str, Any]:
-    """Derive ``observation_space`` metadata from ``features``."""
+    """
+    从 `features` 中提炼 `observation_space`。
+
+    说明：
+    - 返回值的基础结构来自 `UnifiedMetadata().observation_space` 的默认值
+      （这样可以保证没有 images/state 时仍输出稳定结构）。
+    """
     images: list[dict[str, Any]] = []
     for key, value in features.items():
         if not (isinstance(key, str) and key.startswith("observation.images.")):
@@ -337,7 +445,13 @@ def build_observation_space_from_features(features: dict[str, Any]) -> dict[str,
 
 
 def build_action_space_from_features(features: dict[str, Any]) -> dict[str, Any] | str:
-    """Derive ``action_space`` metadata from ``features``."""
+    """
+    从 `features` 中提炼 `action_space`。
+
+    返回值：
+    - 如果 features["action"] 存在且为 dict：返回包含 dtype/shape/names 的 dict
+    - 否则：返回 `UnifiedMetadata().action_space` 的默认值（通常为 "auto_generated"）
+    """
     action_feat = features.get("action")
     if isinstance(action_feat, dict):
         return {
@@ -348,8 +462,17 @@ def build_action_space_from_features(features: dict[str, Any]) -> dict[str, Any]
     return UnifiedMetadata().action_space
 
 
+# =============================================================================
+# 文件系统统计/展示（体积、帧数标签、目录树）
+# =============================================================================
+
 def calculate_dataset_size(ds_path: Path) -> int:
-    """Total size of the dataset directory in bytes."""
+    """
+    递归统计目录总大小（字节）。
+
+    使用位置：
+    - `metadata_collect._build_auto_generated_fields()`：写入 `UnifiedMetadata.dataset_size`
+    """
     if not ds_path.exists():
         return 0
 
@@ -364,7 +487,7 @@ def calculate_dataset_size(ds_path: Path) -> int:
 
 
 def format_file_size(size_bytes: int) -> str:
-    """Human-readable string for bytes."""
+    """把字节数格式化为人类可读字符串（B/KB/MB/GB/TB）。"""
     if size_bytes == 0:
         return "0B"
     size_names = ["B", "KB", "MB", "GB", "TB"]
@@ -379,7 +502,12 @@ def format_file_size(size_bytes: int) -> str:
 
 
 def generate_size_label(size: int) -> str:
-    """Generate a label for number of frames."""
+    """
+    把帧数映射为离散区间标签（用于展示与筛选）。
+
+    使用位置：
+    - `metadata_collect._build_auto_generated_fields()`：根据 total_frames 生成 frame_range
+    """
     if size < 1000:
         return "<1K"
     if size < 10000:

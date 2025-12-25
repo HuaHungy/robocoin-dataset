@@ -5,6 +5,15 @@ Metadata Sync Service
 该模块提供统一的元数据收集入口，确保 README 生成与页面静态资源
 构建依赖同一套逻辑。任何需要从数据库和硬链接目录组合信息的流程，
 都应该通过这里暴露的服务进行调用，从而避免逻辑漂移。
+
+它被哪些地方调用（帮助你快速定位调用链）：
+- `robocoin_dataset/page_sync/page_sync.py`：页面工程需要的 `assets/dataset_info/*.yml` 由这里统一生成
+- `robocoin_dataset/hub_upload/lerobot/hub_upload_util.py`：本地上传流程可复用服务生成统一 metadata
+
+这个文件的定位（为什么单独存在）：
+- `metadata_collect.py` 是“纯函数式的聚合器”（输入 hardlink + db，输出 UnifiedMetadata）
+- `metadata_service.py` 把“db_path 解析/校验 + 日志上下文 + 输出 YAML 落盘”封装成有状态对象，
+  让上层业务代码更短、更不容易漏掉路径校验/目录创建等样板逻辑。
 """
 
 from __future__ import annotations

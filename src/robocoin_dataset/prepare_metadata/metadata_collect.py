@@ -8,6 +8,14 @@
 4. 自动生成目录结构、文件大小、帧数范围等派生字段
 
 最终返回 ``UnifiedMetadata``，供网页（YAML）和 README 模板复用，确保两端信息完全一致。
+
+使用位置（面向调用方）：
+- `robocoin_dataset.prepare_metadata.metadata_service.MetadataSyncService`：页面同步与 README 生成统一入口
+- `robocoin_dataset.hub_upload.lerobot.hub_upload_server.HubUploadServer`：服务端预先构建元数据，下发给分布式客户端
+
+设计原则：
+- **不做“业务含义”上的修正**：这里只负责把不同来源的字段合并到一个对象中，字段值的优先级保持稳定。
+- **不做重型计算的重复**：派生字段统一在本模块内计算，避免在 README 渲染器等下游再次做同样逻辑。
 """
 
 import logging
@@ -35,6 +43,27 @@ from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetada
 
 LOGGER = logging.getLogger(__name__)
 
+def _escape_yaml_single_quoted_string(value: str) -> str:
+    """
+    把普通字符串转换为适合写入 YAML 单引号字符串的形式。
+
+    背景：
+    - HuggingFace Hub 的 gated dataset 配置最终会被写入 YAML header。
+    - YAML 单引号内如果出现单引号，需要用两个单引号表示（YAML 语法规则）。
+    - 同时我们尽量避免换行/制表符等控制字符把 YAML 结构“打断”。
+
+    注意：
+    - 这是一个“字符串清理”工具，不改变语义，只保证序列化安全。
+    """
+    # 对于 YAML 单引号字符串，我们需要转义单引号为双单引号
+    # 同时确保内容中没有可能破坏 YAML 结构的控制字符
+    return (
+        value.replace("'", "''")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .replace("\t", " ")
+    )
+
 
 def get_default_gated_access_config() -> dict[str, Any]:
     """
@@ -48,29 +77,23 @@ def get_default_gated_access_config() -> dict[str, Any]:
             - extra_gated_prompt (str): 用户访问数据集时显示的提示信息
             - extra_gated_fields (dict): 用户需要填写的表单字段配置
     """
-    def _escape_yaml_string(value: str) -> str:
-        """对字符串进行YAML完全安全的转义处理"""
-        if isinstance(value, str):
-            # 对于YAML单引号字符串，我们需要转义单引号为双单引号
-            # 同时确保内容中没有可能破坏YAML结构的字符
-            return value.replace("'", "''").replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
-        return value
-
     return {
-        "extra_gated_prompt": _escape_yaml_string(
+        "extra_gated_prompt": _escape_yaml_single_quoted_string(
             "By accessing this dataset, you agree to cite the associated paper in your research/publications—see the \"Citation\" section for details. "
             "You agree to not use the dataset to conduct experiments that cause harm to human subjects."
         ),
         "extra_gated_fields": {
             "Company/Organization": {
-                "type": _escape_yaml_string("text"),
-                "description": _escape_yaml_string(
+                "type": _escape_yaml_single_quoted_string("text"),
+                "description": _escape_yaml_single_quoted_string(
                     'e.g., "ETH Zurich", "Boston Dynamics", "Independent Researcher"'
                 ),
             },
             "Country": {
-                "type": _escape_yaml_string("country"),
-                "description": _escape_yaml_string('e.g., "Germany", "China", "United States"'),
+                "type": _escape_yaml_single_quoted_string("country"),
+                "description": _escape_yaml_single_quoted_string(
+                    'e.g., "Germany", "China", "United States"'
+                ),
             }
         },
     }
@@ -107,16 +130,12 @@ def create_unified_metadata(
         meta_info.get("statistics") if isinstance(meta_info, dict) else None,
         db_payload,
     )
-    frame_total = statistics.get("total_frames") if statistics else None
-    frame_range = generate_size_label(int(frame_total or 0))
-
-    dataset_size = format_file_size(calculate_dataset_size(dataset_path))
-    dataset_structure = generate_folder_structure(dataset_path, max_files_per_dir=5)
-    dataset_slug = _derive_dataset_slug(dataset_path.name)
-
-    robot_type = (
-        meta_info.get("robot_type") if isinstance(meta_info, dict) else None
-    ) or match_device_name_from_folder(dataset_path.name) or db_payload.get("device_model") or ""
+    auto_fields = _build_auto_generated_fields(
+        dataset_path=dataset_path,
+        meta_info=meta_info,
+        statistics=statistics,
+        db_payload=db_payload,
+    )
 
     metadata = UnifiedMetadata()
     metadata.update(**get_default_gated_access_config())
@@ -132,12 +151,10 @@ def create_unified_metadata(
         ),
         operation_platform_height=db_payload.get("operation_platform_height")
         or (yaml_payload.get("raw_yaml") or {}).get("operation_platform_height"),
-        path=dataset_slug,
-        video_url=f"./assets/videos/{dataset_slug}.mp4",
-        thumbnail_url=f"./assets/thumbnails/{dataset_slug}.jpg",
-        frame_range=frame_range,
-        dataset_size=dataset_size,
-        robot_type=robot_type,
+        # ========== 自动派生/自动生成字段（单独封装，便于复用与审查） ==========
+        # 这些字段不直接来自 DB/YAML/meta 文件，而是基于它们推导出来的“展示/索引字段”。
+        **auto_fields,
+        # ========== meta/info.json 与 meta/tasks.jsonl 来源字段 ==========
         codebase_version=meta_info.get("codebase_version", "") if isinstance(meta_info, dict) else "",
         statistics=statistics or metadata.statistics,
         splits=meta_info.get("splits") if isinstance(meta_info, dict) and meta_info.get("splits") else metadata.splits,
@@ -147,10 +164,11 @@ def create_unified_metadata(
         depth_enabled=bool(meta_info.get("depth_enabled")) if isinstance(meta_info, dict) else False,
         tasks=tasks_text,
         sub_tasks=sub_tasks,
-        structure=dataset_structure,
     )
 
     if features:
+        # ========== features ->（相机/观测空间/动作空间）摘要 ==========
+        # 注意：这一步不会修改 features 本身，只是把其中的结构“提炼”为更适合展示的摘要字段。
         metadata.cameras = build_cameras_from_features(features)
         metadata.observation_space = build_observation_space_from_features(features)
         metadata.action_space = build_action_space_from_features(features)
@@ -184,6 +202,53 @@ def _derive_dataset_slug(folder_name: str) -> str:
         .removesuffix("_hardlink")
         .removesuffix("/")
     )
+
+def _build_auto_generated_fields(
+    *,
+    dataset_path: Path,
+    meta_info: dict[str, Any],
+    statistics: dict[str, Any],
+    db_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    计算并返回“自动生成/派生字段”集合。
+
+    这些字段的特点：
+    - **只依赖输入**（hardlink 路径、meta/info.json 抽取结果、DB/YAML 合并结果），不产生副作用
+    - **用于展示与索引**：例如页面资源路径、帧数范围标签、数据集体积、目录结构树等
+
+    被谁用：
+    - 本模块 `create_unified_metadata` 会把这里返回的 dict 通过 `metadata.update(**auto_fields)` 写回 `UnifiedMetadata`
+
+    为什么要单独封装：
+    - 方便审查“派生字段”的来源与逻辑，不和 DB/YAML 合并逻辑混在一起
+    - 未来如果需要在别的入口做同样计算（例如只给页面生成 YAML），可以复用同一套实现
+    """
+    dataset_slug = _derive_dataset_slug(dataset_path.name)
+
+    frame_total = statistics.get("total_frames") if statistics else None
+    frame_range = generate_size_label(int(frame_total or 0))
+
+    dataset_size = format_file_size(calculate_dataset_size(dataset_path))
+    dataset_structure = generate_folder_structure(dataset_path, max_files_per_dir=5)
+
+    # robot_type 的优先级保持不变：
+    # 1) meta/info.json 的 robot_type（如果存在）
+    # 2) 根据文件夹名匹配 names.yml
+    # 3) DB 里的 device_model（兼容旧字段/历史数据）
+    robot_type = (
+        meta_info.get("robot_type") if isinstance(meta_info, dict) else None
+    ) or match_device_name_from_folder(dataset_path.name) or db_payload.get("device_model") or ""
+
+    return {
+        "path": dataset_slug,
+        "video_url": f"./assets/videos/{dataset_slug}.mp4",
+        "thumbnail_url": f"./assets/thumbnails/{dataset_slug}.jpg",
+        "frame_range": frame_range,
+        "dataset_size": dataset_size,
+        "robot_type": robot_type,
+        "structure": dataset_structure,
+    }
 
 
 def _load_dataset_payload(
