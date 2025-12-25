@@ -38,8 +38,8 @@ COPY . .
 
 # Create virtualenv and install the exact package set captured on the host.
 RUN uv venv --python python3 \
-    && uv pip install --upgrade pip \
     && uv pip install --requirement requirements-current.txt \
+    && uv pip install -e third_parties/robocoin-lerobot \
     && uv pip install -e .
 
 # Default to an interactive shell so that users can run the CLI/tools directly

@@ -156,8 +156,8 @@ source .venv/bin/activate
 
 该脚本会依次执行：
 
-1. `uv pip freeze --exclude-editable`：把**当前环境**中的依赖快照保存到 `requirements-current.txt`，并把所有指向仓库本地路径的 `file:///...` URI 自动替换成容器内的 `/opt/robocoin/...` 路径，保证诸如 `third_parties/robocoin-lerobot` 这类本地包也能在镜像里安装。
-2. `docker build`：Dockerfile 会直接基于该快照创建虚拟环境，安装完全相同的依赖集合，再运行 `uv pip install -e .` 安装当前工作副本。
+1. `uv pip freeze --exclude-editable`：把**当前环境中“非 editable”** 的依赖快照保存到 `requirements-current.txt`（editable 包会被排除），并把快照里可能出现的 `file:///...` URI 自动替换成容器内的 `/opt/robocoin/...` 路径，避免宿主机绝对路径导致容器安装失败。
+2. `docker build`：Dockerfile 会基于该快照创建虚拟环境，先安装 `requirements-current.txt`，再显式安装仓库内的 editable 包（例如 `third_parties/robocoin-lerobot`），最后 `uv pip install -e .` 安装当前工作副本。
 
 脚本不会改动 `pyproject.toml` 或 `uv.lock`，它只关注 Docker 所需的快照。
 
