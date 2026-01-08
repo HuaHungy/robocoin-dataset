@@ -1,4 +1,4 @@
-realman_rmc_aidal: 
+Realman_RMC-AIDA-L: 
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
   post_processor_class: RealmanRmcAidalProcessor
@@ -11,8 +11,16 @@ realman_rmc_aidal:
 #   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.realman_rmc_aidal_processor
 #   post_processor_class: RealmanRmcAidalProcessor
 
-galaxea_r1_lite:
+Galaxea_R1_Lite:
 - version: default_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.galaxea_r1_lite_processor
+  post_processor_class: GalaxeaR1LiteProcessor
+
+- version: default_mcap
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.galaxea_r1_lite_processor
+  post_processor_class: GalaxeaR1LiteProcessor
+
+- version: default_mcap_lite
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.galaxea_r1_lite_processor
   post_processor_class: GalaxeaR1LiteProcessor
 
@@ -20,7 +28,7 @@ galaxea_r1_lite:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.galaxea_r1_lite_processor
   post_processor_class: GalaxeaR1LiteH5Mp4Processor
 
-agilex_cobot_decoupled_magic:
+Agilex_Cobot_Magic:
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
   post_processor_class: AgilexCobotDecoupledMagicProcessor
@@ -45,7 +53,32 @@ agilex_cobot_decoupled_magic:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
   post_processor_class: AgilexCobotDecoupledMagicH5Mp4Processor
   
-unitree_g1:
+Agilex_Split_Aloha:
+- version: default_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
+  post_processor_class: AgilexCobotDecoupledMagicProcessor
+
+- version: realsense_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
+  post_processor_class: AgilexCobotDecoupledRealsenseMagicProcessor
+
+- version: headdown_version
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
+  post_processor_class: AgilexCobotDecoupledMagicProcessor
+
+- version: mult_sensor
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
+  post_processor_class: AgilexCobotDecoupledMagicMultSensorProcessor
+
+- version: h5_mp4
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
+  post_processor_class: AgilexCobotDecoupledMagicH5Mp4Processor
+
+- version: h5_mp4_new
+  post_processor_module: robocoin_dataset.state_action_data_post_process.processors.agilex_cobot_decoupled_magic_processor
+  post_processor_class: AgilexCobotDecoupledMagicH5Mp4Processor
+
+Unitree_G1edu-u3:
 - version: default_version
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
   post_processor_class: UnitreeG1Processor
@@ -62,7 +95,7 @@ unitree_g1:
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.unitree_g1_processor
   post_processor_class: UnitreeG1Processor
 
-discover_robotics_aitbot_mmk2:
+Airbot_MMK2:
 - version: third_view
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.discover_robotics_aitbot_mmk2_processor
   post_processor_class: ThirdViewProcessor
@@ -73,7 +106,7 @@ discover_robotics_aitbot_mmk2:
 
 - version: third_view_lite
   post_processor_module: robocoin_dataset.state_action_data_post_process.processors.discover_robotics_aitbot_mmk2_processor
-  post_processor_class: FivedArmsProcessor
+  post_processor_class: ThirdViewProcessor
 
 ruantong_a2d:
 - version: default_version
