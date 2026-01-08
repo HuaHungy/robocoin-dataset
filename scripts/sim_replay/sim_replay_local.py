@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 '''
 python scripts/sim_replay/sim_replay_local.py \
-  --repo_path /home/kemove/Downloads/mcap_to_lerobot/test \
-  --config_module robocoin_dataset.sim_replay.configs.realman_RS_01_config \
+  --repo_path /mnt/nas/synnas/成功区/Galaxea_R1_Lite_Galaxea_R1_Lite_storage_object_brown_plate \
+  --config_module robocoin_dataset.sim_replay.configs.galaxea_config \
   --config_class RealmanRS01LerobotSimReplayConfig \
   --replay_source data
 '''

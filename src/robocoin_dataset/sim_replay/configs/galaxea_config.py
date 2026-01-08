@@ -95,7 +95,7 @@ class GalaxeaR1LiteLerobotSimReplayConfig(LerobotSimReplayConfig):
     ]
 
     has_gripper = True
-    gripper_position_max = 100
+    gripper_position_max = 1.75
     gripper_position_min = 0
     gripper_mjcf_joint_max = 0.05
     gripper_mjcf_joint_min = 0
