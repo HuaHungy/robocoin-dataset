@@ -199,7 +199,7 @@ def _visualize_episode(
 
             annotation_text = get_annotation_text(batch, i)
             if annotation_text:
-                rr.log("annotations", rr.TextLog(annotation_text))
+                rr.log("annotations", rr.TextLog(str(repo_path) + annotation_text))
 
     return
 
@@ -330,13 +330,14 @@ class DatasetVisualizerClient(TaskClient):
     async def process_task(self, task_data: dict) -> dict:
         import asyncio
         import traceback
+
         from robocoin_dataset.distribution_computation.constant import (
-            TASK_FAILED,
-            TASK_SUCCESS,
             ERR_MSG,
-            TASK_RESULT_STATUS,
-            TASK_RESULT_CONTENT,
+            TASK_FAILED,
             TASK_ID,
+            TASK_RESULT_CONTENT,
+            TASK_RESULT_STATUS,
+            TASK_SUCCESS,
         )
 
         loop = asyncio.get_event_loop()
