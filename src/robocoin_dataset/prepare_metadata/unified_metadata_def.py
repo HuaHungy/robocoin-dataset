@@ -1,9 +1,20 @@
 """
-统一元数据，用途是用于网页展示和上传到Hub的数据集的README生成
-是对外展示和用于数据集筛选的依赖项目
-本数据类型将两者的信息整合进行处理
-并直接在yaml文件（用于网页）和README（用于数据集上传）的时候直接进行调用
-返回一个完整的数据结构对象，并据此进行文件的生成
+统一元数据（Unified Metadata）。
+
+这个模块只做一件事：定义 `UnifiedMetadata` 这一份“对外展示的字段契约”。
+它是网页侧（导出的 `*.yml`）和 Hub README 侧（Jinja2 模板渲染）的共同输入，
+从而保证“页面展示”和“README 描述”不会因为两套逻辑而漂移。
+
+它在哪里被如何使用（最重要的调用链）：
+- **聚合构建**：`prepare_metadata/metadata_collect.py:create_unified_metadata()`
+  会把 DB / YAML / meta/ / annotations/ / 文件系统派生字段合并后填充到本结构。
+- **服务封装**：`prepare_metadata/metadata_service.py:MetadataSyncService`
+  把上面的构建流程封装为“收集 + 落盘”的服务接口，供页面同步与上传流程复用。
+- **README 渲染**：`hub_upload/gen_readme/*` 会把 `UnifiedMetadata.to_dict()` 的结果作为模板 context。
+
+设计取向（非常关键，避免误解）：
+- `UnifiedMetadata` 是“数据容器”，不是“校验器/纠错器”。字段内容对不对主要由上游数据源决定。
+- `update()` 会忽略不存在的字段：这是为了兼容历史字段名、以及不同流程的可选字段集合。
 """
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -315,13 +326,13 @@ class UnifiedMetadata:
 
     # ========== 来源：模板或自动生成 ==========
 
-    cameras: str = "auto_generated"
+    cameras: list[dict[str, Any]] | str = "auto_generated"
     # 数据来源: 模板或自动生成
     # 用途: 相机数量信息
     # 计算方式: 从 features 中统计 observation.images.* 字段数量
     # 示例: "3" 或 "auto_generated"
 
-    observation_space: dict[str, str] = field(default_factory=lambda: {
+    observation_space: dict[str, Any] = field(default_factory=lambda: {
         "images": "auto_generated",
         "state": "auto_generated"
     })
@@ -331,7 +342,7 @@ class UnifiedMetadata:
     #   - images: 图像观测列表 (从 observation.images.* 提取)
     #   - state: 状态观测维度 (从 observation.state 提取)
 
-    action_space: str = "auto_generated"
+    action_space: dict[str, Any] | str = "auto_generated"
     # 数据来源: 从 features 自动提取
     # 用途: 动作空间定义
     # 计算方式: 从 features["action"] 提取 shape 和 names
@@ -365,7 +376,7 @@ class UnifiedMetadata:
 
     # ========== 来源：模板固定值（可选字段） ==========
 
-    contact_email: str = None
+    contact_email: str | None = None
     # 数据来源: 模板固定值（可选）
     # 用途: 联系邮箱
     # 示例: "contact@robocoin.ai"
@@ -514,3 +525,8 @@ FIELD_GROUPS = {
         "gripper_open_scale", "depth_enabled", "data_schema", "structure"
     ]
 }
+
+# NOTE:
+# - FIELD_GROUPS 目前主要用于“按来源解释字段”的索引（写注释/排查问题更直观），并不参与运行时逻辑。
+# - 其中有少量历史字段名（如 task_descriptions/device_model）在 dataclass 中可能不存在；
+#   这是刻意保留的兼容痕迹，方便阅读旧配置或旧脚本时对照理解。不要在运行时代码里硬依赖它们。

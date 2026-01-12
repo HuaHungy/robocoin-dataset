@@ -1,4 +1,4 @@
-realman_rmc_aidal: 
+Realman_RMC-AIDA-L: 
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
@@ -16,12 +16,24 @@ realman_rmc_aidal:
   mujoco_sim_config_class: RealmanRmcAidalMotionAnnotationConfig
 
 
-galaxea_r1_lite:
+Galaxea_R1_Lite:
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_rosbag
   class: LerobotFormatConverterRosbag
   converter_config_path: converter_config_galaxea_r1_lite.yaml
+
+- version: default_mcap
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_lite_mcap
+  class: RBMCAPToLeRobotConverter
+  converter_config_path: converter_config_galaxea_r1_lite_mcap.yaml
+
+- version: default_mcap_lite
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_lite_mcap
+  class: LerobotFormatConverterLiteMcap
+  converter_config_path: converter_config_galaxea_r1_lite_mcap_image_raw.yaml
 
 - version: h5_mp4_version
   verison_description: galaxea r1 lite H5+MP4 format (qpos only, 3 MP4 videos)
@@ -74,7 +86,7 @@ unitree_g1:
 
 
 
-discover_robotics_aitbot_mmk2:
+Airbot_MMK2:
 - version: third_view_full
   verison_description: mmk2 with full action including head (arms+head+spine+hands, 39D)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mmk2
@@ -146,7 +158,7 @@ leju_robot:
   converter_config_path: converter_config_leju_waibu_full.yaml
 
 
-agilex_cobot_decoupled_magic:
+Agilex_Split_Aloha:
 - version: default_version
   verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
@@ -203,8 +215,111 @@ single_arm_ur5:
   class: LerobotFormatConverterUr5
   converter_config_path: converter_config_single_arm_ur5.yaml
 
+Agilex_Split_Aloha:
+- version: default_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic.yaml
 
-yinhe:
+- version: realsense_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, realsense
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_realsense.yaml
+
+- version: depthhead_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, depthhead
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_depthhead.yaml
+
+- version: headdown_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, cam_center_down
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_headdown.yaml
+
+- version: masterpuppet_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, font
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_masterpuppet.yaml
+
+- version: h5_mp4
+  verison_description: agilex_cobot_decoupled_magic robot with HDF5 data and MP4 videos (26D with end-effector)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_h5_mp4.yaml
+
+- version: h5_mp4_new
+  verison_description: agilex_cobot_decoupled_magic robot with HDF5 data and MP4 videos, new version (26D with end-effector)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_h5_mp4_new.yaml
+
+- version: mult_sensor
+  verison_description: agilex_cobot_decoupled_magic robot with multiple sensor folder structure
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
+  class: LerobotFormatConverterJpgJson
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_mult_sensor.yaml
+
+Agilex_Cobot_Magic:
+- version: default_version
+  verison_description: two arms and two grippers, three rgb cameras with high, left wrist, right wrist
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic.yaml
+
+- version: realsense_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, realsense
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_realsense.yaml
+
+- version: depthhead_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, depthhead
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_depthhead.yaml
+
+- version: headdown_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, cam_center_down
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_headdown.yaml
+
+- version: masterpuppet_version
+  verison_description: two arms and two grippers, four rgb cameras with high, left wrist, right wrist, font
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5
+  class: LerobotFormatConverterHdf5
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_masterpuppet.yaml
+
+- version: h5_mp4
+  verison_description: agilex_cobot_decoupled_magic robot with HDF5 data and MP4 videos (26D with end-effector)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_h5_mp4.yaml
+
+- version: h5_mp4_new
+  verison_description: agilex_cobot_decoupled_magic robot with HDF5 data and MP4 videos, new version (26D with end-effector)
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_h5_mp4
+  class: LerobotFormatConverterH5Mp4
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_h5_mp4_new.yaml
+
+- version: mult_sensor
+  verison_description: agilex_cobot_decoupled_magic robot with multiple sensor folder structure
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_jpg_json
+  class: LerobotFormatConverterJpgJson
+  converter_config_path: converter_config_agilex_cobot_decoupled_magic_mult_sensor.yaml
+
+single_arm_ur5:
+- version: default_version
+  verison_description: one arm and one gripper, one rgb camera with high
+  module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_ur5
+  class: LerobotFormatConverterUr5
+  converter_config_path: converter_config_single_arm_ur5.yaml
+Galbot_G1:
 - version: full_version
   verison_description: yinhe robot with MP4 videos and JSON data (full version with head+body action, 20D)
   module: robocoin_dataset.format_converter.tolerobot.lerobot_format_converter_mp4_json

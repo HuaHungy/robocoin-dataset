@@ -24,6 +24,8 @@ import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from robocoin_dataset.prepare_metadata.metadata_service import MetadataSyncService
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -36,6 +38,7 @@ def construce_target_file(
     target_dir: str,
     crf: int = 18,
     update_videos: bool = False,
+    force_regenerate: bool = False,
     logger: logging.Logger | None = None,
 ) -> None:
     """
@@ -61,6 +64,7 @@ def construce_target_file(
         target_dir: Root directory of the page project
         crf: CRF value for video compression (default: 18, range: 0-51, lower = better quality)
         update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
+        force_regenerate: If True, ignore existing COMPLETED status and rebuild assets whenever prerequisites are ready
         logger: Optional logger instance
     """
     from robocoin_dataset.page_sync.page_sync_task import (
@@ -122,12 +126,18 @@ def construce_target_file(
     else:
         _logger.debug(f"Thumbnails directory already exists: {thumbnails_dir}")
 
+    # 2.5 出于性能考虑，复用同一个元数据服务实例，避免重复解析 DB 路径
+    metadata_service = MetadataSyncService(
+        db_file_path=str(db.db_file),
+        logger=_logger,
+    )
+
     # 3-8. Main loop: sync -> generate task -> copy yaml -> copy & compress videos -> align video name -> mark completed
     task_count = 0
     while True:
         # 3. Sync the task status
         _logger.debug("Syncing page sync status...")
-        _sync_page_sync_status(session, _logger)
+        _sync_page_sync_status(session, _logger, force_regenerate=force_regenerate)
 
         # 4. Generate one task
         _logger.debug("Generating next task...")
@@ -181,9 +191,9 @@ def construce_target_file(
                 db.db_file,
             )
             _write_unified_metadata_yaml(
+                metadata_service=metadata_service,
                 dst_yaml_path=str(yaml_dst),
                 hardlink_path=str(hardlink_path),
-                db_file_path=str(db.db_file),
                 dataset_uuid=dataset_uuid,
             )
             _logger.info("Generated unified metadata YAML at %s", yaml_dst)
@@ -253,6 +263,7 @@ def main(
     target_dir: str,
     crf: int = 18,
     update_videos: bool = False,
+    force_regenerate: bool = False,
     log_level: str = "INFO",
 ) -> None:
     """
@@ -263,6 +274,7 @@ def main(
         target_dir: Root directory of the page project
         crf: CRF value for video compression (default: 18, range: 0-51, lower = better quality)
         update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
+        force_regenerate: If True, ignore existing COMPLETED status and rebuild assets whenever prerequisites are ready
         log_level: Logging level (default: INFO)
     """
     from datetime import datetime
@@ -300,6 +312,7 @@ def main(
             target_dir=target_dir,
             crf=crf,
             update_videos=update_videos,
+            force_regenerate=force_regenerate,
             logger=logger,
         )
 
@@ -334,6 +347,11 @@ if __name__ == "__main__":
         help="Force regenerate videos and thumbnails even if they exist (default: False)",
     )
     parser.add_argument(
+        "--force-regenerate",
+        action="store_true",
+        help="Regenerate datasets even if their status already shows as COMPLETED",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="INFO",
@@ -348,5 +366,6 @@ if __name__ == "__main__":
         target_dir=args.target_dir,
         crf=args.crf,
         update_videos=args.update_videos,
+        force_regenerate=args.force_regenerate,
         log_level=args.log_level,
     )

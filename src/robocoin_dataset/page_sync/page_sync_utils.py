@@ -7,6 +7,8 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from robocoin_dataset.prepare_metadata.metadata_service import MetadataSyncService
+
 ######## ACTUAL OPERATION ########
 
 # ------- DATASET NAME GETTING -------#
@@ -80,75 +82,28 @@ def _validate_exist(yaml_path: str | None, hardlink_path: str | None) -> bool:
 
 
 def _write_unified_metadata_yaml(
+    metadata_service: MetadataSyncService,
     dst_yaml_path: str,
     hardlink_path: str,
-    db_file_path: str,
     dataset_uuid: str | None,
 ) -> None:
     """
-    Generate a new YAML metadata file for page assets based on UnifiedMetadata.
+    通过共享的 MetadataSyncService 写出 YAML 文件。
 
-    This function delegates the heavy lifting to prepare_metadata.metadata_collect
-    to build a UnifiedMetadata instance, then serializes it to a YAML file that
-    the page project can consume directly.
-
-    INPUT:
-      dst_yaml_path -> final YAML file path under assets/dataset_info/
-      dataset_path  -> hardlink dataset root (usually *_hardlink or *_qced_hardlink)
-      db_file_path  -> path to db/datasets_new.db
-      dataset_uuid  -> dataset uuid (optional but recommended for precise lookup)
-
-    OUTPUT:
-      None, writes YAML to dst_yaml_path (overwrites if exists)
+    所有页面静态资源依赖的 YAML 均经由该服务生成，以确保与 README 上传
+    使用完全一致的元数据收集逻辑。
     """
-    from robocoin_dataset.prepare_metadata.metadata_collect import create_unified_metadata
-
-    _logger = logging.getLogger(__name__)
-
-    # Create UnifiedMetadata instance
     try:
-        _logger.debug(
-            "Creating UnifiedMetadata for dataset_uuid=%s, dataset_path=%s, db_file_path=%s",
-            dataset_uuid,
-            hardlink_path,
-            db_file_path,
-        )
-        metadata = create_unified_metadata(
+        metadata_service.write_unified_metadata_yaml(
+            dst_yaml_path=dst_yaml_path,
             hardlink_path=hardlink_path,
-            db_file_path=db_file_path,
             dataset_uuid=dataset_uuid,
         )
     except Exception as e:  # noqa: PERF203
-        _logger.error(
-            "Failed to create UnifiedMetadata for dataset_uuid=%s: %s",
+        logging.getLogger(__name__).error(
+            "写入统一元数据 YAML 失败: dataset_uuid=%s, dst=%s, err=%s",
             dataset_uuid,
-            e,
-            exc_info=True,
-        )
-        raise
-
-    dst_path = Path(dst_yaml_path)
-    dst_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write UnifiedMetadata to YAML file
-    try:
-        # UnifiedMetadata knows how to serialize itself to YAML.
-        yaml_str = metadata.to_yaml(str(dst_path))
-        _logger.debug(
-            "Wrote UnifiedMetadata YAML for dataset_uuid=%s to %s (size=%d chars)",
-            dataset_uuid,
-            dst_path,
-            len(yaml_str),
-        )
-
-        # Post-process: fix empty top-level fields by extracting from raw if available
-        # _fix_empty_fields_from_raw(dst_path, dataset_uuid)
-
-    except Exception as e:  # noqa: PERF203
-        _logger.error(
-            "Failed to write UnifiedMetadata YAML for dataset_uuid=%s to %s: %s",
-            dataset_uuid,
-            dst_path,
+            dst_yaml_path,
             e,
             exc_info=True,
         )
