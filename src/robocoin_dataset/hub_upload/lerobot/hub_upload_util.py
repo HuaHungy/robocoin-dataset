@@ -6,6 +6,7 @@ It contains the business logic for dataset upload operations.
 """
 
 import random
+import re
 import shutil
 import tempfile
 import time
@@ -296,9 +297,56 @@ class LocalDsUploadUtil(LocalDsUtil):
 
         return False, "Upload failed with unknown error"
 
+    def _sanitize_repo_name(self, repo_name: str) -> str:
+        """
+        Sanitize repository name to comply with Hugging Face validation rules:
+        - Only alphanumeric chars, '-', '_', or '.' are allowed
+        - Cannot start or end with '-' or '.'
+        - Maximum length is 96 characters
+
+        Args:
+            repo_name: Original repository name
+
+        Returns:
+            Sanitized repository name that meets Hugging Face requirements
+        """
+        if not repo_name:
+            return repo_name
+
+        # Replace invalid characters with underscore
+        # Keep only alphanumeric, '-', '_', and '.'
+        sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', repo_name)
+
+        # Remove leading/trailing '-' and '.'
+        sanitized = sanitized.strip('-.')
+
+        # Collapse multiple consecutive underscores/dots/dashes into single underscore
+        sanitized = re.sub(r'[._-]+', '_', sanitized)
+
+        # Remove leading/trailing separators again after collapsing
+        sanitized = sanitized.strip('-.')
+
+        # Truncate to maximum length of 96 characters
+        if len(sanitized) > 96:
+            sanitized = sanitized[:96].rstrip('-.')
+
+        # Ensure we don't end up with an empty string
+        if not sanitized:
+            # Fallback: use a default name if sanitization results in empty string
+            sanitized = "dataset"
+
+        return sanitized
+
     def _process_repo_name(self, folder_name: str) -> str:
         """
-        Normalize a folder name into a valid repository name by stripping upload suffixes.
+        Normalize a folder name into a valid repository name by stripping upload suffixes,
+        removing duplicate robot names, and sanitizing invalid characters.
+
+        Args:
+            folder_name: Original folder name (may contain suffixes and invalid chars)
+
+        Returns:
+            Sanitized repository name that meets Hugging Face requirements
         """
         dataset_name = folder_name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
         robot_names = self._get_robot_name_list()
@@ -309,7 +357,17 @@ class LocalDsUploadUtil(LocalDsUtil):
                 dataset_name,
                 normalized_name,
             )
-        return normalized_name
+
+        # Sanitize invalid characters to comply with Hugging Face validation rules
+        sanitized_name = self._sanitize_repo_name(normalized_name)
+        if sanitized_name != normalized_name:
+            self.logger.debug(
+                "Sanitized repository name '%s' -> '%s'",
+                normalized_name,
+                sanitized_name,
+            )
+
+        return sanitized_name
 
     def _get_robot_name_list(self) -> list[str]:
         """
