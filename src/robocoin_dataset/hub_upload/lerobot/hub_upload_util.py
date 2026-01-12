@@ -29,10 +29,7 @@ ROBOT_NAME_SEPARATORS = frozenset({"_", "-", "."})
 
 
 _ROBOT_NAMES_CONFIG_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "robocoin_dataset"
-    / "hub_upload"
+    Path(__file__).resolve().parents[1]
     / "config"
     / "robot_names.yml"
 )
