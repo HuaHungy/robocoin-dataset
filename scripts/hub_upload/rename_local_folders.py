@@ -7,6 +7,7 @@ directory to match the sanitized naming convention required for Hugging Face Hub
 
 Usage:
     python scripts/hub_upload/rename_local_folders.py /path/to/datasets/
+    python scripts/hub_upload/rename_local_folders.py /mnt/nas/synnas/成功区
 """
 
 import argparse
