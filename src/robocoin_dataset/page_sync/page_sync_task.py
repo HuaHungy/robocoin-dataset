@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 def _sync_page_sync_status(
     session: "Session",
     logger: logging.Logger | None = None,
+    force_regenerate: bool = False,
 ) -> None:
   '''Sync: mark PENDING if the record need to be page_synced
   I: Database. O: None, change PENDING directly.(version ++ and sync also)
@@ -33,18 +34,25 @@ def _sync_page_sync_status(
   hf_upload_version_field = f"{hf_prefix}_upload_version"
 
   # Query datasets that need page sync
+  status_condition = or_(
+      DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
+      and_(
+          DatasetDB.dataset_info_sync_status == TaskStatus.COMPLETED,
+          DatasetDB.dataset_info_sync_version_ps_ms < getattr(DatasetDB, ms_upload_version_field),
+          DatasetDB.dataset_info_sync_version_ps_hf < getattr(DatasetDB, hf_upload_version_field),
+      ),
+  )
+
+  if force_regenerate:
+      status_condition = or_(
+          DatasetDB.dataset_info_sync_status != TaskStatus.PROCESSING,
+      )
+
   query = session.query(DatasetDB).filter(
     and_(
         getattr(DatasetDB, ms_upload_status_field) == TaskStatus.COMPLETED,
         getattr(DatasetDB, hf_upload_status_field) == TaskStatus.COMPLETED,
-        or_(
-            DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
-            and_(
-                DatasetDB.dataset_info_sync_status == TaskStatus.COMPLETED,
-                DatasetDB.dataset_info_sync_version_ps_ms < getattr(DatasetDB, ms_upload_version_field),
-                DatasetDB.dataset_info_sync_version_ps_hf < getattr(DatasetDB, hf_upload_version_field),
-            ),
-        ),
+        status_condition,
     ),
   )
 

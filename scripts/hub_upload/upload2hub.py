@@ -26,38 +26,38 @@ WORKFLOW:
 
 Usage:
     # Local upload mode (single machine, default)
-    python scripts/hub_upload/upload2hub.py \\
-        --config configs/upload.yaml \\
+    python scripts/hub_upload/upload2hub.py \
+        --config configs/upload.yaml \
         --token YOUR_TOKEN
 
     # Server mode (distribute tasks to clients)
-    python scripts/hub_upload/upload2hub.py --server \\
-        --config configs/upload.yaml \\
-        --db-file-path /path/to/datasets.db \\
-        --token YOUR_TOKEN \\
-        --name-space YourUsername \\
-        --host 0.0.0.0 \\
+    python scripts/hub_upload/upload2hub.py --server \
+        --config configs/upload.yaml \
+        --db-file-path /path/to/datasets.db \
+        --token YOUR_TOKEN \
+        --name-space YourUsername \
+        --host 0.0.0.0 \
         --port 2140
 
     # Client mode (connect to server and process tasks)
-    python scripts/hub_upload/upload2hub.py --client \\
-        --host 127.0.0.1 \\
-        --port 2140 \\
-        --num-clients 4 \\
-        --config configs/upload.yaml \\
-        --token YOUR_TOKEN \\
+    python scripts/hub_upload/upload2hub.py --client \
+        --host 127.0.0.1 \
+        --port 2140 \
+        --num-clients 4 \
+        --config configs/upload.yaml \
+        --token YOUR_TOKEN \
         --name-space YourUsername
 
     # With custom database path
-    python scripts/hub_upload/upload2hub.py \\
-        --config configs/upload.yaml \\
-        --db-file-path /path/to/datasets_new.db \\
+    python scripts/hub_upload/upload2hub.py \
+        --config configs/upload.yaml \
+        --db-file-path /path/to/datasets_new.db \
         --token YOUR_TOKEN
 
     # README-only mode (only update README files, no dataset upload)
-    python scripts/hub_upload/upload2hub.py \\
-        --config configs/upload.yaml \\
-        --readme-only \\
+    python scripts/hub_upload/upload2hub.py \
+        --config configs/upload.yaml \
+        --readme-only \
         --token YOUR_TOKEN
 """
 
