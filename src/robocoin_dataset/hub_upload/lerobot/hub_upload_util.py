@@ -25,6 +25,48 @@ from .constant import (
 )
 from .local_datasets_util import LocalDsConfig, LocalDsUtil
 
+ROBOT_NAME_SEPARATORS = frozenset({"_", "-", "."})
+
+
+_ROBOT_NAMES_CONFIG_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "robocoin_dataset"
+    / "hub_upload"
+    / "config"
+    / "robot_names.yml"
+)
+_ROBOT_NAMES_CACHE: list[str] | None = None
+
+
+def _load_robot_names_from_config() -> list[str]:
+    """
+    Load the list of robot name identifiers from the shared configuration file.
+    """
+    global _ROBOT_NAMES_CACHE
+
+    if _ROBOT_NAMES_CACHE is not None:
+        return _ROBOT_NAMES_CACHE
+
+    try:
+        with open(_ROBOT_NAMES_CONFIG_PATH, encoding="utf-8") as config_file:
+            raw_names = yaml.safe_load(config_file)
+    except (FileNotFoundError, yaml.YAMLError):
+        _ROBOT_NAMES_CACHE = []
+        return _ROBOT_NAMES_CACHE
+
+    if isinstance(raw_names, list):
+        cleaned_names: list[str] = []
+        for entry in raw_names:
+            name = str(entry).strip()
+            if name:
+                cleaned_names.append(name)
+        _ROBOT_NAMES_CACHE = cleaned_names
+    else:
+        _ROBOT_NAMES_CACHE = []
+
+    return _ROBOT_NAMES_CACHE
+
 ######## CONFIGURATION ########
 
 
@@ -184,7 +226,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         """
 
         # Extract dataset name from hardlink path
-        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
+        dataset_name = self._process_repo_name(hardlink_path.name)
 
         # Validate dataset structure using shared validation from LocalDsUtil
         # TODO: we no longer use root_path but keep it for compatibility.
@@ -257,6 +299,71 @@ class LocalDsUploadUtil(LocalDsUtil):
 
         return False, "Upload failed with unknown error"
 
+    def _process_repo_name(self, folder_name: str) -> str:
+        """
+        Normalize a folder name into a valid repository name by stripping upload suffixes.
+        """
+        dataset_name = folder_name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
+        robot_names = self._get_robot_name_list()
+        normalized_name = self._remove_duplicate_robot_names(dataset_name, robot_names)
+        if normalized_name != dataset_name:
+            self.logger.debug(
+                "Trimmed duplicate robot names in '%s' -> '%s'",
+                dataset_name,
+                normalized_name,
+            )
+        return normalized_name
+
+    def _get_robot_name_list(self) -> list[str]:
+        """
+        Retrieve robot names from the shared configuration.
+        """
+        return _load_robot_names_from_config()
+
+    def _remove_duplicate_robot_names(
+        self,
+        repo_name: str,
+        robot_names: list[str],
+    ) -> str:
+        """
+        Ensure each robot name appears at most once in the repository name.
+        """
+        if not robot_names:
+            return repo_name
+
+        sanitized = repo_name
+        for robot_name in robot_names:
+            if not robot_name:
+                continue
+
+            first_index = sanitized.find(robot_name)
+            if first_index == -1:
+                continue
+
+            search_start = first_index + len(robot_name)
+            while True:
+                duplicate_index = sanitized.find(robot_name, search_start)
+                if duplicate_index == -1:
+                    break
+
+                remove_start = self._locate_duplicate_start(sanitized, duplicate_index)
+                sanitized = (
+                    sanitized[:remove_start]
+                    + sanitized[duplicate_index + len(robot_name) :]
+                )
+                search_start = remove_start
+
+        return sanitized
+
+    def _locate_duplicate_start(self, repo_name: str, duplicate_start: int) -> int:
+        """
+        Walk backwards to remove surrounding separators before the duplicate entry.
+        """
+        start = duplicate_start
+        while start > 0 and repo_name[start - 1] in ROBOT_NAME_SEPARATORS:
+            start -= 1
+        return start
+
     def _upload_one_dataset(
         self,
         hardlink_path: Path,
@@ -279,7 +386,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         # Start timing for this dataset
         dataset_start_time = time.time()
 
-        dataset_name = hardlink_path.name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
+        dataset_name = self._process_repo_name(hardlink_path.name)
 
         # Define output path for intermediate YAML file
         output_path = Path(self.config.output_path or "./dataset_info").expanduser().absolute()
