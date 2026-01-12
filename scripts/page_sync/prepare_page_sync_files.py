@@ -18,7 +18,9 @@ python scripts/page_sync/prepare_page_sync_files.py \
     --db-path db/datasets_new.db \
     --target-dir /home/rogerspyke/projects \
     --hf-token your_hf_token \
-    --hf-repo-id RogersPyke/RoboCOIN-DataManager-assets
+    --hf-repo-id RogersPyke/RoboCOIN-DataManager-assets \
+    --crf 30 \
+    --force-regenerate
 """
 
 import argparse
@@ -110,6 +112,12 @@ Output Structure:
     )
 
     parser.add_argument(
+        "--force-regenerate",
+        action="store_true",
+        help="Regenerate page sync files even if the dataset already shows as COMPLETED",
+    )
+
+    parser.add_argument(
         "--hf-token",
         type=str,
         default=None,
@@ -155,6 +163,7 @@ Output Structure:
             crf=args.crf,
             update_videos=args.update_videos,
             log_level=args.log_level,
+        force_regenerate=args.force_regenerate,
         )
         print("\n✓ Page sync completed successfully!")
 

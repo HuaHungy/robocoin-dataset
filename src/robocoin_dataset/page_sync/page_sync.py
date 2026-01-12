@@ -38,6 +38,7 @@ def construce_target_file(
     target_dir: str,
     crf: int = 18,
     update_videos: bool = False,
+    force_regenerate: bool = False,
     logger: logging.Logger | None = None,
 ) -> None:
     """
@@ -63,6 +64,7 @@ def construce_target_file(
         target_dir: Root directory of the page project
         crf: CRF value for video compression (default: 18, range: 0-51, lower = better quality)
         update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
+        force_regenerate: If True, ignore existing COMPLETED status and rebuild assets whenever prerequisites are ready
         logger: Optional logger instance
     """
     from robocoin_dataset.page_sync.page_sync_task import (
@@ -135,7 +137,7 @@ def construce_target_file(
     while True:
         # 3. Sync the task status
         _logger.debug("Syncing page sync status...")
-        _sync_page_sync_status(session, _logger)
+        _sync_page_sync_status(session, _logger, force_regenerate=force_regenerate)
 
         # 4. Generate one task
         _logger.debug("Generating next task...")
@@ -261,6 +263,7 @@ def main(
     target_dir: str,
     crf: int = 18,
     update_videos: bool = False,
+    force_regenerate: bool = False,
     log_level: str = "INFO",
 ) -> None:
     """
@@ -271,6 +274,7 @@ def main(
         target_dir: Root directory of the page project
         crf: CRF value for video compression (default: 18, range: 0-51, lower = better quality)
         update_videos: If True, always regenerate videos and thumbnails; if False, skip existing ones (default: False)
+        force_regenerate: If True, ignore existing COMPLETED status and rebuild assets whenever prerequisites are ready
         log_level: Logging level (default: INFO)
     """
     from datetime import datetime
@@ -308,6 +312,7 @@ def main(
             target_dir=target_dir,
             crf=crf,
             update_videos=update_videos,
+            force_regenerate=force_regenerate,
             logger=logger,
         )
 
@@ -342,6 +347,11 @@ if __name__ == "__main__":
         help="Force regenerate videos and thumbnails even if they exist (default: False)",
     )
     parser.add_argument(
+        "--force-regenerate",
+        action="store_true",
+        help="Regenerate datasets even if their status already shows as COMPLETED",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="INFO",
@@ -356,5 +366,6 @@ if __name__ == "__main__":
         target_dir=args.target_dir,
         crf=args.crf,
         update_videos=args.update_videos,
+        force_regenerate=args.force_regenerate,
         log_level=args.log_level,
     )
