@@ -143,7 +143,7 @@ def construce_target_file(
     while True:
         # 3. Sync the task status
         _logger.debug("Syncing page sync status...")
-        _sync_page_sync_status(session, _logger, force_regenerate=force_regenerate)
+        _sync_page_sync_status(session, _logger)
 
         # 4. Generate one task
         _logger.debug("Generating next task...")

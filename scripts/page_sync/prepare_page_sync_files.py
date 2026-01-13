@@ -15,7 +15,7 @@ python scripts/page_sync/prepare_page_sync_files.py \
 
 # With HuggingFace upload
 python scripts/page_sync/prepare_page_sync_files.py \
-    --db-path db/datasets_new.db \
+    --db-path /mnt/db/datasets_new.db \
     --target-dir /home/rogerspyke/projects \
     --hf-token your_hf_token \
     --hf-repo-id RogersPyke/RoboCOIN-DataManager-assets \
