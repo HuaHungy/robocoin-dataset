@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from huggingface_hub import HfApi
+from huggingface_hub.utils import HfHubHTTPError
 
 HF_TOKEN_ENV_VAR = "HF_TOKEN"
 DEFAULT_REPO_ID = "RogersPyke/RoboCOIN-DataManager-assets"
@@ -99,24 +100,43 @@ def upload_assets(config: UploadConfig) -> str:
     api = HfApi(token=token)
 
     logger.info(
-        "Uploading assets from %s to %s (repo_type=%s, revision=%s)",
+        "[upload_assets] Uploading assets from %s to %s (repo_type=%s, revision=%s)",
         assets_dir,
         config.repo_id,
         config.repo_type,
         config.revision,
     )
 
-    commit_sha = api.upload_folder(
-        folder_path=str(assets_dir),
-        repo_id=config.repo_id,
-        repo_type=config.repo_type,
-        revision=config.revision,
-        commit_message=config.commit_message,
-        allow_patterns=config.allow_patterns,
-        ignore_patterns=config.ignore_patterns,
-    )
+    def _do_upload() -> str:
+        return api.upload_folder(
+            folder_path=str(assets_dir),
+            repo_id=config.repo_id,
+            repo_type=config.repo_type,
+            revision=config.revision,
+            commit_message=config.commit_message,
+            allow_patterns=config.allow_patterns,
+            ignore_patterns=config.ignore_patterns,
+        )
 
-    logger.info("Upload completed successfully at commit %s", commit_sha)
+    try:
+        commit_sha = _do_upload()
+    except HfHubHTTPError as exc:
+        if exc.status_code == 404:
+            logger.warning(
+                "[upload_assets] Repository %s not found; creating before retrying",
+                config.repo_id,
+            )
+            api.create_repo(
+                repo_id=config.repo_id,
+                token=token,
+                repo_type=config.repo_type,
+                exist_ok=True,
+            )
+            commit_sha = _do_upload()
+        else:
+            raise
+
+    logger.info("[upload_assets] Upload completed successfully at commit %s", commit_sha)
     return commit_sha
 
 
