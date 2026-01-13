@@ -83,7 +83,6 @@ def construce_target_file(
         _gen_video_thumbnail,
         _get_dataset_name,
         _sample_one_video_path,
-        _validate_exist,
         _write_unified_metadata_yaml,
     )
 
@@ -163,15 +162,25 @@ def construce_target_file(
         _logger.debug("[page_sync]   hardlink_path: %s", hardlink_path)
 
         # Validate that both yaml_path and hardlink_path exist
-        if not _validate_exist(yaml_path, hardlink_path):
+        missing_paths = []
+        if not yaml_path:
+            missing_paths.append("yaml_path is None")
+        elif not Path(yaml_path).exists():
+            missing_paths.append(f"yaml_path does not exist: {yaml_path}")
+
+        if not hardlink_path:
+            missing_paths.append("hardlink_path is None")
+        elif not Path(hardlink_path).exists():
+            missing_paths.append(f"hardlink_path does not exist: {hardlink_path}")
+
+        if missing_paths:
             _logger.error(
-                "[page_sync] Validation failed for dataset %s: yaml_path=%s, hardlink_path=%s. Both paths must exist. Marking as FAILED.",
+                "[page_sync] Validation failed for dataset %s: %s. Marking as FAILED.",
                 dataset_uuid,
-                yaml_path,
-                hardlink_path
+                "; ".join(missing_paths)
             )
             err_msg = (
-                "Page sync validation failed: yaml_path and hardlink_path must both exist. "
+                f"Page sync validation failed: {'; '.join(missing_paths)}. "
                 f"yaml_path={yaml_path}, hardlink_path={hardlink_path}"
             )
             _mark_task_failed(session, dataset_uuid, err_msg)

@@ -123,9 +123,9 @@ def upload_assets(config: UploadConfig) -> str:
     except (HfHubHTTPError, RepositoryNotFoundError) as exc:
         # Handle both 404 HTTP errors and RepositoryNotFoundError
         is_not_found = False
-        if isinstance(exc, HfHubHTTPError) and exc.status_code == 404:
+        if isinstance(exc, RepositoryNotFoundError):
             is_not_found = True
-        elif isinstance(exc, RepositoryNotFoundError):
+        elif isinstance(exc, HfHubHTTPError) and hasattr(exc, 'response') and exc.response.status_code == 404:
             is_not_found = True
 
         if is_not_found:
