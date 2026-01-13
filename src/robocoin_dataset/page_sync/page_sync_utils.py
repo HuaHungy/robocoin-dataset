@@ -3,6 +3,7 @@
 """
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -47,6 +48,123 @@ def _get_dataset_name(session: Session, dataset_uuid: str) -> str | None:
     dataset_name = Path(item.convert_path).name
     _logger.debug("[page_sync_utils] Retrieved dataset name: %s for dataset_uuid: %s", dataset_name, dataset_uuid)
     return dataset_name
+
+
+# ------- YAML MISSING RECORDING -------#
+
+
+def _record_missing_yaml(
+    dataset_uuid: str,
+    yaml_path: str | None,
+    operation: str,
+    log_dir: Path | None = None,
+    logger: logging.Logger | None = None,
+) -> None:
+    """
+    Record missing YAML file information to a log file.
+
+    Args:
+        dataset_uuid: UUID of the dataset
+        yaml_path: Path to the missing YAML file (can be None)
+        operation: Operation name (e.g., "hub_upload", "page_sync")
+        log_dir: Directory to save the log file (default: docs/)
+        logger: Optional logger instance
+    """
+    _logger = logger or logging.getLogger(__name__)
+
+    # Determine log directory
+    if log_dir is None:
+        # Default to docs/ directory
+        log_dir = Path("docs")
+    log_dir = Path(log_dir).expanduser().resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine log file name based on operation
+    if operation == "page_sync":
+        log_file_name = "missing_yaml_page.txt"
+    elif operation == "hub_upload":
+        log_file_name = "missing_yaml_upload.txt"
+    else:
+        # Fallback for unknown operations
+        log_file_name = f"missing_yaml_{operation}.txt"
+
+    # Log file path
+    log_file = log_dir / log_file_name
+
+    # Prepare log entry
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    yaml_path_str = str(yaml_path) if yaml_path else "None"
+    log_entry = f"{timestamp} | {operation} | {dataset_uuid} | {yaml_path_str}\n"
+
+    try:
+        # Check if file exists to write header
+        file_exists = log_file.exists()
+
+        # Append to log file
+        with open(log_file, "a", encoding="utf-8") as f:
+            # Write header if file is new
+            if not file_exists:
+                if operation == "page_sync":
+                    header = """# Missing YAML Files Log - Page Sync Operation
+#
+# 本文件记录在页面同步（page_sync）过程中发现的缺失 YAML 文件。
+#
+# 说明：
+# - 页面同步功能对缺失的 YAML 文件保持容错，不会中断处理
+# - 缺失的 YAML 文件会导致无法从 YAML 中补充元数据（如 scene_type, atomic_actions, objects 等）
+# - 这些信息会从数据库记录中获取，但可能不如 YAML 文件完整
+#
+# 记录格式：
+# timestamp | operation | dataset_uuid | yaml_path
+#
+# 生成脚本：scripts/page_sync/prepare_page_sync_files.py
+# 相关代码：src/robocoin_dataset/page_sync/page_sync.py
+#
+# ====================================================================
+"""
+                elif operation == "hub_upload":
+                    header = """# Missing YAML Files Log - Hub Upload Operation
+#
+# 本文件记录在上传数据集到 Hub（HuggingFace/ModelScope）过程中发现的缺失 YAML 文件。
+#
+# 说明：
+# - 上传功能对缺失的 YAML 文件保持容错，不会中断上传
+# - 缺失的 YAML 文件会导致无法从 YAML 中补充元数据（如 scene_type, atomic_actions, objects 等）
+# - 这些信息会从数据库记录中获取，但可能不如 YAML 文件完整
+# - README.md 文件仍会正常生成，但可能缺少部分元数据信息
+#
+# 记录格式：
+# timestamp | operation | dataset_uuid | yaml_path
+#
+# 生成脚本：scripts/hub_upload/upload2hub.py
+# 相关代码：src/robocoin_dataset/prepare_metadata/metadata_collect.py
+#
+# ====================================================================
+"""
+                else:
+                    header = f"""# Missing YAML Files Log - {operation} Operation
+#
+# 本文件记录在 {operation} 操作过程中发现的缺失 YAML 文件。
+#
+# 记录格式：
+# timestamp | operation | dataset_uuid | yaml_path
+#
+# ====================================================================
+"""
+                f.write(header)
+            f.write(log_entry)
+        _logger.debug(
+            "[page_sync_utils] Recorded missing YAML for dataset %s (operation: %s) to %s",
+            dataset_uuid,
+            operation,
+            log_file,
+        )
+    except Exception as e:
+        _logger.warning(
+            "[page_sync_utils] Failed to record missing YAML to %s: %s",
+            log_file,
+            e,
+        )
 
 
 # ------- VALIDATION -------#

@@ -82,6 +82,7 @@ def construce_target_file(
         _gen_data_index,
         _gen_video_thumbnail,
         _get_dataset_name,
+        _record_missing_yaml,
         _sample_one_video_path,
         _write_unified_metadata_yaml,
     )
@@ -148,42 +149,51 @@ def construce_target_file(
         _logger.debug("[page_sync] Generating next task...")
         yaml_path, hardlink_path, dataset_uuid = _gen_one_page_sync_task(session)
 
-        if yaml_path is None:
+        if dataset_uuid is None:
             _logger.info("[page_sync] No more pending tasks to process")
             break
-
-        if not dataset_uuid:
-            _logger.error("[page_sync] No dataset_uuid returned from task generation")
-            continue
 
         task_count += 1
         _logger.info("[page_sync] Processing task %s: dataset_uuid=%s", task_count, dataset_uuid)
         _logger.debug("[page_sync]   yaml_path: %s", yaml_path)
         _logger.debug("[page_sync]   hardlink_path: %s", hardlink_path)
 
-        # Validate that both yaml_path and hardlink_path exist
-        missing_paths = []
+        # Validate paths: hardlink_path is required, yaml_path is optional (will be recorded if missing)
+        missing_yaml = False
+        yaml_issue = None
+
         if not yaml_path:
-            missing_paths.append("yaml_path is None")
+            missing_yaml = True
+            yaml_issue = "yaml_path is None"
         elif not Path(yaml_path).exists():
-            missing_paths.append(f"yaml_path does not exist: {yaml_path}")
+            missing_yaml = True
+            yaml_issue = f"yaml_path does not exist: {yaml_path}"
 
-        if not hardlink_path:
-            missing_paths.append("hardlink_path is None")
-        elif not Path(hardlink_path).exists():
-            missing_paths.append(f"hardlink_path does not exist: {hardlink_path}")
-
-        if missing_paths:
-            _logger.error(
-                "[page_sync] Validation failed for dataset %s: %s. Marking as FAILED.",
+        if missing_yaml:
+            _logger.warning(
+                "[page_sync] Dataset %s: %s. Continuing without YAML metadata.",
                 dataset_uuid,
-                "; ".join(missing_paths)
+                yaml_issue
             )
-            err_msg = (
-                f"Page sync validation failed: {'; '.join(missing_paths)}. "
-                f"yaml_path={yaml_path}, hardlink_path={hardlink_path}"
+            # Record missing YAML to log file
+            _record_missing_yaml(
+                dataset_uuid=dataset_uuid,
+                yaml_path=yaml_path,
+                operation="page_sync",
+                log_dir=target_root / "docs",
+                logger=_logger,
             )
-            _mark_task_failed(session, dataset_uuid, err_msg)
+
+        # hardlink_path is required - fail if missing
+        if not hardlink_path:
+            error_msg = f"Page sync validation failed: hardlink_path is None. dataset_uuid={dataset_uuid}"
+            _logger.error("[page_sync] Validation failed for dataset %s: hardlink_path is None. Marking as FAILED.", dataset_uuid)
+            _mark_task_failed(session, dataset_uuid, error_msg)
+            continue
+        if not Path(hardlink_path).exists():
+            error_msg = f"Page sync validation failed: hardlink_path does not exist: {hardlink_path}. dataset_uuid={dataset_uuid}"
+            _logger.error("[page_sync] Validation failed for dataset %s: hardlink_path does not exist: %s. Marking as FAILED.", dataset_uuid, hardlink_path)
+            _mark_task_failed(session, dataset_uuid, error_msg)
             continue
 
         try:

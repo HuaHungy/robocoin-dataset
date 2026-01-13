@@ -333,12 +333,42 @@ def _serialize_dataset_record(dataset: DatasetDB) -> dict[str, Any]:
 
 def _load_yaml_payload(db_payload: dict[str, Any]) -> dict[str, Any]:
     yaml_path = db_payload.get("yaml_file_path")
+    dataset_uuid = db_payload.get("dataset_uuid", "")
+
     if not yaml_path:
+        # Record missing YAML if we have dataset_uuid
+        if dataset_uuid:
+            try:
+                from robocoin_dataset.page_sync.page_sync_utils import _record_missing_yaml
+                _record_missing_yaml(
+                    dataset_uuid=dataset_uuid,
+                    yaml_path=None,
+                    operation="hub_upload",
+                    log_dir=Path("docs"),
+                    logger=LOGGER,
+                )
+            except Exception:
+                # Silently fail if recording is not available
+                pass
         return {"raw_yaml": {}, "scene_type": [], "atomic_actions": [], "objects": []}
 
     path = Path(str(yaml_path)).expanduser()
     if not path.exists():
         LOGGER.warning("YAML file %s does not exist, skipping YAML metadata merge", path)
+        # Record missing YAML if we have dataset_uuid
+        if dataset_uuid:
+            try:
+                from robocoin_dataset.page_sync.page_sync_utils import _record_missing_yaml
+                _record_missing_yaml(
+                    dataset_uuid=dataset_uuid,
+                    yaml_path=str(yaml_path),
+                    operation="hub_upload",
+                    log_dir=Path("docs"),
+                    logger=LOGGER,
+                )
+            except Exception:
+                # Silently fail if recording is not available
+                pass
         return {"raw_yaml": {}, "scene_type": [], "atomic_actions": [], "objects": []}
 
     try:

@@ -1,26 +1,52 @@
 #!/usr/bin/env python3
 """
-本脚本是进行网页同步所需的素材文件生成的CLI入口脚本,一个标准的执行命令是:
-python scripts/page_sync/prepare_page_sync_files.py \
-  --db-path /mnt/db/datasets_new.db \
-  --target-dir /home/rogerspyke/projects \
-  --log-level INFO \
-  --update-videos \
-  --crf 30
-这里--update-videos可以删除,如果加入参数则表示强制重新生成视频。
---crf通过指定crf参数进行视频文件压缩的质量控制,范围是0-51,越小质量越好,越大质量越差
-现在的crf设置30可以得到一个平均视频文件在500kb左右的一个结果
-脚本的实际功能都在 page_sync (src) 中实现
+Page Sync Files Preparation Script - CLI Entry Point
 
+本脚本是进行网页同步所需的素材文件生成的CLI入口脚本。
 
-# With HuggingFace upload
-python scripts/page_sync/prepare_page_sync_files.py \
-    --db-path /mnt/db/datasets_new.db \
-    --target-dir /home/rogerspyke/projects \
-    --hf-token your_hf_token \
-    --hf-repo-id RogersPyke/RoboCOIN-DataManager-assets \
-    --crf 30 \
-    --force-regenerate
+主要功能：
+1. 从数据库中读取待同步的数据集信息
+2. 生成统一的元数据 YAML 文件（assets/dataset_info/*.yml）
+3. 从数据集中采样并压缩视频文件（assets/videos/*.mp4）
+4. 生成视频缩略图（assets/thumbnails/*.jpg）
+5. 生成汇总的元数据文件（assets/info/consolidated_datasets.json, data_index.json）
+6. 可选：将生成的资源上传到 HuggingFace Hub
+
+设计说明：
+- 脚本的实际功能都在 page_sync (src/robocoin_dataset/page_sync/) 中实现
+- 支持增量同步：只处理状态为 PENDING 的数据集
+- 支持强制重新生成：使用 --force-regenerate 可以忽略 COMPLETED 状态
+- 对缺失的 YAML 文件保持容错：会记录到 docs/missing_yaml_page.txt，但不中断处理
+
+使用示例：
+    # 基本用法
+    python scripts/page_sync/prepare_page_sync_files.py \
+      --db-path /mnt/db/datasets_new.db \
+      --target-dir /home/rogerspyke/projects \
+      --log-level INFO \
+      --crf 30
+
+    # 强制重新生成视频和缩略图
+    python scripts/page_sync/prepare_page_sync_files.py \
+      --db-path /mnt/db/datasets_new.db \
+      --target-dir /home/rogerspyke/projects \
+      --update-videos \
+      --crf 30
+
+    # 带 HuggingFace 上传
+    python scripts/page_sync/prepare_page_sync_files.py \
+      --db-path /mnt/db/datasets_new.db \
+      --target-dir /home/rogerspyke/projects \
+      --hf-token your_hf_token \
+      --hf-repo-id RogersPyke/RoboCOIN_DataManager_assets \
+      --crf 30 \
+      --force-regenerate
+
+参数说明：
+    --update-videos: 强制重新生成视频和缩略图（即使已存在）
+    --crf: 视频压缩质量控制参数（范围 0-51，越小质量越好）
+           默认 30 可以得到平均约 500KB 的视频文件
+    --force-regenerate: 忽略 COMPLETED 状态，强制重新生成所有资源
 """
 
 import argparse
