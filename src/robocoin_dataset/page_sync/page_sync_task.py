@@ -73,6 +73,38 @@ def _sync_page_sync_status(
   _logger.info(f"Successfully marked {len(items)} datasets as PENDING")
 
 
+def _reset_comp_to_pend(
+    session: "Session",
+    target_field_name: str,
+    logger: logging.Logger | None = None,
+) -> None:
+    """
+    Reset every COMPLETED record for the given status field back to PENDING.
+    """
+    from robocoin_dataset.database.models import DatasetDB, TaskStatus
+
+    _logger = logger or logging.getLogger(__name__)
+    if not hasattr(DatasetDB, target_field_name):
+        raise AttributeError(
+            f"DatasetDB has no attribute '{target_field_name}'"
+        )
+
+    target_field = getattr(DatasetDB, target_field_name)
+    query = session.query(DatasetDB).filter(target_field == TaskStatus.COMPLETED)
+    count = query.update({target_field: TaskStatus.PENDING}, synchronize_session="fetch")
+    if count:
+        _logger.info(
+            "Reset %d records (%s) from COMPLETED to PENDING",
+            count,
+            target_field_name,
+        )
+    else:
+        _logger.debug(
+            "No COMPLETED records found for %s while resetting to PENDING",
+            target_field_name,
+        )
+    session.commit()
+
 def _gen_one_page_sync_task(session: "Session"
 ) -> tuple[str | None, str | None, str | None]:
     '''Mark first PENDING -> PROCESSING, and return the yaml_path, hardlink_path, and dataset_uuid

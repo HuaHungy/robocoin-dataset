@@ -110,4 +110,5 @@ robocoin_datasets/server_logs/
 *.json
 !/src/robocoin_dataset/page_sync/assets/robot_aliases.json
 !/src/robocoin_dataset/page_sync/assets/exclude.json
+!/src/robocoin_dataset/page_sync/assets/legacy_MMK2_mismatch.json
 run*

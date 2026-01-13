@@ -333,7 +333,7 @@ def get_should_not_upload_but_marked_completed(db_path: str, platform: str) -> l
 
 def compare_datasets(should_upload: list[str], cloud_datasets: list[str], uploaded: list[str] = None, should_not_upload_but_marked: list[str] = None) -> dict:
     """
-    比较应该上传的数据集和云端数据集
+    以 should_upload/云端/标记完成 三个维度构建 8 个标签组合
 
     Args:
         should_upload: 应该上传的数据集列表
@@ -343,86 +343,78 @@ def compare_datasets(should_upload: list[str], cloud_datasets: list[str], upload
 
     Returns:
         {
-            "should_upload_but_missing": [...],  # 应该上传但云端没有的
-            "cloud_but_not_in_should_upload": [...],  # 云端有但不应该上传的
-            "both_have": [...],  # 两者都有的
-            "uploaded_but_missing_in_cloud": [...],  # 本地标注上传完成但云端缺失的
-            "uploaded_but_not_marked": [...],  # 已上传到云端但数据库中未标记为完成的数据集
-            "uploaded_but_not_marked_should_upload": [...],  # uploaded_but_not_marked中应该上传的（理论上应该全部）
-            "uploaded_but_not_marked_should_not_upload": [...],  # uploaded_but_not_marked中不应该上传的（理论上应该为空）
-            "should_not_upload_but_marked_completed": [...],  # 不应该上传但被标记完成的数据集
-            "should_not_upload_but_marked_and_in_cloud": [...],  # 不应该上传但被标记完成且确实在云端存在的数据集
-            "summary": {
-                "should_upload_count": int,
-                "cloud_count": int,
-                "missing_count": int,
-                "extra_count": int,
-                "match_count": int,
-                "uploaded_count": int,  # 本地标注上传完成的数量
-                "uploaded_but_missing_count": int,  # 本地标注上传完成但云端缺失的数量
-                "uploaded_but_not_marked_count": int,  # 已上传到云端但数据库中未标记为完成的数量
-                "uploaded_but_not_marked_should_upload_count": int,  # uploaded_but_not_marked中应该上传的数量
-                "uploaded_but_not_marked_should_not_upload_count": int,  # uploaded_but_not_marked中不应该上传的数量
-                "should_not_upload_but_marked_count": int,  # 不应该上传但被标记完成的数量
-                "should_not_upload_but_marked_and_in_cloud_count": int  # 不应该上传但被标记完成且确实在云端存在的数量
-            }
+            "combinations": {...},  # 8 个标签组合
+            "summary": {...}
         }
     """
     should_upload_set = set(should_upload)
     cloud_set = set(cloud_datasets)
+    uploaded_set = set(uploaded) if uploaded is not None else set()
+    should_not_upload_set = set(should_not_upload_but_marked) if should_not_upload_but_marked is not None else set()
 
     missing = sorted(should_upload_set - cloud_set)
     extra = sorted(cloud_set - should_upload_set)
     both = sorted(should_upload_set & cloud_set)
 
     result = {
-        "should_upload_but_missing": missing,
-        "cloud_but_not_in_should_upload": extra,
-        "both_have": both,
         "summary": {
             "should_upload_count": len(should_upload),
             "cloud_count": len(cloud_datasets),
             "missing_count": len(missing),
             "extra_count": len(extra),
-            "match_count": len(both)
+            "match_count": len(both),
         }
     }
 
-    # 如果提供了 uploaded 列表，计算本地标注上传完成但云端缺失的数据集
-    if uploaded is not None:
-        uploaded_set = set(uploaded)
-        uploaded_but_missing = sorted(uploaded_set - cloud_set)
-        result["uploaded_but_missing_in_cloud"] = uploaded_but_missing
-        result["summary"]["uploaded_count"] = len(uploaded)
-        result["summary"]["uploaded_but_missing_count"] = len(uploaded_but_missing)
+    def build_key(is_should_upload: bool, is_in_cloud: bool, is_marked: bool) -> str:
+        parts = [
+            "should_upload" if is_should_upload else "not_should_upload",
+            "in_cloud" if is_in_cloud else "not_in_cloud",
+            "marked_comp" if is_marked else "not_marked_comp",
+        ]
+        return "-".join(parts)
 
-        # 计算已上传但未标记完成的数据集（在云端存在但数据库中未标记为完成）
-        both_set = set(both)  # 将列表转换为集合以便进行集合运算
-        uploaded_but_not_marked = sorted(both_set - uploaded_set)
-        result["uploaded_but_not_marked"] = uploaded_but_not_marked
-        result["summary"]["uploaded_but_not_marked_count"] = len(uploaded_but_not_marked)
+    combination_keys = {
+        build_key(su, cloud, marked): []
+        for su in (True, False)
+        for cloud in (True, False)
+        for marked in (True, False)
+    }
 
-        # 验证 uploaded_but_not_marked 中的项目是否都应该上传（理论上应该都是）
-        uploaded_but_not_marked_set = set(uploaded_but_not_marked)
-        uploaded_but_not_marked_should_upload = sorted(uploaded_but_not_marked_set & should_upload_set)
-        uploaded_but_not_marked_should_not_upload = sorted(uploaded_but_not_marked_set - should_upload_set)
-        result["uploaded_but_not_marked_should_upload"] = uploaded_but_not_marked_should_upload
-        result["uploaded_but_not_marked_should_not_upload"] = uploaded_but_not_marked_should_not_upload
-        result["summary"]["uploaded_but_not_marked_should_upload_count"] = len(uploaded_but_not_marked_should_upload)
-        result["summary"]["uploaded_but_not_marked_should_not_upload_count"] = len(uploaded_but_not_marked_should_not_upload)
+    universe = set()
+    universe.update(should_upload_set)
+    universe.update(cloud_set)
+    universe.update(uploaded_set)
+    universe.update(should_not_upload_set)
 
-    # 如果提供了 should_not_upload_but_marked 列表，添加到结果中
-    if should_not_upload_but_marked is not None:
-        should_not_upload_but_marked_set = set(should_not_upload_but_marked)
-        result["should_not_upload_but_marked_completed"] = sorted(should_not_upload_but_marked_set)
-        result["summary"]["should_not_upload_but_marked_count"] = len(should_not_upload_but_marked_set)
+    for dataset_name in sorted(universe):
+        key = build_key(
+            dataset_name in should_upload_set,
+            dataset_name in cloud_set,
+            dataset_name in uploaded_set,
+        )
+        combination_keys[key].append(dataset_name)
 
-        # 检查这些不应该上传但被标记完成的数据集是否真的在云端存在
-        should_not_upload_but_marked_and_in_cloud = sorted(should_not_upload_but_marked_set & cloud_set)
-        result["should_not_upload_but_marked_and_in_cloud"] = should_not_upload_but_marked_and_in_cloud
-        result["summary"]["should_not_upload_but_marked_and_in_cloud_count"] = len(should_not_upload_but_marked_and_in_cloud)
-
+    combination_counts = {key: len(names) for key, names in combination_keys.items()}
+    result["summary"]["dataset_count"] = len(universe)
+    result["summary"]["combination_counts"] = combination_counts
+    result["combinations"] = combination_keys
     return result
+
+
+def log_comparison_summary(platform_name: str, comparison: dict) -> None:
+    """输出汇总信息，聚焦在新的八个标签组合及基本统计"""
+    summary = comparison["summary"]
+    logger.info(f"{platform_name}:")
+    logger.info(f"  应该上传: {summary.get('should_upload_count', 0)}")
+    logger.info(f"  云端已有: {summary.get('cloud_count', 0)}")
+    logger.info(f"  缺失(应上传但云端没有): {summary.get('missing_count', 0)}")
+    logger.info(f"  额外(云端有但不应上传): {summary.get('extra_count', 0)}")
+    logger.info(f"  匹配: {summary.get('match_count', 0)}")
+    logger.info(f"  去重数据集总数: {summary.get('dataset_count', 0)}")
+    logger.info("  组合分布:")
+    for key, count in sorted(summary.get("combination_counts", {}).items()):
+        logger.info(f"    {key}: {count}")
 
 
 def save_json(data: dict | list, filepath: Path) -> None:
@@ -502,34 +494,10 @@ def main() -> None:
     logger.info("=" * 60)
 
     logger.info("")
-    logger.info("HuggingFace:")
-    logger.info(f"  应该上传: {hf_comparison['summary']['should_upload_count']}")
-    logger.info(f"  云端已有: {hf_comparison['summary']['cloud_count']}")
-    logger.info(f"  缺失(应上传但云端没有): {hf_comparison['summary']['missing_count']}")
-    logger.info(f"  额外(云端有但不应上传): {hf_comparison['summary']['extra_count']}")
-    logger.info(f"  匹配: {hf_comparison['summary']['match_count']}")
-    logger.info(f"  本地标注上传完成: {hf_comparison['summary'].get('uploaded_count', 0)}")
-    logger.info(f"  ⚠️  本地标注上传完成但云端缺失: {hf_comparison['summary'].get('uploaded_but_missing_count', 0)}")
-    logger.info(f"  ⚠️  已上传但未标记完成: {hf_comparison['summary'].get('uploaded_but_not_marked_count', 0)}")
-    logger.info(f"    └─ 其中应该上传的: {hf_comparison['summary'].get('uploaded_but_not_marked_should_upload_count', 0)}")
-    logger.info(f"    └─ 其中不应该上传的: {hf_comparison['summary'].get('uploaded_but_not_marked_should_not_upload_count', 0)}")
-    logger.info(f"  ⚠️  不应该上传但被标记完成: {hf_comparison['summary'].get('should_not_upload_but_marked_count', 0)}")
-    logger.info(f"  ⚠️  不应该上传但被标记完成且确实在云端存在: {hf_comparison['summary'].get('should_not_upload_but_marked_and_in_cloud_count', 0)}")
+    log_comparison_summary("HuggingFace", hf_comparison)
 
     logger.info("")
-    logger.info("ModelScope:")
-    logger.info(f"  应该上传: {ms_comparison['summary']['should_upload_count']}")
-    logger.info(f"  云端已有: {ms_comparison['summary']['cloud_count']}")
-    logger.info(f"  缺失(应上传但云端没有): {ms_comparison['summary']['missing_count']}")
-    logger.info(f"  额外(云端有但不应上传): {ms_comparison['summary']['extra_count']}")
-    logger.info(f"  匹配: {ms_comparison['summary']['match_count']}")
-    logger.info(f"  本地标注上传完成: {ms_comparison['summary'].get('uploaded_count', 0)}")
-    logger.info(f"  ⚠️  本地标注上传完成但云端缺失: {ms_comparison['summary'].get('uploaded_but_missing_count', 0)}")
-    logger.info(f"  ⚠️  已上传但未标记完成: {ms_comparison['summary'].get('uploaded_but_not_marked_count', 0)}")
-    logger.info(f"    └─ 其中应该上传的: {ms_comparison['summary'].get('uploaded_but_not_marked_should_upload_count', 0)}")
-    logger.info(f"    └─ 其中不应该上传的: {ms_comparison['summary'].get('uploaded_but_not_marked_should_not_upload_count', 0)}")
-    logger.info(f"  ⚠️  不应该上传但被标记完成: {ms_comparison['summary'].get('should_not_upload_but_marked_count', 0)}")
-    logger.info(f"  ⚠️  不应该上传但被标记完成且确实在云端存在: {ms_comparison['summary'].get('should_not_upload_but_marked_and_in_cloud_count', 0)}")
+    log_comparison_summary("ModelScope", ms_comparison)
 
     logger.info("")
     logger.info("=" * 60)
