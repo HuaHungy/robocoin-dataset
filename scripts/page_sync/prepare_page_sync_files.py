@@ -203,7 +203,7 @@ Output Structure:
             log_level=args.log_level,
         force_regenerate=args.force_regenerate,
         )
-        logger.info("[prepare_page_sync_files] ✓ Page sync completed successfully!")
+        logger.info("[prepare_page_sync_files] <SUCCESS> Page sync completed successfully!")
 
         # Optional HuggingFace upload
         if args.hf_token and args.hf_repo_id:
@@ -222,7 +222,7 @@ Output Structure:
                         repo_id=args.hf_repo_id,
                         token=args.hf_token,
                     )
-                    logger.info("[prepare_page_sync_files] ✓ HuggingFace upload completed successfully! Commit SHA: %s", commit_sha)
+                    logger.info("[prepare_page_sync_files]  <SUCCESS> HuggingFace upload completed successfully! Commit SHA: %s", commit_sha)
                     upload_success = True
                     break  # Success, exit retry loop
                 except Exception as e:

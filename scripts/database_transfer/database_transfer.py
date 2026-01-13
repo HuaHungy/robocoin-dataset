@@ -774,7 +774,7 @@ def _log_verification_results(results: dict[str, object]) -> None:
 
     if results["success"]:
         LOGGER.info(
-            "[VERIFY] ✓ Transfer verification PASSED: %d rows accurately transferred",
+            "[VERIFY] <SUCCESS> Transfer verification PASSED: %d rows accurately transferred",
             results["total_expected"],
         )
 
