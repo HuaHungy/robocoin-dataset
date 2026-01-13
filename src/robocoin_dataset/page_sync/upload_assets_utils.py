@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from huggingface_hub import HfApi
-from huggingface_hub.utils import HfHubHTTPError
+from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
 
 HF_TOKEN_ENV_VAR = "HF_TOKEN"
 DEFAULT_REPO_ID = "RogersPyke/RoboCOIN-DataManager-assets"
@@ -120,8 +120,15 @@ def upload_assets(config: UploadConfig) -> str:
 
     try:
         commit_sha = _do_upload()
-    except HfHubHTTPError as exc:
-        if exc.status_code == 404:
+    except (HfHubHTTPError, RepositoryNotFoundError) as exc:
+        # Handle both 404 HTTP errors and RepositoryNotFoundError
+        is_not_found = False
+        if isinstance(exc, HfHubHTTPError) and exc.status_code == 404:
+            is_not_found = True
+        elif isinstance(exc, RepositoryNotFoundError):
+            is_not_found = True
+
+        if is_not_found:
             logger.warning(
                 "[upload_assets] Repository %s not found; creating before retrying",
                 config.repo_id,
