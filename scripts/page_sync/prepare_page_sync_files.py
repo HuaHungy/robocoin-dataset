@@ -52,9 +52,13 @@ Page Sync Files Preparation Script - CLI Entry Point
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Maximum retry times for HuggingFace upload on timeout errors
+MAX_RETRY_TIMES = 3
 
 
 def main() -> None:
@@ -204,19 +208,64 @@ Output Structure:
         # Optional HuggingFace upload
         if args.hf_token and args.hf_repo_id:
             logger.info("[prepare_page_sync_files] Starting HuggingFace upload...")
-            try:
-                from robocoin_dataset.page_sync.upload_assets_utils import sync_assets_to_hf
+            from robocoin_dataset.page_sync.upload_assets_utils import sync_assets_to_hf
 
-                assets_dir = target_dir / "assets"
-                commit_sha = sync_assets_to_hf(
-                    assets_dir=str(assets_dir),
-                    repo_id=args.hf_repo_id,
-                    token=args.hf_token,
-                )
-                logger.info("[prepare_page_sync_files] ✓ HuggingFace upload completed successfully! Commit SHA: %s", commit_sha)
-            except Exception as e:
-                logger.error("[prepare_page_sync_files] ✗ Error during HuggingFace upload: %s", e)
-                sys.exit(1)
+            assets_dir = target_dir / "assets"
+
+            # Retry logic for timeout and network errors
+            last_exception = None
+            upload_success = False
+            for attempt in range(1, MAX_RETRY_TIMES + 1):
+                try:
+                    commit_sha = sync_assets_to_hf(
+                        assets_dir=str(assets_dir),
+                        repo_id=args.hf_repo_id,
+                        token=args.hf_token,
+                    )
+                    logger.info("[prepare_page_sync_files] ✓ HuggingFace upload completed successfully! Commit SHA: %s", commit_sha)
+                    upload_success = True
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    last_exception = e
+                    # Check if it's a timeout or network-related error
+                    is_timeout_or_network_error = False
+                    error_str = str(e).lower()
+
+                    # Check for timeout-related keywords
+                    if any(keyword in error_str for keyword in ['timeout', 'timed out', 'connection', 'network', 'socket']):
+                        is_timeout_or_network_error = True
+
+                    # Check for specific exception types
+                    exception_type = type(e).__name__
+                    if any(keyword in exception_type.lower() for keyword in ['timeout', 'connection', 'network']):
+                        is_timeout_or_network_error = True
+
+                    # Check for HTTP errors that might indicate timeout (504, 408, etc.)
+                    if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                        if e.response.status_code in [408, 504, 503]:
+                            is_timeout_or_network_error = True
+
+                    if is_timeout_or_network_error and attempt < MAX_RETRY_TIMES:
+                        wait_time = attempt * 2  # Exponential backoff: 2s, 4s, 6s
+                        logger.warning(
+                            "[prepare_page_sync_files] ⚠ Upload attempt %d/%d failed due to timeout/network error: %s. Retrying in %d seconds...",
+                            attempt, MAX_RETRY_TIMES, e, wait_time
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # Not a timeout/network error, or max retries reached
+                        if attempt >= MAX_RETRY_TIMES:
+                            logger.error(
+                                "[prepare_page_sync_files] ✗ HuggingFace upload failed after %d attempts. Last error: %s",
+                                MAX_RETRY_TIMES, e
+                            )
+                        else:
+                            logger.error("[prepare_page_sync_files] ✗ Error during HuggingFace upload: %s", e)
+                        raise
+
+            # If upload failed after all retries, raise the last exception
+            if not upload_success and last_exception is not None:
+                raise last_exception
         elif args.hf_token or args.hf_repo_id:
             logger.warning("[prepare_page_sync_files] ⚠ WARNING: Both --hf-token and --hf-repo-id must be provided for HuggingFace upload. Skipping upload.")
         else:

@@ -71,7 +71,7 @@ def construce_target_file(
         _gen_one_page_sync_task,
         _mark_task_completed,
         _mark_task_failed,
-        _reset_comp_to_pend,
+        _reset_comp_and_failed_to_pend,
         _sync_page_sync_status,
     )
     from robocoin_dataset.page_sync.page_sync_utils import (
@@ -134,9 +134,9 @@ def construce_target_file(
     )
     if force_regenerate:
         _logger.info(
-            "[page_sync] Force regenerate requested; resetting completed page-sync tasks to PENDING"
+            "[page_sync] Force regenerate requested; resetting COMPLETED and FAILED page-sync tasks to PENDING"
         )
-        _reset_comp_to_pend(session, "dataset_info_sync_status", _logger)
+        _reset_comp_and_failed_to_pend(session, "dataset_info_sync_status", _logger)
 
     # 3-8. Main loop: sync -> generate task -> copy yaml -> copy & compress videos -> align video name -> mark completed
     task_count = 0

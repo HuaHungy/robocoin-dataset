@@ -67,14 +67,17 @@ def _sync_page_sync_status(
   _logger.info("[page_sync_task] Successfully marked %s datasets as PENDING", len(items))
 
 
-def _reset_comp_to_pend(
+def _reset_comp_and_failed_to_pend(
     session: "Session",
     target_field_name: str,
     logger: logging.Logger | None = None,
 ) -> None:
     """
-    Reset every COMPLETED record for the given status field back to PENDING.
+    Reset every COMPLETED and FAILED record for the given status field back to PENDING.
+    Used for force_regenerate mode.
     """
+    from sqlalchemy.sql.expression import or_
+
     from robocoin_dataset.database.models import DatasetDB, TaskStatus
 
     _logger = logger or logging.getLogger(__name__)
@@ -84,17 +87,22 @@ def _reset_comp_to_pend(
         )
 
     target_field = getattr(DatasetDB, target_field_name)
-    query = session.query(DatasetDB).filter(target_field == TaskStatus.COMPLETED)
+    query = session.query(DatasetDB).filter(
+        or_(
+            target_field == TaskStatus.COMPLETED,
+            target_field == TaskStatus.FAILED,
+        )
+    )
     count = query.update({target_field: TaskStatus.PENDING}, synchronize_session="fetch")
     if count:
         _logger.info(
-            "[page_sync_task] Reset %d records (%s) from COMPLETED to PENDING",
+            "[page_sync_task] Reset %d records (%s) from COMPLETED/FAILED to PENDING",
             count,
             target_field_name,
         )
     else:
         _logger.debug(
-            "[page_sync_task] No COMPLETED records found for %s while resetting to PENDING",
+            "[page_sync_task] No COMPLETED/FAILED records found for %s while resetting to PENDING",
             target_field_name,
         )
     session.commit()

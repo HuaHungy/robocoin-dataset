@@ -37,6 +37,7 @@ from robocoin_dataset.prepare_metadata.metadata_collect_utils import (
     format_file_size,
     generate_folder_structure,
     generate_size_label,
+    map_device_name_to_robot_type,
     match_device_name_from_folder,
 )
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
@@ -232,13 +233,27 @@ def _build_auto_generated_fields(
     dataset_size = format_file_size(calculate_dataset_size(dataset_path))
     dataset_structure = generate_folder_structure(dataset_path, max_files_per_dir=5)
 
-    # robot_type 的优先级保持不变：
-    # 1) meta/info.json 的 robot_type（如果存在）
-    # 2) 根据文件夹名匹配 names.yml
+    # robot_type 的优先级：
+    # 1) 从文件夹名（dataset_path.name）中匹配并映射得到 robot_type（最高优先级）
+    # 2) meta/info.json 的 robot_type（如果存在）
     # 3) DB 里的 device_model（兼容旧字段/历史数据）
-    robot_type = (
-        meta_info.get("robot_type") if isinstance(meta_info, dict) else None
-    ) or match_device_name_from_folder(dataset_path.name) or db_payload.get("device_model") or ""
+    robot_type = None
+
+    # 最高优先级：从文件夹名匹配并映射
+    matched_key = match_device_name_from_folder(dataset_path.name)
+    if matched_key:
+        robot_type = map_device_name_to_robot_type(matched_key)
+        # TODO: 未来可以启用修复功能，使用 metadata_collect_utils._fix_meta_info()
+        #       将标准化的 robot_type 写回 meta/info.json，保持数据一致性
+        #       例如：_fix_meta_info(robot_type, dataset_path)
+
+    # 如果文件夹名中没有匹配到，尝试 meta/info.json
+    if not robot_type and isinstance(meta_info, dict) and meta_info.get("robot_type"):
+        robot_type = meta_info.get("robot_type")
+
+    # 最后回退到 device_model
+    if not robot_type:
+        robot_type = db_payload.get("device_model") or ""
 
     return {
         "path": dataset_slug,

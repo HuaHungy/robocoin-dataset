@@ -31,57 +31,128 @@ from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetada
 _logger = logging.getLogger(__name__)
 
 # =============================================================================
-# 目录名 -> 设备名映射（names.yml）
+# 目录名 -> 设备名映射（legal_robo_map.yml）
 # =============================================================================
+
+def _load_legal_robo_map() -> dict[str, str]:
+    """
+    从 `prepare_metadata/readmes/legal_robo_map.yml` 加载设备名映射表。
+
+    返回：
+    - 一个字典，key 是设备名变体，value 是标准化的 robot_type
+    """
+    legal_robo_map_file = Path(__file__).parent / "readmes" / "legal_robo_map.yml"
+    if not legal_robo_map_file.exists():
+        _logger.warning(
+            "Legal robo map file does not exist: %s. Cannot load device name mapping.",
+            legal_robo_map_file,
+        )
+        return {}
+
+    try:
+        with legal_robo_map_file.open(encoding="utf-8") as f:
+            mapping_list = yaml.safe_load(f)
+    except Exception as exc:
+        _logger.error(
+            "Failed to load legal_robo_map.yml: %s. Cannot load device name mapping.",
+            exc,
+        )
+        return {}
+
+    if not isinstance(mapping_list, list):
+        _logger.error(
+            "legal_robo_map.yml should contain a list, but got %s. Cannot load device name mapping.",
+            type(mapping_list),
+        )
+        return {}
+
+    mapping: dict[str, str] = {
+        key: value
+        for item in mapping_list
+        if isinstance(item, dict)
+        for key, value in item.items()
+        if isinstance(key, str) and isinstance(value, str)
+    }
+
+    return mapping
+
 
 def match_device_name_from_folder(dataset_folder_name: str) -> str | None:
     """
-    根据数据集文件夹名，尝试从 `prepare_metadata/names.yml` 中匹配一个“设备/机器人名”。
+    根据数据集文件夹名，尝试从 `prepare_metadata/readmes/legal_robo_map.yml` 中匹配一个"设备/机器人名"。
 
     使用位置：
     - `metadata_collect.create_unified_metadata()` 会用它作为 robot_type 的候选值之一
 
     规则：
-    - `names.yml` 是一个字符串列表；只要其中某个字符串是 folder_name 的子串就算命中
-    - 命中返回该字符串，否则返回 None
+    - `legal_robo_map.yml` 包含设备名变体到标准化名称的映射
+    - 只要其中某个 key 是 folder_name 的子串就算命中
+    - 命中返回该 key，否则返回 None
 
     注意：
-    - 这是一个“启发式匹配”，不保证 100% 正确；上层会有优先级回退（meta/info.json、DB 等）。
+    - 这是一个"启发式匹配"，不保证 100% 正确；上层会有优先级回退（meta/info.json、DB 等）。
     """
-    # names.yml is colocated with this module under prepare_metadata/
-    names_file = Path(__file__).parent / "names.yml"
-    if not names_file.exists():
-        _logger.warning(
-            "Names file does not exist: %s. Cannot match device name.", names_file
+    mapping = _load_legal_robo_map()
+    if not mapping:
+        _logger.debug(
+            "No device name mapping available. Cannot match device name from '%s'",
+            dataset_folder_name,
         )
         return None
 
-    try:
-        with names_file.open(encoding="utf-8") as f:
-            device_names = yaml.safe_load(f)
-    except Exception as exc:
-        _logger.error("Failed to load names.yml: %s. Cannot match device name.", exc)
-        return None
+    # 按 key 长度降序排序，优先匹配更长的 key（避免短 key 误匹配）
+    sorted_keys = sorted(mapping.keys(), key=len, reverse=True)
 
-    if not isinstance(device_names, list):
-        _logger.error(
-            "names.yml should contain a list, but got %s. Cannot match device name.",
-            type(device_names),
-        )
-        return None
-
-    for device_name in device_names:
-        if device_name in dataset_folder_name:
+    for device_key in sorted_keys:
+        if device_key in dataset_folder_name:
             _logger.info(
                 "Matched device name '%s' in dataset name '%s'",
-                device_name,
+                device_key,
                 dataset_folder_name,
             )
-            return device_name
+            return device_key
 
     _logger.debug(
-        "No device name from names.yml matched in dataset name '%s'",
+        "No device name from legal_robo_map.yml matched in dataset name '%s'",
         dataset_folder_name,
+    )
+    return None
+
+
+def map_device_name_to_robot_type(device_name: str) -> str | None:
+    """
+    根据匹配到的设备名（key），从 `legal_robo_map.yml` 中查找对应的标准化 robot_type（value）。
+
+    使用位置：
+    - 在 `match_device_name_from_folder()` 返回 key 后，调用此方法获取标准化的 robot_type
+    - `metadata_collect.create_unified_metadata()` 可以使用此方法将设备名映射为正确的 robot_type
+
+    参数：
+    - device_name: 从文件夹名中匹配到的设备名（legal_robo_map.yml 中的 key）
+
+    返回：
+    - 对应的标准化 robot_type（legal_robo_map.yml 中的 value），如果未找到则返回 None
+    """
+    mapping = _load_legal_robo_map()
+    if not mapping:
+        _logger.debug(
+            "No device name mapping available. Cannot map device name '%s' to robot_type.",
+            device_name,
+        )
+        return None
+
+    robot_type = mapping.get(device_name)
+    if robot_type:
+        _logger.info(
+            "Mapped device name '%s' to robot_type '%s'",
+            device_name,
+            robot_type,
+        )
+        return robot_type
+
+    _logger.debug(
+        "Device name '%s' not found in legal_robo_map.yml. Cannot map to robot_type.",
+        device_name,
     )
     return None
 
@@ -358,6 +429,81 @@ def _load_tasks(tasks_file: Path) -> str:
         return ""
 
     return "\n".join(tasks)
+
+
+def _fix_meta_info(robot_type: str, dataset_path: str | Path) -> bool:
+    """
+    修改数据集路径下 `meta/info.json` 文件中的 `robot_type` 字段。
+
+    使用场景：
+    - 当通过 `match_device_name_from_folder()` 和 `map_device_name_to_robot_type()`
+      获取到标准化的 robot_type 后，需要将其写回 `meta/info.json` 以保持一致性。
+
+    参数：
+    - robot_type: 要设置的标准化 robot_type 值
+    - dataset_path: 数据集的路径（hardlink path）
+
+    返回：
+    - True: 成功修改
+    - False: 修改失败（文件不存在、读取失败、写入失败等）
+
+    注意：
+    - 如果 `meta/info.json` 不存在，函数会返回 False 并记录警告
+    - 如果 JSON 解析失败或写入失败，函数会返回 False 并记录错误
+    - 函数会保持 JSON 文件的原有格式（使用 json.dump 的默认缩进）
+    """
+    dataset_path = Path(dataset_path)
+    info_file = dataset_path / "meta" / "info.json"
+
+    if not info_file.exists():
+        _logger.warning(
+            "meta/info.json does not exist at %s. Cannot fix robot_type.",
+            info_file,
+        )
+        return False
+
+    try:
+        # 读取现有的 JSON 内容
+        with info_file.open(encoding="utf-8") as f:
+            meta_info: dict[str, Any] = json.load(f)
+
+        # 检查是否需要修改
+        if meta_info.get("robot_type") == robot_type:
+            _logger.debug(
+                "robot_type in %s is already '%s'. No change needed.",
+                info_file,
+                robot_type,
+            )
+            return True
+
+        # 修改 robot_type 字段
+        meta_info["robot_type"] = robot_type
+
+        # 写回文件
+        with info_file.open("w", encoding="utf-8") as f:
+            json.dump(meta_info, f, indent=2, ensure_ascii=False)
+
+        _logger.info(
+            "Successfully updated robot_type to '%s' in %s",
+            robot_type,
+            info_file,
+        )
+        return True
+
+    except json.JSONDecodeError as exc:
+        _logger.error(
+            "Failed to parse JSON from %s: %s. Cannot fix robot_type.",
+            info_file,
+            exc,
+        )
+        return False
+    except Exception as exc:
+        _logger.error(
+            "Failed to fix robot_type in %s: %s",
+            info_file,
+            exc,
+        )
+        return False
 
 
 # =============================================================================
