@@ -3,6 +3,7 @@
 """
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -29,24 +30,141 @@ def _get_dataset_name(session: Session, dataset_uuid: str) -> str | None:
 
     _logger = logging.getLogger(__name__)
 
-    _logger.debug(f"Querying for dataset name using dataset_uuid: {dataset_uuid}...")
+    _logger.debug("[page_sync_utils] Querying for dataset name using dataset_uuid: %s...", dataset_uuid)
     query = session.query(DatasetDB).filter(
         DatasetDB.dataset_uuid == dataset_uuid
     )
     item = query.first()
 
     if not item:
-        _logger.warning(f"No dataset found with dataset_uuid: {dataset_uuid}")
+        _logger.warning("[page_sync_utils] No dataset found with dataset_uuid: %s", dataset_uuid)
         return None
 
     if not hasattr(item, 'convert_path') or not item.convert_path:
-        _logger.warning(f"Dataset {dataset_uuid} found but convert_path is missing or empty")
+        _logger.warning("[page_sync_utils] Dataset %s found but convert_path is missing or empty", dataset_uuid)
         return None
 
     # Get the basename (ending) of the convert_path as dataset_name
     dataset_name = Path(item.convert_path).name
-    _logger.debug(f"Retrieved dataset name: {dataset_name} for dataset_uuid: {dataset_uuid}")
+    _logger.debug("[page_sync_utils] Retrieved dataset name: %s for dataset_uuid: %s", dataset_name, dataset_uuid)
     return dataset_name
+
+
+# ------- YAML MISSING RECORDING -------#
+
+
+def _record_missing_yaml(
+    dataset_uuid: str,
+    yaml_path: str | None,
+    operation: str,
+    log_dir: Path | None = None,
+    logger: logging.Logger | None = None,
+) -> None:
+    """
+    Record missing YAML file information to a log file.
+
+    Args:
+        dataset_uuid: UUID of the dataset
+        yaml_path: Path to the missing YAML file (can be None)
+        operation: Operation name (e.g., "hub_upload", "page_sync")
+        log_dir: Directory to save the log file (default: docs/)
+        logger: Optional logger instance
+    """
+    _logger = logger or logging.getLogger(__name__)
+
+    # Determine log directory
+    if log_dir is None:
+        # Default to docs/ directory
+        log_dir = Path("docs")
+    log_dir = Path(log_dir).expanduser().resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine log file name based on operation
+    if operation == "page_sync":
+        log_file_name = "missing_yaml_page.txt"
+    elif operation == "hub_upload":
+        log_file_name = "missing_yaml_upload.txt"
+    else:
+        # Fallback for unknown operations
+        log_file_name = f"missing_yaml_{operation}.txt"
+
+    # Log file path
+    log_file = log_dir / log_file_name
+
+    # Prepare log entry
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    yaml_path_str = str(yaml_path) if yaml_path else "None"
+    log_entry = f"{timestamp} | {operation} | {dataset_uuid} | {yaml_path_str}\n"
+
+    try:
+        # Check if file exists to write header
+        file_exists = log_file.exists()
+
+        # Append to log file
+        with open(log_file, "a", encoding="utf-8") as f:
+            # Write header if file is new
+            if not file_exists:
+                if operation == "page_sync":
+                    header = """# Missing YAML Files Log - Page Sync Operation
+#
+# 本文件记录在页面同步（page_sync）过程中发现的缺失 YAML 文件。
+#
+# 说明：
+# - 页面同步功能对缺失的 YAML 文件保持容错，不会中断处理
+# - 缺失的 YAML 文件会导致无法从 YAML 中补充元数据（如 scene_type, atomic_actions, objects 等）
+# - 这些信息会从数据库记录中获取，但可能不如 YAML 文件完整
+#
+# 记录格式：
+# timestamp | operation | dataset_uuid | yaml_path
+#
+# 生成脚本：scripts/page_sync/prepare_page_sync_files.py
+# 相关代码：src/robocoin_dataset/page_sync/page_sync.py
+#
+# ====================================================================
+"""
+                elif operation == "hub_upload":
+                    header = """# Missing YAML Files Log - Hub Upload Operation
+#
+# 本文件记录在上传数据集到 Hub（HuggingFace/ModelScope）过程中发现的缺失 YAML 文件。
+#
+# 说明：
+# - 上传功能对缺失的 YAML 文件保持容错，不会中断上传
+# - 缺失的 YAML 文件会导致无法从 YAML 中补充元数据（如 scene_type, atomic_actions, objects 等）
+# - 这些信息会从数据库记录中获取，但可能不如 YAML 文件完整
+# - README.md 文件仍会正常生成，但可能缺少部分元数据信息
+#
+# 记录格式：
+# timestamp | operation | dataset_uuid | yaml_path
+#
+# 生成脚本：scripts/hub_upload/upload2hub.py
+# 相关代码：src/robocoin_dataset/prepare_metadata/metadata_collect.py
+#
+# ====================================================================
+"""
+                else:
+                    header = f"""# Missing YAML Files Log - {operation} Operation
+#
+# 本文件记录在 {operation} 操作过程中发现的缺失 YAML 文件。
+#
+# 记录格式：
+# timestamp | operation | dataset_uuid | yaml_path
+#
+# ====================================================================
+"""
+                f.write(header)
+            f.write(log_entry)
+        _logger.debug(
+            "[page_sync_utils] Recorded missing YAML for dataset %s (operation: %s) to %s",
+            dataset_uuid,
+            operation,
+            log_file,
+        )
+    except Exception as e:
+        _logger.warning(
+            "[page_sync_utils] Failed to record missing YAML to %s: %s",
+            log_file,
+            e,
+        )
 
 
 # ------- VALIDATION -------#
@@ -62,19 +180,19 @@ def _validate_exist(yaml_path: str | None, hardlink_path: str | None) -> bool:
     _logger = logging.getLogger(__name__)
     # Check if both paths are provided
     if not yaml_path or not hardlink_path:
-        _logger.debug(f"Missing paths - yaml_path: {yaml_path}, hardlink_path: {hardlink_path}")
+        _logger.debug("[page_sync_utils] Missing paths - yaml_path: %s, hardlink_path: %s", yaml_path, hardlink_path)
         return False
     # Check if yaml_path exists
     yaml_file = Path(yaml_path)
     if not yaml_file.exists():
-        _logger.debug(f"YAML file does not exist: {yaml_path}")
+        _logger.debug("[page_sync_utils] YAML file does not exist: %s", yaml_path)
         return False
     # Check if hardlink_path exists
     hardlink_dir = Path(hardlink_path)
     if not hardlink_dir.exists():
-        _logger.debug(f"Hardlink directory does not exist: {hardlink_path}")
+        _logger.debug("[page_sync_utils] Hardlink directory does not exist: %s", hardlink_path)
         return False
-    _logger.debug("Both paths validated successfully")
+    _logger.debug("[page_sync_utils] Both paths validated successfully")
     return True
 
 
@@ -101,7 +219,7 @@ def _write_unified_metadata_yaml(
         )
     except Exception as e:  # noqa: PERF203
         logging.getLogger(__name__).error(
-            "写入统一元数据 YAML 失败: dataset_uuid=%s, dst=%s, err=%s",
+            "[page_sync_utils] 写入统一元数据 YAML 失败: dataset_uuid=%s, dst=%s, err=%s",
             dataset_uuid,
             dst_yaml_path,
             e,
@@ -138,18 +256,18 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
     root_path = Path(hardlink_path)
 
     if not root_path.exists():
-        _logger.warning(f"Root directory does not exist: {hardlink_path}")
+        _logger.warning("[page_sync_utils] Root directory does not exist: %s", hardlink_path)
         return None
 
     videos_path = root_path / "videos"
     if not videos_path.exists():
-        _logger.warning(f"Videos directory does not exist: {videos_path}")
+        _logger.warning("[page_sync_utils] Videos directory does not exist: %s", videos_path)
         return None
 
     # Get all videos first
     all_videos = list(videos_path.glob("chunk-*/observation.images.*/*.mp4"))
     if not all_videos:
-        _logger.warning(f"No videos found in any observation.images.* folders under {videos_path}")
+        _logger.warning("[page_sync_utils] No videos found in any observation.images.* folders under %s", videos_path)
         return None
 
     # Filter videos from priority folders (containing "high", "top", or "head")
@@ -161,7 +279,7 @@ def _sample_one_video_path(hardlink_path: str) -> str | None:
     # Use priority videos if found, otherwise use all videos
     video_files = priority_videos if priority_videos else all_videos
     selected_video_path = random.choice(video_files)
-    _logger.info(f"Sampled video: {selected_video_path}")
+    _logger.info("[page_sync_utils] Sampled video: %s", selected_video_path)
 
     return str(selected_video_path)
 
@@ -198,15 +316,15 @@ def _compress_video_to_dst(
 
     # Skip if file exists and force_update is False
     if not force_update and dst_video_path.exists():
-        _logger.info(f"Video already exists at {dst_video_path}, skipping compression")
+        _logger.info("[page_sync_utils] Video already exists at %s, skipping compression", dst_video_path)
         return
 
-    _logger.debug(f"Video file: {video_file}")
-    _logger.debug(f"Destination: {dst_video_path}")
+    _logger.debug("[page_sync_utils] Video file: %s", video_file)
+    _logger.debug("[page_sync_utils] Destination: %s", dst_video_path)
 
     # Check if source video file exists
     if not video_file.exists():
-        _logger.error(f"Source video file does not exist: {selected_video_path}")
+        _logger.error("[page_sync_utils] Source video file does not exist: %s", selected_video_path)
         raise FileNotFoundError(f"Source video file not found: {selected_video_path}")
 
     # Create destination directory if it doesn't exist
@@ -215,7 +333,7 @@ def _compress_video_to_dst(
     try:
         # Get original file size for logging
         original_size_kb = video_file.stat().st_size / 1024
-        _logger.debug(f"Original video size: {original_size_kb:.2f} KB")
+        _logger.debug("[page_sync_utils] Original video size: %.2f KB", original_size_kb)
 
         # Build ffmpeg command with CRF-based encoding
         compress_cmd = [
@@ -236,37 +354,40 @@ def _compress_video_to_dst(
             str(dst_video_path),
         ]
 
-        _logger.debug(f"ffmpeg command: {' '.join(compress_cmd)}")
-        _logger.info(f"Starting video compression with CRF={crf} (this may take a while)...")
+        _logger.debug("[page_sync_utils] ffmpeg command: %s", ' '.join(compress_cmd))
+        _logger.info("[page_sync_utils] Starting video compression with CRF=%s (this may take a while)...", crf)
         subprocess.run(compress_cmd, check=True, capture_output=True, timeout=300)
 
         # Check output size
         if dst_video_path.exists():
             output_size_kb = dst_video_path.stat().st_size / 1024
             _logger.info(
-                f"Successfully compressed {video_file.name}: "
-                f"{original_size_kb:.2f}KB -> {output_size_kb:.2f}KB (CRF={crf})"
+                "[page_sync_utils] Successfully compressed %s: %.2fKB -> %.2fKB (CRF=%s)",
+                video_file.name,
+                original_size_kb,
+                output_size_kb,
+                crf
             )
         else:
-            _logger.warning("Compressed file created but size check failed")
-            _logger.info(f"Compression completed for {video_file.name}")
+            _logger.warning("[page_sync_utils] Compressed file created but size check failed")
+            _logger.info("[page_sync_utils] Compression completed for %s", video_file.name)
 
     except subprocess.TimeoutExpired:
-        _logger.error(f"Video compression timed out for {video_file.name}")
+        _logger.error("[page_sync_utils] Video compression timed out for %s", video_file.name)
         # Clean up partial output file if it exists
         if dst_video_path.exists():
             dst_video_path.unlink()
         raise RuntimeError(f"Video compression timed out for {video_file.name}")
     except subprocess.CalledProcessError as e:
-        _logger.error(f"Failed to compress {video_file.name}: {e}")
+        _logger.error("[page_sync_utils] Failed to compress %s: %s", video_file.name, e)
         error_output = e.stderr.decode() if e.stderr else "N/A"
-        _logger.error(f"ffmpeg stderr: {error_output}")
+        _logger.error("[page_sync_utils] ffmpeg stderr: %s", error_output)
         # Clean up partial output file if it exists
         if dst_video_path.exists():
             dst_video_path.unlink()
         raise RuntimeError(f"Video compression failed for {video_file.name}: {e}")
     except Exception as e:
-        _logger.error(f"Error processing {video_file.name}: {e}", exc_info=True)
+        _logger.error("[page_sync_utils] Error processing %s: %s", video_file.name, e, exc_info=True)
         # Clean up partial output file if it exists
         if dst_video_path.exists():
             dst_video_path.unlink()
@@ -291,9 +412,9 @@ def _align_video_name_with_yaml(yaml_path: str, video_path: str, dataset_name: s
     if src_yaml.name != expected_yaml_name:
         dst_yaml = src_yaml.parent / expected_yaml_name
         src_yaml.rename(dst_yaml)
-        _logger.debug(f"Renamed YAML from {src_yaml.name} to {dst_yaml.name}")
+        _logger.debug("[page_sync_utils] Renamed YAML from %s to %s", src_yaml.name, dst_yaml.name)
     else:
-        _logger.debug(f"YAML already named correctly: {src_yaml.name}")
+        _logger.debug("[page_sync_utils] YAML already named correctly: %s", src_yaml.name)
 
     # Step 2: Check and rename video file if necessary
     src_video = Path(video_path)
@@ -304,9 +425,9 @@ def _align_video_name_with_yaml(yaml_path: str, video_path: str, dataset_name: s
     if src_video.name != expected_video_name:
         dst_video = src_video.parent / expected_video_name
         src_video.rename(dst_video)
-        _logger.debug(f"Renamed video from {src_video.name} to {dst_video.name}")
+        _logger.debug("[page_sync_utils] Renamed video from %s to %s", src_video.name, dst_video.name)
     else:
-        _logger.debug(f"Video already named correctly: {src_video.name}")
+        _logger.debug("[page_sync_utils] Video already named correctly: %s", src_video.name)
 
 
 def _gen_video_thumbnail(
@@ -338,7 +459,7 @@ def _gen_video_thumbnail(
 
     # Skip if file exists and force_update is False
     if not force_update and thumbnail_path.exists():
-        _logger.info(f"Thumbnail already exists at {thumbnail_path}, skipping generation")
+        _logger.info("[page_sync_utils] Thumbnail already exists at %s, skipping generation", thumbnail_path)
         return
 
     subprocess.run(
@@ -347,7 +468,7 @@ def _gen_video_thumbnail(
         capture_output=True,
         timeout=60,
     )
-    _logger.debug(f"Generated thumbnail: {thumbnail_path}")
+    _logger.debug("[page_sync_utils] Generated thumbnail: %s", thumbnail_path)
 
 
 # ------- CONSOLIDATION -------#
@@ -375,43 +496,43 @@ def _gen_consolidation(dataset_info_dir: str, output_path: str) -> None:
     output_file = Path(output_path)
 
     if not dataset_info_path.exists():
-        _logger.error(f"Dataset info directory does not exist: {dataset_info_dir}")
+        _logger.error("[page_sync_utils] Dataset info directory does not exist: %s", dataset_info_dir)
         raise FileNotFoundError(f"Dataset info directory not found: {dataset_info_dir}")
 
     # Find all YAML files
     yaml_files = list(dataset_info_path.glob("*.yaml")) + list(dataset_info_path.glob("*.yml"))
-    _logger.info(f"Found {len(yaml_files)} YAML files to consolidate")
+    _logger.info("[page_sync_utils] Found %s YAML files to consolidate", len(yaml_files))
 
     if not yaml_files:
-        _logger.warning("No YAML files found to consolidate")
+        _logger.warning("[page_sync_utils] No YAML files found to consolidate")
         consolidated_data = {}
     else:
         consolidated_data = {}
 
         for yaml_file in yaml_files:
             try:
-                _logger.debug(f"Reading YAML file: {yaml_file}")
+                _logger.debug("[page_sync_utils] Reading YAML file: %s", yaml_file)
                 with open(yaml_file, encoding="utf-8") as f:
                     data = yaml.safe_load(f)
 
                 # Use the filename (without extension) as the key
                 dataset_name = yaml_file.stem
                 consolidated_data[dataset_name] = data
-                _logger.debug(f"Added {dataset_name} to consolidated data")
+                _logger.debug("[page_sync_utils] Added %s to consolidated data", dataset_name)
 
             except Exception as e:  # noqa: PERF203
-                _logger.error(f"Failed to read or parse {yaml_file}: {e}", exc_info=True)
+                _logger.error("[page_sync_utils] Failed to read or parse %s: %s", yaml_file, e, exc_info=True)
                 continue
 
     # Create output directory if it doesn't exist
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Write consolidated data to JSON
-    _logger.debug(f"Writing consolidated data to {output_file}")
+    _logger.debug("[page_sync_utils] Writing consolidated data to %s", output_file)
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(consolidated_data, f, indent=2, ensure_ascii=False)
 
-    _logger.info(f"Successfully wrote consolidated datasets to {output_file}")
+    _logger.info("[page_sync_utils] Successfully wrote consolidated datasets to %s", output_file)
 
 
 def _gen_data_index(dataset_info_dir: str, output_path: str) -> None:
@@ -433,12 +554,12 @@ def _gen_data_index(dataset_info_dir: str, output_path: str) -> None:
     output_file = Path(output_path)
 
     if not dataset_info_path.exists():
-        _logger.error(f"Dataset info directory does not exist: {dataset_info_dir}")
+        _logger.error("[page_sync_utils] Dataset info directory does not exist: %s", dataset_info_dir)
         raise FileNotFoundError(f"Dataset info directory not found: {dataset_info_dir}")
 
     # Find all YAML files
     yaml_files = list(dataset_info_path.glob("*.yaml")) + list(dataset_info_path.glob("*.yml"))
-    _logger.info(f"Found {len(yaml_files)} YAML files for indexing")
+    _logger.info("[page_sync_utils] Found %s YAML files for indexing", len(yaml_files))
 
     # Create list of dataset names (filenames without extension)
     data_index = {
@@ -450,11 +571,11 @@ def _gen_data_index(dataset_info_dir: str, output_path: str) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Write index to JSON
-    _logger.debug(f"Writing data index to {output_file}")
+    _logger.debug("[page_sync_utils] Writing data index to %s", output_file)
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(data_index, f, indent=2, ensure_ascii=False)
 
-    _logger.info(f"Successfully wrote data index to {output_file} with {len(yaml_files)} datasets")
+    _logger.info("[page_sync_utils] Successfully wrote data index to %s with %s datasets", output_file, len(yaml_files))
 
 
 def _copy_robot_aliases_and_exclude(info_dir: str) -> None:
@@ -469,21 +590,21 @@ def _copy_robot_aliases_and_exclude(info_dir: str) -> None:
     # Copy robot_aliases.json
     robot_aliases_src = assets_dir / "robot_aliases.json"
     if not robot_aliases_src.exists():
-        _logger.error("robot_aliases.json resource missing at %s", robot_aliases_src)
+        _logger.error("[page_sync_utils] robot_aliases.json resource missing at %s", robot_aliases_src)
         raise FileNotFoundError(f"Failed to locate robot_aliases.json at {robot_aliases_src}")
 
     dst_dir = Path(info_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
     robot_aliases_dst = dst_dir / "robot_aliases.json"
     shutil.copy2(robot_aliases_src, robot_aliases_dst)
-    _logger.info("Copied %s to %s", robot_aliases_src, robot_aliases_dst)
+    _logger.info("[page_sync_utils] Copied %s to %s", robot_aliases_src, robot_aliases_dst)
 
     # Copy exclude.json
     exclude_src = assets_dir / "exclude.json"
     if not exclude_src.exists():
-        _logger.error("exclude.json resource missing at %s", exclude_src)
+        _logger.error("[page_sync_utils] exclude.json resource missing at %s", exclude_src)
         raise FileNotFoundError(f"Failed to locate exclude.json at {exclude_src}")
 
     exclude_dst = dst_dir / "exclude.json"
     shutil.copy2(exclude_src, exclude_dst)
-    _logger.info("Copied %s to %s", exclude_src, exclude_dst)
+    _logger.info("[page_sync_utils] Copied %s to %s", exclude_src, exclude_dst)

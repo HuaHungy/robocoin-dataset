@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 def _sync_page_sync_status(
     session: "Session",
     logger: logging.Logger | None = None,
-    force_regenerate: bool = False,
 ) -> None:
   '''Sync: mark PENDING if the record need to be page_synced
   I: Database. O: None, change PENDING directly.(version ++ and sync also)
@@ -43,11 +42,6 @@ def _sync_page_sync_status(
       ),
   )
 
-  if force_regenerate:
-      status_condition = or_(
-          DatasetDB.dataset_info_sync_status != TaskStatus.PROCESSING,
-      )
-
   query = session.query(DatasetDB).filter(
     and_(
         getattr(DatasetDB, ms_upload_status_field) == TaskStatus.COMPLETED,
@@ -58,20 +52,60 @@ def _sync_page_sync_status(
 
   items = query.all()
   if not items:
-    _logger.debug("No datasets found for page sync")
+    _logger.debug("[page_sync_task] No datasets found for page sync")
     return
 
-  _logger.info(f"Found {len(items)} datasets to sync page info")
+  _logger.info("[page_sync_task] Found %s datasets to sync page info", len(items))
 
   # Update status to PENDING for found items
   for item in items:
       item.dataset_info_sync_status = TaskStatus.PENDING
 
-      _logger.debug(f"Marked dataset {item.dataset_uuid} as PENDING for page sync")
+      _logger.debug("[page_sync_task] Marked dataset %s as PENDING for page sync", item.dataset_uuid)
 
   session.commit()
-  _logger.info(f"Successfully marked {len(items)} datasets as PENDING")
+  _logger.info("[page_sync_task] Successfully marked %s datasets as PENDING", len(items))
 
+
+def _reset_comp_and_failed_to_pend(
+    session: "Session",
+    target_field_name: str,
+    logger: logging.Logger | None = None,
+) -> None:
+    """
+    Reset every COMPLETED and FAILED record for the given status field back to PENDING.
+    Used for force_regenerate mode.
+    """
+    from sqlalchemy.sql.expression import or_
+
+    from robocoin_dataset.database.models import DatasetDB, TaskStatus
+
+    _logger = logger or logging.getLogger(__name__)
+    if not hasattr(DatasetDB, target_field_name):
+        raise AttributeError(
+            f"DatasetDB has no attribute '{target_field_name}'"
+        )
+
+    target_field = getattr(DatasetDB, target_field_name)
+    query = session.query(DatasetDB).filter(
+        or_(
+            target_field == TaskStatus.COMPLETED,
+            target_field == TaskStatus.FAILED,
+        )
+    )
+    count = query.update({target_field: TaskStatus.PENDING}, synchronize_session="fetch")
+    if count:
+        _logger.info(
+            "[page_sync_task] Reset %d records (%s) from COMPLETED/FAILED to PENDING",
+            count,
+            target_field_name,
+        )
+    else:
+        _logger.debug(
+            "[page_sync_task] No COMPLETED/FAILED records found for %s while resetting to PENDING",
+            target_field_name,
+        )
+    session.commit()
 
 def _gen_one_page_sync_task(session: "Session"
 ) -> tuple[str | None, str | None, str | None]:
@@ -93,7 +127,7 @@ def _gen_one_page_sync_task(session: "Session"
     ms_upload_version_field = f"{ms_prefix}_upload_version"
     hf_upload_version_field = f"{hf_prefix}_upload_version"
 
-    _logger.debug("Querying for PENDING tasks...")
+    _logger.debug("[page_sync_task] Querying for PENDING tasks...")
     query = session.query(DatasetDB).filter(
         and_(
             DatasetDB.dataset_info_sync_status == TaskStatus.PENDING,
@@ -104,10 +138,10 @@ def _gen_one_page_sync_task(session: "Session"
 
     item = query.first()
     if not item:
-        _logger.debug("No PENDING tasks found")
+        _logger.debug("[page_sync_task] No PENDING tasks found")
         return None, None, None
 
-    _logger.debug("Found PENDING task, marking as PROCESSING...")
+    _logger.debug("[page_sync_task] Found PENDING task, marking as PROCESSING...")
     item.dataset_info_sync_status = TaskStatus.PROCESSING
 
     ms_version = getattr(item, ms_upload_version_field) if hasattr(item, ms_upload_version_field) else 0
@@ -122,15 +156,15 @@ def _gen_one_page_sync_task(session: "Session"
 
     # Get dataset_uuid
     dataset_uuid = item.dataset_uuid if hasattr(item, 'dataset_uuid') and item.dataset_uuid else None
-    _logger.debug(f"Dataset UUID: {dataset_uuid}")
+    _logger.debug("[page_sync_task] Dataset UUID: %s", dataset_uuid)
 
     # Get yaml path from dataset
     yaml_path = item.yaml_file_path if hasattr(item, 'yaml_file_path') and item.yaml_file_path else None
-    _logger.debug(f"YAML path: {yaml_path}")
+    _logger.debug("[page_sync_task] YAML path: %s", yaml_path)
 
     # Get hardlink path from dataset_hard_link table using dataset_uuid
     try:
-        _logger.debug(f"Querying hardlink path for dataset_uuid: {dataset_uuid}")
+        _logger.debug("[page_sync_task] Querying hardlink path for dataset_uuid: %s", dataset_uuid)
         hardlink_record = session.query(DatasetHardLinkDB).filter(
             DatasetHardLinkDB.dataset_uuid == dataset_uuid
         ).first()
@@ -173,7 +207,7 @@ def _mark_task_completed(session: "Session", dataset_uuid: str) -> None:
     if item:
         item.dataset_info_sync_status = TaskStatus.COMPLETED
         session.commit()
-        logging.getLogger(__name__).info(f"Marked dataset {dataset_uuid} as COMPLETED")
+        logging.getLogger(__name__).info("[page_sync_task] Marked dataset %s as COMPLETED", dataset_uuid)
 
 
 def _mark_task_failed(session: "Session", dataset_uuid: str, error_msg: str = "") -> None:
@@ -196,7 +230,7 @@ def _mark_task_failed(session: "Session", dataset_uuid: str, error_msg: str = ""
         item.dataset_info_sync_status = TaskStatus.FAILED
         item.dataset_info_sync_err_msg = error_msg if error_msg else None
         session.commit()
-        logging.getLogger(__name__).error(f"Marked dataset {dataset_uuid} as FAILED: {error_msg}")
+        logging.getLogger(__name__).error("[page_sync_task] Marked dataset %s as FAILED: %s", dataset_uuid, error_msg)
 
 
 def _get_hub_field_prefix(dataset_table: "type[DatasetDB]") -> tuple[str, str]:

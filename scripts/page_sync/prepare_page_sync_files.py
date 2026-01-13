@@ -1,31 +1,64 @@
 #!/usr/bin/env python3
 """
-本脚本是进行网页同步所需的素材文件生成的CLI入口脚本,一个标准的执行命令是:
-python scripts/page_sync/prepare_page_sync_files.py \
-  --db-path /mnt/db/datasets_new.db \
-  --target-dir /home/rogerspyke/projects \
-  --log-level INFO \
-  --update-videos \
-  --crf 30
-这里--update-videos可以删除,如果加入参数则表示强制重新生成视频。
---crf通过指定crf参数进行视频文件压缩的质量控制,范围是0-51,越小质量越好,越大质量越差
-现在的crf设置30可以得到一个平均视频文件在500kb左右的一个结果
-脚本的实际功能都在 page_sync (src) 中实现
+Page Sync Files Preparation Script - CLI Entry Point
 
+本脚本是进行网页同步所需的素材文件生成的CLI入口脚本。
 
-# With HuggingFace upload
-python scripts/page_sync/prepare_page_sync_files.py \
-    --db-path db/datasets_new.db \
-    --target-dir /home/rogerspyke/projects \
-    --hf-token your_hf_token \
-    --hf-repo-id RogersPyke/RoboCOIN-DataManager-assets \
-    --crf 30 \
-    --force-regenerate
+主要功能：
+1. 从数据库中读取待同步的数据集信息
+2. 生成统一的元数据 YAML 文件（assets/dataset_info/*.yml）
+3. 从数据集中采样并压缩视频文件（assets/videos/*.mp4）
+4. 生成视频缩略图（assets/thumbnails/*.jpg）
+5. 生成汇总的元数据文件（assets/info/consolidated_datasets.json, data_index.json）
+6. 可选：将生成的资源上传到 HuggingFace Hub
+
+设计说明：
+- 脚本的实际功能都在 page_sync (src/robocoin_dataset/page_sync/) 中实现
+- 支持增量同步：只处理状态为 PENDING 的数据集
+- 支持强制重新生成：使用 --force-regenerate 可以忽略 COMPLETED 状态
+- 对缺失的 YAML 文件保持容错：会记录到 docs/missing_yaml_page.txt，但不中断处理
+
+使用示例：
+    # 基本用法
+    python scripts/page_sync/prepare_page_sync_files.py \
+      --db-path /mnt/db/datasets_new.db \
+      --target-dir /home/rogerspyke/projects \
+      --log-level INFO \
+      --crf 30
+
+    # 强制重新生成视频和缩略图
+    python scripts/page_sync/prepare_page_sync_files.py \
+      --db-path /mnt/db/datasets_new.db \
+      --target-dir /home/rogerspyke/projects \
+      --update-videos \
+      --crf 30
+
+    # 带 HuggingFace 上传
+    python scripts/page_sync/prepare_page_sync_files.py \
+      --db-path /mnt/db/datasets_new.db \
+      --target-dir /home/rogerspyke/projects \
+      --hf-token your_hf_token \
+      --hf-repo-id RogersPyke/RoboCOIN_DataManager_assets \
+      --crf 30 \
+      --force-regenerate
+
+参数说明：
+    --update-videos: 强制重新生成视频和缩略图（即使已存在）
+    --crf: 视频压缩质量控制参数（范围 0-51，越小质量越好）
+           默认 30 可以得到平均约 500KB 的视频文件
+    --force-regenerate: 忽略 COMPLETED 状态，强制重新生成所有资源
 """
 
 import argparse
+import logging
 import sys
+import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Maximum retry times for HuggingFace upload on timeout errors
+MAX_RETRY_TIMES = 3
 
 
 def main() -> None:
@@ -133,28 +166,33 @@ Output Structure:
 
     args = parser.parse_args()
 
+    # 配置基本 logging，这样在进入 page_sync_main 之前就能看到日志
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper()),
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+
     # Validate paths
     db_path = Path(args.db_path)
     if not db_path.exists():
-        print(f"Error: Database file not found: {args.db_path}", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] Database file not found: %s", args.db_path)
         sys.exit(1)
 
     target_dir = Path(args.target_dir)
     if not target_dir.exists():
-        print(f"Error: Target directory not found: {args.target_dir}", file=sys.stderr)
-        print("Please create the directory first or check the path.", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] Target directory not found: %s", args.target_dir)
+        logger.error("[prepare_page_sync_files] Please create the directory first or check the path.")
         sys.exit(1)
 
     # Import and run the main function
     from robocoin_dataset.page_sync.page_sync import main as page_sync_main
 
-    print("Starting page sync operation...")
-    print(f"  Database: {args.db_path}")
-    print(f"  Target: {args.target_dir}")
-    print(f"  CRF: {args.crf}")
-    print(f"  Update videos: {args.update_videos}")
-    print(f"  Log level: {args.log_level}")
-    print()
+    logger.info("[prepare_page_sync_files] Starting page sync operation...")
+    logger.info("[prepare_page_sync_files]   Database: %s", args.db_path)
+    logger.info("[prepare_page_sync_files]   Target: %s", args.target_dir)
+    logger.info("[prepare_page_sync_files]   CRF: %s", args.crf)
+    logger.info("[prepare_page_sync_files]   Update videos: %s", args.update_videos)
+    logger.info("[prepare_page_sync_files]   Log level: %s", args.log_level)
 
     try:
         page_sync_main(
@@ -165,34 +203,79 @@ Output Structure:
             log_level=args.log_level,
         force_regenerate=args.force_regenerate,
         )
-        print("\n✓ Page sync completed successfully!")
+        logger.info("[prepare_page_sync_files] ✓ Page sync completed successfully!")
 
         # Optional HuggingFace upload
         if args.hf_token and args.hf_repo_id:
-            print("\nStarting HuggingFace upload...")
-            try:
-                from robocoin_dataset.page_sync.upload_assets_utils import sync_assets_to_hf
+            logger.info("[prepare_page_sync_files] Starting HuggingFace upload...")
+            from robocoin_dataset.page_sync.upload_assets_utils import sync_assets_to_hf
 
-                assets_dir = target_dir / "assets"
-                commit_sha = sync_assets_to_hf(
-                    assets_dir=str(assets_dir),
-                    repo_id=args.hf_repo_id,
-                    token=args.hf_token,
-                )
-                print(f"✓ HuggingFace upload completed successfully! Commit SHA: {commit_sha}")
-            except Exception as e:
-                print(f"\n✗ Error during HuggingFace upload: {e}", file=sys.stderr)
-                sys.exit(1)
+            assets_dir = target_dir / "assets"
+
+            # Retry logic for timeout and network errors
+            last_exception = None
+            upload_success = False
+            for attempt in range(1, MAX_RETRY_TIMES + 1):
+                try:
+                    commit_sha = sync_assets_to_hf(
+                        assets_dir=str(assets_dir),
+                        repo_id=args.hf_repo_id,
+                        token=args.hf_token,
+                    )
+                    logger.info("[prepare_page_sync_files] ✓ HuggingFace upload completed successfully! Commit SHA: %s", commit_sha)
+                    upload_success = True
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    last_exception = e
+                    # Check if it's a timeout or network-related error
+                    is_timeout_or_network_error = False
+                    error_str = str(e).lower()
+
+                    # Check for timeout-related keywords
+                    if any(keyword in error_str for keyword in ['timeout', 'timed out', 'connection', 'network', 'socket']):
+                        is_timeout_or_network_error = True
+
+                    # Check for specific exception types
+                    exception_type = type(e).__name__
+                    if any(keyword in exception_type.lower() for keyword in ['timeout', 'connection', 'network']):
+                        is_timeout_or_network_error = True
+
+                    # Check for HTTP errors that might indicate timeout (504, 408, etc.)
+                    if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                        if e.response.status_code in [408, 504, 503]:
+                            is_timeout_or_network_error = True
+
+                    if is_timeout_or_network_error and attempt < MAX_RETRY_TIMES:
+                        wait_time = attempt * 2  # Exponential backoff: 2s, 4s, 6s
+                        logger.warning(
+                            "[prepare_page_sync_files] ⚠ Upload attempt %d/%d failed due to timeout/network error: %s. Retrying in %d seconds...",
+                            attempt, MAX_RETRY_TIMES, e, wait_time
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # Not a timeout/network error, or max retries reached
+                        if attempt >= MAX_RETRY_TIMES:
+                            logger.error(
+                                "[prepare_page_sync_files] ✗ HuggingFace upload failed after %d attempts. Last error: %s",
+                                MAX_RETRY_TIMES, e
+                            )
+                        else:
+                            logger.error("[prepare_page_sync_files] ✗ Error during HuggingFace upload: %s", e)
+                        raise
+
+            # If upload failed after all retries, raise the last exception
+            if not upload_success and last_exception is not None:
+                raise last_exception
         elif args.hf_token or args.hf_repo_id:
-            print("\n⚠ WARNING: Both --hf-token and --hf-repo-id must be provided for HuggingFace upload. Skipping upload.")
+            logger.warning("[prepare_page_sync_files] ⚠ WARNING: Both --hf-token and --hf-repo-id must be provided for HuggingFace upload. Skipping upload.")
         else:
-            print("\nℹ HuggingFace upload skipped (no token/repo-id provided)")
+            logger.info("[prepare_page_sync_files] ℹ HuggingFace upload skipped (no token/repo-id provided)")
 
     except KeyboardInterrupt:
-        print("\n✗ Operation cancelled by user", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] ✗ Operation cancelled by user")
         sys.exit(130)
     except Exception as e:
-        print(f"\n✗ Error during page sync: {e}", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] ✗ Error during page sync: %s", e)
         sys.exit(1)
 
 

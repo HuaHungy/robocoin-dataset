@@ -1,28 +1,32 @@
 """
 RoboCoin Datasets Uploader - Main CLI Entry Point
 
-This script uploads datasets to the hub using a database-driven strategy.
-It generates dataset info YAML files and README.md files ON-DEMAND for each dataset
-right before uploading, using the hardlink paths from the database.
+本脚本是数据集上传到 Hub 平台（HuggingFace/ModelScope）的 CLI 入口脚本。
 
-KEY FEATURES:
-- On-demand generation of dataset info YAML files from metadata (per dataset)
-- On-demand generation of README.md files from templates (per dataset)
-- Upload datasets to HuggingFace or ModelScope
-- Database-driven upload tracking
-- Works with hardlinks at any location (not restricted to single root_path)
-- Supports three modes: local, server, and client
+主要功能：
+1. 从数据库中读取待上传的数据集信息
+2. 按需生成数据集信息 YAML 文件（dataset_info.yml）
+3. 按需生成 README.md 文件（使用模板和统一元数据）
+4. 上传数据集到 HuggingFace 或 ModelScope Hub
+5. 跟踪上传状态和版本信息
 
-MODES:
-    1. Local mode (default, --local): Single machine upload
-    2. Server mode (--server): Starts a task distribution server
-    3. Client mode (--client): Connects to server and processes tasks
+核心特性：
+- 按需生成：为每个数据集在上传前动态生成 YAML 和 README 文件
+- 数据库驱动：使用数据库跟踪上传状态，支持增量上传
+- 灵活路径：支持硬链接在任意位置（不限制单一根目录）
+- 多种模式：支持本地单机、服务器分发、客户端处理三种模式
+- 容错处理：对缺失的 YAML 文件保持容错，记录到 docs/missing_yaml_upload.txt
 
-WORKFLOW:
-    For each dataset in the database:
-    1. Generate dataset_info.yml file from metadata
-    2. Generate README.md file from template
-    3. Upload dataset to hub (unless --readme-only is specified)
+运行模式：
+    1. Local mode (默认, --local): 单机上传模式
+    2. Server mode (--server): 启动任务分发服务器
+    3. Client mode (--client): 连接到服务器并处理任务
+
+工作流程：
+    对于数据库中的每个数据集：
+    1. 从元数据生成 dataset_info.yml 文件
+    2. 从模板生成 README.md 文件
+    3. 上传数据集到 Hub（除非指定 --readme-only）
 
 Usage:
     # Local upload mode (single machine, default)

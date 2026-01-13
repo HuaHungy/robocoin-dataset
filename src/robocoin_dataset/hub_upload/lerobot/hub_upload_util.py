@@ -6,7 +6,6 @@ It contains the business logic for dataset upload operations.
 """
 
 import random
-import re
 import shutil
 import tempfile
 import time
@@ -21,49 +20,11 @@ from robocoin_dataset.hub_upload.gen_readme.gen_readme import gen_readme
 from robocoin_dataset.prepare_metadata.metadata_service import MetadataSyncService
 from robocoin_dataset.prepare_metadata.unified_metadata_def import UnifiedMetadata
 
+from ..repo_name_util import process_repo_name
 from .constant import (
     DatasetsHubEnum,
 )
 from .local_datasets_util import LocalDsConfig, LocalDsUtil
-
-ROBOT_NAME_SEPARATORS = frozenset({"_", "-", "."})
-
-
-_ROBOT_NAMES_CONFIG_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "config"
-    / "robot_names.yml"
-)
-_ROBOT_NAMES_CACHE: list[str] | None = None
-
-
-def _load_robot_names_from_config() -> list[str]:
-    """
-    Load the list of robot name identifiers from the shared configuration file.
-    """
-    global _ROBOT_NAMES_CACHE
-
-    if _ROBOT_NAMES_CACHE is not None:
-        return _ROBOT_NAMES_CACHE
-
-    try:
-        with open(_ROBOT_NAMES_CONFIG_PATH, encoding="utf-8") as config_file:
-            raw_names = yaml.safe_load(config_file)
-    except (FileNotFoundError, yaml.YAMLError):
-        _ROBOT_NAMES_CACHE = []
-        return _ROBOT_NAMES_CACHE
-
-    if isinstance(raw_names, list):
-        cleaned_names: list[str] = []
-        for entry in raw_names:
-            name = str(entry).strip()
-            if name:
-                cleaned_names.append(name)
-        _ROBOT_NAMES_CACHE = cleaned_names
-    else:
-        _ROBOT_NAMES_CACHE = []
-
-    return _ROBOT_NAMES_CACHE
 
 ######## CONFIGURATION ########
 
@@ -224,7 +185,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         """
 
         # Extract dataset name from hardlink path
-        dataset_name = self._process_repo_name(hardlink_path.name)
+        dataset_name = process_repo_name(hardlink_path.name)
 
         # Validate dataset structure using shared validation from LocalDsUtil
         # TODO: we no longer use root_path but keep it for compatibility.
@@ -297,128 +258,6 @@ class LocalDsUploadUtil(LocalDsUtil):
 
         return False, "Upload failed with unknown error"
 
-    def _sanitize_repo_name(self, repo_name: str) -> str:
-        """
-        Sanitize repository name to comply with Hugging Face validation rules:
-        - Only alphanumeric chars, '-', '_', or '.' are allowed
-        - Cannot start or end with '-' or '.'
-        - Maximum length is 96 characters
-
-        Args:
-            repo_name: Original repository name
-
-        Returns:
-            Sanitized repository name that meets Hugging Face requirements
-        """
-        if not repo_name:
-            return repo_name
-
-        # Replace invalid characters with underscore
-        # Keep only alphanumeric, '-', '_', and '.'
-        sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', repo_name)
-
-        # Remove leading/trailing '-' and '.'
-        sanitized = sanitized.strip('-.')
-
-        # Collapse multiple consecutive underscores/dots/dashes into single underscore
-        sanitized = re.sub(r'[._-]+', '_', sanitized)
-
-        # Remove leading/trailing separators again after collapsing
-        sanitized = sanitized.strip('-.')
-
-        # Truncate to maximum length of 96 characters
-        if len(sanitized) > 96:
-            sanitized = sanitized[:96].rstrip('-.')
-
-        # Ensure we don't end up with an empty string
-        if not sanitized:
-            # Fallback: use a default name if sanitization results in empty string
-            sanitized = "dataset"
-
-        return sanitized
-
-    def _process_repo_name(self, folder_name: str) -> str:
-        """
-        Normalize a folder name into a valid repository name by stripping upload suffixes,
-        removing duplicate robot names, and sanitizing invalid characters.
-
-        Args:
-            folder_name: Original folder name (may contain suffixes and invalid chars)
-
-        Returns:
-            Sanitized repository name that meets Hugging Face requirements
-        """
-        dataset_name = folder_name.removesuffix("_qced_hardlink").removesuffix("_hardlink")
-        robot_names = self._get_robot_name_list()
-        normalized_name = self._remove_duplicate_robot_names(dataset_name, robot_names)
-        if normalized_name != dataset_name:
-            self.logger.debug(
-                "Trimmed duplicate robot names in '%s' -> '%s'",
-                dataset_name,
-                normalized_name,
-            )
-
-        # Sanitize invalid characters to comply with Hugging Face validation rules
-        sanitized_name = self._sanitize_repo_name(normalized_name)
-        if sanitized_name != normalized_name:
-            self.logger.debug(
-                "Sanitized repository name '%s' -> '%s'",
-                normalized_name,
-                sanitized_name,
-            )
-
-        return sanitized_name
-
-    def _get_robot_name_list(self) -> list[str]:
-        """
-        Retrieve robot names from the shared configuration.
-        """
-        return _load_robot_names_from_config()
-
-    def _remove_duplicate_robot_names(
-        self,
-        repo_name: str,
-        robot_names: list[str],
-    ) -> str:
-        """
-        Ensure each robot name appears at most once in the repository name.
-        """
-        if not robot_names:
-            return repo_name
-
-        sanitized = repo_name
-        for robot_name in robot_names:
-            if not robot_name:
-                continue
-
-            first_index = sanitized.find(robot_name)
-            if first_index == -1:
-                continue
-
-            search_start = first_index + len(robot_name)
-            while True:
-                duplicate_index = sanitized.find(robot_name, search_start)
-                if duplicate_index == -1:
-                    break
-
-                remove_start = self._locate_duplicate_start(sanitized, duplicate_index)
-                sanitized = (
-                    sanitized[:remove_start]
-                    + sanitized[duplicate_index + len(robot_name) :]
-                )
-                search_start = remove_start
-
-        return sanitized
-
-    def _locate_duplicate_start(self, repo_name: str, duplicate_start: int) -> int:
-        """
-        Walk backwards to remove surrounding separators before the duplicate entry.
-        """
-        start = duplicate_start
-        while start > 0 and repo_name[start - 1] in ROBOT_NAME_SEPARATORS:
-            start -= 1
-        return start
-
     def _upload_one_dataset(
         self,
         hardlink_path: Path,
@@ -441,7 +280,7 @@ class LocalDsUploadUtil(LocalDsUtil):
         # Start timing for this dataset
         dataset_start_time = time.time()
 
-        dataset_name = self._process_repo_name(hardlink_path.name)
+        dataset_name = process_repo_name(hardlink_path.name)
 
         # Define output path for intermediate YAML file
         output_path = Path(self.config.output_path or "./dataset_info").expanduser().absolute()
