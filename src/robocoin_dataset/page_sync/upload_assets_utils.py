@@ -265,7 +265,7 @@ def main(argv: Sequence[str] | None = None) -> str:
     try:
         return upload_assets(config)
     except UploadAssetsError as exc:
-        logger.error("Assets upload failed: %s", exc)
+        logger.error("[upload_assets] Assets upload failed: %s", exc)
         raise SystemExit(1) from exc
 
 

@@ -24,8 +24,11 @@ python scripts/page_sync/prepare_page_sync_files.py \
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -133,28 +136,33 @@ Output Structure:
 
     args = parser.parse_args()
 
+    # 配置基本 logging，这样在进入 page_sync_main 之前就能看到日志
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper()),
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+
     # Validate paths
     db_path = Path(args.db_path)
     if not db_path.exists():
-        print(f"Error: Database file not found: {args.db_path}", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] Database file not found: %s", args.db_path)
         sys.exit(1)
 
     target_dir = Path(args.target_dir)
     if not target_dir.exists():
-        print(f"Error: Target directory not found: {args.target_dir}", file=sys.stderr)
-        print("Please create the directory first or check the path.", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] Target directory not found: %s", args.target_dir)
+        logger.error("[prepare_page_sync_files] Please create the directory first or check the path.")
         sys.exit(1)
 
     # Import and run the main function
     from robocoin_dataset.page_sync.page_sync import main as page_sync_main
 
-    print("Starting page sync operation...")
-    print(f"  Database: {args.db_path}")
-    print(f"  Target: {args.target_dir}")
-    print(f"  CRF: {args.crf}")
-    print(f"  Update videos: {args.update_videos}")
-    print(f"  Log level: {args.log_level}")
-    print()
+    logger.info("[prepare_page_sync_files] Starting page sync operation...")
+    logger.info("[prepare_page_sync_files]   Database: %s", args.db_path)
+    logger.info("[prepare_page_sync_files]   Target: %s", args.target_dir)
+    logger.info("[prepare_page_sync_files]   CRF: %s", args.crf)
+    logger.info("[prepare_page_sync_files]   Update videos: %s", args.update_videos)
+    logger.info("[prepare_page_sync_files]   Log level: %s", args.log_level)
 
     try:
         page_sync_main(
@@ -165,11 +173,11 @@ Output Structure:
             log_level=args.log_level,
         force_regenerate=args.force_regenerate,
         )
-        print("\n✓ Page sync completed successfully!")
+        logger.info("[prepare_page_sync_files] ✓ Page sync completed successfully!")
 
         # Optional HuggingFace upload
         if args.hf_token and args.hf_repo_id:
-            print("\nStarting HuggingFace upload...")
+            logger.info("[prepare_page_sync_files] Starting HuggingFace upload...")
             try:
                 from robocoin_dataset.page_sync.upload_assets_utils import sync_assets_to_hf
 
@@ -179,20 +187,20 @@ Output Structure:
                     repo_id=args.hf_repo_id,
                     token=args.hf_token,
                 )
-                print(f"✓ HuggingFace upload completed successfully! Commit SHA: {commit_sha}")
+                logger.info("[prepare_page_sync_files] ✓ HuggingFace upload completed successfully! Commit SHA: %s", commit_sha)
             except Exception as e:
-                print(f"\n✗ Error during HuggingFace upload: {e}", file=sys.stderr)
+                logger.error("[prepare_page_sync_files] ✗ Error during HuggingFace upload: %s", e)
                 sys.exit(1)
         elif args.hf_token or args.hf_repo_id:
-            print("\n⚠ WARNING: Both --hf-token and --hf-repo-id must be provided for HuggingFace upload. Skipping upload.")
+            logger.warning("[prepare_page_sync_files] ⚠ WARNING: Both --hf-token and --hf-repo-id must be provided for HuggingFace upload. Skipping upload.")
         else:
-            print("\nℹ HuggingFace upload skipped (no token/repo-id provided)")
+            logger.info("[prepare_page_sync_files] ℹ HuggingFace upload skipped (no token/repo-id provided)")
 
     except KeyboardInterrupt:
-        print("\n✗ Operation cancelled by user", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] ✗ Operation cancelled by user")
         sys.exit(130)
     except Exception as e:
-        print(f"\n✗ Error during page sync: {e}", file=sys.stderr)
+        logger.error("[prepare_page_sync_files] ✗ Error during page sync: %s", e)
         sys.exit(1)
 
 
