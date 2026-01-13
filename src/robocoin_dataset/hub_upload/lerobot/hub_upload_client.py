@@ -527,7 +527,7 @@ def run_multi_clients(
         )
         proc.start()
         processes.append(proc)
-        console_logger.info(f"  ✓ Process {i:>2} spawned (PID: {proc.pid})")
+        console_logger.info(f"  <SUCCESS> Process {i:>2} spawned (PID: {proc.pid})")
 
         # Add startup delay to avoid thundering herd
         if i < num_clients - 1:
