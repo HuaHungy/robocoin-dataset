@@ -50,7 +50,7 @@ BAD_EPISODES = "bad_episodes"
 HARD_LINK_PATH = "hard_link_path"
 MIN_EPISODES_NUM = "min_episodes_num"
 
-MERGED_FEATURE = "merged"
+MERGED_FEATURE = None
 QCED_FEATURE = "quality_checked"
 HL_SUFFIX = "qced_hardlink"
 DS_API_KEY = "ds_api_key"
@@ -455,6 +455,30 @@ def gen_qced_repo(
         hard_link_repo_path=hard_link_repo_path,
         video_path_corresp=video_path_corresp,
     ).get_hard_link_corresp()
+
+    dir_corresp_filtered = {}
+    for src_dir, dst_dir in dir_corresp.items():
+        if "annotations" not in str(src_dir).lower() and "annotations" not in str(dst_dir).lower():
+            dir_corresp_filtered[src_dir] = dst_dir
+    dir_corresp = dir_corresp_filtered
+
+    # print("=" * 80)
+    # print("即将创建硬链接的文件清单（共 {} 个文件）：".format(len(file_corresp)))
+    # print("-" * 80)
+    # for idx, (src_file, dst_file) in enumerate(file_corresp.items(), 1):
+    #     print(f"{idx}. 源文件：{src_file}")
+    #     print(f"   目标硬链接：{dst_file}")
+    #     print("-" * 40)
+
+    # print("\n" + "=" * 80)
+    # print("即将创建硬链接的目录清单（共 {} 个目录）：".format(len(dir_corresp)))
+    # print("-" * 80)
+    # for idx, (src_dir, dst_dir) in enumerate(dir_corresp.items(), 1):
+    #     print(f"{idx}. 源目录：{src_dir}")
+    #     print(f"   目标硬链接目录：{dst_dir}")
+    #     print("-" * 40)
+    # print("=" * 80)
+
     create_hardlinks_from_correspondence(file_corresp=file_corresp, dir_corresp=dir_corresp)
     return str(hard_link_repo_path)
 
@@ -595,6 +619,7 @@ class QualityCheckedRepoGenerator:
                 if not ds_item:
                     return
                 ds_item.qced_repo_gen_status = TaskStatus.COMPLETED
+                ds_item.qced_repo_gen_path = hardlink_repo_path  # 新增这一行，硬链接路径直接赋值
                 hardlink_item = (
                     session.query(DatasetHardLinkDB)
                     .filter(DatasetHardLinkDB.dataset_uuid == dataset_uuid)
@@ -638,6 +663,7 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         video_score_threshold: float = 0.9,
         min_episodes_num: int = 10,
         ds_api_key: str | None = None,
+        target_dataset_uuid: str | None = None,  # 新增：支持指定UUID
     ) -> None:
         super().__init__(
             logger=logger,
@@ -657,25 +683,69 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
         self.video_score_threshold = video_score_threshold
         self.min_episodes_num = min_episodes_num
         self.ds_api_key = ds_api_key
+        self.target_dataset_uuid = target_dataset_uuid  # 新增：保存指定UUID
 
     def get_task_category(self) -> str:
         return "dataset quality checked repo generation"
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
-            _sync_qced_repo_gen_tasks(session=session)
-            dataset_uuid, repo_path = _gen_one_qced_repo_gen_task(session=session)
-            bad_episodes = _get_bad_episodes(
-                session=session,
-                dataset_uuid=dataset_uuid,
-                state_data_score_threshold=self.state_data_score_threshold,
-                action_data_score_threshold=self.action_data_score_threshold,
-                video_score=self.video_score_threshold,
-            )
+            dataset_uuid = None
+            repo_path = None
+            bad_episodes = set()
+
+            # 新增：优先处理指定UUID的数据集
+            if self.target_dataset_uuid:
+                item = session.query(DatasetDB).filter(
+                    DatasetDB.dataset_uuid == self.target_dataset_uuid
+                ).first()
+                if not item:
+                    self.logger.info(f"Dataset with UUID {self.target_dataset_uuid} not found.")
+                    return None
+                # 校验前置状态：QC必须已完成
+                if item.qc_status != TaskStatus.COMPLETED:
+                    self.logger.info(f"Dataset {self.target_dataset_uuid} QC status is not COMPLETED, skip.")
+                    return None
+                # 校验是否正在处理/已完成（避免重复）
+                if item.qced_repo_gen_status == TaskStatus.PROCESSING:
+                    self.logger.info(f"Dataset {self.target_dataset_uuid} is already being processed, skip.")
+                    return None
+                if item.qced_repo_gen_status == TaskStatus.COMPLETED:
+                    self.logger.info(f"Dataset {self.target_dataset_uuid} has already been processed successfully, skip.")
+                    return None
+                # 更新为处理中状态
+                item.qced_repo_gen_status = TaskStatus.PROCESSING
+                item.qced_repo_gen_version = item.qced_repo_gen_version + 1
+                session.commit()
+
+                # 提取必要信息
+                dataset_uuid = item.dataset_uuid
+                repo_path = item.convert_path
+                # 获取坏样本集
+                bad_episodes = _get_bad_episodes(
+                    session=session,
+                    dataset_uuid=dataset_uuid,
+                    state_data_score_threshold=self.state_data_score_threshold,
+                    action_data_score_threshold=self.action_data_score_threshold,
+                    video_score=self.video_score_threshold,
+                )
+            else:
+                # 原有逻辑：自动筛选待处理任务
+                _sync_qced_repo_gen_tasks(session=session)
+                dataset_uuid, repo_path = _gen_one_qced_repo_gen_task(session=session)
+                if dataset_uuid:
+                    bad_episodes = _get_bad_episodes(
+                        session=session,
+                        dataset_uuid=dataset_uuid,
+                        state_data_score_threshold=self.state_data_score_threshold,
+                        action_data_score_threshold=self.action_data_score_threshold,
+                        video_score=self.video_score_threshold,
+                    )
+
+            if not dataset_uuid:
+                return None
             bad_episodes = list(bad_episodes)
 
-        if not dataset_uuid:
-            return None
         return {
             DATASET_UUID: dataset_uuid,
             LEFORMAT_PATH: repo_path,
@@ -684,51 +754,54 @@ class QualityCheckedRepoGeneratorServer(TaskServer):
             DS_API_KEY: self.ds_api_key,
         }
 
+
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         ds_uuid = task_content.get(DATASET_UUID)
+        if not ds_uuid:  # 新增：校验UUID是否存在，避免后续报错
+            self.logger.error("Task content missing DATASET_UUID, skip handling result.")
+            return
 
+        # 修复：正确提取任务状态和错误信息
         task_status = task_result_content.get(TASK_RESULT_STATUS)
-        task_status_msg = task_result_content.get(ERR_MSG)
+        err_msg = task_result_content.get(ERR_MSG, "")  # 避免key不存在抛出异常
 
-        err_msg = task_result_content.get(ERR_MSG)
-        hardlink_path = task_result_content.get(TASK_RESULT_CONTENT).get(HARD_LINK_PATH)
+        try:
+            # 修复：安全提取hardlink_path，避免嵌套key不存在抛出异常
+            task_result_content_dict = task_result_content.get(TASK_RESULT_CONTENT, {})
+            hardlink_path = task_result_content_dict.get(HARD_LINK_PATH, "")
+        except Exception as e:
+            hardlink_path = ""
+            self.logger.warning(f"Failed to extract hardlink path from task result: {str(e)}")
 
-        if task_status == TASK_SUCCESS:
+        if task_status == TASK_SUCCESS and hardlink_path:  # 新增：校验hardlink_path有效性
             with self.db.with_session() as session:
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
-                if item:
-                    item.qced_repo_gen_status = TaskStatus.COMPLETED
-                else:
+                if not item:
+                    self.logger.error(f"Dataset with UUID {ds_uuid} not found in DB, skip updating status.")
                     return
-                hl_item = (
-                    session.query(DatasetHardLinkDB)
-                    .filter(DatasetHardLinkDB.dataset_uuid == ds_uuid)
-                    .first()
-                )
+                item.qced_repo_gen_status = TaskStatus.COMPLETED
+                item.qced_repo_gen_path = hardlink_path  # 新增这一行，覆盖原有路径（如有）
+                hl_item = session.query(DatasetHardLinkDB).filter(DatasetHardLinkDB.dataset_uuid == ds_uuid).first()
                 if hl_item:
                     hl_item.hard_link_path = hardlink_path
                 else:
-                    session.add(
-                        DatasetHardLinkDB(
-                            dataset_uuid=ds_uuid,
-                            hard_link_path=hardlink_path,
-                        )
-                    )
+                    session.add(DatasetHardLinkDB(dataset_uuid=ds_uuid, hard_link_path=hardlink_path))
                 session.commit()
+            self.logger.info(f"Dataset {ds_uuid} qced repo generation completed successfully.")
         else:
+            # 修复：任务失败时，正确更新状态为FAILED并保存错误信息
             with self.db.with_session() as session:
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
-                if item:
-                    item.qced_repo_gen_status = TaskStatus.FAILED
-                    item.qced_repo_gen_err_msg = err_msg
-                else:
+                if not item:
+                    self.logger.error(f"Dataset with UUID {ds_uuid} not found in DB, skip updating status.")
                     return
+                item.qced_repo_gen_status = TaskStatus.FAILED
+                item.qced_repo_gen_err_msg = err_msg[:1000]  # 限制错误信息长度，避免数据库字段溢出
                 session.commit()
-
-            self.logger.info(
-                f"Upsert {item.convert_path} dataset quality checked repo generation status to {item.qced_repo_gen_status}, "
-                f"update_message: {task_status_msg}"
+            self.logger.error(
+                f"Dataset {ds_uuid} qced repo generation failed. Error: {err_msg[:500]}..."
             )
+
 
 
 class QualityCheckedRepoGeneratorClient(TaskClient):

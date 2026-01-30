@@ -68,6 +68,13 @@ async def main() -> None:
         help="Minimum episodes number",
     )
 
+    parser.add_argument(
+        "--target_dataset_uuid",
+        type=str,
+        default=None,
+        help="Specify the target dataset UUID to generate qced repo (optional).",
+    )
+
     parser.add_argument("--ds_api_key", type=str, default="sk-a3c8736391cf43809957329f28cac287")
 
     args = parser.parse_args()
@@ -93,6 +100,7 @@ async def main() -> None:
         video_score_threshold=args.video_score_threshold,
         ds_api_key=args.ds_api_key,
         min_episodes_num=args.min_episodes_num,
+        target_dataset_uuid=args.target_dataset_uuid,
     )
 
     await server.start()

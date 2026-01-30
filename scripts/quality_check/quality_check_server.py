@@ -45,6 +45,13 @@ async def main() -> None:
         help="Path to the quality check config file",
     )
 
+    parser.add_argument(
+        "--target_dataset_uuid",
+        type=str,
+        default=None,
+        help="Specify the target dataset UUID for testing (optional)"
+    )
+
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
 
@@ -64,6 +71,7 @@ async def main() -> None:
         port=args.port,
         logger=logger,
         qc_config_path=args.qc_config_path,
+        target_dataset_uuid=args.target_dataset_uuid
     )
 
     await checker.start()

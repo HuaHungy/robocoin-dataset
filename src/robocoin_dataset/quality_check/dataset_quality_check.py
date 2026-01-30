@@ -42,7 +42,8 @@ from robocoin_dataset.utils.le_path import get_episodes_frames, get_parquet_file
 
 QC_CONFIG = "qc_config"
 QC_RESULT = "qc_result"
-MERGED_DATA_FEATURE = "merged"
+# MERGED_DATA_FEATURE = "merged"
+MERGED_DATA_FEATURE = None
 
 
 def get_checker_config(
@@ -248,7 +249,7 @@ def _gen_one_dataset_quality_check_task(
 ) -> tuple[str | None, str | None, str | None, str | None]:
     query = session.query(DatasetDB).filter(
         and_(
-            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            DatasetDB.convert_status == TaskStatus.COMPLETED,
             or_(
                 # 分支1: 正在排队
                 DatasetDB.qc_status == TaskStatus.PENDING,
@@ -318,7 +319,7 @@ def _sync_quality_check_tasks(
     query = session.query(DatasetDB).filter(
         and_(
             # 必要前提：convert必须成功
-            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            DatasetDB.convert_status == TaskStatus.COMPLETED,
             # 两个触发分支
             or_(
                 # 分支1: 正在排队
@@ -349,7 +350,7 @@ def _gen_one_dataset_quality_check_task_without_sync(
     query = session.query(DatasetDB).filter(
         and_(
             # 必要前提：convert必须成功
-            DatasetDB.data_merge_status == TaskStatus.COMPLETED,
+            DatasetDB.convert_status == TaskStatus.COMPLETED,
             DatasetDB.qc_status == TaskStatus.PENDING,
         )
     )
@@ -462,6 +463,7 @@ class DatasetQualityCheckServer(TaskServer):
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
         logger: logging.Logger | None = None,
+        target_dataset_uuid: str | None = None,  # 新增：接收指定的数据集UUID
     ) -> None:
         super().__init__(
             logger=logger,
@@ -475,6 +477,8 @@ class DatasetQualityCheckServer(TaskServer):
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.logger = logger or logging.getLogger(__name__)
+        # 新增：保存指定的目标数据集UUID
+        self.target_dataset_uuid = target_dataset_uuid
 
         self.qc_config_path = Path(qc_config_path).expanduser().absolute()
         if not self.qc_config_path.exists():
@@ -485,10 +489,40 @@ class DatasetQualityCheckServer(TaskServer):
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
-            _sync_quality_check_tasks(session=session)
-            dataset_uuid, repo_path, device_model, device_model_version = (
-                _gen_one_dataset_quality_check_task_without_sync(session=session)
-            )
+            # 若指定了目标UUID，直接查询该数据集，跳过同步和自动筛选
+            if self.target_dataset_uuid:
+                item = session.query(DatasetDB).filter(
+                    DatasetDB.dataset_uuid == self.target_dataset_uuid
+                ).first()
+                if not item:
+                    self.logger.info(f"Dataset with UUID {self.target_dataset_uuid} not found.")
+                    return None
+                 # 新增：判断是否已完成，且不允许重复处理
+                if item.qc_status == TaskStatus.COMPLETED:
+                    self.logger.info(f"Dataset {self.target_dataset_uuid} has already been processed successfully, skip duplicate assignment.")
+                    return None
+                # 强制校验前置条件：convert_status完成
+                if item.convert_status != TaskStatus.COMPLETED:
+                    self.logger.info(f"Dataset {self.target_dataset_uuid} convert status is not completed.")
+                    return None
+                # 新增：关键拦截逻辑——如果当前正在处理，直接返回None，不重复分配
+                if item.qc_status == TaskStatus.PROCESSING:
+                    self.logger.info(f"Dataset {self.target_dataset_uuid} is already being processed, skip duplicate assignment.")
+                    return None
+                # 强制更新任务状态为PROCESSING
+                item.qc_status = TaskStatus.PROCESSING
+                item.qc_version = item.qc_version + 1
+                session.commit()
+                dataset_uuid = item.dataset_uuid
+                repo_path = item.convert_path
+                device_model = item.device_model
+                device_model_version = item.device_model_version
+            else:
+                # 原有逻辑：自动筛选（保留，方便后续恢复）
+                _sync_quality_check_tasks(session=session)
+                dataset_uuid, repo_path, device_model, device_model_version = (
+                    _gen_one_dataset_quality_check_task_without_sync(session=session)
+                )
 
         if not dataset_uuid:
             self.logger.info("No dataset quality check task available.")
@@ -509,47 +543,73 @@ class DatasetQualityCheckServer(TaskServer):
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
         ds_uuid = task_content.get(DATASET_UUID)
+        if not ds_uuid:
+            self.logger.error("Handle task result failed: missing DATASET_UUID in task content.")
+            return
 
-        task_status = task_result_content.get(TASK_RESULT_STATUS)
-        task_status_msg = task_result_content.get(ERR_MSG)
+        try:
+            # 提取任务结果字段，增加默认值避免报错
+            task_status = task_result_content.get(TASK_RESULT_STATUS)
+            err_msg = task_result_content.get(ERR_MSG, "")
+            task_content_dict = task_result_content.get(TASK_RESULT_CONTENT, {})
+            qc_results = task_content_dict.get(QC_RESULT, {})
 
-        qc_results = task_result_content.get(TASK_RESULT_CONTENT).get(QC_RESULT)
+            # # 新增：打印日志，验证qc_results是否为空
+            # self.logger.info(f"qc_results content: {qc_results}")
+            self.logger.info(f"qc_results length: {len(qc_results)}")
 
-        err_msg = task_result_content.get(ERR_MSG)
-
-        if task_status == TASK_SUCCESS:
             with self.db.with_session() as session:
                 item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
-                if item:
+                if not item:
+                    self.logger.error(f"Handle task result failed: dataset {ds_uuid} not found in DB.")
+                    return
+
+                if task_status == TASK_SUCCESS:
+                    # 更新数据集QC状态为完成
                     item.qc_status = TaskStatus.COMPLETED
+                    item.qc_err_msg = ""  # 清空历史错误信息
+
+                    # 删除该数据集原有QC记录，插入新记录
+                    session.query(EpisodeQcDB).filter(EpisodeQcDB.dataset_uuid == ds_uuid).delete()
+
+                    # 遍历QC结果，增加容错处理
+                    for episode_idx_str, summary in qc_results.items():
+                        try:
+                            episode_idx = int(episode_idx_str)
+                        except (ValueError, TypeError):
+                            self.logger.warning(f"Skip invalid episode index: {episode_idx_str}")
+                            continue
+
+                        # 提取summary字段，增加默认值避免KeyError
+                        is_bad = summary.get("is_bad", False)
+                        state_score = summary.get("state_data_score", 0.0)
+                        action_score = summary.get("action_data_score", 0.0)
+                        video_score = summary.get("video_score", 0.0)
+
+
+                        episode_qc_item = EpisodeQcDB(
+                            dataset_uuid=ds_uuid,
+                            episode_idx=episode_idx,
+                            is_bad_episode=is_bad,
+                            state_data_score=state_score,
+                            action_data_score=action_score,
+                            video_score=video_score,
+                        )
+                        session.add(episode_qc_item)
+
+                    self.logger.info(f"Dataset {ds_uuid} quality check completed successfully.")
                 else:
-                    return
-                session.query(EpisodeQcDB).filter(EpisodeQcDB.dataset_uuid == ds_uuid).delete()
-                for episode_idx, summary in qc_results.items():
-                    episode_qc_item = EpisodeQcDB(
-                        dataset_uuid=ds_uuid,
-                        episode_idx=int(episode_idx),
-                        is_bad_episode=summary["is_bad"],
-                        state_data_score=summary["state_data_score"],
-                        action_data_score=summary["action_data_score"],
-                        video_score=summary["video_score"],
-                    )
-                    session.add(episode_qc_item)
-                session.commit()
-        else:
-            with self.db.with_session() as session:
-                item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
-                if item:
+                    # 更新数据集QC状态为失败，记录错误信息
                     item.qc_status = TaskStatus.FAILED
-                    item.qc_err_msg = err_msg
-                else:
-                    return
+                    item.qc_err_msg = err_msg[:1000]  # 截断过长信息，避免数据库字段溢出
+                    self.logger.error(f"Dataset {ds_uuid} quality check failed: {err_msg}")
+
+                # 提交事务
                 session.commit()
 
-            self.logger.info(
-                f"Upsert {item.convert_path} dataset quality check status to {item.qc_status}, "
-                f"update_message: {task_status_msg}"
-            )
+        except Exception as e:
+            self.logger.error(f"Handle task result for {ds_uuid} failed with exception: {str(e)}\n{traceback.format_exc()}")
+
 
 
 class DatasetQualityCheckClient(TaskClient):
@@ -575,6 +635,8 @@ class DatasetQualityCheckClient(TaskClient):
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
             repo_path = task_content.get(LEFORMAT_PATH)
+            if not repo_path:
+                raise ValueError("Missing LEFORMAT_PATH in task content")
 
             results = _check_repo(
                 repo_path,
@@ -582,8 +644,30 @@ class DatasetQualityCheckClient(TaskClient):
                 data_feature=MERGED_DATA_FEATURE,
             )
 
-            results_send = {str(episode_idx): v for episode_idx, v in results.items()}
+            # 新增：打印关键日志，确认results是否为空（核心验证）
+            print(f"[Client] _check_repo返回结果长度: {len(results)}")
+            print(f"[Client] _check_repo返回结果前5条: {list(results.items())[:5] if results else '空'}")
 
+            # 转换为字符串键（避免服务端解析问题），并转为纯原生字典（避免defaultdict序列化问题）
+            results_send = {str(episode_idx): dict(v) for episode_idx, v in results.items()}
+
+            # 新增：打印转换后的results_send
+            print(f"[Client] 转换后results_send长度: {len(results_send)}")
+
+            # 修复：确保这是唯一的返回语句，无多余缩进和不可达代码
+            # return {
+            #     TASK_RESULT_STATUS: TASK_SUCCESS,  # 标记任务成功
+            #     TASK_RESULT_CONTENT: {QC_RESULT: results_send},  # 包装QC结果
+            #     ERR_MSG: ""  # 清空错误信息
+            # }
             return {QC_RESULT: results_send}
+
         except Exception as e:
-            raise RuntimeError(f"dataset quality check {repo_path} failed") from e
+            # 优化：捕获异常并返回标准错误格式，方便服务端记录
+            error_msg = f"Dataset quality check for {repo_path} failed: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {
+                TASK_RESULT_STATUS: "FAILED",
+                TASK_RESULT_CONTENT: {},
+                ERR_MSG: error_msg[:1000]
+            }
