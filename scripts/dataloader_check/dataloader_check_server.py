@@ -41,14 +41,22 @@ async def main() -> None:
         "--num_workers",
         type=int,
         default=8,
-        help="",
+        help="Number of workers for dataloader",
     )
 
     parser.add_argument(
         "--sample_rate",
         type=float,
         default=0.1,
-        help="",
+        help="Sample rate for dataset checking",
+    )
+
+    # 🔴 新增：指定单个数据集UUID的参数
+    parser.add_argument(
+        "--target_dataset_uuid",
+        type=str,
+        default="",
+        help="Target dataset UUID to check (if empty, check all eligible datasets)",
     )
 
     args = parser.parse_args()
@@ -71,6 +79,7 @@ async def main() -> None:
         logger=logger,
         num_workers=args.num_workers,
         sample_rate=args.sample_rate,
+        target_dataset_uuid=args.target_dataset_uuid,  # 🔴 传递UUID参数
     )
 
     await checker.start()
@@ -86,5 +95,6 @@ python scripts/dataloader_check/dataloader_check_server.py \
     --port 2120\
     --log_dir ./logs/dataloader_check_server/ \
     --num_workers 8 \
-    --sample_rate 0.1
+    --sample_rate 0.1 \
+    --target_dataset_uuid b667a677-66fb-41a7-b039-06c2f57d4681  # 🔴 新增用法
 """

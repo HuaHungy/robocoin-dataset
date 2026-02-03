@@ -29,14 +29,14 @@ async def main() -> None:
         "--device_model",
         type=str,
         default=None,
-        help="Device model to sim replay",
+        help="Device model to process",
     )
 
     parser.add_argument(
         "--device_model_version",
         type=str,
         default=None,
-        help="Device model version to sim replay",
+        help="Device model version to process",
     )
 
     parser.add_argument(
@@ -60,6 +60,14 @@ async def main() -> None:
         help="Port to run the server",
     )
 
+    # 新增：指定单个数据集UUID的参数
+    parser.add_argument(
+        "--target_dataset_uuid",
+        type=str,
+        default=None,
+        help="Specify a single dataset UUID to process (priority over device_model/version)",
+    )
+
     args = parser.parse_args()
     db_file_path = Path(args.db_file_path).expanduser().absolute()
 
@@ -81,6 +89,7 @@ async def main() -> None:
         heartbeat_interval=30.0,
         device_model=args.device_model,
         device_model_version=args.device_model_version,
+        target_dataset_uuid=args.target_dataset_uuid,  # 新增
         timeout=15.0,
         logger=logger,
     )
@@ -94,6 +103,7 @@ if __name__ == "__main__":
 
 """Usage:
 
+# 原有批量处理用法
 python scripts/annotation/motion_annotation/motion_annotation_server.py \
     --db_file_path ./db/datasets_new.db \
     --host 0.0.0.0 \
@@ -102,4 +112,13 @@ python scripts/annotation/motion_annotation/motion_annotation_server.py \
     --device_model realman_rmc_aidal \
     --device_model_version default_version \
     --log_dir ./logs/
+
+# 新增指定UUID用法
+python scripts/annotation/motion_annotation/motion_annotation_server.py \
+    --db_file_path ./db/datasets_new.db \
+    --host 0.0.0.0 \
+    --port 8766 \
+    --sim_replay_config_path ./scripts/sim_replay/configs/sim_replay_config_path.yaml \
+    --log_dir ./logs/ \
+    --target_dataset_uuid b667a677-66fb-41a7-b039-06c2f57d4681
 """

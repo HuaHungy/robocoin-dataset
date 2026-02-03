@@ -36,11 +36,12 @@ SAMPLE_RATE = "sample_rate"
 HARD_LINK_PATH = "hard_link_path"
 
 
-def _sync_dataloader_check_tasks(session: Session) -> None:
+# 🔴 新增：修改函数，增加target_dataset_uuid参数
+def _sync_dataloader_check_tasks(session: Session, target_dataset_uuid: str = "") -> None:
     query = session.query(DatasetDB).filter(
         and_(
-            # 必要前提：convert必须成功
-            DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,
+            # 前置条件：可视化校验完成
+            DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
             # 两个触发分支
             or_(
                 # 分支1: 正在排队
@@ -48,11 +49,16 @@ def _sync_dataloader_check_tasks(session: Session) -> None:
                 # 分支2: 已完成但版本过期
                 and_(
                     DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
-                    DatasetDB.data_loader_detection_version_ps != DatasetDB.qced_repo_gen_version,
+                    DatasetDB.data_loader_detection_version_ps != DatasetDB.visualize_check_version,
                 ),
             ),
         )
     )
+
+    # 🔴 新增：如果指定了UUID，过滤该UUID
+    if target_dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == target_dataset_uuid)
+
     items = query.all()
 
     if not items:
@@ -60,21 +66,27 @@ def _sync_dataloader_check_tasks(session: Session) -> None:
 
     for item in items:
         item.data_loader_detection_status = TaskStatus.PENDING
-        item.data_loader_detection_version_ps = item.qced_repo_gen_version
+        item.data_loader_detection_version_ps = item.visualize_check_version
 
     session.commit()
 
 
+# 🔴 新增：修改函数，增加target_dataset_uuid参数
 def _gen_one_dataloader_check_task(
-    session: Session,
+    session: Session, target_dataset_uuid: str = ""
 ) -> tuple[str | None, str | None]:
     query = session.query(DatasetDB).filter(
         and_(
-            # 必要前提：convert必须成功
-            DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,
+            # 前置条件：可视化校验完成
+            DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
             DatasetDB.data_loader_detection_status == TaskStatus.PENDING,
         )
     )
+
+    # 🔴 新增：如果指定了UUID，过滤该UUID
+    if target_dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == target_dataset_uuid)
+
     ds_item = query.first()
 
     if not ds_item:
@@ -138,17 +150,21 @@ class DataLoaderChecker:
         sample_rate: float = 0.1,
         num_workers: int = 8,
         logger: logging.Logger | None = None,
+        target_dataset_uuid: str = "",  # 🔴 新增参数
     ) -> None:
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.sample_rate = sample_rate
         self.num_workers = num_workers
         self.logger = logger or logging.getLogger(__name__)
+        self.target_dataset_uuid = target_dataset_uuid  # 🔴 保存UUID参数
 
     def check_one_repo(self) -> None:
         with self.db.with_session() as session:
-            _sync_dataloader_check_tasks(session=session)
-            dataset_uuid, hardlink = _gen_one_dataloader_check_task(session=session)
+            # 🔴 传递UUID参数
+            _sync_dataloader_check_tasks(session=session, target_dataset_uuid=self.target_dataset_uuid)
+            # 🔴 传递UUID参数
+            dataset_uuid, hardlink = _gen_one_dataloader_check_task(session=session, target_dataset_uuid=self.target_dataset_uuid)
             if dataset_uuid is None:
                 return
 
@@ -188,6 +204,7 @@ class DataLoaderCheckerServer(TaskServer):
         logger: logging.Logger | None = None,
         sample_rate: float = 0.1,
         num_workers: int = 8,
+        target_dataset_uuid: str = "",  # 🔴 新增参数
     ) -> None:
         super().__init__(
             logger=logger,
@@ -203,14 +220,17 @@ class DataLoaderCheckerServer(TaskServer):
         self.sample_rate = sample_rate
         self.num_workers = num_workers
         self.logger = logger or logging.getLogger(__name__)
+        self.target_dataset_uuid = target_dataset_uuid  # 🔴 保存UUID参数
 
     def get_task_category(self) -> str:
         return "dataset dataloader checker"
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
-            _sync_dataloader_check_tasks(session=session)
-            dataset_uuid, hardlink_path = _gen_one_dataloader_check_task(session=session)
+            # 🔴 传递UUID参数
+            _sync_dataloader_check_tasks(session=session, target_dataset_uuid=self.target_dataset_uuid)
+            # 🔴 传递UUID参数
+            dataset_uuid, hardlink_path = _gen_one_dataloader_check_task(session=session, target_dataset_uuid=self.target_dataset_uuid)
 
         if not dataset_uuid:
             return None
@@ -248,7 +268,7 @@ class DataLoaderCheckerServer(TaskServer):
                     return
 
                 self.logger.info(
-                    f"Upsert {item.convert_path} dataset dataloader check status to {item.qced_repo_gen_status}, "
+                    f"Upsert {item.convert_path} dataset dataloader check status to {item.visualize_check_status}, "
                     f"update_message: {task_status_msg}"
                 )
                 session.commit()

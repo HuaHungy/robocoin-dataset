@@ -83,8 +83,12 @@ def _get_config_classes_path_dict(
 
 
 def _sync_sim_replay_tasks(
-    session: Session, device_model: str | None = None, device_model_version: str | None = None
+    session: Session, 
+    device_model: str | None = None, 
+    device_model_version: str | None = None,
+    target_dataset_uuid: str | None = None  # 新增
 ) -> None:
+    # 基础查询条件
     query = session.query(DatasetDB).filter(
         and_(
             # 必要前提：convert必须成功
@@ -101,11 +105,12 @@ def _sync_sim_replay_tasks(
             ),
         )
     )
-    if device_model:
-        query = query.filter(
-            DatasetDB.device_model == device_model,
-        )
-
+    
+    # 新增：指定UUID时只处理该数据集
+    if target_dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == target_dataset_uuid)
+    elif device_model:
+        query = query.filter(DatasetDB.device_model == device_model)
         if device_model_version:
             query = query.filter(DatasetDB.device_model_version == device_model_version)
 
@@ -122,23 +127,37 @@ def _sync_sim_replay_tasks(
 
 
 def _gen_one_sim_replay_task(
-    session: Session, device_model: str, device_model_version: str | None = None
+    session: Session, 
+    device_model: str, 
+    device_model_version: str | None = None,
+    target_dataset_uuid: str | None = None  # 新增
 ) -> tuple[str | None, str | None, str | None, str | None]:
+    # 基础查询条件
     query = session.query(DatasetDB).filter(
         DatasetDB.sim_replay_status == TaskStatus.PENDING,
     )
-    if device_model:
+    
+    # 新增：指定UUID时只查询该数据集
+    if target_dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == target_dataset_uuid)
+    elif device_model:
         query = query.filter(DatasetDB.device_model == device_model)
         if device_model_version:
             query = query.filter(DatasetDB.device_model_version == device_model_version)
+    
     item = query.first()
     if not item:
         return None, None, None, None
+    
+    # 检查 qced_repo_gen_path 是否存在
+    if not item.qced_repo_gen_path or not Path(item.qced_repo_gen_path).exists():
+        raise FileNotFoundError(f"qced_repo_gen_path not found for dataset {item.dataset_uuid}: {item.qced_repo_gen_path}")
+    
     item.sim_replay_status = TaskStatus.PROCESSING
     session.commit()
     return (
         item.dataset_uuid,
-        item.convert_path,
+        item.qced_repo_gen_path,  # 修改：替换为 qced_repo_gen_path
         item.device_model,
         item.device_model_version,
     )
@@ -601,14 +620,15 @@ class SimReplay:
             file_path=sim_replay_config_path
         )
 
-    def sim_replay_datasets(self, device_model: str, device_model_version: str = "") -> None:
+    def sim_replay_datasets(self, device_model: str, device_model_version: str = "", target_dataset_uuid: str | None = None) -> None:  # 新增参数
         with self.db.with_session() as session:
-            _sync_sim_replay_tasks(session, device_model, device_model_version=device_model_version)
+            _sync_sim_replay_tasks(session, device_model, device_model_version=device_model_version, target_dataset_uuid=target_dataset_uuid)  # 传参
             dataset_uuid, convert_path, device_model, device_model_version = (
                 _gen_one_sim_replay_task(
                     session=session,
                     device_model=device_model,
                     device_model_version=device_model_version,
+                    target_dataset_uuid=target_dataset_uuid,  # 传参
                 )
             )
 
@@ -660,6 +680,7 @@ class SimReplayServer(TaskServer):
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
         device_model: str = "",
         device_model_version: str = "",
+        target_dataset_uuid: str | None = None,  # 新增
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
         logger: logging.Logger | None = None,
     ) -> None:
@@ -673,6 +694,7 @@ class SimReplayServer(TaskServer):
         db_file_path = Path(db_file_path).expanduser().absolute()
         self.device_model = device_model
         self.device_model_version = device_model_version
+        self.target_dataset_uuid = target_dataset_uuid  # 新增
 
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
@@ -688,7 +710,8 @@ class SimReplayServer(TaskServer):
         self.logger.info(
             f"Simulation Replay Server started, "
             f"device_model={self.device_model}, "
-            f"device_model_version={self.device_model_version}"
+            f"device_model_version={self.device_model_version}, "
+            f"target_dataset_uuid={self.target_dataset_uuid}"  # 新增日志
         )
 
     def get_task_category(self) -> str:
@@ -712,12 +735,15 @@ class SimReplayServer(TaskServer):
                     ),
                 )
             )
-            if self.device_model is not None:
+            # 新增：指定UUID时只处理该数据集
+            if self.target_dataset_uuid:
+                query = query.filter(DatasetDB.dataset_uuid == self.target_dataset_uuid)
+            elif self.device_model is not None:
                 query = query.filter(
                     DatasetDB.device_model == self.device_model,
                 )
 
-            if self.device_model_version is not None:
+            if self.device_model_version is not None and not self.target_dataset_uuid:  # 指定UUID时忽略版本过滤
                 query = query.filter(DatasetDB.device_model_version == self.device_model_version)
 
             item = query.first()
@@ -743,7 +769,7 @@ class SimReplayServer(TaskServer):
 
             return {
                 DATASET_UUID: item.dataset_uuid,
-                LEFORMAT_PATH: item.convert_path,
+                LEFORMAT_PATH: item.qced_repo_gen_path,  # 修改：替换为 qced_repo_gen_path
                 DEVICE_MODEL: item.device_model,
                 DEVICE_MODEL_VERSION: item.device_model_version,
                 SIM_REPLAY_CONFIG_MODULE_PATH: sim_replay_config_module_path,
@@ -770,7 +796,7 @@ class SimReplayServer(TaskServer):
             item.sim_replay_error_msg = task_status_msg
             session.commit()
             self.logger.info(
-                f"Upsert {item.convert_path} sim replay status to {convert_status}, "
+                f"Upsert {item.qced_repo_gen_path} sim replay status to {convert_status}, "  # 修改：替换为 qced_repo_gen_path
                 f"update_message: {task_status_msg}"
             )
 
@@ -796,7 +822,7 @@ class SimReplayClient(TaskClient):
         return {}
 
     def _sync_process_task(self, task_content: dict) -> dict:
-        repo_path = task_content.get(LEFORMAT_PATH)
+        repo_path = task_content.get(LEFORMAT_PATH)  # 现在是 qced_repo_gen_path
         sim_replay_config_module_path = task_content.get(SIM_REPLAY_CONFIG_MODULE_PATH)
         sim_replay_config_class_name = task_content.get(SIM_REPLAY_CONFIG_CLASS_NAME)
 
@@ -831,4 +857,3 @@ class SimReplayClient(TaskClient):
                 ERR_MSG: error_msg,
                 TASK_RESULT_CONTENT: {},
             }
-

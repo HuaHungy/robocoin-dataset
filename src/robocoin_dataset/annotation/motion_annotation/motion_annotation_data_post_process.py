@@ -64,11 +64,14 @@ def _get_sim_replay_config_classes_dict(
 
 
 def _sync_motion_annotation_data_post_processing_tasks(
-    session: Session, device_model: str | None = None, device_model_version: str | None = None
+    session: Session, 
+    device_model: str | None = None, 
+    device_model_version: str | None = None,
+    target_dataset_uuid: str | None = None  # 新增
 ) -> None:
     query = session.query(DatasetDB).filter(
         and_(
-            # 必要前提：convert必须成功
+            # 必要前提：sim_replay必须成功
             DatasetDB.sim_replay_status == TaskStatus.COMPLETED,
             # 两个触发分支
             or_(
@@ -82,11 +85,14 @@ def _sync_motion_annotation_data_post_processing_tasks(
             ),
         )
     )
-    if device_model:
+    
+    # 新增：指定UUID时只处理该数据集
+    if target_dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == target_dataset_uuid)
+    elif device_model:
         query = query.filter(
             DatasetDB.device_model == device_model,
         )
-
         if device_model_version:
             query = query.filter(DatasetDB.device_model_version == device_model_version)
 
@@ -94,7 +100,13 @@ def _sync_motion_annotation_data_post_processing_tasks(
 
     if not items:
         return
+    
     for item in items:
+        # 检查 qced_repo_gen_path 是否存在
+        if not item.qced_repo_gen_path or not Path(item.qced_repo_gen_path).exists():
+            logging.warning(f"qced_repo_gen_path not found for dataset {item.dataset_uuid}: {item.qced_repo_gen_path}")
+            continue
+            
         if item.motion_annotation_status == TaskStatus.COMPLETED:
             item.motion_annotation_version = item.motion_annotation_version + 1
         item.motion_annotation_status = TaskStatus.PENDING
@@ -104,34 +116,52 @@ def _sync_motion_annotation_data_post_processing_tasks(
 
 
 def _gen_one_motion_annotation_data_post_processing_task(
-    session: Session, device_model: str = "", device_model_version: str = ""
+    session: Session, 
+    device_model: str = "", 
+    device_model_version: str = "",
+    target_dataset_uuid: str | None = None  # 新增
 ) -> tuple[str | None, str | None, str | None, str | None]:
     query = session.query(DatasetDB).filter(
         DatasetDB.sim_replay_status == TaskStatus.COMPLETED,
         DatasetDB.motion_annotation_status == TaskStatus.PENDING,
     )
-    if device_model:
+    
+    # 新增：指定UUID时只查询该数据集
+    if target_dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == target_dataset_uuid)
+    elif device_model:
         query = query.filter(
             DatasetDB.device_model == device_model,
         )
-
         if device_model_version:
             query = query.filter(DatasetDB.device_model_version == device_model_version)
 
     item = query.first()
     if not item:
         return None, None, None, None
+    
+    # 检查 qced_repo_gen_path 是否存在
+    if not item.qced_repo_gen_path or not Path(item.qced_repo_gen_path).exists():
+        raise FileNotFoundError(f"qced_repo_gen_path not found for dataset {item.dataset_uuid}: {item.qced_repo_gen_path}")
+    
     item.motion_annotation_version = item.motion_annotation_version + 1
     item.motion_annotation_status = TaskStatus.PROCESSING
     item.motion_annotation_version_ps = item.sim_replay_version
     session.commit()
-    return item.dataset_uuid, item.convert_path, item.device_model, item.device_model_version
+    
+    # 修改：返回 qced_repo_gen_path 而非 convert_path
+    return item.dataset_uuid, item.qced_repo_gen_path, item.device_model, item.device_model_version
 
 
 def _motion_annotation_data_post_process(
     repo_path: str | Path,
     sim_replay_config: LerobotSimReplayConfig,
 ) -> None:
+    # 确保路径存在
+    repo_path = Path(repo_path).expanduser().absolute()
+    if not repo_path.exists():
+        raise FileNotFoundError(f"Repository path not found: {repo_path}")
+    
     processor: MotionAnnotationDataPostProcessor = MotionAnnotationDataPostProcessor(
         convert_path=repo_path, sim_replay_config=sim_replay_config
     )
@@ -151,15 +181,18 @@ class MotionAnnotationDataPostProcess:
         self.sim_replay_config_dict = _get_sim_replay_config_classes_dict(sim_replay_config_path)
 
     def motion_annotation_data_post_process_one_dataset(
-        self, device_model: str = "", device_model_version: str = ""
+        self, 
+        device_model: str = "", 
+        device_model_version: str = "",
+        target_dataset_uuid: str | None = None  # 新增
     ) -> None:
         with self.db.with_session() as session:
             _sync_motion_annotation_data_post_processing_tasks(
-                session, device_model, device_model_version
+                session, device_model, device_model_version, target_dataset_uuid  # 传参
             )
             dataset_uuid, convert_path, device_model, device_model_version = (
                 _gen_one_motion_annotation_data_post_processing_task(
-                    session, device_model, device_model_version
+                    session, device_model, device_model_version, target_dataset_uuid  # 传参
                 )
             )
             if dataset_uuid is None:
@@ -215,6 +248,7 @@ class MotionAnnotationDataPostProcessServer(TaskServer):
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
         device_model: str = "",
         device_model_version: str = "",
+        target_dataset_uuid: str | None = None,  # 新增
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
         logger: logging.Logger | None = None,
     ) -> None:
@@ -228,6 +262,7 @@ class MotionAnnotationDataPostProcessServer(TaskServer):
         db_file_path = Path(db_file_path).expanduser().absolute()
         self.device_model = device_model
         self.device_model_version = device_model_version
+        self.target_dataset_uuid = target_dataset_uuid  # 新增
 
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
@@ -242,7 +277,8 @@ class MotionAnnotationDataPostProcessServer(TaskServer):
         self.logger.info(
             f"EEF Sim Data Post Process Server started, "
             f"device_model={self.device_model}, "
-            f"device_model_version={self.device_model_version}"
+            f"device_model_version={self.device_model_version}, "
+            f"target_dataset_uuid={self.target_dataset_uuid}"  # 新增日志
         )
 
     def get_task_category(self) -> str:
@@ -252,7 +288,7 @@ class MotionAnnotationDataPostProcessServer(TaskServer):
         with self.db.with_session() as session:
             query = session.query(DatasetDB).filter(
                 and_(
-                    # 必要前提：convert必须成功
+                    # 必要前提：sim_replay必须成功
                     DatasetDB.sim_replay_status == TaskStatus.COMPLETED,
                     # 两个触发分支
                     or_(
@@ -266,18 +302,25 @@ class MotionAnnotationDataPostProcessServer(TaskServer):
                     ),
                 )
             )
-            if self.device_model is not None:
+            
+            # 新增：指定UUID时只处理该数据集
+            if self.target_dataset_uuid:
+                query = query.filter(DatasetDB.dataset_uuid == self.target_dataset_uuid)
+            elif self.device_model is not None:
                 query = query.filter(
                     DatasetDB.device_model == self.device_model,
                 )
-
-            if self.device_model_version is not None:
+            if self.device_model_version is not None and not self.target_dataset_uuid:
                 query = query.filter(DatasetDB.device_model_version == self.device_model_version)
 
             item = query.first()
 
             if not item:
                 return None
+
+            # 检查 qced_repo_gen_path 是否存在
+            if not item.qced_repo_gen_path or not Path(item.qced_repo_gen_path).exists():
+                raise FileNotFoundError(f"qced_repo_gen_path not found for dataset {item.dataset_uuid}: {item.qced_repo_gen_path}")
 
             item.motion_annotation_status = TaskStatus.PROCESSING
             item.motion_annotation_version = item.motion_annotation_version + 1
@@ -297,7 +340,7 @@ class MotionAnnotationDataPostProcessServer(TaskServer):
 
             return {
                 DATASET_UUID: item.dataset_uuid,
-                LEFORMAT_PATH: item.convert_path,
+                LEFORMAT_PATH: item.qced_repo_gen_path,  # 修改：替换为 qced_repo_gen_path
                 DEVICE_MODEL: item.device_model,
                 DEVICE_MODEL_VERSION: item.device_model_version,
                 SIM_REPLAY_CONFIG_MODULE_PATH: sim_replay_module_path,
@@ -320,13 +363,16 @@ class MotionAnnotationDataPostProcessServer(TaskServer):
             item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
             if item is None:
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+                return
 
             # 在同一个session中更新转换状态
             item.motion_annotation_status = motion_annotation_status
             item.motion_annotation_err_msg = task_status_msg
             session.commit()
+            
+            # 修改：日志中使用 qced_repo_gen_path
             self.logger.info(
-                f"Upsert {item.convert_path} motion annotation data post process status to {motion_annotation_status}, "
+                f"Upsert {item.qced_repo_gen_path} motion annotation data post process status to {motion_annotation_status}, "
                 f"update_message: {task_status_msg}"
             )
 
@@ -353,9 +399,14 @@ class MotionAnnotationDataPostProcessClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
-            repo_path = task_content.get(LEFORMAT_PATH)
+            repo_path = task_content.get(LEFORMAT_PATH)  # 现在是 qced_repo_gen_path
             sim_replay_module_path = task_content.get(SIM_REPLAY_CONFIG_MODULE_PATH)
             sim_replay_class_name = task_content.get(SIM_REPLAY_CONFIG_CLASS_NAME)
+
+            # 确保路径存在
+            repo_path = Path(repo_path).expanduser().absolute()
+            if not repo_path.exists():
+                raise FileNotFoundError(f"Repository path not found: {repo_path}")
 
             sim_replay_config_class = importlib.import_module(
                 sim_replay_module_path
@@ -366,6 +417,9 @@ class MotionAnnotationDataPostProcessClient(TaskClient):
                 repo_path=repo_path, sim_replay_config=sim_replay_config
             )
 
+            self.logger.info(f"Motion annotation post process succeeded for {repo_path}")
             return {}
         except Exception as e:
+            repo_path = task_content.get(LEFORMAT_PATH, "unknown path")
+            self.logger.error(f"Motion annotation post process failed for {repo_path}: {str(e)}")
             raise RuntimeError(f"motion annotation post process dataset {repo_path} failed") from e

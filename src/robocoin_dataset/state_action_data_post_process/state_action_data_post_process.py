@@ -34,6 +34,9 @@ PROCESSOR_LOG_DIR = "processor_log_dir"
 PROCESSOR_LOG_NAME = "processor_log_name"
 DEVICE_MODEL_VERSION = "device_model_version"
 
+# 新增：定义 qced 相关常量（保持代码风格一致性）
+QCED_REPO_GEN_PATH = "qced_repo_gen_path"
+
 
 def _get_config_classes_dict(
     state_action_dpp_classes_config_file_path: str | Path,
@@ -64,29 +67,37 @@ def _get_config_classes_dict(
 
 
 def _sync_state_action_data_post_processing_tasks(
-    session: Session, device_model: str | None = None, device_model_version: str | None = None
+    session: Session, 
+    device_model: str | None = None, 
+    device_model_version: str | None = None,
+    dataset_uuid: str | None = None,  # 新增：支持指定uuid
 ) -> None:
+    # 核心修改1：移除 convert_status 判断，新增 qced_repo_gen_status == TaskStatus.COMPLETED
     query = session.query(DatasetDB).filter(
         and_(
-            # 必要前提：convert必须成功
-            DatasetDB.convert_status == TaskStatus.COMPLETED,
-            # 两个触发分支
+            # 新前提：qced repo 生成必须成功完成
+            DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,
+            # 两个触发分支（逻辑不变，仅依赖新前提）
             or_(
                 # 分支1: 正在排队
                 DatasetDB.sa_dpp_status == TaskStatus.PENDING,
                 # 分支2: 已完成但版本过期
                 and_(
                     DatasetDB.sa_dpp_status == TaskStatus.COMPLETED,
-                    DatasetDB.sa_dpp_version_ps < DatasetDB.convert_version,
+                    DatasetDB.sa_dpp_version_ps < DatasetDB.qced_repo_gen_version,  # 同步：改为 qced 版本
                 ),
             ),
         )
     )
+    
+    # 新增：支持指定 dataset_uuid 过滤
+    if dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == dataset_uuid)
+    
     if device_model:
         query = query.filter(
             DatasetDB.device_model == device_model,
         )
-
         if device_model_version:
             query = query.filter(DatasetDB.device_model_version == device_model_version)
 
@@ -97,37 +108,51 @@ def _sync_state_action_data_post_processing_tasks(
     for item in items:
         item.sa_dpp_status = TaskStatus.PENDING
         item.sa_dpp_version = item.sa_dpp_version + 1
-        item.sa_dpp_version_ps = item.convert_version
+        item.sa_dpp_version_ps = item.qced_repo_gen_version  # 同步：改为 qced 版本
 
     session.commit()
 
 
 def _gen_one_state_action_data_post_processing_task(
-    session: Session, device_model: str = "", device_model_version: str = ""
+    session: Session, 
+    device_model: str = "", 
+    device_model_version: str = "",
+    dataset_uuid: str = "",  # 新增：支持指定uuid
 ) -> tuple[str | None, str | None, str | None, str | None]:
+    # 核心修改2：移除 convert_status 判断，新增 qced_repo_gen_status == TaskStatus.COMPLETED
     query = session.query(DatasetDB).filter(
-        DatasetDB.sa_dpp_status == TaskStatus.PENDING,
+        and_(
+            DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,
+            DatasetDB.sa_dpp_status == TaskStatus.PENDING,
+        )
     )
+    
+    # 新增：支持指定 dataset_uuid 过滤
+    if dataset_uuid:
+        query = query.filter(DatasetDB.dataset_uuid == dataset_uuid)
+    
     if device_model:
         query = query.filter(
             DatasetDB.device_model == device_model,
         )
-
         if device_model_version:
             query = query.filter(DatasetDB.device_model_version == device_model_version)
 
     item = query.first()
     if not item:
         return None, None, None, None
+    
     item.sa_dpp_status = TaskStatus.PROCESSING
-    item.sa_dpp_version_ps = item.convert_version
+    item.sa_dpp_version_ps = item.qced_repo_gen_version  # 同步：改为 qced 版本
     item.sa_dpp_version = item.sa_dpp_version + 1
     session.commit()
-    return item.dataset_uuid, item.convert_path, item.device_model, item.device_model_version
+    
+    # 核心修改3：返回 qced_repo_gen_path 而非 convert_path
+    return item.dataset_uuid, item.qced_repo_gen_path, item.device_model, item.device_model_version
 
 
 def _state_action_data_post_process(
-    convert_path: str | Path,
+    convert_path: str | Path,  # 变量名保留（兼容原有逻辑），实际传入的是 qced_repo_gen_path
     processor_class: type[StateActionDataPostProcessorBase],
 ) -> None:
     if processor_class is None:
@@ -149,15 +174,20 @@ class StateActionDataPostProcess:
         self.processor_classes_dict = _get_config_classes_dict(processor_class_config_path)
 
     def state_action_data_post_process_one_dataset(
-        self, device_model: str = "", device_model_version: str = ""
+        self, 
+        device_model: str = "", 
+        device_model_version: str = "",
+        dataset_uuid: str = "",  # 新增：支持指定uuid
     ) -> None:
         with self.db.with_session() as session:
+            # 传入 dataset_uuid 进行同步
             _sync_state_action_data_post_processing_tasks(
-                session, device_model, device_model_version
+                session, device_model, device_model_version, dataset_uuid
             )
-            dataset_uuid, convert_path, device_model, device_model_version = (
+            # 传入 dataset_uuid 生成任务
+            dataset_uuid, qced_repo_gen_path, device_model, device_model_version = (
                 _gen_one_state_action_data_post_processing_task(
-                    session, device_model, device_model_version
+                    session, device_model, device_model_version, dataset_uuid
                 )
             )
             if dataset_uuid is None:
@@ -174,7 +204,8 @@ class StateActionDataPostProcess:
                 raise ValueError(
                     f"processor_class not found for {device_model} {device_model_version}"
                 )
-            _state_action_data_post_process(convert_path, processor_class)
+            # 传入 qced_repo_gen_path 进行处理
+            _state_action_data_post_process(qced_repo_gen_path, processor_class)
             with self.db.with_session() as session:
                 item = (
                     session.query(DatasetDB).filter(DatasetDB.dataset_uuid == dataset_uuid).first()
@@ -191,7 +222,7 @@ class StateActionDataPostProcess:
                 item.sa_dpp_status = TaskStatus.FAILED
                 item.sa_dpp_err_msg = str(traceback.format_exc())
                 session.commit()
-            self.logger.error(f"State Action Data post process dataset {convert_path} failed: {e}")
+            self.logger.error(f"State Action Data post process dataset {qced_repo_gen_path} failed: {e}")
 
 
 class StateActionDataPostProcessServer(TaskServer):
@@ -204,6 +235,7 @@ class StateActionDataPostProcessServer(TaskServer):
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
         device_model: str = "",
         device_model_version: str = "",
+        dataset_uuid: str = "",  # 核心新增：添加 dataset_uuid 实例变量
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
         logger: logging.Logger | None = None,
     ) -> None:
@@ -217,6 +249,7 @@ class StateActionDataPostProcessServer(TaskServer):
         db_file_path = Path(db_file_path).expanduser().absolute()
         self.device_model = device_model
         self.device_model_version = device_model_version
+        self.dataset_uuid = dataset_uuid  # 核心新增：存储 UUID 为实例变量
 
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
@@ -233,39 +266,48 @@ class StateActionDataPostProcessServer(TaskServer):
             state_action_dpp_classes_config_path
         )
 
-        self.logger.info(
+        # 优化日志：打印 UUID 信息
+        log_msg = (
             f"State Action Data Post Process Server started, "
             f"device_model={self.device_model}, "
             f"device_model_version={self.device_model_version}"
         )
+        if self.dataset_uuid:
+            log_msg += f", dataset_uuid={self.dataset_uuid}"
+        self.logger.info(log_msg)
 
     def get_task_category(self) -> str:
         return "state_action_data_post_process"
 
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
+            # 核心修改4：服务端生成任务时，移除 convert_status，新增 qced_repo_gen_status 判断
             query = session.query(DatasetDB).filter(
                 and_(
-                    # 必要前提：convert必须成功
-                    DatasetDB.convert_status == TaskStatus.COMPLETED,
-                    # 两个触发分支
+                    # 新前提：qced repo 生成必须成功完成
+                    DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,
+                    # 两个触发分支（逻辑不变，仅依赖新前提）
                     or_(
                         # 分支1: 正在排队
                         DatasetDB.sa_dpp_status == TaskStatus.PENDING,
                         # 分支2: 已完成但版本过期
                         and_(
                             DatasetDB.sa_dpp_status == TaskStatus.COMPLETED,
-                            DatasetDB.sa_dpp_version_ps < DatasetDB.convert_version,
+                            DatasetDB.sa_dpp_version_ps < DatasetDB.qced_repo_gen_version,  # 同步：改为 qced 版本
                         ),
                     ),
                 )
             )
-            if self.device_model is not None:
+            # 核心新增：使用实例变量 dataset_uuid 过滤查询
+            if self.dataset_uuid and self.dataset_uuid != "":
+                query = query.filter(DatasetDB.dataset_uuid == self.dataset_uuid)
+            
+            if self.device_model is not None and self.device_model != "":
                 query = query.filter(
                     DatasetDB.device_model == self.device_model,
                 )
 
-            if self.device_model_version is not None:
+            if self.device_model_version is not None and self.device_model_version != "":
                 query = query.filter(DatasetDB.device_model_version == self.device_model_version)
 
             item = query.first()
@@ -275,7 +317,7 @@ class StateActionDataPostProcessServer(TaskServer):
 
             item.sa_dpp_status = TaskStatus.PROCESSING
             item.sa_dpp_version = item.sa_dpp_version + 1
-            item.sa_dpp_version_ps = item.convert_version
+            item.sa_dpp_version_ps = item.qced_repo_gen_version  # 同步：改为 qced 版本
 
             session.commit()
             converter_module_path, converter_class_name = self.processor_classes_config_dict.get(
@@ -287,9 +329,11 @@ class StateActionDataPostProcessServer(TaskServer):
                     f"No processor config found for device model {item.device_model} and version {item.device_model_version}"
                 )
 
+            # 核心修改5：任务内容中返回 qced_repo_gen_path 而非 convert_path
             return {
                 DATASET_UUID: item.dataset_uuid,
-                LEFORMAT_PATH: item.convert_path,
+                LEFORMAT_PATH: item.convert_path,  # 保留兼容，新增 qced 路径字段
+                QCED_REPO_GEN_PATH: item.qced_repo_gen_path,  # 新增：传递 qced repo 生成路径
                 DEVICE_MODEL: item.device_model,
                 DEVICE_MODEL_VERSION: item.device_model_version,
                 PROCESSOR_MODULE_PATH: converter_module_path,
@@ -304,19 +348,20 @@ class StateActionDataPostProcessServer(TaskServer):
 
         sa_dpp_status = TaskStatus.COMPLETED if task_status == TASK_SUCCESS else TaskStatus.FAILED
 
-        # 🆕 合并为单个session，保证原子性
+        # 合并为单个session，保证原子性
         with self.db.with_session() as session:
             # 查询 device_model_version
             item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
             if item is None:
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+                return
 
             # 在同一个session中更新转换状态
             item.sa_dpp_status = sa_dpp_status
             item.sa_dpp_err_msg = task_status_msg
             session.commit()
             self.logger.info(
-                f"Upsert {item.convert_path} state action data post process status to {sa_dpp_status}, "
+                f"Upsert {item.qced_repo_gen_path} state action data post process status to {sa_dpp_status}, "  # 改为 qced 路径
                 f"update_message: {task_status_msg}"
             )
 
@@ -343,7 +388,11 @@ class StateActionDataPostProcessClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
-            convert_path = task_content.get(LEFORMAT_PATH)
+            # 核心修改6：客户端获取 qced_repo_gen_path 而非 convert_path
+            qced_repo_gen_path = task_content.get(QCED_REPO_GEN_PATH)
+            if not qced_repo_gen_path:
+                raise ValueError("qced_repo_gen_path not found in task content")
+            
             processor_module_path = task_content.get(PROCESSOR_MODULE_PATH)
             processor_class_name = task_content.get(PROCESSOR_CLASS_NAME)
 
@@ -351,12 +400,15 @@ class StateActionDataPostProcessClient(TaskClient):
                 processor_class_name
             )
 
+            # 传入 qced_repo_gen_path 进行处理
             _state_action_data_post_process(
-                convert_path=convert_path, processor_class=processor_class
+                convert_path=qced_repo_gen_path, processor_class=processor_class
             )
 
             return {}
         except Exception as e:
+            # 修正：使用 qced 路径打印错误日志
+            qced_repo_gen_path = task_content.get(QCED_REPO_GEN_PATH, "unknown path")
             raise RuntimeError(
-                f"state action data post process dataset {convert_path} failed"
+                f"state action data post process dataset {qced_repo_gen_path} failed"
             ) from e

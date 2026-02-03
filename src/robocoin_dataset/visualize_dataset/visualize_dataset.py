@@ -54,7 +54,6 @@ def get_annotation_text(batch: dict, idx: int) -> str:
         annotation_text += f"Task:\n{batch['task'][idx]};\n"
     annotation_text += "\n"
     # subtasks
-
     if "subtasks" in batch:
         annotation_text += f"Subtasks:\n{batch['subtasks'][idx]}\n"
     annotation_text += "\n"
@@ -213,6 +212,7 @@ class DatasetVisualizerServer(TaskServer):
         heartbeat_interval: float = 30.0,  # 服务端每30秒发一次 ping
         timeout: float = 15.0,  # 等待 pong 超过15秒则断开
         device_model: str | None = None,
+        target_dataset_uuid: str | None = None,  # 新增参数
         logger: logging.Logger | None = None,
     ) -> None:
         super().__init__(
@@ -227,6 +227,7 @@ class DatasetVisualizerServer(TaskServer):
         self.db_file_path: Path = Path(db_file_path).expanduser().absolute()
         self.db = DatasetDatabase(self.db_file_path)
         self.device_model = device_model
+        self.target_dataset_uuid = target_dataset_uuid  # 新增属性
         self.logger = logger or logging.getLogger(__name__)
 
     def get_task_category(self) -> str:
@@ -236,8 +237,8 @@ class DatasetVisualizerServer(TaskServer):
         with self.db.with_session() as session:
             query = session.query(DatasetDB).filter(
                 and_(
-                    # 必要前提：convert必须成功
-                    DatasetDB.data_loader_detection_status == TaskStatus.COMPLETED,
+                    # 关键修改1：前置条件改为 data_merge_status 完成
+                    DatasetDB.data_merge_status == TaskStatus.COMPLETED,
                     # 两个触发分支
                     or_(
                         # 分支1: 正在排队
@@ -245,12 +246,17 @@ class DatasetVisualizerServer(TaskServer):
                         # 分支2: 已完成但版本过期
                         and_(
                             DatasetDB.visualize_check_status == TaskStatus.COMPLETED,
-                            DatasetDB.visualize_check_version_ps
-                            != DatasetDB.data_loader_detection_version,
+                            # 关键修改2：版本基准改为 data_merge_version
+                            DatasetDB.visualize_check_version_ps != DatasetDB.data_merge_version,
                         ),
                     ),
                 )
             )
+            
+            # ========== 新增：如果指定了 UUID，仅筛选该 UUID ==========
+            if self.target_dataset_uuid:
+                query = query.filter(DatasetDB.dataset_uuid == self.target_dataset_uuid)
+            
             print(f"device_model: {self.device_model}")
             if self.device_model:
                 query = query.filter(
@@ -275,13 +281,14 @@ class DatasetVisualizerServer(TaskServer):
 
             item.visualize_check_status = TaskStatus.PROCESSING
             item.visualize_check_version = item.visualize_check_version + 1
-            item.visualize_check_version_ps = item.data_loader_detection_version
+            # 关键修改3：版本关联改为 data_merge_version
+            item.visualize_check_version_ps = item.data_merge_version
 
             session.commit()
 
             return {
                 DATASET_UUID: item.dataset_uuid,
-                HARD_LINK_PATH: hard_link_item.hard_link_path,
+                HARD_LINK_PATH: hard_link_item.hard_link_path,  # 源路径保持不变
             }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -296,12 +303,13 @@ class DatasetVisualizerServer(TaskServer):
             item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
             if item is None:
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+                return  # 增加防护，避免后续报错
 
             print(item.visualize_check_status)
             item.visualize_check_status = convert_status
             item.visualize_check_err_msg = task_status_msg
             self.logger.info(
-                f"Upsert {item.convert_path} visualize checke status to {convert_status}, "
+                f"Upsert {item.convert_path} visualize check status to {convert_status}, "
                 f"update_message: {task_status_msg}"
             )
             session.commit()

@@ -25,11 +25,6 @@ from robocoin_dataset.format_converter.tolerobot.constant import (
     LEFORMAT_PATH,
 )
 
-# from robocoin_dataset.utils.parquet_paths import (
-#     get_episode_stats_file_path,
-#     get_meta_info_file_path,
-#     get_parquet_paths,
-# )
 from robocoin_dataset.utils.le_path import (
     get_episode_num,
     get_episodes_stats_jsonl_file,
@@ -49,24 +44,13 @@ def _get_string_from_uuid_list(uuids: list[str]) -> str:
 class DataMergeConfig:
     pre_stage_set: set[tuple[str, str, str]] = {
         (
-            DatasetDB.video_embed_subtask_annotation_status,
-            DatasetDB.video_embed_subtask_annotation_version,
-            DatasetDB.data_merge_version_ps_sta,
-        ),
-        (
-            DatasetDB.scene_annotation_status,
-            DatasetDB.scene_annotation_version,
-            DatasetDB.data_merge_version_ps_sa,
-        ),
-        (
             DatasetDB.motion_annotation_status,
             DatasetDB.motion_annotation_version,
             DatasetDB.data_merge_version_ps_ma,
         ),
     }
-    patch_features = ["subtask_annotation", "scene_annotation", "motion_annotation", "state_action"]
-
-    merge_feature = "merged"
+    patch_features = ["motion_annotation", "state_action"]
+    merge_feature = None
 
 
 def _merge_episode_parquet_files(
@@ -357,26 +341,21 @@ def _sync_tasks(
 def _sync_data_merge_tasks(
     session: Session, device_model: str | None = None, device_model_version: str | None = None
 ) -> None:
+    # 仅筛选【运动标注完成】的数据集，删除视频嵌入、场景标注的筛选条件
     query = (
         session.query(DatasetDB)
+        .filter(DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED)  # 新增：格式转换完成
         .filter(DatasetDB.motion_annotation_status == TaskStatus.COMPLETED)
-        .filter(DatasetDB.video_embed_subtask_annotation_status == TaskStatus.COMPLETED)
-        .filter(DatasetDB.scene_annotation_status == TaskStatus.COMPLETED)
     )
 
+    # 触发条件：仅判断运动标注的版本是否过期，删除另外两个版本的判断
     query = query.filter(
         or_(
             DatasetDB.data_merge_status == TaskStatus.PENDING,
             and_(
                 DatasetDB.data_merge_status == TaskStatus.COMPLETED,
-                or_(
-                    DatasetDB.data_merge_version_ps_ma < DatasetDB.motion_annotation_version,
-                    or_(
-                        DatasetDB.data_merge_version_ps_sa < DatasetDB.scene_annotation_version,
-                        DatasetDB.data_merge_version_ps_sta
-                        < DatasetDB.video_embed_subtask_annotation_version,
-                    ),
-                ),
+                # 仅保留运动标注的版本过期判断
+                DatasetDB.data_merge_version_ps_ma < DatasetDB.motion_annotation_version,
             ),
         )
     )
@@ -385,19 +364,17 @@ def _sync_data_merge_tasks(
         query = query.filter(
             DatasetDB.device_model == device_model,
         )
-
         if device_model_version:
             query = query.filter(DatasetDB.device_model_version == device_model_version)
 
     items = query.all()
-
     if not items:
         return
+    
     for item in items:
         item.data_merge_status = TaskStatus.PENDING
+        # 仅同步运动标注的版本，删除另外两个版本的同步
         item.data_merge_version_ps_ma = item.motion_annotation_version
-        item.data_merge_version_ps_sa = item.scene_annotation_version
-        item.data_merge_version_ps_sta = item.video_embed_subtask_annotation_version
 
     session.commit()
 
@@ -410,15 +387,16 @@ def _gen_one_dataset_data_merge_task(
         .filter(
             DatasetDB.data_merge_status == TaskStatus.PENDING,
         )
-        .filter(
-            DatasetDB.video_embed_subtask_annotation_status == TaskStatus.COMPLETED,
-        )
+        # .filter(
+        #     DatasetDB.video_embed_subtask_annotation_status == TaskStatus.COMPLETED,
+        # )
         .filter(
             DatasetDB.motion_annotation_status == TaskStatus.COMPLETED,
         )
-        .filter(
-            DatasetDB.scene_annotation_status == TaskStatus.COMPLETED,
-        )
+        .filter(DatasetDB.qced_repo_gen_status == TaskStatus.COMPLETED,) 
+        # .filter(
+        #     DatasetDB.scene_annotation_status == TaskStatus.COMPLETED,
+        # )
     )
     item = query.first()
     if not item:
@@ -426,7 +404,8 @@ def _gen_one_dataset_data_merge_task(
     item.data_merge_status = TaskStatus.PROCESSING
     item.data_merge_version = item.data_merge_version + 1
     session.commit()
-    return item.dataset_uuid, item.convert_path
+    # ========== 核心修改：将 convert_path 改为 qced_repo_gen_path ==========
+    return item.dataset_uuid, item.qced_repo_gen_path
 
 
 class DataMerger:
@@ -452,6 +431,7 @@ class DataMerger:
     def merge_data_one_dataset(self) -> None:
         with self.db.with_session() as session:
             _sync_data_merge_tasks(session)
+            # 接收的路径已改为 qced_repo_gen_path，变量名可保留（不影响逻辑）
             dataset_uuid, repo_path = _gen_one_dataset_data_merge_task(session=session)
             if dataset_uuid is None:
                 return
@@ -506,13 +486,14 @@ class DataMergerServer(TaskServer):
     def generate_task_content(self) -> dict | None:
         with self.db.with_session() as session:
             _sync_data_merge_tasks(session)
+            # 接收的路径已改为 qced_repo_gen_path
             dataset_uuid, repo_path = _gen_one_dataset_data_merge_task(session)
 
             if not dataset_uuid:
                 return None
             return {
                 DATASET_UUID: dataset_uuid,
-                LEFORMAT_PATH: repo_path,
+                LEFORMAT_PATH: repo_path,  # 传递的是 qced_repo_gen_path
             }
 
     def handle_task_result(self, task_content: dict, task_result_content: dict) -> None:
@@ -531,13 +512,15 @@ class DataMergerServer(TaskServer):
             item = session.query(DatasetDB).filter(DatasetDB.dataset_uuid == ds_uuid).first()
             if item is None:
                 self.logger.error(f"Dataset {ds_uuid} not found in dataset DB.")
+                return  # 新增：避免后续空指针
 
             # 在同一个session中更新转换状态
             item.data_merge_status = data_merge_status
             item.data_merge_err_msg = task_status_msg
             session.commit()
+            # ========== 日志中也改为 qced_repo_gen_path ==========
             self.logger.info(
-                f"Upsert {item.convert_path} data merge status to {data_merge_status}, "
+                f"Upsert {item.qced_repo_gen_path} data merge status to {data_merge_status}, "
                 f"update_message: {task_status_msg}"
             )
 
@@ -566,6 +549,7 @@ class DataMergerClient(TaskClient):
 
     def _sync_process_task(self, task_content: dict) -> dict:
         try:
+            # 接收的是 qced_repo_gen_path
             repo_path = task_content.get(LEFORMAT_PATH)
             self.logger.info(f"merge_data: {repo_path}")
             merge_dataset_data(
@@ -576,4 +560,5 @@ class DataMergerClient(TaskClient):
 
             return {}
         except Exception as e:
+            # 异常日志中也使用 qced_repo_gen_path
             raise RuntimeError(f"data merge dataset {repo_path} failed") from e

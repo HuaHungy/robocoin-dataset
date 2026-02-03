@@ -39,6 +39,14 @@ async def main() -> None:
         help="Device model version to post process state and action data",
     )
 
+    # 新增：dataset_uuid 参数（和参考示例命名对齐，支持 target_dataset_uuid 别名）
+    parser.add_argument(
+        "--target_dataset_uuid",  # 增加别名，和参考示例保持一致
+        type=str,
+        default=None,
+        help="Specific dataset UUID to post process (optional, if not specified, process all qualified datasets)",
+    )
+
     parser.add_argument(
         "--log_dir",
         type=str,
@@ -67,17 +75,22 @@ async def main() -> None:
     )
     device_model = args.device_model
     device_model_version = args.device_model_version
+    # 获取 UUID 参数（兼容别名）
+    dataset_uuid = args.target_dataset_uuid
 
+    # 校验数据库文件存在
     if not db_file_path.exists():
         print(f"{db_file_path} does not exist")
         exit(1)
 
+    # 初始化日志
     logger = setup_logger(
         name="state action data post process server",
         log_dir=Path(args.log_dir),
         level=logging.INFO,
     )
 
+    # 核心修改：将 dataset_uuid 传递给 StateActionDataPostProcessServer 实例
     processor_server = StateActionDataPostProcessServer(
         db_file_path=db_file_path,
         state_action_dpp_classes_config_path=state_action_data_post_process_factory_config_path,
@@ -86,6 +99,7 @@ async def main() -> None:
         heartbeat_interval=30.0,
         device_model=device_model,
         device_model_version=device_model_version,
+        dataset_uuid=dataset_uuid,  # 传入 UUID
         timeout=15.0,
         logger=logger,
     )
@@ -95,13 +109,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-"""usage:
-# realman_rmc_aidal
-python scripts/state_action_data_post_process/state_action_data_post_process_server.py \
-    --db_file_path /mnt/db/datasets_new.db \
-    --state_action_data_post_process_factory_config_path ./scripts/state_action_data_post_process/configs/state_action_data_post_process_factory_config.yaml \
-    --device_model realman_rmc_aidal \
-    --device_model_version mcap_version \
-    --log_dir ./logs/stat_action_data_post_process
-"""
