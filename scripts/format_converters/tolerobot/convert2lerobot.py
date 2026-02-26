@@ -18,6 +18,54 @@ from robocoin_dataset.format_converter.tolerobot.lerobot_format_converter import
 from robocoin_dataset.utils.logger import setup_logger
 
 
+import time
+import datetime
+from typing import List, Dict
+
+def generate_conversion_report(
+    output_path: Path,
+    device_model: str,
+    device_model_version: str | None,
+    total_episodes: int,
+    success_count: int,
+    total_time: float,
+    episode_stats: List[Dict],
+    dataset_path: Path,
+    log_file: Path | None = None
+):
+    """Generate a Markdown report for the conversion process."""
+    report_path = output_path / "CONVERSION_REPORT.md"
+    avg_time = total_time / total_episodes if total_episodes > 0 else 0
+    fps = sum(s['frames'] for s in episode_stats) / total_time if total_time > 0 else 0
+    
+    with open(report_path, "w") as f:
+        f.write(f"# LeRobot Conversion Report\n\n")
+        f.write(f"**Date**: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"**Device Model**: `{device_model}` (Version: `{device_model_version}`)\n")
+        f.write(f"**Input Dataset**: `{dataset_path}`\n")
+        f.write(f"**Output Directory**: `{output_path}`\n\n")
+        
+        f.write("## 1. Performance Summary\n")
+        f.write(f"- **Total Episodes**: {total_episodes}\n")
+        f.write(f"- **Success Rate**: {success_count}/{total_episodes} ({(success_count/total_episodes)*100:.1f}%)\n")
+        f.write(f"- **Total Time**: {total_time:.2f} s\n")
+        f.write(f"- **Average Time per Episode**: {avg_time:.2f} s\n")
+        f.write(f"- **Processing Speed**: {fps:.2f} frames/s\n\n")
+        
+        f.write("## 2. Episode Details\n")
+        f.write("| Episode ID | Frames | Duration (s) | FPS | Status |\n")
+        f.write("| :--- | :--- | :--- | :--- | :--- |\n")
+        
+        for stat in episode_stats:
+            status = "✅ Success" if stat['success'] else "❌ Failed"
+            f.write(f"| {stat['index']} | {stat['frames']} | {stat['duration']:.2f} | {stat['fps']:.2f} | {status} |\n")
+            
+        if log_file and log_file.exists():
+            f.write("\n## 3. Logs\n")
+            f.write(f"Full logs are available at: `{log_file}`\n")
+
+    print(f"Conversion report generated at: {report_path}")
+
 def convert2lerobot(
     device_model: str,
     dataset_path: Path,
@@ -32,6 +80,7 @@ def convert2lerobot(
     device_model_version: str | None = None,
     is_test: bool = False,
     auto_reencode: bool = False,
+    max_episodes: int | None = None,
 ) -> LerobotFormatConverter:
     """
     Convert dataset to lerobot format.
@@ -40,6 +89,8 @@ def convert2lerobot(
         dataset_path (str): Path to dataset.
         output_path (str): Path to output directory.
     """
+    start_time = time.time()
+    episode_stats = []
 
     if not factory_config_path.exists():
         raise FileNotFoundError(f"Factory config file {factory_config_path} does not exist.")
@@ -84,6 +135,13 @@ def convert2lerobot(
         log_dir=log_dir,
         level=logging.INFO,
     )
+    
+    # Get the actual log file path from the file handler
+    log_file_path = None
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            log_file_path = Path(handler.baseFilename)
+            break
 
     converter: LerobotFormatConverter = LerobotFormatConverterFactory.create_converter(
         dataset_path=dataset_path,
@@ -104,19 +162,97 @@ def convert2lerobot(
     total_episodes = converter.get_episodes_num()
     if is_test:
         total_episodes = 1
+    elif max_episodes is not None and max_episodes > 0:
+        total_episodes = min(total_episodes, max_episodes)
 
+    success_count = 0
+    converted_count = 0
+    
+    # Use convert() generator but stop early if max_episodes is reached
+    # Note: converter.convert() handles is_test logic internally, but not max_episodes
+    # We need to manually break the loop if not is_test but max_episodes is set
+    
     for task, task_ep_idx, ep_idx in tqdm(
         converter.convert(is_test=is_test),
         total=total_episodes,
         desc="Converting Dataset",
         unit="episode",
     ):
+        ep_start = time.time()
         logger.info(f"Converted episode {task_ep_idx} of task {task}, total ep_idx is:{ep_idx}")
+        ep_duration = time.time() - ep_start
+        
+        success_count += 1
+        converted_count += 1
+        
+        # Try to retrieve actual stats from converter's mapping if available
+        # Note: ep_idx in the loop is the global LeRobot index
+        frames = 0
+        
+        # We need to find the entry in episode_source_mapping that corresponds to this global_ep_idx
+        # The keys in episode_source_mapping are original_ep_idx, not global_ep_idx
+        if hasattr(converter, 'episode_source_mapping'):
+            for orig_idx, info in converter.episode_source_mapping.items():
+                if info.get("global_ep_idx") == ep_idx:
+                    frames = info.get("converted_frames", 0)
+                    break
+        
+        episode_stats.append({
+            "index": ep_idx,
+            "frames": frames, 
+            "duration": ep_duration,
+            "fps": frames / ep_duration if ep_duration > 0 else 0,
+            "success": True
+        })
+        
+        if max_episodes is not None and converted_count >= max_episodes:
+            break
     
     # Save episode source mapping after conversion completes
     if not is_test:
         converter.save_episode_source_mapping()
-        converter.save_original_data_paths()  # 🆕 保存原始数据绝对路径映射
+        converter.save_original_data_paths()
+    
+    total_time = time.time() - start_time
+    
+    # Generate the markdown report
+    generate_conversion_report(
+        output_path=output_path,
+        device_model=device_model,
+        device_model_version=device_model_version,
+        total_episodes=total_episodes,
+        success_count=success_count,
+        total_time=total_time,
+        episode_stats=episode_stats,
+        dataset_path=dataset_path,
+        log_file=log_file_path
+    )
+    
+    # Automatically run evaluation script if conversion was successful and not empty
+    if success_count > 0 and output_path.exists():
+        try:
+            print("\nRunning evaluation script...")
+            # Import and run the evaluator
+            import sys
+            # Add src to path to import evaluator
+            src_path = Path(__file__).resolve().parents[3] / "src"
+            if str(src_path) not in sys.path:
+                sys.path.append(str(src_path))
+            
+            # Run the evaluator as a subprocess to avoid import issues or conflicts
+            import subprocess
+            eval_script = src_path / "robocoin_dataset/convert_test/evaluate_lerobot.py"
+            subprocess.run([sys.executable, str(eval_script), str(output_path)], check=True)
+            
+            # Append evaluation summary to conversion report?
+            # Or just leave them side-by-side. User requested "evaluation report should also be there".
+            # They are in the same folder now.
+            
+        except Exception as e:
+            logger.error(f"Failed to run evaluation script: {e}")
+            print(f"Failed to run evaluation script: {e}")
+
+    return converter
 
 
 def main() -> None:
@@ -195,6 +331,13 @@ def main() -> None:
         default=False,
         help="Enable automatic video re-encoding for incompatible codecs (e.g., AV1). Requires ffmpeg. (default: disabled)",
     )
+    
+    argparser.add_argument(
+        "--max-episodes",
+        type=int,
+        default=None,
+        help="Maximum number of episodes to convert (default: all)",
+    )
 
     args = argparser.parse_args()
     device_model_version = None
@@ -216,6 +359,7 @@ def main() -> None:
             device_model_version=device_model_version,
             is_test=args.is_test,
             auto_reencode=args.auto_reencode,
+            max_episodes=args.max_episodes,
         )
     except Exception:
         traceback.print_exc()

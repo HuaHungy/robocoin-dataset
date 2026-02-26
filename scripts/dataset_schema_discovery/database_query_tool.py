@@ -13,7 +13,7 @@ import sys
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root / 'src'))
 
-from robocoin_dataset.database.models import DatasetDB, DmvAnnotationDB
+from robocoin_dataset.database.models import DatasetDB
 from robocoin_dataset.database.database import DatasetDatabase
 
 
@@ -51,20 +51,9 @@ class DatabaseQueryTool:
         if not self.session:
             raise RuntimeError("请使用 'with' 语句创建DatabaseQueryTool实例")
         
-        # 先查询device_model对应的所有dataset_uuid（支持前缀匹配）
-        annotations = self.session.query(DmvAnnotationDB).filter(
-            DmvAnnotationDB.device_model.like(f"{device_model}%")
-        ).all()
-        
-        dataset_uuids = [ann.dataset_uuid for ann in annotations]
-        
-        if not dataset_uuids:
-            self.logger.warning(f"未找到device_model为 {device_model} 的数据集")
-            return []
-        
-        # 查询这些dataset的详细信息
+        # 直接查询DatasetDB（支持前缀匹配）
         query = self.session.query(DatasetDB).filter(
-            DatasetDB.dataset_uuid.in_(dataset_uuids)
+            DatasetDB.device_model.like(f"{device_model}%")
         )
         
         if limit:
@@ -75,12 +64,6 @@ class DatabaseQueryTool:
         # 转换为字典列表
         result = []
         for dataset in datasets:
-            # 找到对应的annotation
-            annotation = next(
-                (ann for ann in annotations if ann.dataset_uuid == dataset.dataset_uuid),
-                None
-            )
-            
             # 数据集路径 = yaml_file_path的父目录
             dataset_path = None
             if dataset.yaml_file_path:
@@ -90,15 +73,15 @@ class DatabaseQueryTool:
                 'dataset_uuid': dataset.dataset_uuid,
                 'dataset_name': dataset.dataset_name,
                 'dataset_path': dataset_path,
-                'device_model': annotation.device_model if annotation else None,
-                'device_model_version': annotation.device_model_version if annotation else None,
+                'device_model': dataset.device_model,
+                'device_model_version': dataset.device_model_version,
                 'created_at': getattr(dataset, 'created_at', None).isoformat() if hasattr(dataset, 'created_at') and dataset.created_at else None,
             })
         
         self.logger.info(f"找到 {len(result)} 个 {device_model} 数据集")
         
         return result
-    
+
     def query_all_device_models(self) -> List[Dict[str, Any]]:
         """
         查询所有device_model及其数据集数量
@@ -113,16 +96,19 @@ class DatabaseQueryTool:
         
         # 按device_model分组统计
         results = self.session.query(
-            DmvAnnotationDB.device_model,
-            DmvAnnotationDB.device_model_version,
-            func.count(DmvAnnotationDB.dataset_uuid).label('count')
+            DatasetDB.device_model,
+            DatasetDB.device_model_version,
+            func.count(DatasetDB.dataset_uuid).label('count')
         ).group_by(
-            DmvAnnotationDB.device_model,
-            DmvAnnotationDB.device_model_version
+            DatasetDB.device_model,
+            DatasetDB.device_model_version
         ).all()
         
         device_models = []
         for device_model, version, count in results:
+            if not device_model:  # 跳过没有device_model的记录
+                continue
+                
             device_models.append({
                 'device_model': device_model,
                 'device_model_version': version,
